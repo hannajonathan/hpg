@@ -102,3 +102,6 @@ install(FILES ${HPG_INCLUDE}
   DESTINATION ${CMAKE_INSTALL_FULL_INCLUDEDIR}/hpg)
 install(EXPORT HPGConfig DESTINATION share/hpg/cmake)
 export(TARGETS hpg FILE HPGConfig.cmake)
+
+add_executable(test test.cc)
+target_link_libraries(test hpg)
