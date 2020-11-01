@@ -133,7 +133,7 @@ struct State {
 
 /** Kokkos state implementation for a device type */
 template <Device D>
-class HPG_EXPORT StateT
+class HPG_EXPORT StateT final
   : public State {
 public:
 
@@ -234,7 +234,7 @@ private:
 #ifdef HPG_ENABLE_CUDA
 /** Kokkos state implementation for Cuda device */
 template <>
-struct HPG_EXPORT StateT<Device::Cuda>
+struct HPG_EXPORT StateT<Device::Cuda> final
   : public State {
 public:
 
