@@ -114,9 +114,16 @@ struct GridLayout {
 struct State {
 
   Device device; /**< device type */
+  std::array<unsigned, 3> grid_size; /**< grid size */
+  std::array<float, 2> grid_scale; /**< grid scale */
 
-  State(Device device_)
-    : device(device_) {}
+  State(
+    Device device_,
+    const std::array<unsigned, 3>& grid_size_,
+    const std::array<float, 2>& grid_scale_)
+    : device(device_)
+    , grid_size(grid_size_)
+    , grid_scale(grid_scale_) {}
 
   virtual void
   fence() = 0;
@@ -126,7 +133,7 @@ struct State {
 
 /** Kokkos state implementation for a device type */
 template <Device D>
-class StateT
+class HPG_EXPORT StateT
   : public State {
 public:
 
@@ -135,16 +142,16 @@ public:
 
   execution_space exec_space;
 
-  std::array<unsigned, 3> grid_size;
   grid_view<typename GridLayout<D>::layout, memory_space> grid;
 
   StateT()
     : State(D) {
   }
 
-  StateT(const std::array<unsigned, 3> grid_size_)
-    : State(D)
-    , grid_size(grid_size_) {
+  StateT(
+    const std::array<unsigned, 3> grid_size,
+    const std::array<float, 2>& grid_scale)
+    : State(D, grid_size,  grid_scale) {
 
     std::array<int, 3> ig{
       static_cast<int>(grid_size[0]),
@@ -163,7 +170,7 @@ public:
   }
 
   StateT(StateT& st)
-    : State(D) {
+    : State(D, st.grid_size, st.grid_scale) {
     std::array<int, 3> ig{
       static_cast<int>(st.grid_size[0]),
       static_cast<int>(st.grid_size[1]),
@@ -185,8 +192,7 @@ public:
   }
 
   StateT(StateT&& st)
-    : State(D) {
-    grid_size = std::move(st).grid_size;
+    : State(D, std::move(st).grid_size, std::move(st).grid_scale) {
     grid = st.grid;
   }
 
@@ -216,25 +222,25 @@ public:
 
 private:
   void
-  swap(StateT& right) {
-    std::swap(grid_size, right.grid_size);
+  swap(StateT& other) {
+    std::swap(grid_size, other.grid_size);
+    std::swap(grid_scale, other.grid_scale);
     decltype(grid) g = grid;
-    grid = right.grid;
-    right.grid = g;
+    grid = other.grid;
+    other.grid = g;
   }
 };
 
 #ifdef HPG_ENABLE_CUDA
 /** Kokkos state implementation for Cuda device */
 template <>
-struct StateT<Device::Cuda>
+struct HPG_EXPORT StateT<Device::Cuda>
   : public State {
 public:
 
   using execution_space = Kokkos::Cuda;
   using memory_space = execution_space::memory_space;
 
-  std::array<unsigned, 3> grid_size;
   grid_view<GridLayout<Device::Cuda>::layout, memory_space> grid;
 
   // use two execution spaces to support overlap of data copying with
@@ -244,9 +250,10 @@ public:
   execution_space* exec_copy = &exec_spaces[0];
   execution_space* exec_compute = &exec_spaces[1];
 
-  StateT(const std::array<unsigned, 3> grid_size_)
-    : State(Device::Cuda)
-    , grid_size(grid_size_) {
+  StateT(
+    const std::array<unsigned, 3> grid_size,
+    const std::array<float, 2>& grid_scale)
+    : State(Device::Cuda, grid_size, grid_scale) {
 
     init_exec_spaces();
 
@@ -269,7 +276,7 @@ public:
   }
 
   StateT(StateT& st)
-    : State(Device::Cuda) {
+    : State(Device::Cuda, st.grid_size, st.grid_scale) {
 
     st.fence();
     init_exec_spaces();
@@ -294,7 +301,7 @@ public:
   }
 
   StateT(StateT&& st)
-    : State(Device::Cuda) {
+    : State(Device::Cuda, std::move(st).grid_size, std::move(st).grid_scale) {
     std::swap(streams[0], std::move(st).streams[0]);
     std::swap(streams[1], std::move(st).streams[1]);
     *exec_copy = std::move(*std::move(st).exec_copy);
@@ -333,26 +340,26 @@ public:
 
 private:
   void
-  swap(StateT& right) {
-    std::swap(streams[0], right.streams[0]);
-    std::swap(streams[1], right.streams[1]);
+  swap(StateT& other) {
+    std::swap(streams, other.streams);
     {
-      auto r_copy_off = std::distance(&right.exec_spaces[0], right.exec_copy);
+      auto other_copy_off = std::distance(&other.exec_spaces[0], other.exec_copy);
       auto copy_off = std::distance(&exec_spaces[0], exec_copy);
-      exec_copy = &exec_spaces[r_copy_off];
-      right.exec_copy = &right.exec_spaces[copy_off];
+      exec_copy = &exec_spaces[other_copy_off];
+      other.exec_copy = &other.exec_spaces[copy_off];
     }
     {
-      auto r_compute_off =
-        std::distance(&right.exec_spaces[1], right.exec_compute);
+      auto other_compute_off =
+        std::distance(&other.exec_spaces[1], other.exec_compute);
       auto compute_off = std::distance(&exec_spaces[1], exec_compute);
-      exec_compute = &exec_spaces[r_compute_off];
-      right.exec_compute = &right.exec_spaces[compute_off];
+      exec_compute = &exec_spaces[other_compute_off];
+      other.exec_compute = &other.exec_spaces[compute_off];
     }
-    std::swap(grid_size, right.grid_size);
+    std::swap(grid_size, other.grid_size);
+    std::swap(grid_scale, other.grid_scale);
     decltype(grid) g = grid;
-    grid = right.grid;
-    right.grid = g;
+    grid = other.grid;
+    other.grid = g;
   }
 
   void

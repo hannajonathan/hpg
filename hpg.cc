@@ -65,29 +65,36 @@ hpg::GridderState::operator=(GridderState&& rhs) {
 }
 
 GridderState
-Gridder::init(Device device, const std::array<unsigned, 3>& grid_size) {
+Gridder::init(
+  Device device,
+  const std::array<unsigned, 3>& grid_size,
+  const std::array<float, 2>& grid_scale) {
 
   GridderState result;
 
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
-    result.impl = std::make_shared<Impl::StateT<Device::Serial>>(grid_size);
+    result.impl =
+      std::make_shared<Impl::StateT<Device::Serial>>(grid_size, grid_scale);
     break;
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
-    result.impl = std::make_shared<Impl::StateT<Device::OpenMP>>(grid_size);
+    result.impl =
+      std::make_shared<Impl::StateT<Device::OpenMP>>(grid_size, grid_scale);
     break;
 #endif // HPG_ENABLE_OPENMP
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
-    result.impl = std::make_shared<Impl::StateT<Device::Cuda>>(grid_size);
+    result.impl =
+      std::make_shared<Impl::StateT<Device::Cuda>>(grid_size, grid_scale);
     break;
 #endif // HPG_ENABLE_CUDA
 #ifdef HPG_ENABLE_HPX
   case Device::HPX:
-    result.impl = std::make_shared<Impl::StateT<Device::HPX>>(grid_size);
+    result.impl =
+      std::make_shared<Impl::StateT<Device::HPX>>(grid_size, grid_scale);
     break;
 #endif // HPG_ENABLE_HPX
   default:
@@ -98,9 +105,9 @@ Gridder::init(Device device, const std::array<unsigned, 3>& grid_size) {
 }
 
 GridderState
-Gridder::fence(GridderState handle) {
-  handle.impl->fence();
-  return handle;
+Gridder::fence(GridderState st) {
+  st.impl->fence();
+  return st;
 }
 
 void

@@ -111,9 +111,13 @@ public:
    *
    * @param device gridder device type
    * @param grid_size, in logical axis order: X, Y, channel
+   * @param grid_scale, in X, Y order
    */
-  Gridder(Device device, const std::array<unsigned, 3>& grid_size)
-    : state(init(device, grid_size)) {}
+  Gridder(
+    Device device,
+    const std::array<unsigned, 3>& grid_size,
+    const std::array<float, 2>& grid_scale)
+    : state(init(device, grid_size, grid_scale)) {}
 
   /** device execution fence
    *
@@ -133,7 +137,10 @@ public:
    * equivalent
    */
   static GridderState
-  init(Device device, const std::array<unsigned, 3>& grid_size);
+  init(
+    Device device,
+    const std::array<unsigned, 3>& grid_size,
+    const std::array<float, 2>& grid_scale);
 
   /** device execution fence
    *
