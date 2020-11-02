@@ -170,7 +170,7 @@ struct State {
     , grid_scale(grid_scale_) {}
 
   virtual void
-  resample_to_grid(Device host_device, const CF2& cf) = 0;
+  set_convolution_function(Device host_device, const CF2& cf) = 0;
 
   virtual void
   fence() = 0;
@@ -180,22 +180,24 @@ struct State {
 
 template <Device D, typename CFH>
 static void
-init_cf_host(CFH& cf_h, const CF2* cf2) {
+init_cf_host(CFH& cf_h, const CF2& cf2) {
   static_assert(
-    K::SpaceAccessibility<typename DeviceT<D>::kokkos_device, K::HostSpace>
+    K::SpaceAccessibility<
+      typename DeviceT<D>::kokkos_device::memory_space,
+      K::HostSpace>
     ::accessible);
   K::parallel_for(
     K::MDRangePolicy<
     K::Rank<2>,
     typename DeviceT<D>::kokkos_device>(
       {0, 0},
-      {static_cast<int>(cf2->extent[0]), static_cast<int>(cf2->extent[1])}),
-    KOKKOS_LAMBDA(int i, int j) {
-      auto X = i / cf2->oversampling;
-      auto x = i % cf2->oversampling;
-      auto Y = j / cf2->oversampling;
-      auto y = j % cf2->oversampling;
-      cf_h(X, Y, x, y) = cf2->operator()(i, j);
+      {static_cast<int>(cf2.extent[0]), static_cast<int>(cf2.extent[1])}),
+    [&](int i, int j) {
+      auto X = i / cf2.oversampling;
+      auto x = i % cf2.oversampling;
+      auto Y = j / cf2.oversampling;
+      auto y = j % cf2.oversampling;
+      cf_h(X, Y, x, y) = cf2.operator()(i, j);
     });
 }
 
@@ -212,6 +214,7 @@ public:
   execution_space exec_space;
 
   grid_view<typename GridLayout<D>::layout, memory_space> grid;
+  const_cf2_view<typename CF2Layout<D>::layout, memory_space> cf;
 
   StateT()
     : State(D) {
@@ -285,28 +288,28 @@ public:
   }
 
   void
-  resample_to_grid(Device host_device, const CF2& cf2) override {
-    cf2_view<typename CF2Layout<D>::layout, memory_space> cf;
+  set_convolution_function(Device host_device, const CF2& cf2) override {
+    cf2_view<typename CF2Layout<D>::layout, memory_space> cf_init;
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {
-      auto cf_h = K::create_mirror_view(cf);
-      init_cf_host<Device::Serial>(cf_h, &cf2);
-      K::deep_copy(exec_space, cf, cf_h);
+      auto cf_h = K::create_mirror_view(cf_init);
+      init_cf_host<Device::Serial>(cf_h, cf2);
+      K::deep_copy(exec_space, cf_init, cf_h);
     }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP: {
-      auto cf_h = K::create_mirror_view(cf);
-      init_cf_host<Device::OpenMP>(cf_h, &cf2);
-      K::deep_copy(exec_space, cf, cf_h);
+      auto cf_h = K::create_mirror_view(cf_init);
+      init_cf_host<Device::OpenMP>(cf_h, cf2);
+      K::deep_copy(exec_space, cf_init, cf_h);
     }
 #endif // HPG_ENABLE_SERIAL
     default:
       assert(false);
       break;
     }
-    // FIXME: do gridding
+    cf = cf_init;
   }
 
   void
@@ -336,6 +339,7 @@ public:
   using memory_space = execution_space::memory_space;
 
   grid_view<GridLayout<Device::Cuda>::layout, memory_space> grid;
+  const_cf2_view<CF2Layout<Device::Cuda>::layout, memory_space> cf;
 
   // use two execution spaces to support overlap of data copying with
   // computation using CUDA streams
@@ -428,30 +432,28 @@ public:
   }
 
   void
-  resample_to_grid(Device host_device, const CF2& cf2) override {
-    cf2_view<CF2Layout<Device::Cuda>::layout, memory_space> cf;
+  set_convolution_function(Device host_device, const CF2& cf2) override {
+    cf2_view<CF2Layout<Device::Cuda>::layout, memory_space> cf_init;
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {
-      auto cf_h = K::create_mirror_view(cf);
-      init_cf_host<Device::Serial>(cf_h, &cf2);
-      K::deep_copy(exec_space, cf, cf_h);
+      auto cf_h = K::create_mirror_view(cf_init);
+      init_cf_host<Device::Serial>(cf_h, cf2);
+      K::deep_copy(*exec_copy, cf_init, cf_h);
     }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP: {
-      auto cf_h = K::create_mirror_view(cf);
-      init_cf_host<Device::OpenMP>(cf_h, &cf2);
-      K::deep_copy(exec_space, cf, cf_h);
+      auto cf_h = K::create_mirror_view(cf_init);
+      init_cf_host<Device::OpenMP>(cf_h, cf2);
+      K::deep_copy(*exec_copy, cf_init, cf_h);
     }
 #endif // HPG_ENABLE_SERIAL
     default:
       assert(false);
       break;
     }
-    exec_compute->fence();
-    std::swap(exec_copy, exec_compute);
-    // FIXME: do gridding using *exec_compute
+    cf = cf_init;
   }
 
   void
