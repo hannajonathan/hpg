@@ -2,6 +2,11 @@
 
 #include <iostream>
 
+struct MyCF2
+  : public hpg::CF2 {
+
+};
+
 int
 main(int argc, char* argv[]) {
 

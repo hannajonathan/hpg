@@ -105,6 +105,12 @@ Gridder::init(
 }
 
 GridderState
+Gridder::resample_to_grid(GridderState st, Device host_device, const CF2& cf) {
+  st.impl->resample_to_grid(host_device, cf);
+  return st;
+}
+
+GridderState
 Gridder::fence(GridderState st) {
   st.impl->fence();
   return st;

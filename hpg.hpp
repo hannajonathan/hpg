@@ -1,5 +1,6 @@
 #pragma once
 
+#include <complex>
 #include <memory>
 
 #include "hpg_export.h"
@@ -73,6 +74,18 @@ public:
   operator=(GridderState&&);
 };
 
+/** base class for 2d convolution functions */
+class HPG_EXPORT CF2 {
+public:
+
+  unsigned oversampling;
+
+  std::array<unsigned, 2> extent;
+
+  virtual std::complex<float>
+  operator()(unsigned x, unsigned y) const = 0;
+};
+
 /** Gridder class
  *
  * Instances of this class may be used for an object-oriented interface to the
@@ -119,6 +132,11 @@ public:
     const std::array<float, 2>& grid_scale)
     : state(init(device, grid_size, grid_scale)) {}
 
+  void
+  resample_to_grid(Device host_device, const CF2& cf) {
+    state = resample_to_grid(std::move(state), host_device, cf);
+  }
+
   /** device execution fence
    *
    * Returns after all tasks on device have completed. Call is rarely explicitly
@@ -141,6 +159,9 @@ public:
     Device device,
     const std::array<unsigned, 3>& grid_size,
     const std::array<float, 2>& grid_scale);
+
+  static GridderState
+  resample_to_grid(GridderState state, Device host_device, const CF2& cf);
 
   /** device execution fence
    *

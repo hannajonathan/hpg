@@ -82,6 +82,15 @@ using grid_view = K::View<gv_t***, Layout, memory_space>;
 template <typename Layout, typename memory_space>
 using const_grid_view = K::View<const gv_t***, Layout, memory_space>;
 
+/**
+ * View type for CF2 values
+ */
+template <typename Layout, typename memory_space>
+using cf2_view = K::View<cf_t****, Layout, memory_space>;
+
+template <typename Layout, typename memory_space>
+using const_cf2_view = K::View<const cf_t****, Layout, memory_space>;
+
 /** device-specific grid layout */
 template <Device D>
 struct GridLayout {
@@ -110,6 +119,41 @@ struct GridLayout {
   }
 };
 
+/** device-specific CF2 layout */
+template <Device D>
+struct CF2Layout {
+
+  /** Kokkos layout type */
+  using layout =
+    std::conditional_t<
+    std::is_same_v<
+      typename DeviceT<D>::kokkos_device::array_layout,
+      K::LayoutLeft>,
+    K::LayoutLeft,
+    K::LayoutStride>;
+
+  /**
+   * create Kokkos layout using given CF2
+   *
+   * logical layout is X, Y, x, y
+   */
+  static layout
+  dimensions(const CF2& cf) {
+    std::array<int, 4> dims{
+      cf.extent[0] / cf.oversampling,
+      cf.extent[1] / cf.oversampling,
+      cf.oversampling,
+      cf.oversampling
+    };
+    if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
+      return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3]);
+    } else {
+      static const std::array<int, 4> order{1, 0, 3, 2};
+      return K::LayoutStride::order_dimensions(4, order.data(), dims.data());
+    }
+  }
+};
+
 /** abstract base class for state implementations */
 struct State {
 
@@ -126,10 +170,35 @@ struct State {
     , grid_scale(grid_scale_) {}
 
   virtual void
+  resample_to_grid(Device host_device, const CF2& cf) = 0;
+
+  virtual void
   fence() = 0;
 
   virtual ~State() {}
 };
+
+template <Device D, typename CFH>
+static void
+init_cf_host(CFH& cf_h, const CF2* cf2) {
+  static_assert(
+    K::SpaceAccessibility<typename DeviceT<D>::kokkos_device, K::HostSpace>
+    ::accessible);
+  K::parallel_for(
+    K::MDRangePolicy<
+    K::Rank<2>,
+    typename DeviceT<D>::kokkos_device>(
+      {0, 0},
+      {static_cast<int>(cf2->extent[0]), static_cast<int>(cf2->extent[1])}),
+    KOKKOS_LAMBDA(int i, int j) {
+      auto X = i / cf2->oversampling;
+      auto x = i % cf2->oversampling;
+      auto Y = j / cf2->oversampling;
+      auto y = j % cf2->oversampling;
+      cf_h(X, Y, x, y) = cf2->operator()(i, j);
+    });
+}
+
 
 /** Kokkos state implementation for a device type */
 template <Device D>
@@ -213,6 +282,31 @@ public:
   StateT
   copy() {
     return StateT(*this);
+  }
+
+  void
+  resample_to_grid(Device host_device, const CF2& cf2) override {
+    cf2_view<typename CF2Layout<D>::layout, memory_space> cf;
+    switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+    case Device::Serial: {
+      auto cf_h = K::create_mirror_view(cf);
+      init_cf_host<Device::Serial>(cf_h, &cf2);
+      K::deep_copy(exec_space, cf, cf_h);
+    }
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_OPENMP
+    case Device::OpenMP: {
+      auto cf_h = K::create_mirror_view(cf);
+      init_cf_host<Device::OpenMP>(cf_h, &cf2);
+      K::deep_copy(exec_space, cf, cf_h);
+    }
+#endif // HPG_ENABLE_SERIAL
+    default:
+      assert(false);
+      break;
+    }
+    // FIXME: do gridding
   }
 
   void
@@ -331,6 +425,33 @@ public:
   StateT
   copy() {
     return StateT(*this);
+  }
+
+  void
+  resample_to_grid(Device host_device, const CF2& cf2) override {
+    cf2_view<CF2Layout<Device::Cuda>::layout, memory_space> cf;
+    switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+    case Device::Serial: {
+      auto cf_h = K::create_mirror_view(cf);
+      init_cf_host<Device::Serial>(cf_h, &cf2);
+      K::deep_copy(exec_space, cf, cf_h);
+    }
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_OPENMP
+    case Device::OpenMP: {
+      auto cf_h = K::create_mirror_view(cf);
+      init_cf_host<Device::OpenMP>(cf_h, &cf2);
+      K::deep_copy(exec_space, cf, cf_h);
+    }
+#endif // HPG_ENABLE_SERIAL
+    default:
+      assert(false);
+      break;
+    }
+    exec_compute->fence();
+    std::swap(exec_copy, exec_compute);
+    // FIXME: do gridding using *exec_compute
   }
 
   void
