@@ -292,6 +292,16 @@ public:
     cf2_view<typename CF2Layout<D>::layout, memory_space> cf_init(
       K::ViewAllocateWithoutInitializing("cf2"),
       CF2Layout<D>::dimensions(cf2));
+    std::cout << "alloc cf sz " << cf_init.extent(0)
+              << " " << cf_init.extent(1)
+              << " " << cf_init.extent(2)
+              << " " << cf_init.extent(3)
+              << std::endl;
+    std::cout << "alloc cf str " << cf_init.stride(0)
+              << " " << cf_init.stride(1)
+              << " " << cf_init.stride(2)
+              << " " << cf_init.stride(3)
+              << std::endl;
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {
@@ -440,6 +450,16 @@ public:
     cf2_view<CF2Layout<Device::Cuda>::layout, memory_space> cf_init(
       K::ViewAllocateWithoutInitializing("cf2"),
       CF2Layout<Device::Cuda>::dimensions(cf2));
+    std::cout << "alloc cf sz " << cf_init.extent(0)
+              << " " << cf_init.extent(1)
+              << " " << cf_init.extent(2)
+              << " " << cf_init.extent(3)
+              << std::endl;
+    std::cout << "alloc cf str " << cf_init.stride(0)
+              << " " << cf_init.stride(1)
+              << " " << cf_init.stride(2)
+              << " " << cf_init.stride(3)
+              << std::endl;
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {

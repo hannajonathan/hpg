@@ -5,7 +5,7 @@
 #include <random>
 #include <vector>
 
-struct MyCF2
+struct MyCF2 final
   : public hpg::CF2 {
 
   std::vector<std::complex<float>> values;
@@ -14,18 +14,18 @@ struct MyCF2
 
   MyCF2(
     unsigned oversampling_,
-    unsigned size,
+    const std::array<unsigned, 2>& size,
     const std::vector<std::complex<float>>& values_)
     : values(values_) {
 
     oversampling = oversampling_;
-    extent[0] = size * oversampling;
-    extent[1] = size * oversampling;
+    extent[0] = size[0] * oversampling;
+    extent[1] = size[1] * oversampling;
   }
 
   std::complex<float>
   operator()(unsigned x, unsigned y) const override {
-    return values[x * oversampling + y];
+    return values[x * extent[1] + y];
   }
 };
 
@@ -35,8 +35,8 @@ main(int argc, char* argv[]) {
   MyCF2 cf2;
   {
     const unsigned oversampling = 10;
-    const unsigned size = 31;
-    const unsigned num_values = oversampling * size * oversampling * size;
+    const std::array<unsigned, 2> size{31, 25};
+    const unsigned num_values = oversampling * size[0] * oversampling * size[1];
     std::vector<std::complex<float>> values;
     values.reserve(num_values);
     std::mt19937 gen(42);
