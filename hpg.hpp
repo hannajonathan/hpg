@@ -7,6 +7,10 @@
 
 namespace hpg {
 
+using cf_fp = float;
+using visibility_fp = float;
+using grid_value_fp = double;
+using grid_scale_fp = float;
 /**
  * backend device type
  */
@@ -37,7 +41,7 @@ public:
 
   std::array<unsigned, 2> extent;
 
-  virtual std::complex<float>
+  virtual std::complex<cf_fp>
     operator()(unsigned x, unsigned y) const = 0;
 };
 
@@ -94,7 +98,7 @@ public:
   GridderState(
     Device device,
     const std::array<unsigned, 3>& grid_size,
-    const std::array<float, 2>& grid_scale);
+    const std::array<grid_scale_fp, 2>& grid_scale);
 
   /** copy constructor
    *

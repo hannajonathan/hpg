@@ -59,20 +59,14 @@ struct DeviceT<Device::HPX> {
 };
 #endif // HPG_ENABLE_HPX
 
-/** portable single precision complex type */
-using cxf_t = Kokkos::complex<float>;
-
-/** portable double precision complex type */
-using cxd_t = Kokkos::complex<double>;
-
 /** visibility value type */
-using vis_t = cxf_t;
+using vis_t = Kokkos::complex<visibility_fp>;
 
 /** convolution function value type */
-using cf_t = cxf_t;
+using cf_t = Kokkos::complex<cf_fp>;
 
 /** gridded value type */
-using gv_t = cxd_t;
+using gv_t = Kokkos::complex<grid_value_fp>;
 
 /** Kokkos::View type for grid values
  */
@@ -159,12 +153,12 @@ struct State {
 
   Device device; /**< device type */
   std::array<unsigned, 3> grid_size; /**< grid size */
-  std::array<float, 2> grid_scale; /**< grid scale */
+  std::array<grid_scale_fp, 2> grid_scale; /**< grid scale */
 
   State(
     Device device_,
     const std::array<unsigned, 3>& grid_size_,
-    const std::array<float, 2>& grid_scale_)
+    const std::array<grid_scale_fp, 2>& grid_scale_)
     : device(device_)
     , grid_size(grid_size_)
     , grid_scale(grid_scale_) {}
@@ -222,7 +216,7 @@ public:
 
   StateT(
     const std::array<unsigned, 3> grid_size,
-    const std::array<float, 2>& grid_scale)
+    const std::array<grid_scale_fp, 2>& grid_scale)
     : State(D, grid_size,  grid_scale) {
 
     std::array<int, 3> ig{
@@ -369,7 +363,7 @@ public:
 
   StateT(
     const std::array<unsigned, 3> grid_size,
-    const std::array<float, 2>& grid_scale)
+    const std::array<grid_scale_fp, 2>& grid_scale)
     : State(Device::Cuda, grid_size, grid_scale) {
 
     init_exec_spaces();

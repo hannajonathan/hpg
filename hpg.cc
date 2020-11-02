@@ -8,7 +8,7 @@ GridderState::GridderState() {
 GridderState::GridderState(
   Device device,
   const std::array<unsigned, 3>& grid_size,
-  const std::array<float, 2>& grid_scale) {
+  const std::array<grid_scale_fp, 2>& grid_scale) {
 
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
