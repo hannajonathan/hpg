@@ -3,15 +3,12 @@
 using namespace hpg;
 
 GridderState::GridderState() {
-  std::cout << "default construct" << std::endl;
 }
 
 GridderState::GridderState(
   Device device,
   const std::array<unsigned, 3>& grid_size,
   const std::array<float, 2>& grid_scale) {
-
-  std::cout << "new construct" << std::endl;
 
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
@@ -45,18 +42,15 @@ GridderState::GridderState(
 }
 
 GridderState::GridderState(GridderState& h) {
-  std::cout << "copy construct" << std::endl;
   *this = h;
 }
 
 GridderState::GridderState(GridderState&& h) {
-  std::cout << "move construct" << std::endl;
   *this = std::move(h);
 }
 
 GridderState&
 GridderState::operator=(GridderState& rhs) {
-  std::cout << "copy assign" << std::endl;
   switch (rhs.impl->device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
@@ -99,7 +93,6 @@ GridderState::operator=(GridderState& rhs) {
 
 GridderState&
 GridderState::operator=(GridderState&& rhs) {
-  std::cout << "move assign" << std::endl;
   impl = std::move(std::move(rhs).impl);
   return *this;
 }
