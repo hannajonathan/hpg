@@ -140,10 +140,10 @@ struct CF2Layout {
   static layout
   dimensions(const CF2& cf) {
     std::array<int, 4> dims{
-      cf.extent[0] / cf.oversampling,
-      cf.extent[1] / cf.oversampling,
-      cf.oversampling,
-      cf.oversampling
+      static_cast<int>(cf.extent[0] / cf.oversampling),
+      static_cast<int>(cf.extent[1] / cf.oversampling),
+      static_cast<int>(cf.oversampling),
+      static_cast<int>(cf.oversampling)
     };
     if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
       return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3]);
@@ -197,7 +197,7 @@ init_cf_host(CFH& cf_h, const CF2& cf2) {
       auto x = i % cf2.oversampling;
       auto Y = j / cf2.oversampling;
       auto y = j % cf2.oversampling;
-      cf_h(X, Y, x, y) = cf2.operator()(i, j);
+      cf_h(X, Y, x, y) = cf2(i, j);
     });
 }
 
@@ -289,13 +289,16 @@ public:
 
   void
   set_convolution_function(Device host_device, const CF2& cf2) override {
-    cf2_view<typename CF2Layout<D>::layout, memory_space> cf_init;
+    cf2_view<typename CF2Layout<D>::layout, memory_space> cf_init(
+      K::ViewAllocateWithoutInitializing("cf2"),
+      CF2Layout<D>::dimensions(cf2));
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {
       auto cf_h = K::create_mirror_view(cf_init);
       init_cf_host<Device::Serial>(cf_h, cf2);
       K::deep_copy(exec_space, cf_init, cf_h);
+      break;
     }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
@@ -303,6 +306,7 @@ public:
       auto cf_h = K::create_mirror_view(cf_init);
       init_cf_host<Device::OpenMP>(cf_h, cf2);
       K::deep_copy(exec_space, cf_init, cf_h);
+      break;
     }
 #endif // HPG_ENABLE_SERIAL
     default:
@@ -433,13 +437,16 @@ public:
 
   void
   set_convolution_function(Device host_device, const CF2& cf2) override {
-    cf2_view<CF2Layout<Device::Cuda>::layout, memory_space> cf_init;
+    cf2_view<CF2Layout<Device::Cuda>::layout, memory_space> cf_init(
+      K::ViewAllocateWithoutInitializing("cf2"),
+      CF2Layout<Device::Cuda>::dimensions(cf2));
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {
       auto cf_h = K::create_mirror_view(cf_init);
       init_cf_host<Device::Serial>(cf_h, cf2);
       K::deep_copy(*exec_copy, cf_init, cf_h);
+      break;
     }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
@@ -447,6 +454,7 @@ public:
       auto cf_h = K::create_mirror_view(cf_init);
       init_cf_host<Device::OpenMP>(cf_h, cf2);
       K::deep_copy(*exec_copy, cf_init, cf_h);
+      break;
     }
 #endif // HPG_ENABLE_SERIAL
     default:
