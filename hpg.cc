@@ -41,7 +41,7 @@ GridderState::GridderState(
   }
 }
 
-GridderState::GridderState(GridderState& h) {
+GridderState::GridderState(const volatile GridderState& h) {
   *this = h;
 }
 
@@ -50,13 +50,15 @@ GridderState::GridderState(GridderState&& h) {
 }
 
 GridderState&
-GridderState::operator=(GridderState& rhs) {
-  switch (rhs.impl->device) {
+GridderState::operator=(const volatile GridderState& rhs) {
+
+  const GridderState& crhs = const_cast<const GridderState&>(rhs);
+  switch (crhs.impl->device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     impl =
       std::make_shared<Impl::StateT<Device::Serial>>(
-        dynamic_cast<Impl::StateT<Device::Serial>*>(rhs.impl.get())
+        dynamic_cast<Impl::StateT<Device::Serial>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_SERIAL
@@ -64,7 +66,7 @@ GridderState::operator=(GridderState& rhs) {
   case Device::OpenMP:
     impl =
       std::make_shared<Impl::StateT<Device::OpenMP>>(
-        dynamic_cast<Impl::StateT<Device::OpenMP>*>(rhs.impl.get())
+        dynamic_cast<Impl::StateT<Device::OpenMP>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_OPENMP
@@ -72,7 +74,7 @@ GridderState::operator=(GridderState& rhs) {
   case Device::Cuda:
     impl =
       std::make_shared<Impl::StateT<Device::Cuda>>(
-        dynamic_cast<Impl::StateT<Device::Cuda>*>(rhs.impl.get())
+        dynamic_cast<Impl::StateT<Device::Cuda>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_CUDA
@@ -80,7 +82,7 @@ GridderState::operator=(GridderState& rhs) {
   case Device::HPX:
     impl =
       std::make_shared<Impl::StateT<Device::HPX>>(
-        dynamic_cast<const Impl::StateT<Device::HPX>*>(rhs.impl.get())
+        dynamic_cast<const Impl::StateT<Device::HPX>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_HPX
@@ -93,12 +95,16 @@ GridderState::operator=(GridderState& rhs) {
 
 GridderState&
 GridderState::operator=(GridderState&& rhs) {
+
   impl = std::move(std::move(rhs).impl);
   return *this;
 }
 
 GridderState
-GridderState::set_convolution_function(Device host_device, const CF2& cf) & {
+GridderState::set_convolution_function(
+  Device host_device,
+  const CF2& cf) const volatile & {
+
   GridderState result(*this);
   result.impl->set_convolution_function(host_device, cf);
   return result;
@@ -106,13 +112,15 @@ GridderState::set_convolution_function(Device host_device, const CF2& cf) & {
 
 GridderState
 GridderState::set_convolution_function(Device host_device, const CF2& cf) && {
+
   GridderState result(std::move(*this));
   result.impl->set_convolution_function(host_device, cf);
   return result;
 }
 
 GridderState
-GridderState::fence() & {
+GridderState::fence() const volatile & {
+
   GridderState result(*this);
   result.impl->fence();
   return result;
@@ -120,6 +128,7 @@ GridderState::fence() & {
 
 GridderState
 GridderState::fence() && {
+
   GridderState result(std::move(*this));
   result.impl->fence();
   return result;

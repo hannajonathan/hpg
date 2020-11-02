@@ -49,6 +49,9 @@ struct HPG_EXPORT Gridder;
  * gridded visibility data and possibly a convolution function array. Used by
  * the Gridder class, but may also be used directly for its greater flexibility.
  *
+ * Depending on the device used for gridding, methods may schedule tasks for
+ * asynchronous execution.
+ *
  * In general, using a GridderState method on an instance creates a new (value)
  * copy of the target. For example,
  *    GridderState s0;
@@ -97,7 +100,7 @@ public:
    *
    * copies all state
    */
-  GridderState(GridderState&);
+  GridderState(const volatile GridderState&);
 
   /** move constructor
    */
@@ -108,7 +111,7 @@ public:
    * copies all state
    */
   GridderState&
-  operator=(GridderState&);
+  operator=(const volatile GridderState&);
 
   /** move assignment
    */
@@ -126,9 +129,7 @@ public:
    * @sa Gridder::set_convolution_function()
    */
   GridderState
-  set_convolution_function(
-    Device host_device,
-    const CF2& cf) &;
+  set_convolution_function(Device host_device, const CF2& cf) const volatile &;
 
   /** set convolution function
    *
@@ -156,7 +157,7 @@ public:
    * @sa Gridder::fence()
    */
   GridderState
-  fence() &;
+  fence() const volatile &;
 
   /** device execution fence
    *
@@ -184,6 +185,9 @@ public:
  * GridderState consequently makes it easy to create copies of those values when
  * a moved value would have been more efficient (both in resource usage and
  * performance).
+ *
+ * Depending on the device used for gridding, methods may schedule tasks for
+ * asynchronous execution.
  */
 class Gridder {
 public:

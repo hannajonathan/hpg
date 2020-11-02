@@ -173,7 +173,7 @@ struct State {
   set_convolution_function(Device host_device, const CF2& cf) = 0;
 
   virtual void
-  fence() = 0;
+  fence() const volatile = 0;
 
   virtual ~State() {}
 };
@@ -241,12 +241,17 @@ public:
               << std::endl;
   }
 
-  StateT(StateT& st)
-    : State(D, st.grid_size, st.grid_scale) {
+  StateT(const volatile StateT& st)
+    : State(
+      D,
+      const_cast<const StateT&>(st).grid_size,
+      const_cast<const StateT&>(st).grid_scale) {
+
+    const StateT& cst = const_cast<const StateT&>(st);
     std::array<int, 3> ig{
-      static_cast<int>(st.grid_size[0]),
-      static_cast<int>(st.grid_size[1]),
-      static_cast<int>(st.grid_size[2])};
+      static_cast<int>(cst.grid_size[0]),
+      static_cast<int>(cst.grid_size[1]),
+      static_cast<int>(cst.grid_size[2])};
     grid =
       decltype(grid)(
         K::ViewAllocateWithoutInitializing("grid"),
@@ -260,7 +265,7 @@ public:
               << " " << grid.stride(2)
               << std::endl;
     st.fence();
-    K::deep_copy(exec_space, grid, st.grid);
+    K::deep_copy(exec_space, grid, cst.grid);
   }
 
   StateT(StateT&& st)
@@ -269,7 +274,7 @@ public:
   }
 
   StateT&
-  operator=(StateT& st) {
+  operator=(const volatile StateT& st) {
     StateT tmp(st);
     this->swap(tmp);
     return *this;
@@ -283,7 +288,7 @@ public:
   }
 
   StateT
-  copy() {
+  copy() const volatile {
     return StateT(*this);
   }
 
@@ -327,8 +332,8 @@ public:
   }
 
   void
-  fence() override {
-    exec_space.fence();
+  fence() const volatile override {
+    const_cast<const execution_space&>(exec_space).fence();
   }
 
 private:
@@ -387,16 +392,20 @@ public:
     K::deep_copy(*exec_copy, grid, 0);
   }
 
-  StateT(StateT& st)
-    : State(Device::Cuda, st.grid_size, st.grid_scale) {
+  StateT(const volatile StateT& st)
+    : State(
+      Device::Cuda,
+      const_cast<const StateT&>(st).grid_size,
+      const_cast<const StateT&>(st).grid_scale) {
 
     st.fence();
     init_exec_spaces();
 
+    const StateT& cst = const_cast<const StateT&>(st);
     std::array<int, 3> ig{
-      static_cast<int>(st.grid_size[0]),
-      static_cast<int>(st.grid_size[1]),
-      static_cast<int>(st.grid_size[2])};
+      static_cast<int>(cst.grid_size[0]),
+      static_cast<int>(cst.grid_size[1]),
+      static_cast<int>(cst.grid_size[2])};
     grid =
       decltype(grid)(
         K::ViewAllocateWithoutInitializing("grid"),
@@ -409,7 +418,7 @@ public:
               << " " << grid.stride(1)
               << " " << grid.stride(2)
               << std::endl;
-    K::deep_copy(*exec_copy, grid, st.grid);
+    K::deep_copy(*exec_copy, grid, cst.grid);
   }
 
   StateT(StateT&& st)
@@ -427,7 +436,7 @@ public:
   }
 
   StateT&
-  operator=(StateT& st) {
+  operator=(const volatile StateT& st) {
     StateT tmp(st);
     this->swap(tmp);
     return *this;
@@ -441,7 +450,7 @@ public:
   }
 
   StateT
-  copy() {
+  copy() const volatile {
     return StateT(*this);
   }
 
@@ -485,8 +494,8 @@ public:
   }
 
   void
-  fence() override {
-    exec_compute->fence();
+  fence() const volatile override {
+    const_cast<const execution_space*>(exec_compute)->fence();
   }
 
 private:
