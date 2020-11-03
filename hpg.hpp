@@ -356,8 +356,9 @@ public:
    * required by users.
    */
   void
-  fence() {
-    state = std::move(state).fence();
+  fence() volatile {
+    const_cast<Gridder*>(this)->state =
+      std::move(const_cast<Gridder*>(this)->state).fence();
   }
 };
 
