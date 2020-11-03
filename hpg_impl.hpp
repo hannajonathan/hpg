@@ -239,7 +239,7 @@ sincos<K::CudaSpace, double>(double ph, double* sn, double* cs) {
  * helper class for computing visibility value and index metadata
  */
 template <typename execution_space>
-struct GridVis {
+struct GridVis final {
 
   int coarse[2];
   int fine[2];
@@ -346,7 +346,7 @@ namespace Core {
  * for OpenMP. A specialization for the host Serial device is provided, however.
  */
 template <typename execution_space>
-struct Gridder {
+struct HPG_EXPORT Gridder final {
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
@@ -402,7 +402,7 @@ struct Gridder {
  */
 #ifdef HPG_ENABLE_SERIAL
 template <>
-struct Gridder<K::Serial> {
+struct HPG_EXPORT Gridder<K::Serial> final {
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
