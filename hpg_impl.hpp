@@ -46,6 +46,8 @@ struct Visibility {
 
   Visibility(Visibility&&) = default;
 
+  KOKKOS_INLINE_FUNCTION ~Visibility() = default;
+
   KOKKOS_INLINE_FUNCTION Visibility& operator=(Visibility const&) = default;
 
   KOKKOS_INLINE_FUNCTION Visibility& operator=(Visibility&&) = default;
