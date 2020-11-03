@@ -245,6 +245,28 @@ public:
   GridderState
   fence() &&;
 
+  /** get normalization factor */
+  std::pair<GridderState, std::complex<grid_value_fp>>
+  get_normalization() const volatile &;
+
+  /** get normalization factor */
+  std::pair<GridderState, std::complex<grid_value_fp>>
+  get_normalization() &&;
+
+  /** set normalization factor
+   *
+   * @return normalization factor value before setting new value
+   */
+  std::pair<GridderState, std::complex<grid_value_fp>>
+  set_normalization(const std::complex<grid_value_fp>& val = 0) &;
+
+  /** set normalization factor
+   *
+   * @return normalization factor value before setting new value
+   */
+  std::pair<GridderState, std::complex<grid_value_fp>>
+  set_normalization(const std::complex<grid_value_fp>& val = 0) &&;
+
 protected:
   friend class Gridder;
 
@@ -359,6 +381,27 @@ public:
   fence() const volatile {
     const_cast<Gridder*>(this)->state =
       std::move(const_cast<Gridder*>(this)->state).fence();
+  }
+
+  /** get normalization factor */
+  std::complex<grid_value_fp>
+  get_normalization() const volatile {
+    std::complex<grid_value_fp> result;
+    std::tie(const_cast<Gridder*>(this)->state, result) =
+      std::move(const_cast<Gridder*>(this)->state).get_normalization();
+    return result;
+  }
+
+  /** set normalization factor
+   *
+   * @return normalization factor value before setting new value
+   */
+  std::complex<grid_value_fp>
+  set_normalization(const std::complex<grid_value_fp>& val = 0) {
+    std::complex<grid_value_fp> result;
+    std::tie(const_cast<Gridder*>(this)->state, result) =
+      std::move(const_cast<Gridder*>(this)->state).set_normalization(val);
+    return result;
   }
 };
 

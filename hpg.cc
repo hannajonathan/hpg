@@ -177,6 +177,34 @@ GridderState::fence() && {
   return result;
 }
 
+std::pair<GridderState, std::complex<grid_value_fp>>
+GridderState::get_normalization() const volatile & {
+
+  GridderState result(*this);
+  return {result, result.impl->get_normalization()};
+}
+
+std::pair<GridderState, std::complex<grid_value_fp>>
+GridderState::get_normalization() && {
+
+  GridderState result(std::move(*this));
+  return {result, result.impl->get_normalization()};
+}
+
+std::pair<GridderState, std::complex<grid_value_fp>>
+GridderState::set_normalization(const std::complex<grid_value_fp>& val) & {
+
+  GridderState result(*this);
+  return {result, result.impl->set_normalization(val)};
+}
+
+std::pair<GridderState, std::complex<grid_value_fp>>
+GridderState::set_normalization(const std::complex<grid_value_fp>& val) && {
+
+  GridderState result(std::move(*this));
+  return {result, result.impl->set_normalization(val)};
+}
+
 void
 GridderState::swap(GridderState& other) {
   std::swap(impl, other.impl);

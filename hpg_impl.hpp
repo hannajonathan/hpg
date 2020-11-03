@@ -367,7 +367,7 @@ struct HPG_EXPORT Gridder final {
     const const_visibility_view<memory_space>& visibilities,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const grid_view<grid_layout, memory_space>& grid,
-    const K::View<gv_t>& norm) {
+    const K::View<gv_t, memory_space>& norm) {
 
     const K::Array<int, 2>
       cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
@@ -430,7 +430,7 @@ struct HPG_EXPORT Gridder<K::Serial> final {
     const const_visibility_view<memory_space>& visibilities,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const grid_view<grid_layout, memory_space>& grid,
-    const K::View<gv_t>& norm) {
+    const K::View<gv_t, memory_space>& norm) {
 
     const K::Array<int, 2>
       cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
@@ -501,6 +501,12 @@ struct State {
 
   virtual void
   fence() const volatile = 0;
+
+  virtual std::complex<grid_value_fp>
+  get_normalization() const volatile = 0;
+
+  virtual std::complex<grid_value_fp>
+  set_normalization(const std::complex<grid_value_fp>&) = 0;
 
   virtual ~State() {}
 };
@@ -749,6 +755,34 @@ public:
     const_cast<const execution_space&>(exec_space).fence();
   }
 
+  std::complex<grid_value_fp>
+  get_normalization() const volatile override {
+    gv_t result;
+    auto nvnorm = const_cast<StateT*>(this)->norm;
+    K::parallel_reduce(
+      K::RangePolicy<execution_space>(0, 1),
+      KOKKOS_LAMBDA(int, gv_t& acc) {
+        acc += nvnorm();
+      },
+      result);
+    return result;
+  }
+
+  std::complex<grid_value_fp>
+  set_normalization(const std::complex<grid_value_fp>& val) override {
+    gv_t new_val = val;
+    gv_t old_val;
+    auto nvnorm = const_cast<StateT*>(this)->norm;
+    K::parallel_reduce(
+      K::RangePolicy<execution_space>(0, 1),
+      KOKKOS_LAMBDA(int, gv_t& acc) {
+        acc += nvnorm();
+        nvnorm() = new_val;
+      },
+      old_val);
+    return old_val;
+  }
+
 private:
   void
   swap(StateT& other) {
@@ -775,7 +809,7 @@ public:
 
   grid_view<GridLayout<Device::Cuda>::layout, memory_space> grid;
   const_cf2_view<CF2Layout<Device::Cuda>::layout, memory_space> cf;
-  K::View<visibility_fp, memory_space> norm;
+  K::View<gv_t, memory_space> norm;
 
   // use two execution spaces to support overlap of data copying with
   // computation using CUDA streams
@@ -972,6 +1006,36 @@ public:
   void
   fence() const volatile override {
     const_cast<const execution_space*>(exec_compute)->fence();
+  }
+
+  std::complex<grid_value_fp>
+  get_normalization() const volatile override {
+    gv_t result;
+    auto nvnorm = const_cast<StateT*>(this)->norm;
+    fence();
+    K::parallel_reduce(
+      K::RangePolicy<execution_space>(*exec_compute, 0, 1),
+      KOKKOS_LAMBDA(int, gv_t& acc) {
+        acc += nvnorm();
+      },
+      result);
+    return result;
+  }
+
+  std::complex<grid_value_fp>
+  set_normalization(const std::complex<grid_value_fp>& val) override {
+    gv_t new_val = val;
+    gv_t old_val;
+    fence();
+    auto nvnorm = const_cast<StateT*>(this)->norm;
+    K::parallel_reduce(
+      K::RangePolicy<execution_space>(0, 1),
+      KOKKOS_LAMBDA(int, gv_t& acc) {
+        acc += nvnorm();
+        nvnorm() = new_val;
+      },
+      old_val);
+    return old_val;
   }
 
 private:

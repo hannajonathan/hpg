@@ -1,5 +1,6 @@
 #include "hpg.hpp"
 
+#include <cassert>
 #include <complex>
 #include <iostream>
 #include <random>
@@ -121,6 +122,16 @@ main(int argc, char* argv[]) {
       visibility_frequencies,
       visibility_phase,
       visibility_coordinates);
+    auto norm = g0.get_normalization();
+    std::cout << "normalization " << norm.real()
+              << " " << norm.imag()
+              << std::endl;
+    auto norm0 = g0.set_normalization(norm * -1.0);
+    assert(norm == norm0);
+    auto norm1 = g0.get_normalization();
+    std::cout << "normalization " << norm1.real()
+              << " " << norm1.imag()
+              << std::endl;
   }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
@@ -145,6 +156,16 @@ main(int argc, char* argv[]) {
       visibility_frequencies,
       visibility_phase,
       visibility_coordinates);
+    auto norm = g0.get_normalization();
+    std::cout << "normalization " << norm.real()
+              << " " << norm.imag()
+              << std::endl;
+    auto norm0 = g0.set_normalization(norm * -1.0);
+    assert(norm == norm0);
+    auto norm1 = g0.get_normalization();
+    std::cout << "normalization " << norm1.real()
+              << " " << norm1.imag()
+              << std::endl;
   }
 #endif // HPG_ENABLE_CUDA
   hpg::finalize();
