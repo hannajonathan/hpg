@@ -107,7 +107,7 @@ public:
    * create a GridderState
    *
    * @param device gridder device type
-   * @param grid_size, in logical axis order: X, Y, channel
+   * @param grid_size, in logical axis order: X, Y, plane
    * @param grid_scale, in X, Y order
    *
    * @sa Gridder::Gridder()
@@ -282,26 +282,26 @@ protected:
  * interface of GridderState, as the GridderState member of a Gridder instance
  * is often modified by Gridder methods through move construction/assignment,
  * and is thus never copied. Managing GridderState instances directly provides
- * greate flexibility, in that the caller has complete control over when
+ * greater flexibility, in that the caller has complete control over when
  * GridderState values are copied vs moved. However, the flexibility provided by
  * GridderState consequently makes it easy to create copies of those values when
  * a moved value would have been more efficient (both in resource usage and
  * performance).
  *
  * Depending on the device used for gridding, methods may schedule tasks for
- * asynchronous execution.
+ * asynchronous execution or may block. Even when asynchronous execution is
+ * supported by a device, a call may nevertheless block at times, depending upon
+ * the internal state of the Gridder instance.
  */
 class Gridder {
 public:
 
   mutable GridderState state; /**< state maintained by instances */
 
-  // NB: grid_size logical axis order: X, Y, ch
-
   /** constructor
    *
    * @param device gridder device type
-   * @param grid_size, in logical axis order: X, Y, channel
+   * @param grid_size, in logical axis order: X, Y, plane
    * @param grid_scale, in X, Y order
    */
   Gridder(
