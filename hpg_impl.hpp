@@ -244,6 +244,7 @@ struct GridVis final {
   int coarse[2];
   int fine[2];
   vis_t value;
+  cf_fp cf_im_factor;
 
   KOKKOS_INLINE_FUNCTION GridVis() {};
 
@@ -280,6 +281,7 @@ struct GridVis final {
         fine_scale[1]);
     coarse[1] = c1;
     fine[1] = f1;
+    cf_im_factor = (vis.uvw[2] > 0) ? -1 : 1;
   }
 
   GridVis(GridVis const&) = default;
@@ -355,7 +357,8 @@ struct HPG_EXPORT Gridder final {
     const const_cf2_view<cf_layout, memory_space>& cf,
     const const_visibility_view<memory_space>& visibilities,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    const grid_view<grid_layout, memory_space>& grid) {
+    const grid_view<grid_layout, memory_space>& grid,
+    const K::View<gv_t>& norm) {
 
     const K::Array<int, 2>
       cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
@@ -387,10 +390,16 @@ struct HPG_EXPORT Gridder final {
           K::TeamVectorRange(team_member, cf.extent_int(0)),
           [=](const int X) {
             /* loop over coarseY */
-            for (int Y = 0; Y < cf.extent_int(1); ++Y)
+            gv_t n;
+            for (int Y = 0; Y < cf.extent_int(1); ++Y) {
+              gv_t cfv = cf(X, Y, vis.fine[0], vis.fine[1]);
+              cfv.imag() *= vis.cf_im_factor;
               pseudo_atomic_add<execution_space>(
                 grid(vis.coarse[0] + X, vis.coarse[1] + Y, 0),
-                gv_t(vis.value * cf(X, Y, vis.fine[0], vis.fine[1])));
+                cfv * vis.value);
+              n += cfv;
+            }
+            pseudo_atomic_add<execution_space>(norm(), n);
           });
       });
   }
@@ -411,7 +420,8 @@ struct HPG_EXPORT Gridder<K::Serial> final {
     const const_cf2_view<cf_layout, memory_space>& cf,
     const const_visibility_view<memory_space>& visibilities,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    const grid_view<grid_layout, memory_space>& grid) {
+    const grid_view<grid_layout, memory_space>& grid,
+    const K::View<gv_t>& norm) {
 
     const K::Array<int, 2>
       cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
@@ -441,8 +451,10 @@ struct HPG_EXPORT Gridder<K::Serial> final {
           [=](const int X) {
             /* loop over coarseY */
             for (int Y = 0; Y < cf.extent_int(1); ++Y) {
-              grid(vis.coarse[0] + X, vis.coarse[1] + Y, 0)
-                += vis.value * cf(X, Y, vis.fine[0], vis.fine[1]);
+              gv_t cfv = cf(X, Y, vis.fine[0], vis.fine[1]);
+              cfv.imag() *= vis.cf_im_factor;
+              grid(vis.coarse[0] + X, vis.coarse[1] + Y, 0) += cfv * vis.value;
+              norm() += cfv;
             }
           });
       });
@@ -551,6 +563,7 @@ public:
 
   grid_view<typename GridLayout<D>::layout, memory_space> grid;
   const_cf2_view<typename CF2Layout<D>::layout, memory_space> cf;
+  K::View<gv_t, memory_space> norm;
 
   StateT()
     : State(D) {
@@ -575,6 +588,7 @@ public:
               << " " << grid.stride(1)
               << " " << grid.stride(2)
               << std::endl;
+    norm = decltype(norm)("norm");
   }
 
   StateT(const volatile StateT& st)
@@ -602,11 +616,14 @@ public:
               << std::endl;
     st.fence();
     K::deep_copy(exec_space, grid, cst.grid);
+    norm = decltype(norm)(K::ViewAllocateWithoutInitializing("norm"));
+    K::deep_copy(exec_space, norm, cst.norm);
   }
 
   StateT(StateT&& st)
     : State(D, std::move(st).grid_size, std::move(st).grid_scale) {
     grid = st.grid;
+    norm = st.norm;
   }
 
   StateT&
@@ -715,7 +732,7 @@ public:
     }
     const_visibility_view<memory_space> cvis = vis;
     Core::Gridder<execution_space>
-      ::grid_visibilities(exec_space, cf, cvis, grid_scale, grid);
+      ::grid_visibilities(exec_space, cf, cvis, grid_scale, grid, norm);
   }
 
   void
@@ -731,6 +748,9 @@ private:
     decltype(grid) g = grid;
     grid = other.grid;
     other.grid = g;
+    decltype(norm) n = norm;
+    norm = other.norm;
+    other.norm = n;
   }
 };
 
@@ -746,6 +766,7 @@ public:
 
   grid_view<GridLayout<Device::Cuda>::layout, memory_space> grid;
   const_cf2_view<CF2Layout<Device::Cuda>::layout, memory_space> cf;
+  K::View<visibility_fp, memory_space> norm;
 
   // use two execution spaces to support overlap of data copying with
   // computation using CUDA streams
@@ -777,6 +798,8 @@ public:
               << " " << grid.stride(2)
               << std::endl;
     K::deep_copy(*exec_copy, grid, 0);
+    norm = decltype(norm)(K::ViewAllocateWithoutInitializing("norm"));
+    K::deep_copy(*exec_copy, norm, 0);
   }
 
   StateT(const volatile StateT& st)
@@ -806,10 +829,14 @@ public:
               << " " << grid.stride(2)
               << std::endl;
     K::deep_copy(*exec_copy, grid, cst.grid);
+    norm = decltype(norm)(K::ViewAllocateWithoutInitializing("norm"));
+    K::deep_copy(*exec_copy, norm, cst.norm);
   }
 
   StateT(StateT&& st)
     : State(Device::Cuda, std::move(st).grid_size, std::move(st).grid_scale) {
+    grid = st.grid;
+    norm = st.norm;
     std::swap(streams[0], std::move(st).streams[0]);
     std::swap(streams[1], std::move(st).streams[1]);
     *exec_copy = std::move(*std::move(st).exec_copy);
@@ -930,7 +957,7 @@ public:
     std::swap(exec_copy, exec_compute);
     const_visibility_view<memory_space> cvis = vis;
     Core::Gridder<execution_space>
-      ::grid_visibilities(*exec_compute, cf, cvis, grid_scale, grid);
+      ::grid_visibilities(*exec_compute, cf, cvis, grid_scale, grid, norm);
   }
 
   void
@@ -960,6 +987,9 @@ private:
     decltype(grid) g = grid;
     grid = other.grid;
     other.grid = g;
+    decltype(norm) n = norm;
+    norm = other.norm;
+    other.norm = n;
   }
 
   void
