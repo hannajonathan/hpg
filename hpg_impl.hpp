@@ -441,7 +441,7 @@ struct HPG_EXPORT Gridder<K::Serial> final {
           [=](const int X) {
             /* loop over coarseY */
             for (int Y = 0; Y < cf.extent_int(1); ++Y) {
-              grid(0, vis.coarse[0] + X, vis.coarse[1] + Y)
+              grid(vis.coarse[0] + X, vis.coarse[1] + Y, 0)
                 += vis.value * cf(X, Y, vis.fine[0], vis.fine[1]);
             }
           });
