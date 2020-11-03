@@ -8,14 +8,14 @@
 struct MyCF2 final
   : public hpg::CF2 {
 
-  std::vector<std::complex<float>> values;
+  std::vector<std::complex<hpg::cf_fp>> values;
 
   MyCF2() {}
 
   MyCF2(
     unsigned oversampling_,
     const std::array<unsigned, 2>& size,
-    const std::vector<std::complex<float>>& values_)
+    const std::vector<std::complex<hpg::cf_fp>>& values_)
     : values(values_) {
 
     oversampling = oversampling_;
@@ -23,28 +23,31 @@ struct MyCF2 final
     extent[1] = size[1] * oversampling;
   }
 
-  std::complex<float>
+  std::complex<hpg::cf_fp>
   operator()(unsigned x, unsigned y) const override {
     return values[x * extent[1] + y];
   }
 };
 
+template <typename Generator>
+MyCF2
+create_cf2(Generator& gen) {
+  const unsigned oversampling = 10;
+  const std::array<unsigned, 2> size{31, 25};
+  const unsigned num_values = oversampling * size[0] * oversampling * size[1];
+  std::vector<std::complex<hpg::cf_fp>> values;
+  values.reserve(num_values);
+  std::uniform_real_distribution<hpg::cf_fp> dist(-1.0f, 1.0f);
+  for (auto i = 0; i < num_values; ++i)
+    values.emplace_back(dist(gen), dist(gen));
+  return MyCF2(oversampling, size, values);
+}
 int
 main(int argc, char* argv[]) {
 
-  MyCF2 cf2;
-  {
-    const unsigned oversampling = 10;
-    const std::array<unsigned, 2> size{31, 25};
-    const unsigned num_values = oversampling * size[0] * oversampling * size[1];
-    std::vector<std::complex<float>> values;
-    values.reserve(num_values);
-    std::mt19937 gen(42);
-    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-    for (auto i = 0; i < num_values; ++i)
-      values.emplace_back(dist(gen), dist(gen));
-    cf2 = MyCF2(oversampling, size, values);
-  }
+  std::mt19937 rng(42);
+
+  MyCF2 cf2 = create_cf2(rng);
 
   hpg::initialize();
 #ifdef HPG_ENABLE_SERIAL
