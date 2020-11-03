@@ -254,7 +254,7 @@ struct GridVis final {
     const K::Array<int, 2>& cf_radius,
     const K::Array<grid_scale_fp, 2>& fine_scale) {
 
-    static const vis_frequency_fp c = 3e8;
+    static const vis_frequency_fp c = 299792458.0;
     K::complex<vis_phase_fp> phasor;
     sincos<execution_space>(vis.d_phase, &phasor.imag(), &phasor.real());
     value = vis.value * phasor * vis.weight;
