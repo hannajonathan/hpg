@@ -293,6 +293,15 @@ struct GridVis final {
   KOKKOS_INLINE_FUNCTION GridVis& operator=(GridVis&&) = default;
 };
 
+/** almost atomic complex addition
+ *
+ * We want atomic addition to avoid the use of locks, that is, to be implemented
+ * only by either a real atomic addition function or a compare-and-swap loop. We
+ * define this function since 128 bit CAS functions don't exist in CUDA or HIP,
+ * and we want at least a chance of compiling to the actual atomic add
+ * functions. This function is almost atomic since the real and imaginary
+ * components are updated sequentially.
+ */
 template <typename execution_space, typename T>
 KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add(K::complex<T>& acc, const K::complex<T>& val) {
