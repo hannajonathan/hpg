@@ -2,15 +2,32 @@
 
 #include <complex>
 #include <memory>
+#include <vector>
 
 #include "hpg_export.h"
 
 namespace hpg {
 
+/** convolution function array value floating point type */
 using cf_fp = float;
+/** visibility value floating point type */
 using visibility_fp = float;
+/** gridded value floating point type */
 using grid_value_fp = double;
+/** grid scale floating point type */
 using grid_scale_fp = float;
+/** visibility (U, V, W) coordinate floating point type */
+using vis_uvw_fp = double;
+/** visibility weight floating point type */
+using vis_weight_fp = float;
+/** visibility frequency floating point type */
+using vis_frequency_fp = double;
+/** visibility phase floating point type */
+using vis_phase_fp = double;
+
+// vis_uvw_t can be any type that supports std::get<N>() for element access
+using vis_uvw_t = std::array<vis_uvw_fp, 3>;
+
 /**
  * backend device type
  */
@@ -146,9 +163,62 @@ public:
    * @sa Gridder::set_convolution_function()
    */
   GridderState
-  set_convolution_function(
+  set_convolution_function(Device host_device, const CF2& cf) &&;
+
+  /** grid some visibilities
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * The indexing of visibilities and all other metadata vectors must be
+   * consistent. For example the weight for the visibility value visibilities[i]
+   * must be located at visibility_weights[i].
+   *
+   * @param host_device device to use for changing array layout
+   * @param visibilities visibilities
+   * @param visibility_weights visibility weights
+   * @param visibility_frequencies visibility frequencies
+   * @param visibility_phase visibility phase difference
+   * @param visibility_coordinates visibility coordinates
+   *
+   * @sa Gridder::grid_visibilities()
+   */
+  GridderState
+  grid_visibilities(
     Device host_device,
-    const CF2& cf) &&;
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_uvw_t>& visibility_coordinates)
+    const volatile &;
+
+  /** grid some visibilities
+   *
+   * @return new GridderState that has overwritten the target, but after
+   * gridding task has been submitted to device queue
+   *
+   * The indexing of visibilities and all other metadata vectors must be
+   * consistent. For example the weight for the visibility value visibilities[i]
+   * must be located at visibility_weights[i].
+   *
+   * @param host_device device to use for changing array layout
+   * @param visibilities visibilities
+   * @param visibility_weights visibility weights
+   * @param visibility_frequencies visibility frequencies
+   * @param visibility_phase visibility phase difference
+   * @param visibility_coordinates visibility coordinates
+   *
+   * @sa Gridder::grid_visibilities()
+   */
+  GridderState
+  grid_visibilities(
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_uvw_t>& visibility_coordinates) &&;
 
   /** device execution fence
    *
@@ -209,7 +279,7 @@ public:
   Gridder(
     Device device,
     const std::array<unsigned, 3>& grid_size,
-    const std::array<float, 2>& grid_scale)
+    const std::array<grid_scale_fp, 2>& grid_scale)
     : state(GridderState(device, grid_size, grid_scale)) {}
 
   /** set convolution function
@@ -223,6 +293,39 @@ public:
   void
   set_convolution_function(Device host_device, const CF2& cf) {
     state = std::move(state).set_convolution_function(host_device, cf);
+  }
+
+  /** grid visibilities
+   *
+   * The indexing of visibilities and all other metadata vectors must be
+   * consistent. For example the weight for the visibility value visibilities[i]
+   * must be located at visibility_weights[i].
+   *
+   * @param host_device device to use for changing array layout
+   * @param visibilities visibilities
+   * @param visibility_weights visibility weights
+   * @param visibility_frequencies visibility frequencies
+   * @param visibility_phase visibility phase difference
+   * @param visibility_coordinates visibility coordinates
+   */
+  void
+  grid_visibilities(
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_uvw_t>& visibility_coordinates) {
+
+    state =
+      std::move(state)
+      .grid_visibilities(
+        host_device,
+        visibilities,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phase,
+        visibility_coordinates);
   }
 
   /** device execution fence

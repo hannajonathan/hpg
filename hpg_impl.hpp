@@ -2,16 +2,60 @@
 
 #include <algorithm>
 #include <cassert>
+#include <type_traits>
 
 #include <iostream> // FIXME: remove
 
 #include <Kokkos_Core.hpp>
-#include <Kokkos_ScatterView.hpp>
 
 namespace K = Kokkos;
+namespace KExp = Kokkos::Experimental;
 
 namespace hpg {
 namespace Impl {
+
+/** visibility value type */
+using vis_t = K::complex<visibility_fp>;
+
+/** convolution function value type */
+using cf_t = K::complex<cf_fp>;
+
+/** gridded value type */
+using gv_t = K::complex<grid_value_fp>;
+
+struct Visibility {
+
+  KOKKOS_INLINE_FUNCTION Visibility() {};
+
+  Visibility(
+    const vis_t& value_,
+    vis_weight_fp weight_,
+    vis_frequency_fp freq_,
+    vis_phase_fp d_phase_,
+    const vis_uvw_t& uvw_)
+    : value(value_)
+    , weight(weight_)
+    , freq(freq_)
+    , d_phase(d_phase_) {
+    uvw[0] = std::get<0>(uvw_);
+    uvw[1] = std::get<1>(uvw_);
+    uvw[2] = std::get<2>(uvw_);
+  }
+
+  Visibility(Visibility const&) = default;
+
+  Visibility(Visibility&&) = default;
+
+  KOKKOS_INLINE_FUNCTION Visibility& operator=(Visibility const&) = default;
+
+  KOKKOS_INLINE_FUNCTION Visibility& operator=(Visibility&&) = default;
+
+  vis_t value;
+  vis_weight_fp weight;
+  vis_frequency_fp freq;
+  vis_phase_fp d_phase;
+  K::Array<vis_uvw_fp, 3> uvw;
+};
 
 /** implementation initialization function */
 void
@@ -59,31 +103,26 @@ struct DeviceT<Device::HPX> {
 };
 #endif // HPG_ENABLE_HPX
 
-/** visibility value type */
-using vis_t = Kokkos::complex<visibility_fp>;
-
-/** convolution function value type */
-using cf_t = Kokkos::complex<cf_fp>;
-
-/** gridded value type */
-using gv_t = Kokkos::complex<grid_value_fp>;
-
-/** Kokkos::View type for grid values
- */
+/** Kokkos::View type for grid values */
 template <typename Layout, typename memory_space>
 using grid_view = K::View<gv_t***, Layout, memory_space>;
 
 template <typename Layout, typename memory_space>
 using const_grid_view = K::View<const gv_t***, Layout, memory_space>;
 
-/**
- * View type for CF2 values
- */
+/** View type for CF2 values */
 template <typename Layout, typename memory_space>
 using cf2_view = K::View<cf_t****, Layout, memory_space>;
 
 template <typename Layout, typename memory_space>
 using const_cf2_view = K::View<const cf_t****, Layout, memory_space>;
+
+/** View type for Visibility values */
+template <typename memory_space>
+using visibility_view = K::View<Visibility*, memory_space>;
+
+template <typename memory_space>
+using const_visibility_view = K::View<const Visibility*, memory_space>;
 
 /** device-specific grid layout */
 template <Device D>
@@ -98,9 +137,7 @@ struct GridLayout {
       K::LayoutLeft,
       K::LayoutStride>;
 
-  /**
-   * create Kokkos layout using given grid dimensions (in logical order X, Y,
-   * ch)
+  /** create Kokkos layout using given grid dimensions
    */
   static layout
   dimensions(const std::array<int, 3>& dims) {
@@ -148,6 +185,270 @@ struct CF2Layout {
   }
 };
 
+/**
+ * convert a UV coordinate to coarse and fine grid coordinates
+ */
+KOKKOS_FUNCTION std::tuple<int, int>
+compute_vis_coord(
+  int g_offset,
+  int oversampling,
+  int cf_radius,
+  vis_uvw_fp coord,
+  vis_frequency_fp inv_lambda,
+  grid_scale_fp fine_scale) {
+
+  long fine_coord = std::lrint((double(coord) * inv_lambda) * fine_scale);
+  long nearest_coarse_fine_coord =
+    std::lrint(double(fine_coord) / oversampling) * oversampling;
+  int coarse = nearest_coarse_fine_coord / oversampling - cf_radius + g_offset;
+  int fine;
+  if (fine_coord >= nearest_coarse_fine_coord)
+    fine = fine_coord - nearest_coarse_fine_coord;
+  else
+    fine = fine_coord - (nearest_coarse_fine_coord - oversampling);
+  assert(0 <= fine && fine < oversampling);
+  return {coarse, fine};
+}
+
+/**
+ * portable sincos()
+ */
+template <typename execution_space, typename T>
+KOKKOS_FORCEINLINE_FUNCTION void
+sincos(T ph, T* sn, T* cs) {
+  *sn = std::sin(ph);
+  *cs = std::cos(ph);
+}
+
+#ifdef KOKKOS_ENABLE_CUDA
+template <>
+__device__ __forceinline__ void
+sincos<K::CudaSpace, float>(float ph, float* sn, float* cs) {
+  ::sincosf(ph, sn, cs);
+}
+template <>
+__device__ __forceinline__ void
+sincos<K::CudaSpace, double>(double ph, double* sn, double* cs) {
+  ::sincos(ph, sn, cs);
+}
+#endif
+
+/**
+ * helper class for computing visibility value and index metadata
+ */
+template <typename execution_space>
+struct GridVis {
+
+  int coarse[2];
+  int fine[2];
+  vis_t value;
+
+  KOKKOS_INLINE_FUNCTION GridVis() {};
+
+  KOKKOS_INLINE_FUNCTION GridVis(
+    const Visibility& vis,
+    const K::Array<int, 2>& grid_radius,
+    const K::Array<int, 2>& oversampling,
+    const K::Array<int, 2>& cf_radius,
+    const K::Array<grid_scale_fp, 2>& fine_scale) {
+
+    static const vis_frequency_fp c = 3e8;
+    K::complex<vis_phase_fp> phasor;
+    sincos<execution_space>(vis.d_phase, &phasor.imag(), &phasor.real());
+    value = vis.value * phasor * vis.weight;
+    auto inv_lambda = vis.freq / c;
+    // can't use std::tie here - CUDA doesn't support it
+    auto [c0, f0] =
+      compute_vis_coord(
+        grid_radius[0],
+        oversampling[0],
+        cf_radius[0],
+        vis.uvw[0],
+        inv_lambda,
+        fine_scale[0]);
+    coarse[0] = c0;
+    fine[0] = f0;
+    auto [c1, f1] =
+      compute_vis_coord(
+        grid_radius[1],
+        oversampling[1],
+        cf_radius[1],
+        vis.uvw[1],
+        inv_lambda,
+        fine_scale[1]);
+    coarse[1] = c1;
+    fine[1] = f1;
+  }
+
+  GridVis(GridVis const&) = default;
+
+  GridVis(GridVis&&) = default;
+
+  KOKKOS_INLINE_FUNCTION GridVis& operator=(GridVis const&) = default;
+
+  KOKKOS_INLINE_FUNCTION GridVis& operator=(GridVis&&) = default;
+};
+
+template <typename execution_space, typename T>
+KOKKOS_FORCEINLINE_FUNCTION void
+pseudo_atomic_add(K::complex<T>& acc, const K::complex<T>& val) {
+  K::atomic_add(&acc, val);
+}
+
+#ifdef HPG_ENABLE_CUDA
+template <>
+KOKKOS_FORCEINLINE_FUNCTION void
+pseudo_atomic_add<K::Cuda, double>(
+  K::complex<double>& acc, const K::complex<double>& val) {
+
+  K::atomic_add(&acc.real(), val.real());
+  K::atomic_add(&acc.imag(), val.imag());
+}
+
+template <>
+KOKKOS_FORCEINLINE_FUNCTION void
+pseudo_atomic_add<K::Cuda, float>(
+  K::complex<float>& acc, const K::complex<float>& val) {
+
+  K::atomic_add(&acc.real(), val.real());
+  K::atomic_add(&acc.imag(), val.imag());
+}
+#endif // HPG_ENABLE_CUDA
+#ifdef HPG_ENABLE_HPX
+template <>
+KOKKOS_FORCEINLINE_FUNCTION void
+pseudo_atomic_add<K::HPX, double>(
+  K::complex<double>& acc, const K::complex<double>& val) {
+
+  K::atomic_add(&acc.real(), val.real());
+  K::atomic_add(&acc.imag(), val.imag());
+}
+
+template <>
+KOKKOS_FORCEINLINE_FUNCTION void
+pseudo_atomic_add<K::HPX, float>(
+  K::complex<float>& acc, const K::complex<float>& val) {
+
+  K::atomic_add(&acc.real(), val.real());
+  K::atomic_add(&acc.imag(), val.imag());
+}
+#endif // HPG_ENABLE_HPX
+
+namespace Core {
+
+/** gridding kernel
+ *
+ * The function that launches the gridding kernel is wrapped by a class to allow
+ * partial specialization by execution space. Note that the default
+ * implementation probably is optimal only for many-core devices, probably not
+ * for OpenMP. A specialization for the host Serial device is provided, however.
+ */
+template <typename execution_space>
+struct Gridder {
+
+  template <typename cf_layout, typename grid_layout, typename memory_space>
+  static void
+  grid_visibilities(
+    execution_space exec,
+    const const_cf2_view<cf_layout, memory_space>& cf,
+    const const_visibility_view<memory_space>& visibilities,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const grid_view<grid_layout, memory_space>& grid) {
+
+    const K::Array<int, 2>
+      cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
+    const K::Array<int, 2>
+      grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
+    const K::Array<int, 2>
+      oversampling{cf.extent_int(2), cf.extent_int(3)};
+    const K::Array<grid_scale_fp, 2> fine_scale{
+      grid_scale[0] * oversampling[0],
+      grid_scale[1] * oversampling[1]};
+
+    using member_type = typename K::TeamPolicy<execution_space>::member_type;
+
+    K::parallel_for(
+      "gridding",
+      K::TeamPolicy<execution_space>(
+        exec,
+        static_cast<int>(visibilities.size()),
+        K::AUTO),
+      KOKKOS_LAMBDA(const member_type& team_member) {
+        GridVis<execution_space> vis(
+          visibilities(team_member.league_rank()),
+          grid_radius,
+          oversampling,
+          cf_radius,
+          fine_scale);
+        /* loop over coarseX */
+        K::parallel_for(
+          K::TeamVectorRange(team_member, cf.extent_int(0)),
+          [=](const int X) {
+            /* loop over coarseY */
+            for (int Y = 0; Y < cf.extent_int(1); ++Y)
+              pseudo_atomic_add<execution_space>(
+                grid(vis.coarse[0] + X, vis.coarse[1] + Y, 0),
+                gv_t(vis.value * cf(X, Y, vis.fine[0], vis.fine[1])));
+          });
+      });
+  }
+};
+
+/** grid_visibilities() specialization for K::Serial
+ *
+ * only difference is that atomic addition to grid isn't used
+ */
+#ifdef HPG_ENABLE_SERIAL
+template <>
+struct Gridder<K::Serial> {
+
+  template <typename cf_layout, typename grid_layout, typename memory_space>
+  static void
+  grid_visibilities(
+    K::Serial /* unused */,
+    const const_cf2_view<cf_layout, memory_space>& cf,
+    const const_visibility_view<memory_space>& visibilities,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const grid_view<grid_layout, memory_space>& grid) {
+
+    const K::Array<int, 2>
+      cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
+    const K::Array<int, 2>
+      grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
+    const K::Array<int, 2>
+      oversampling{cf.extent_int(2), cf.extent_int(3)};
+    const K::Array<grid_scale_fp, 2> fine_scale{
+      grid_scale[0] * oversampling[0],
+      grid_scale[1] * oversampling[1]};
+
+    using member_type = typename K::TeamPolicy<K::Serial>::member_type;
+
+    K::parallel_for(
+      "gridding",
+      K::TeamPolicy<K::Serial>(static_cast<int>(visibilities.size()), K::AUTO),
+      KOKKOS_LAMBDA(const member_type& team_member) {
+        GridVis<K::Serial> vis(
+          visibilities(team_member.league_rank()),
+          grid_radius,
+          oversampling,
+          cf_radius,
+          fine_scale);
+        /* loop over coarseX */
+        K::parallel_for(
+          K::TeamVectorRange(team_member, cf.extent_int(0)),
+          [=](const int X) {
+            /* loop over coarseY */
+            for (int Y = 0; Y < cf.extent_int(1); ++Y) {
+              grid(0, vis.coarse[0] + X, vis.coarse[1] + Y)
+                += vis.value * cf(X, Y, vis.fine[0], vis.fine[1]);
+            }
+          });
+      });
+  }
+};
+#endif // HPG_ENABLE_SERIAL
+} // end namespace Core
+
 /** abstract base class for state implementations */
 struct State {
 
@@ -165,6 +466,15 @@ struct State {
 
   virtual void
   set_convolution_function(Device host_device, const CF2& cf) = 0;
+
+  virtual void
+  grid_visibilities(
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_uvw_t>& visibility_coordinates) = 0;
 
   virtual void
   fence() const volatile = 0;
@@ -195,6 +505,35 @@ init_cf_host(CFH& cf_h, const CF2& cf2) {
     });
 }
 
+template <Device D, typename VisH>
+static void
+init_vis(
+  VisH& vis_h,
+  const std::vector<std::complex<visibility_fp>>& visibilities,
+  const std::vector<vis_weight_fp>& visibility_weights,
+  const std::vector<vis_frequency_fp>& visibility_frequencies,
+  const std::vector<vis_phase_fp>& visibility_phase,
+  const std::vector<vis_uvw_t>& visibility_coordinates) {
+
+  static_assert(
+    K::SpaceAccessibility<
+    typename DeviceT<D>::kokkos_device::memory_space,
+    K::HostSpace>
+    ::accessible);
+  K::parallel_for(
+    K::RangePolicy<typename DeviceT<D>::kokkos_device>(
+      0,
+      static_cast<int>(visibilities.size())),
+    KOKKOS_LAMBDA(int i) {
+      vis_h(i) =
+        Visibility(
+          visibilities[i],
+          visibility_weights[i],
+          visibility_frequencies[i],
+          visibility_phase[i],
+          visibility_coordinates[i]);
+    });
+}
 
 /** Kokkos state implementation for a device type */
 template <Device D>
@@ -202,8 +541,9 @@ class HPG_EXPORT StateT final
   : public State {
 public:
 
-  using execution_space = typename DeviceT<D>::kokkos_device::execution_space;
-  using memory_space = typename DeviceT<D>::kokkos_device::memory_space;
+  using kokkos_device = typename DeviceT<D>::kokkos_device;
+  using execution_space = typename kokkos_device::execution_space;
+  using memory_space = typename kokkos_device::memory_space;
 
   execution_space exec_space;
 
@@ -326,6 +666,57 @@ public:
   }
 
   void
+  grid_visibilities(
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_uvw_t>& visibility_coordinates) override {
+
+    visibility_view<memory_space> vis(
+      K::ViewAllocateWithoutInitializing("visibilities"),
+      visibilities.size());
+
+    switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+    case Device::Serial: {
+      auto vis_h = K::create_mirror_view(vis);
+      init_vis<Device::Serial>(
+        vis_h,
+        visibilities,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phase,
+        visibility_coordinates);
+      K::deep_copy(exec_space, vis, vis_h);
+      break;
+    }
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_OPENMP
+    case Device::OpenMP: {
+      auto vis_h = K::create_mirror_view(vis);
+      init_vis<Device::OpenMP>(
+        vis_h,
+        visibilities,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phase,
+        visibility_coordinates);
+      K::deep_copy(exec_space, vis, vis_h);
+      break;
+    }
+#endif // HPG_ENABLE_SERIAL
+    default:
+      assert(false);
+      break;
+    }
+    const_visibility_view<memory_space> cvis = vis;
+    Core::Gridder<execution_space>
+      ::grid_visibilities(exec_space, cf, cvis, grid_scale, grid);
+  }
+
+  void
   fence() const volatile override {
     const_cast<const execution_space&>(exec_space).fence();
   }
@@ -348,7 +739,7 @@ struct HPG_EXPORT StateT<Device::Cuda> final
   : public State {
 public:
 
-  using execution_space = Kokkos::Cuda;
+  using execution_space = K::Cuda;
   using memory_space = execution_space::memory_space;
 
   grid_view<GridLayout<Device::Cuda>::layout, memory_space> grid;
@@ -488,6 +879,59 @@ public:
   }
 
   void
+  grid_visibilities(
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_uvw_t>& visibility_coordinates) override {
+
+    visibility_view<memory_space> vis(
+      K::ViewAllocateWithoutInitializing("visibilities"),
+      visibilities.size());
+
+    switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+    case Device::Serial: {
+      auto vis_h = K::create_mirror_view(vis);
+      init_vis<Device::Serial>(
+        vis_h,
+        visibilities,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phase,
+        visibility_coordinates);
+      K::deep_copy(*exec_copy, vis, vis_h);
+      break;
+    }
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_OPENMP
+    case Device::OpenMP: {
+      auto vis_h = K::create_mirror_view(vis);
+      init_vis<Device::OpenMP>(
+        vis_h,
+        visibilities,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phase,
+        visibility_coordinates);
+      K::deep_copy(*exec_copy, vis, vis_h);
+      break;
+    }
+#endif // HPG_ENABLE_SERIAL
+    default:
+      assert(false);
+      break;
+    }
+    exec_compute->fence();
+    std::swap(exec_copy, exec_compute);
+    const_visibility_view<memory_space> cvis = vis;
+    Core::Gridder<execution_space>
+      ::grid_visibilities(*exec_compute, cf, cvis, grid_scale, grid);
+  }
+
+  void
   fence() const volatile override {
     const_cast<const execution_space*>(exec_compute)->fence();
   }
@@ -524,7 +968,7 @@ private:
       exec_spaces[i] = execution_space(streams[i]);
     }
   }
-};
+  };
 #endif // HPG_ENABLE_CUDA
 
 } // end namespace Impl
