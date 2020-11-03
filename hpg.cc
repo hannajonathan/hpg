@@ -178,6 +178,25 @@ GridderState::fence() && {
 }
 
 void
+GridderState::swap(GridderState& other) {
+  std::swap(impl, other.impl);
+}
+
+Gridder&
+Gridder::operator=(const volatile Gridder& rhs) {
+  GridderState tmp(rhs.state);
+  state.swap(tmp);
+  return *this;
+}
+
+Gridder&
+Gridder::operator=(Gridder&& rhs) {
+  GridderState tmp(std::move(rhs).state);
+  state.swap(tmp);
+  return *this;
+}
+
+void
 hpg::initialize() {
   Impl::initialize();
 }

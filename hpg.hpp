@@ -244,6 +244,12 @@ public:
    */
   GridderState
   fence() &&;
+
+protected:
+  friend class Gridder;
+
+  void
+  swap(GridderState& other);
 };
 
 /** Gridder class
@@ -281,6 +287,22 @@ public:
     const std::array<unsigned, 3>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale)
     : state(GridderState(device, grid_size, grid_scale)) {}
+
+  /** copy constructor */
+  Gridder(const volatile Gridder& other)
+    : state(other.state) {}
+
+  /** move constructor */
+  Gridder(Gridder&& other)
+    : state(std::move(other).state) {}
+
+  /** copy assignment */
+  Gridder&
+  operator=(const volatile Gridder&);
+
+  /** move assignment*/
+  Gridder&
+  operator=(Gridder&&);
 
   /** set convolution function
    *
