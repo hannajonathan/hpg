@@ -272,7 +272,7 @@ protected:
 class Gridder {
 public:
 
-  GridderState state; /**< state maintained by instances */
+  mutable GridderState state; /**< state maintained by instances */
 
   // NB: grid_size logical axis order: X, Y, ch
 
@@ -356,7 +356,7 @@ public:
    * required by users.
    */
   void
-  fence() volatile {
+  fence() const volatile {
     const_cast<Gridder*>(this)->state =
       std::move(const_cast<Gridder*>(this)->state).fence();
   }
