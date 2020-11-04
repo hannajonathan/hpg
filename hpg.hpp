@@ -2,6 +2,7 @@
 
 #include <complex>
 #include <memory>
+#include <tuple>
 #include <vector>
 
 #include "hpg_export.h"
@@ -277,25 +278,25 @@ public:
   fence() &&;
 
   /** get normalization factor */
-  std::pair<GridderState, std::complex<grid_value_fp>>
+  std::tuple<GridderState, std::complex<grid_value_fp>>
   get_normalization() const volatile &;
 
   /** get normalization factor */
-  std::pair<GridderState, std::complex<grid_value_fp>>
+  std::tuple<GridderState, std::complex<grid_value_fp>>
   get_normalization() &&;
 
   /** set normalization factor
    *
    * @return normalization factor value before setting new value
    */
-  std::pair<GridderState, std::complex<grid_value_fp>>
+  std::tuple<GridderState, std::complex<grid_value_fp>>
   set_normalization(const std::complex<grid_value_fp>& val = 0) &;
 
   /** set normalization factor
    *
    * @return normalization factor value before setting new value
    */
-  std::pair<GridderState, std::complex<grid_value_fp>>
+  std::tuple<GridderState, std::complex<grid_value_fp>>
   set_normalization(const std::complex<grid_value_fp>& val = 0) &&;
 
 protected:

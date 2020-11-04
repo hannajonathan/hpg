@@ -101,8 +101,8 @@ main(int argc, char* argv[]) {
 
   hpg::initialize();
 #ifdef HPG_ENABLE_SERIAL
-  std::cout << "Serial" << std::endl;
   {
+    std::cout << "GridderState Serial" << std::endl;
     auto st0 =
       hpg::GridderState(hpg::Device::Serial, 4, {1000, 2000, 3}, {0.1, -0.1});
     auto st1 = st0.fence();
@@ -112,11 +112,12 @@ main(int argc, char* argv[]) {
     assert(st3.max_async_tasks() == 0);
   }
   {
+    std::cout << "Gridder Serial" << std::endl;
     auto g0 =
       hpg::Gridder(hpg::Device::Serial, 0, {1000, 2000, 3}, {0.1, -0.1});
-    g0.fence();
-    g0.fence();
+    std::cout << "constructed" << std::endl;
     g0.set_convolution_function(hpg::Device::OpenMP, cf2);
+    std::cout << "cf set" << std::endl;
     g0.grid_visibilities(
       hpg::Device::OpenMP,
       visibilities,
@@ -124,11 +125,13 @@ main(int argc, char* argv[]) {
       visibility_frequencies,
       visibility_phase,
       visibility_coordinates);
+    std::cout << "gridded" << std::endl;
     auto norm = g0.get_normalization();
     std::cout << "normalization " << norm.real()
               << " " << norm.imag()
               << std::endl;
     auto norm0 = g0.set_normalization(norm * -1.0);
+    std::cout << "norm set" << std::endl;
     assert(norm == norm0);
     auto norm1 = g0.get_normalization();
     std::cout << "normalization " << norm1.real()
@@ -148,8 +151,6 @@ main(int argc, char* argv[]) {
   }
   {
     auto g0 = hpg::Gridder(hpg::Device::Cuda, 2, {1000, 2000, 3}, {0.1, -0.1});
-    g0.fence();
-    g0.fence();
     g0.set_convolution_function(hpg::Device::OpenMP, cf2);
     g0.grid_visibilities(
       hpg::Device::OpenMP,
