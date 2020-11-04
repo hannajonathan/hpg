@@ -138,7 +138,7 @@ GridderState::grid_scale() const {
 GridderState
 GridderState::set_convolution_function(
   Device host_device,
-  const CF2& cf) const volatile & {
+  const CF2& cf) & {
 
   GridderState result(*this);
   result.impl->set_convolution_function(host_device, cf);
@@ -160,8 +160,7 @@ GridderState::grid_visibilities(
   const std::vector<vis_weight_fp>& visibility_weights,
   const std::vector<vis_frequency_fp>& visibility_frequencies,
   const std::vector<vis_phase_fp>& visibility_phase,
-  const std::vector<vis_uvw_t>& visibility_coordinates)
-  const volatile & {
+  const std::vector<vis_uvw_t>& visibility_coordinates) & {
 
   GridderState result(*this);
   result.impl

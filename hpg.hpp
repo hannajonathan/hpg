@@ -103,7 +103,7 @@ struct HPG_EXPORT Gridder;
  *    GridderState s0;
  *    GridderState s1 = s0.fence();
  * will create a copy of s0. Note that a copy will include the grid and the
- * convolution function array. (Many of these methods are non-const on the
+ * convolution function array. (Many of these methods are const volatile on the
  * target since a fence operation may be involved.) To avoid the copy, the
  * following pattern can be used instead:
  *    GridderState s0;
@@ -147,7 +147,7 @@ public:
 
   /** copy constructor
    *
-   * copies all state
+   * Copies all state. Invokes fence() on argument.
    */
   GridderState(const volatile GridderState&);
 
@@ -157,7 +157,7 @@ public:
 
   /** copy assignment
    *
-   * copies all state
+   * Copies all state. Invokes fence() on argument.
    */
   GridderState&
   operator=(const volatile GridderState&);
@@ -178,15 +178,19 @@ public:
   unsigned
   max_async_tasks() const;
 
-  /** grid size */
+  /** grid size
+   */
   const std::array<unsigned, 3>&
   grid_size() const;
 
-  /** grid scale */
+  /** grid scale
+   */
   const std::array<grid_scale_fp, 2>&
   grid_scale() const;
 
   /** set convolution function
+   *
+   * Does not invoke fence() on target.
    *
    * @return new GridderState that is a copy of the target, but with provided
    * convolution function for subsequent gridding
@@ -197,9 +201,11 @@ public:
    * @sa Gridder::set_convolution_function()
    */
   GridderState
-  set_convolution_function(Device host_device, const CF2& cf) const volatile &;
+  set_convolution_function(Device host_device, const CF2& cf) &;
 
   /** set convolution function
+   *
+   * Does not invoke fence() on target.
    *
    * @return new GridderState that has overwritten the target, but with provided
    * convolution function for subsequent gridding
@@ -213,6 +219,8 @@ public:
   set_convolution_function(Device host_device, const CF2& cf) &&;
 
   /** grid some visibilities
+   *
+   * Does not invoke fence() on target.
    *
    * @return new GridderState after gridding task has been submitted to device
    * queue
@@ -237,10 +245,11 @@ public:
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
     const std::vector<vis_phase_fp>& visibility_phase,
-    const std::vector<vis_uvw_t>& visibility_coordinates)
-    const volatile &;
+    const std::vector<vis_uvw_t>& visibility_coordinates) &;
 
   /** grid some visibilities
+   *
+   * Does not invoke fence() on target.
    *
    * @return new GridderState that has overwritten the target, but after
    * gridding task has been submitted to device queue
@@ -292,15 +301,23 @@ public:
   GridderState
   fence() &&;
 
-  /** get normalization factor */
+  /** get normalization factor
+   *
+   * Invokes fence() on target.
+   */
   std::tuple<GridderState, std::complex<grid_value_fp>>
   get_normalization() const volatile &;
 
-  /** get normalization factor */
+  /** get normalization factor
+   *
+   * Invokes fence() on target.
+   */
   std::tuple<GridderState, std::complex<grid_value_fp>>
   get_normalization() &&;
 
   /** set normalization factor
+   *
+   * Invokes fence() on target.
    *
    * @return value of normalization factor before new value is set
    */
@@ -309,24 +326,38 @@ public:
 
   /** set normalization factor
    *
+   * Invokes fence() on target.
+   *
    * @return value of normalization factor before new value is set
    */
   std::tuple<GridderState, std::complex<grid_value_fp>>
   set_normalization(const std::complex<grid_value_fp>& val = 0) &&;
 
-  /** get access to grid values */
+  /** get access to grid values
+   *
+   * Invokes fence() on target
+   */
   std::tuple<GridderState, std::shared_ptr<GridArray>>
   grid_values() const volatile &;
 
-  /** get access to grid values */
+  /** get access to grid values
+   *
+   * Invokes fence() on target
+   */
   std::tuple<GridderState, std::shared_ptr<GridArray>>
   grid_values() &&;
 
-  /** reset grid values to zero */
+  /** reset grid values to zero
+   *
+   * Invokes fence() on target
+   */
   GridderState
   reset_grid() &;
 
-  /** reset grid values to zero */
+  /** reset grid values to zero
+   *
+   * Invokes fence() on target
+   */
   GridderState
   reset_grid() &&;
 
@@ -379,7 +410,10 @@ public:
     const std::array<grid_scale_fp, 2>& grid_scale)
     : state(GridderState(device, max_async_tasks, grid_size, grid_scale)) {}
 
-  /** copy constructor */
+  /** copy constructor
+   *
+   * Invokes fence() on argument.
+   */
   Gridder(const volatile Gridder& other)
     : state(other.state) {}
 
@@ -387,7 +421,10 @@ public:
   Gridder(Gridder&& other)
     : state(std::move(other).state) {}
 
-  /** copy assignment */
+  /** copy assignment
+   *
+   * Invokes fence() on argument
+   */
   Gridder&
   operator=(const volatile Gridder&);
 
@@ -424,6 +461,8 @@ public:
 
   /** set convolution function
    *
+   * Does not invoke fence() on target.
+   *
    * the provided convolution function will be used for gridding until this
    * function is called again
    *
@@ -436,6 +475,8 @@ public:
   }
 
   /** grid visibilities
+   *
+   * Does not invoke fence() on target.
    *
    * The indexing of visibilities and all other metadata vectors must be
    * consistent. For example the weight for the visibility value visibilities[i]
@@ -479,7 +520,10 @@ public:
       std::move(const_cast<Gridder*>(this)->state).fence();
   }
 
-  /** get normalization factor */
+  /** get normalization factor
+   *
+   * Invokes fence() on target.
+   */
   std::complex<grid_value_fp>
   get_normalization() const volatile {
     std::complex<grid_value_fp> result;
@@ -490,6 +534,8 @@ public:
 
   /** set normalization factor
    *
+   * Invokes fence() on target.
+   *
    * @return value of normalization factor before new value is set
    */
   std::complex<grid_value_fp>
@@ -499,7 +545,10 @@ public:
     return result;
   }
 
-  /** get access to grid values */
+  /** get access to grid values
+   *
+   * Invokes fence() on target.
+   */
   std::shared_ptr<GridArray>
   grid_values() const volatile {
     std::shared_ptr<GridArray> result;
@@ -508,7 +557,10 @@ public:
     return result;
   }
 
-  /** reset grid values to zero */
+  /** reset grid values to zero
+   *
+   * Invokes fence() on target.
+   */
   void
   reset_grid() {
     state = std::move(state).reset_grid();

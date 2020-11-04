@@ -637,7 +637,6 @@ public:
       const_cast<const StateT&>(st).grid_size,
       const_cast<const StateT&>(st).grid_scale) {
 
-    st.fence();
     init_exec_spaces();
 
     const StateT& cst = const_cast<const StateT&>(st);
@@ -657,8 +656,10 @@ public:
               << " " << grid.stride(1)
               << " " << grid.stride(2)
               << std::endl;
-    K::deep_copy(current_exec_space(), grid, cst.grid);
     norm = decltype(norm)(K::ViewAllocateWithoutInitializing("norm"));
+
+    st.fence();
+    K::deep_copy(current_exec_space(), grid, cst.grid);
     K::deep_copy(current_exec_space(), norm, cst.norm);
   }
 
@@ -668,6 +669,7 @@ public:
   }
 
   virtual ~StateT() {
+    fence();
     grid = decltype(grid)();
     cf = decltype(cf)();
     norm = decltype(norm)();
@@ -845,7 +847,7 @@ public:
     auto st = const_cast<StateT*>(this);
     auto grid_h = K::create_mirror(st->grid);
     K::deep_copy(st->current_exec_space(), grid_h, st->grid);
-    fence();
+    st->current_exec_space().fence();
     return std::make_shared<GridViewArray<D>>(grid_h);
   }
 
