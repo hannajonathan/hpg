@@ -125,7 +125,7 @@ struct DeviceT<Device::Cuda> {
     if (stream) {
       auto rc = cudaStreamDestroy(stream);
       result = rc == cudaSuccess;
-      stream = std::nullptr;
+      stream = NULL;
     }
     return result;
   }
