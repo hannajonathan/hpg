@@ -453,63 +453,6 @@ struct HPG_EXPORT Gridder final {
       });
   }
 };
-
-/** grid_visibilities() specialization for K::Serial
- *
- * only difference is that atomic addition to grid isn't used
- */
-#ifdef HPG_ENABLE_SERIAL
-template <>
-struct HPG_EXPORT Gridder<K::Serial> final {
-
-  template <typename cf_layout, typename grid_layout, typename memory_space>
-  static void
-  grid_visibilities(
-    K::Serial /* unused */,
-    const const_cf2_view<cf_layout, memory_space>& cf,
-    const const_visibility_view<memory_space>& visibilities,
-    const std::array<grid_scale_fp, 2>& grid_scale,
-    const grid_view<grid_layout, memory_space>& grid,
-    const K::View<gv_t, memory_space>& norm) {
-
-    const K::Array<int, 2>
-      cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
-    const K::Array<int, 2>
-      grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
-    const K::Array<int, 2>
-      oversampling{cf.extent_int(2), cf.extent_int(3)};
-    const K::Array<grid_scale_fp, 2> fine_scale{
-      grid_scale[0] * oversampling[0],
-      grid_scale[1] * oversampling[1]};
-
-    using member_type = typename K::TeamPolicy<K::Serial>::member_type;
-
-    K::parallel_for(
-      "gridding",
-      K::TeamPolicy<K::Serial>(static_cast<int>(visibilities.size()), K::AUTO),
-      KOKKOS_LAMBDA(const member_type& team_member) {
-        GridVis<K::Serial> vis(
-          visibilities(team_member.league_rank()),
-          grid_radius,
-          oversampling,
-          cf_radius,
-          fine_scale);
-        /* loop over coarseX */
-        K::parallel_for(
-          K::TeamVectorRange(team_member, cf.extent_int(0)),
-          [=](const int X) {
-            /* loop over coarseY */
-            for (int Y = 0; Y < cf.extent_int(1); ++Y) {
-              gv_t cfv = cf(X, Y, vis.fine[0], vis.fine[1]);
-              cfv.imag() *= vis.cf_im_factor;
-              grid(vis.coarse[0] + X, vis.coarse[1] + Y, 0) += cfv * vis.value;
-              norm() += cfv;
-            }
-          });
-      });
-  }
-};
-#endif // HPG_ENABLE_SERIAL
 } // end namespace Core
 
 /** abstract base class for state implementations */
@@ -625,7 +568,7 @@ public:
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
   std::vector<
-    std::conditional<std::is_void_v<stream_type>, int, stream_type>> streams;
+    std::conditional_t<std::is_void_v<stream_type>, int, stream_type>> streams;
   std::vector<execution_space> exec_spaces;
   std::deque<int> exec_space_indexes;
 
@@ -895,7 +838,7 @@ private:
     exec_spaces.reserve(max_active_tasks);
     for (unsigned i = 0; i < max_active_tasks; ++i) {
       if constexpr (!std::is_void_v<stream_type>) {
-        auto rc = DeviceT<D>::create_stream(&streams[i]);
+        auto rc = DeviceT<D>::create_stream(streams[i]);
         assert(rc);
         exec_spaces.push_back(execution_space(streams[i]));
         exec_space_indexes.push_back(i);
