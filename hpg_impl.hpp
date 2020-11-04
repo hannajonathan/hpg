@@ -463,6 +463,9 @@ struct State {
   std::array<unsigned, 3> grid_size; /**< grid size */
   std::array<grid_scale_fp, 2> grid_scale; /**< grid scale */
 
+  State(Device device_)
+    : device(device_) {}
+
   State(
     Device device_,
     unsigned max_active_tasks_,
@@ -636,16 +639,8 @@ public:
   }
 
   StateT(StateT&& st)
-    : State(
-      D,
-      std::move(st).max_active_tasks,
-      std::move(st).grid_size,
-      std::move(st).grid_scale)
-    , grid(st.grid)
-    , norm(st.norm)
-    , streams(std::move(st).streams)
-    , exec_spaces(std::move(st).exec_spaces)
-    , exec_space_indexes(std::move(st).exec_space_indexes) {
+    : State(D) {
+    swap(st);
   }
 
   virtual ~StateT() {
