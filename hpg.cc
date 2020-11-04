@@ -7,32 +7,47 @@ GridderState::GridderState() {
 
 GridderState::GridderState(
   Device device,
+  unsigned max_async_tasks,
   const std::array<unsigned, 3>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale) {
+
+  const unsigned max_active_tasks = max_async_tasks + 1;
 
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     impl =
-      std::make_shared<Impl::StateT<Device::Serial>>(grid_size, grid_scale);
+      std::make_shared<Impl::StateT<Device::Serial>>(
+        max_active_tasks,
+        grid_size,
+        grid_scale);
     break;
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     impl =
-      std::make_shared<Impl::StateT<Device::OpenMP>>(grid_size, grid_scale);
+      std::make_shared<Impl::StateT<Device::OpenMP>>(
+        max_active_tasks,
+        grid_size,
+        grid_scale);
     break;
 #endif // HPG_ENABLE_OPENMP
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     impl =
-      std::make_shared<Impl::StateT<Device::Cuda>>(grid_size, grid_scale);
+      std::make_shared<Impl::StateT<Device::Cuda>>(
+        max_active_tasks,
+        grid_size,
+        grid_scale);
     break;
 #endif // HPG_ENABLE_CUDA
 #ifdef HPG_ENABLE_HPX
   case Device::HPX:
     impl =
-      std::make_shared<Impl::StateT<Device::HPX>>(grid_size, grid_scale);
+      std::make_shared<Impl::StateT<Device::HPX>>(
+        max_active_tasks,
+        grid_size,
+        grid_scale);
     break;
 #endif // HPG_ENABLE_HPX
   default:
@@ -98,6 +113,26 @@ GridderState::operator=(GridderState&& rhs) {
 
   impl = std::move(std::move(rhs).impl);
   return *this;
+}
+
+Device
+GridderState::device() const {
+  return impl->device;
+}
+
+unsigned
+GridderState::max_async_tasks() const {
+  return impl->max_active_tasks - 1;
+}
+
+const std::array<unsigned, 3>&
+GridderState::grid_size() const {
+  return impl->grid_size;
+}
+
+const std::array<grid_scale_fp, 2>&
+GridderState::grid_scale() const {
+  return impl->grid_scale;
 }
 
 GridderState

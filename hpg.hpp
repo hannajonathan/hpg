@@ -71,7 +71,16 @@ struct HPG_EXPORT Gridder;
  * the Gridder class, but may also be used directly for its greater flexibility.
  *
  * Depending on the device used for gridding, methods may schedule tasks for
- * asynchronous execution.
+ * asynchronous execution. When an instance is constructed, the user may provide
+ * a maximum number of concurrent, asynchronous tasks to run on the requested
+ * device. Note that the actual number of concurrent tasks that the new instance
+ * supports may be less than the number requested in the constructor. In
+ * particular, note that several devices support no asynchronous
+ * execution. Class methods that submit work to a device, that is, for either
+ * data movement or computation, may block when the number of asynchronously
+ * running tasks is at its limit, until one of those running tasks
+ * completes. Otherwise, the methods that create device tasks will return as
+ * soon the task has been submitted to the device.
  *
  * In general, using a GridderState method on an instance creates a new (value)
  * copy of the target. For example,
@@ -107,6 +116,8 @@ public:
    * create a GridderState
    *
    * @param device gridder device type
+   * @param max_async_tasks maximum number of asynchronous tasks (actual number
+   * may be less than requested)
    * @param grid_size, in logical axis order: X, Y, plane
    * @param grid_scale, in X, Y order
    *
@@ -114,6 +125,7 @@ public:
    */
   GridderState(
     Device device,
+    unsigned max_async_tasks,
     const std::array<unsigned, 3>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale);
 
@@ -138,6 +150,25 @@ public:
    */
   GridderState&
   operator=(GridderState&&);
+
+  /** device */
+  Device
+  device() const;
+
+  /** maximum active tasks
+   *
+   * This value may differ from the value provided to the constructor, depending
+   * on device limitations */
+  unsigned
+  max_async_tasks() const;
+
+  /** grid size */
+  const std::array<unsigned, 3>&
+  grid_size() const;
+
+  /** grid scale */
+  const std::array<grid_scale_fp, 2>&
+  grid_scale() const;
 
   /** set convolution function
    *
@@ -291,7 +322,10 @@ protected:
  * Depending on the device used for gridding, methods may schedule tasks for
  * asynchronous execution or may block. Even when asynchronous execution is
  * supported by a device, a call may nevertheless block at times, depending upon
- * the internal state of the Gridder instance.
+ * the internal state of the Gridder instance. See GridderState for more
+ * information.
+ *
+ * @sa GridderState
  */
 class Gridder {
 public:
@@ -301,14 +335,17 @@ public:
   /** constructor
    *
    * @param device gridder device type
+   * @param max_async_tasks maximum number of concurrent tasks (actual number
+   * may be less than requested)
    * @param grid_size, in logical axis order: X, Y, plane
    * @param grid_scale, in X, Y order
    */
   Gridder(
     Device device,
+    unsigned max_async_tasks,
     const std::array<unsigned, 3>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale)
-    : state(GridderState(device, grid_size, grid_scale)) {}
+    : state(GridderState(device, max_async_tasks, grid_size, grid_scale)) {}
 
   /** copy constructor */
   Gridder(const volatile Gridder& other)
@@ -325,6 +362,33 @@ public:
   /** move assignment*/
   Gridder&
   operator=(Gridder&&);
+
+  /** device */
+  Device
+  device() const {
+    return state.device();
+  }
+
+  /** maximum active tasks
+   *
+   * This value may differ from the value provided to the constructor, depending
+   * on device limitations */
+  unsigned
+  max_async_tasks() const {
+    return state.max_async_tasks();
+  }
+
+  /** grid size */
+  const std::array<unsigned, 3>&
+  grid_size() const {
+    return state.grid_size();
+  }
+
+  /** grid scale */
+  const std::array<grid_scale_fp, 2>&
+  grid_scale() const {
+    return state.grid_scale();
+  }
 
   /** set convolution function
    *

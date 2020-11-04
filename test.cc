@@ -104,14 +104,16 @@ main(int argc, char* argv[]) {
   std::cout << "Serial" << std::endl;
   {
     auto st0 =
-      hpg::GridderState(hpg::Device::Serial, {1000, 2000, 3}, {0.1, -0.1});
+      hpg::GridderState(hpg::Device::Serial, 4, {1000, 2000, 3}, {0.1, -0.1});
     auto st1 = st0.fence();
     auto st2 = std::move(st0).fence();
     auto st3 =
       std::move(st2).set_convolution_function(hpg::Device::Serial, cf2);
+    assert(st3.max_async_tasks() == 0);
   }
   {
-    auto g0 = hpg::Gridder(hpg::Device::Serial, {1000, 2000, 3}, {0.1, -0.1});
+    auto g0 =
+      hpg::Gridder(hpg::Device::Serial, 0, {1000, 2000, 3}, {0.1, -0.1});
     g0.fence();
     g0.fence();
     g0.set_convolution_function(hpg::Device::OpenMP, cf2);
@@ -138,14 +140,14 @@ main(int argc, char* argv[]) {
   std::cout << "Cuda" << std::endl;
   {
     auto st0 =
-      hpg::GridderState(hpg::Device::Cuda, {1000, 2000, 3}, {0.1, -0.1});
+      hpg::GridderState(hpg::Device::Cuda, 2, {1000, 2000, 3}, {0.1, -0.1});
     auto st1 = st0.fence();
     auto st2 = std::move(st0).fence();
     auto st3 =
       std::move(st2).set_convolution_function(hpg::Device::OpenMP, cf2);
   }
   {
-    auto g0 = hpg::Gridder(hpg::Device::Cuda, {1000, 2000, 3}, {0.1, -0.1});
+    auto g0 = hpg::Gridder(hpg::Device::Cuda, 2, {1000, 2000, 3}, {0.1, -0.1});
     g0.fence();
     g0.fence();
     g0.set_convolution_function(hpg::Device::OpenMP, cf2);
