@@ -588,9 +588,10 @@ public:
       static_cast<int>(grid_size[0]),
       static_cast<int>(grid_size[1]),
       static_cast<int>(grid_size[2])};
-    grid = decltype(grid)(
-      K::view_alloc("grid", current_exec_space()),
-      GridLayout<D>::dimensions(ig));
+    grid =
+      decltype(grid)(
+        K::view_alloc("grid", current_exec_space()),
+        GridLayout<D>::dimensions(ig));
     std::cout << "alloc grid sz " << grid.extent(0)
               << " " << grid.extent(1)
               << " " << grid.extent(2)
@@ -822,6 +823,7 @@ private:
     std::swap(streams, other.streams);
     std::swap(exec_spaces, other.exec_spaces);
     std::swap(exec_space_indexes, other.exec_space_indexes);
+    std::swap(max_active_tasks, other.max_active_tasks);
     std::swap(grid_size, other.grid_size);
     std::swap(grid_scale, other.grid_scale);
     decltype(grid) g = grid;
