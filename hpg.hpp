@@ -59,8 +59,23 @@ public:
 
   std::array<unsigned, 2> extent;
 
-  virtual std::complex<cf_fp>
-    operator()(unsigned x, unsigned y) const = 0;
+  virtual const std::complex<cf_fp>&
+  operator()(unsigned x, unsigned y) const = 0;
+
+  virtual ~CF2() {}
+};
+
+/** wrapper for read-only access to grid values */
+class HPG_EXPORT GridArray {
+public:
+
+  virtual unsigned
+  extent(unsigned dim) const = 0;
+
+  virtual std::complex<grid_value_fp>
+  operator()(unsigned x, unsigned y, unsigned plane) const = 0;
+
+  virtual ~GridArray() {}
 };
 
 struct HPG_EXPORT Gridder;
@@ -287,17 +302,33 @@ public:
 
   /** set normalization factor
    *
-   * @return normalization factor value before setting new value
+   * @return value of normalization factor before new value is set
    */
   std::tuple<GridderState, std::complex<grid_value_fp>>
   set_normalization(const std::complex<grid_value_fp>& val = 0) &;
 
   /** set normalization factor
    *
-   * @return normalization factor value before setting new value
+   * @return value of normalization factor before new value is set
    */
   std::tuple<GridderState, std::complex<grid_value_fp>>
   set_normalization(const std::complex<grid_value_fp>& val = 0) &&;
+
+  /** get access to grid values */
+  std::tuple<GridderState, std::shared_ptr<GridArray>>
+  grid_values() const volatile &;
+
+  /** get access to grid values */
+  std::tuple<GridderState, std::shared_ptr<GridArray>>
+  grid_values() &&;
+
+  /** reset grid values to zero */
+  GridderState
+  reset_grid() &;
+
+  /** reset grid values to zero */
+  GridderState
+  reset_grid() &&;
 
 protected:
   friend class Gridder;
@@ -459,14 +490,28 @@ public:
 
   /** set normalization factor
    *
-   * @return normalization factor value before setting new value
+   * @return value of normalization factor before new value is set
    */
   std::complex<grid_value_fp>
   set_normalization(const std::complex<grid_value_fp>& val = 0) {
     std::complex<grid_value_fp> result;
-    std::tie(const_cast<Gridder*>(this)->state, result) =
-      std::move(const_cast<Gridder*>(this)->state).set_normalization(val);
+    std::tie(state, result) = std::move(state).set_normalization(val);
     return result;
+  }
+
+  /** get access to grid values */
+  std::shared_ptr<GridArray>
+  grid_values() const volatile {
+    std::shared_ptr<GridArray> result;
+    std::tie(const_cast<Gridder*>(this)->state, result) =
+      std::move(const_cast<Gridder*>(this)->state).grid_values();
+    return result;
+  }
+
+  /** reset grid values to zero */
+  void
+  reset_grid() {
+    state = std::move(state).reset_grid();
   }
 };
 

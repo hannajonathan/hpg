@@ -240,6 +240,36 @@ GridderState::set_normalization(const std::complex<grid_value_fp>& val) && {
   return {std::move(result), result.impl->set_normalization(val)};
 }
 
+std::tuple<GridderState, std::shared_ptr<GridArray>>
+GridderState::grid_values() const volatile & {
+
+  GridderState result(*this);
+  return {std::move(result), result.impl->grid_values()};
+}
+
+std::tuple<GridderState, std::shared_ptr<GridArray>>
+GridderState::grid_values() && {
+
+  GridderState result(std::move(*this));
+  return {std::move(result), result.impl->grid_values()};
+}
+
+GridderState
+GridderState::reset_grid() & {
+
+  GridderState result(*this);
+  result.impl->reset_grid();
+  return result;
+}
+
+GridderState
+GridderState::reset_grid() && {
+
+  GridderState result(std::move(*this));
+  result.impl->reset_grid();
+  return result;
+}
+
 void
 GridderState::swap(GridderState& other) {
   std::swap(impl, other.impl);

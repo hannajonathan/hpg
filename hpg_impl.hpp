@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <memory>
 #include <type_traits>
 #include <deque>
 
@@ -497,7 +498,45 @@ struct State {
   virtual std::complex<grid_value_fp>
   set_normalization(const std::complex<grid_value_fp>&) = 0;
 
+  virtual std::shared_ptr<GridArray>
+  grid_values() const volatile = 0;
+
+  virtual void
+  reset_grid() = 0;
+
   virtual ~State() {}
+};
+
+template <Device D>
+struct StateT;
+
+template <Device D>
+class HPG_EXPORT GridViewArray
+  : public GridArray {
+public:
+
+  using memory_space = typename DeviceT<D>::kokkos_device::memory_space;
+
+  using grid_t =
+    typename const_grid_view<typename GridLayout<D>::layout, memory_space>
+    ::host_mirror_type;
+
+  grid_t grid;
+
+  GridViewArray(const grid_t& grid_)
+    : grid(grid_) {}
+
+  ~GridViewArray() {}
+
+  unsigned
+  extent(unsigned dim) const override {
+    return grid.extent(dim);
+  }
+
+  std::complex<grid_value_fp>
+  operator()(unsigned x, unsigned y, unsigned plane) const override {
+    return grid(x, y, plane);
+  }
 };
 
 template <Device D, typename CFH>
@@ -556,7 +595,8 @@ init_vis(
 /** Kokkos state implementation for a device type */
 template <Device D>
 struct HPG_EXPORT StateT final
-  : public State {
+  : public State
+  , public std::enable_shared_from_this<StateT<D>> {
 public:
 
   using kokkos_device = typename DeviceT<D>::kokkos_device;
@@ -586,23 +626,7 @@ public:
       grid_scale) {
 
     init_exec_spaces();
-
-    std::array<int, 3> ig{
-      static_cast<int>(grid_size[0]),
-      static_cast<int>(grid_size[1]),
-      static_cast<int>(grid_size[2])};
-    grid =
-      decltype(grid)(
-        K::view_alloc("grid", current_exec_space()),
-        GridLayout<D>::dimensions(ig));
-    std::cout << "alloc grid sz " << grid.extent(0)
-              << " " << grid.extent(1)
-              << " " << grid.extent(2)
-              << std::endl;
-    std::cout << "alloc grid str " << grid.stride(0)
-              << " " << grid.stride(1)
-              << " " << grid.stride(2)
-              << std::endl;
+    new_grid();
     norm = decltype(norm)(K::view_alloc("norm", current_exec_space()));
   }
 
@@ -815,6 +839,22 @@ public:
     return old_val;
   }
 
+  std::shared_ptr<GridArray>
+  grid_values() const volatile override {
+    fence();
+    auto st = const_cast<StateT*>(this);
+    auto grid_h = K::create_mirror(st->grid);
+    K::deep_copy(st->current_exec_space(), grid_h, st->grid);
+    fence();
+    return std::make_shared<GridViewArray<D>>(grid_h);
+  }
+
+  void
+  reset_grid() {
+    fence();
+    new_grid();
+  }
+
 private:
   void
   swap(StateT& other) {
@@ -860,6 +900,26 @@ private:
     exec_space_indexes.push_back(exec_space_indexes.front());
     exec_space_indexes.pop_front();
     exec_space_indexes.push_front(-1);
+  }
+
+  void
+  new_grid() {
+    std::array<int, 3> ig{
+      static_cast<int>(grid_size[0]),
+      static_cast<int>(grid_size[1]),
+      static_cast<int>(grid_size[2])};
+    grid =
+      decltype(grid)(
+        K::view_alloc("grid", current_exec_space()),
+        GridLayout<D>::dimensions(ig));
+    std::cout << "alloc grid sz " << grid.extent(0)
+              << " " << grid.extent(1)
+              << " " << grid.extent(2)
+              << std::endl;
+    std::cout << "alloc grid str " << grid.stride(0)
+              << " " << grid.stride(1)
+              << " " << grid.stride(2)
+              << std::endl;
   }
 };
 

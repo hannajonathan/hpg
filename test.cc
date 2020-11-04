@@ -24,7 +24,7 @@ struct MyCF2 final
     extent[1] = size[1] * oversampling;
   }
 
-  std::complex<hpg::cf_fp>
+  const std::complex<hpg::cf_fp>&
   operator()(unsigned x, unsigned y) const override {
     return values[x * extent[1] + y];
   }
@@ -79,6 +79,16 @@ init_visibilities(
   }
 }
 
+std::complex<hpg::grid_value_fp>
+sum_grid(const std::shared_ptr<hpg::GridArray>& array) {
+  std::complex<hpg::grid_value_fp> result;
+  for (auto i = 0; i < array->extent(0); ++i)
+    for (auto j = 0; j < array->extent(1); ++j)
+      for (auto k = 0; k < array->extent(2); ++k)
+        result += array->operator()(i, j, k);
+  return result;
+}
+
 int
 main(int argc, char* argv[]) {
 
@@ -127,16 +137,24 @@ main(int argc, char* argv[]) {
       visibility_coordinates);
     std::cout << "gridded" << std::endl;
     auto norm = g0.get_normalization();
-    std::cout << "normalization " << norm.real()
-              << " " << norm.imag()
-              << std::endl;
+    std::cout << "normalization " << norm << std::endl;
     auto norm0 = g0.set_normalization(norm * -1.0);
     std::cout << "norm set" << std::endl;
     assert(norm == norm0);
     auto norm1 = g0.get_normalization();
-    std::cout << "normalization " << norm1.real()
-              << " " << norm1.imag()
-              << std::endl;
+    std::cout << "normalization " << norm1 << std::endl;
+    {
+      auto grid = g0.grid_values();
+      auto sum = sum_grid(grid);
+      std::cout << "sum " << sum << std::endl;
+    }
+    g0.reset_grid();
+    std::cout << "grid reset" << std::endl;
+    {
+      auto grid = g0.grid_values();
+      auto sum = sum_grid(grid);
+      std::cout << "sum " << sum << std::endl;
+    }
   }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
@@ -164,16 +182,24 @@ main(int argc, char* argv[]) {
       visibility_coordinates);
     std::cout << "gridded" << std::endl;
     auto norm = g0.get_normalization();
-    std::cout << "normalization " << norm.real()
-              << " " << norm.imag()
-              << std::endl;
+    std::cout << "normalization " << norm << std::endl;
     auto norm0 = g0.set_normalization(norm * -1.0);
     std::cout << "norm set" << std::endl;
     assert(norm == norm0);
     auto norm1 = g0.get_normalization();
-    std::cout << "normalization " << norm1.real()
-              << " " << norm1.imag()
-              << std::endl;
+    std::cout << "normalization " << norm1 << std::endl;
+    {
+      auto grid = g0.grid_values();
+      auto sum = sum_grid(grid);
+      std::cout << "sum " << sum << std::endl;
+    }
+    g0.reset_grid();
+    std::cout << "grid reset" << std::endl;
+    {
+      auto grid = g0.grid_values();
+      auto sum = sum_grid(grid);
+      std::cout << "sum " << sum << std::endl;
+    }
   }
 #endif // HPG_ENABLE_CUDA
   hpg::finalize();
