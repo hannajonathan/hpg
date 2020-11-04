@@ -644,6 +644,9 @@ public:
   }
 
   virtual ~StateT() {
+    grid = decltype(grid)();
+    cf = decltype(cf)();
+    norm = decltype(norm)();
     if constexpr(!std::is_void_v<stream_type>) {
       for (unsigned i = 0; i < max_active_tasks; ++i) {
         auto rc = DeviceT<D>::destroy_stream(streams[i]);
@@ -821,12 +824,8 @@ private:
     std::swap(max_active_tasks, other.max_active_tasks);
     std::swap(grid_size, other.grid_size);
     std::swap(grid_scale, other.grid_scale);
-    decltype(grid) g = grid;
-    grid = other.grid;
-    other.grid = g;
-    decltype(norm) n = norm;
-    norm = other.norm;
-    other.norm = n;
+    std::swap(grid, other.grid);
+    std::swap(norm, other.norm);
   }
 
   void
