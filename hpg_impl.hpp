@@ -3,9 +3,10 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <deque>
 #include <memory>
 #include <type_traits>
-#include <deque>
+#include <variant>
 
 #include <iostream> // FIXME: remove
 
@@ -739,7 +740,7 @@ public:
       grid_scale) {
 
     init_exec_spaces();
-    new_grid(nullptr);
+    new_grid(true, true);
   }
 
   StateT(const volatile StateT& st)
@@ -750,7 +751,7 @@ public:
       const_cast<const StateT&>(st).grid_scale) {
 
     init_exec_spaces();
-    new_grid(const_cast<const StateT*>(&st));
+    new_grid(const_cast<const StateT*>(&st), true);
   }
 
   StateT(StateT&& st)
@@ -931,9 +932,9 @@ public:
   }
 
   void
-  reset_grid() {
+  reset_grid() override {
     next_exec_space();
-    new_grid(nullptr);
+    new_grid(true, true);
   }
 
   void
@@ -995,14 +996,17 @@ private:
   }
 
   void
-  new_grid(const StateT* source) {
+  new_grid(std::variant<const StateT*, bool> source, bool also_weights) {
+
+    const bool create_without_init =
+      std::holds_alternative<const StateT*>(source) || !std::get<bool>(source);
 
     std::array<int, 4> ig{
       static_cast<int>(grid_size[0]),
       static_cast<int>(grid_size[1]),
       static_cast<int>(grid_size[2]),
       static_cast<int>(grid_size[3])};
-    if (source)
+    if (create_without_init)
       grid =
         decltype(grid)(
           K::ViewAllocateWithoutInitializing("grid"),
@@ -1023,22 +1027,25 @@ private:
               << " " << grid.stride(3)
               << std::endl;
 
-    if (source)
-      weights =
-        decltype(weights)(
-          K::ViewAllocateWithoutInitializing("weights"),
-          static_cast<int>(grid_size[2]),
-          static_cast<int>(grid_size[3]));
-    else
-      weights =
-        decltype(weights)(
-          K::view_alloc("weights", current_exec_space()),
-          static_cast<int>(grid_size[2]),
-          static_cast<int>(grid_size[3]));
-
-    if (source) {
-      K::deep_copy(current_exec_space(), grid, source->grid);
-      K::deep_copy(current_exec_space(), weights, source->weights);
+    if (also_weights) {
+      if (create_without_init)
+        weights =
+          decltype(weights)(
+            K::ViewAllocateWithoutInitializing("weights"),
+            static_cast<int>(grid_size[2]),
+            static_cast<int>(grid_size[3]));
+      else
+        weights =
+          decltype(weights)(
+            K::view_alloc("weights", current_exec_space()),
+            static_cast<int>(grid_size[2]),
+            static_cast<int>(grid_size[3]));
+    }
+    if (std::holds_alternative<const StateT*>(source)) {
+      auto st = std::get<const StateT*>(source);
+      K::deep_copy(current_exec_space(), grid, st->grid);
+      if (also_weights)
+        K::deep_copy(current_exec_space(), weights, st->weights);
     }
   }
 };
