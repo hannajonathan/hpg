@@ -221,32 +221,32 @@ GridderState::fence() && {
   return result;
 }
 
-std::tuple<GridderState, std::shared_ptr<GridWeightArray>>
+std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
 GridderState::grid_weights() const volatile & {
 
   GridderState result(*this);
-  return {std::move(result), result.impl->grid_weights()};
+  return {std::move(result), std::move(result.impl->grid_weights())};
 }
 
-std::tuple<GridderState, std::shared_ptr<GridWeightArray>>
+std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
 GridderState::grid_weights() && {
 
   GridderState result(std::move(*this));
-  return {std::move(result), result.impl->grid_weights()};
+  return {std::move(result), std::move(result.impl->grid_weights())};
 }
 
-std::tuple<GridderState, std::shared_ptr<GridValueArray>>
+std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::grid_values() const volatile & {
 
   GridderState result(*this);
-  return {std::move(result), result.impl->grid_values()};
+  return {std::move(result), std::move(result.impl->grid_values())};
 }
 
-std::tuple<GridderState, std::shared_ptr<GridValueArray>>
+std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::grid_values() && {
 
   GridderState result(std::move(*this));
-  return {std::move(result), result.impl->grid_values()};
+  return {std::move(result), std::move(result.impl->grid_values())};
 }
 
 GridderState

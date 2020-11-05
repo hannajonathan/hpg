@@ -109,7 +109,7 @@ init_visibilities(
 }
 
 std::complex<hpg::grid_value_fp>
-sum_grid(const std::shared_ptr<hpg::GridValueArray>& array) {
+sum_grid(const hpg::GridValueArray* array) {
   std::complex<hpg::grid_value_fp> result;
   for (auto i = 0; i < array->extent(0); ++i)
     for (auto j = 0; j < array->extent(1); ++j)
@@ -180,14 +180,14 @@ main(int argc, char* argv[]) {
     std::cout << std::endl;
     {
       auto grid = g0.grid_values();
-      auto sum = sum_grid(grid);
+      auto sum = sum_grid(grid.get());
       std::cout << "sum " << sum << std::endl;
     }
     g0.reset_grid();
     std::cout << "grid reset" << std::endl;
     {
       auto grid = g0.grid_values();
-      auto sum = sum_grid(grid);
+      auto sum = sum_grid(grid.get());
       std::cout << "sum " << sum << std::endl;
     }
   }
@@ -226,14 +226,14 @@ main(int argc, char* argv[]) {
     std::cout << std::endl;
     {
       auto grid = g0.grid_values();
-      auto sum = sum_grid(grid);
+      auto sum = sum_grid(grid.get());
       std::cout << "sum " << sum << std::endl;
     }
     g0.reset_grid();
     std::cout << "grid reset" << std::endl;
     {
       auto grid = g0.grid_values();
-      auto sum = sum_grid(grid);
+      auto sum = sum_grid(grid.get());
       std::cout << "sum " << sum << std::endl;
     }
   }

@@ -342,22 +342,22 @@ public:
    *
    * Invokes fence() on target.
    */
-  std::tuple<GridderState, std::shared_ptr<GridWeightArray>>
+  std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
   grid_weights() const volatile &;
 
   /** get grid plane weights
    *
    * Invokes fence() on target.
    */
-  std::tuple<GridderState, std::shared_ptr<GridWeightArray>>
+  std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
   grid_weights() &&;
 
   /** get access to grid values */
-  std::tuple<GridderState, std::shared_ptr<GridValueArray>>
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   grid_values() const volatile &;
 
   /** get access to grid values */
-  std::tuple<GridderState, std::shared_ptr<GridValueArray>>
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   grid_values() &&;
 
   /** reset grid values to zero
@@ -543,18 +543,18 @@ public:
    *
    * Invokes fence() on target.
    */
-  std::shared_ptr<GridWeightArray>
+  std::unique_ptr<GridWeightArray>
   grid_weights() const volatile {
-    std::shared_ptr<GridWeightArray> result;
+    std::unique_ptr<GridWeightArray> result;
     std::tie(const_cast<Gridder*>(this)->state, result) =
       std::move(const_cast<Gridder*>(this)->state).grid_weights();
     return result;
   }
 
   /** get access to grid values */
-  std::shared_ptr<GridValueArray>
+  std::unique_ptr<GridValueArray>
   grid_values() const volatile {
-    std::shared_ptr<GridValueArray> result;
+    std::unique_ptr<GridValueArray> result;
     std::tie(const_cast<Gridder*>(this)->state, result) =
       std::move(const_cast<Gridder*>(this)->state).grid_values();
     return result;

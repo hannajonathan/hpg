@@ -536,10 +536,10 @@ struct State {
   virtual void
   fence() const volatile = 0;
 
-  virtual std::shared_ptr<GridWeightArray>
+  virtual std::unique_ptr<GridWeightArray>
   grid_weights() const volatile = 0;
 
-  virtual std::shared_ptr<GridValueArray>
+  virtual std::unique_ptr<GridValueArray>
   grid_values() const volatile = 0;
 
   virtual void
@@ -669,8 +669,7 @@ init_vis(
 /** Kokkos state implementation for a device type */
 template <Device D>
 struct HPG_EXPORT StateT final
-  : public State
-  , public std::enable_shared_from_this<StateT<D>> {
+  : public State {
 public:
 
   using kokkos_device = typename DeviceT<D>::kokkos_device;
@@ -871,24 +870,24 @@ public:
     }
   }
 
-  std::shared_ptr<GridWeightArray>
+  std::unique_ptr<GridWeightArray>
   grid_weights() const volatile override {
     fence();
     auto st = const_cast<StateT*>(this);
     auto wgts_h = K::create_mirror(st->weights);
     K::deep_copy(st->current_exec_space(), wgts_h, st->weights);
     st->current_exec_space().fence();
-    return std::make_shared<GridWeightViewArray<D>>(wgts_h);
+    return std::make_unique<GridWeightViewArray<D>>(wgts_h);
   }
 
-  std::shared_ptr<GridValueArray>
+  std::unique_ptr<GridValueArray>
   grid_values() const volatile override {
     fence();
     auto st = const_cast<StateT*>(this);
     auto grid_h = K::create_mirror(st->grid);
     K::deep_copy(st->current_exec_space(), grid_h, st->grid);
     st->current_exec_space().fence();
-    return std::make_shared<GridValueViewArray<D>>(grid_h);
+    return std::make_unique<GridValueViewArray<D>>(grid_h);
   }
 
   void
