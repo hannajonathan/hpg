@@ -219,7 +219,7 @@ public:
 
   /** set convolution function
    *
-   * Does not invoke fence() on target.
+   * May invoke fence() on target.
    *
    * @return new GridderState that is a copy of the target, but with provided
    * convolution function for subsequent gridding
@@ -234,7 +234,7 @@ public:
 
   /** set convolution function
    *
-   * Does not invoke fence() on target.
+   * May invoke fence() on target.
    *
    * @return new GridderState that has overwritten the target, but with provided
    * convolution function for subsequent gridding
@@ -249,7 +249,7 @@ public:
 
   /** grid some visibilities
    *
-   * Does not invoke fence() on target.
+   * May invoke fence() on target.
    *
    * @return new GridderState after gridding task has been submitted to device
    * queue
@@ -282,7 +282,7 @@ public:
 
   /** grid some visibilities
    *
-   * Does not invoke fence() on target.
+   * May invoke fence() on target.
    *
    * @return new GridderState that has overwritten the target, but after
    * gridding task has been submitted to device queue
@@ -474,7 +474,7 @@ public:
 
   /** set convolution function
    *
-   * Does not invoke fence() on target.
+   * May invoke fence() on target.
    *
    * the provided convolution function will be used for gridding until this
    * function is called again
@@ -489,7 +489,7 @@ public:
 
   /** grid visibilities
    *
-   * Does not invoke fence() on target.
+   * May invoke fence() on target.
    *
    * The indexing of visibilities and all other metadata vectors must be
    * consistent. For example the weight for the visibility value visibilities[i]
