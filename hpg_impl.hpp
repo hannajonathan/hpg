@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <deque>
 
@@ -478,14 +479,7 @@ struct HPG_EXPORT Gridder final {
             for (int Y = 0; Y < cf.extent_int(1); ++Y) {
               /* look over elements of Mueller matrix column  */
               for (int P = 0; P < cf.extent_int(2); ++P) {
-                gv_t cfv =
-                  cf(
-                    X,
-                    Y,
-                    P,
-                    vis.fine[0],
-                    vis.fine[1],
-                    vis.cf_cube);
+                gv_t cfv = cf(X, Y, P, vis.fine[0], vis.fine[1], vis.cf_cube);
                 cfv.imag() *= vis.cf_im_factor;
                 pseudo_atomic_add<execution_space>(
                   grid(
@@ -706,7 +700,7 @@ public:
       grid_scale) {
 
     init_exec_spaces();
-    new_grid();
+    new_grid(std::nullopt);
   }
 
   StateT(const volatile StateT& st)
@@ -717,34 +711,7 @@ public:
       const_cast<const StateT&>(st).grid_scale) {
 
     init_exec_spaces();
-
-    const StateT& cst = const_cast<const StateT&>(st);
-    std::array<int, 4> ig{
-      static_cast<int>(cst.grid_size[0]),
-      static_cast<int>(cst.grid_size[1]),
-      static_cast<int>(cst.grid_size[2]),
-      static_cast<int>(cst.grid_size[3])};
-    grid =
-      decltype(grid)(
-        K::ViewAllocateWithoutInitializing("grid"),
-        GridLayout<D>::dimensions(ig));
-    std::cout << "alloc grid sz " << grid.extent(0)
-              << " " << grid.extent(1)
-              << " " << grid.extent(2)
-              << " " << grid.extent(3)
-              << std::endl;
-    std::cout << "alloc grid str " << grid.stride(0)
-              << " " << grid.stride(1)
-              << " " << grid.stride(2)
-              << " " << grid.stride(3)
-              << std::endl;
-    K::deep_copy(current_exec_space(), grid, cst.grid);
-    weights =
-      decltype(weights)(
-        K::ViewAllocateWithoutInitializing("weights"),
-        static_cast<int>(cst.grid_size[2]),
-        static_cast<int>(cst.grid_size[3]));
-    K::deep_copy(current_exec_space(), weights, cst.weights);
+    new_grid(const_cast<const StateT*>(&st));
   }
 
   StateT(StateT&& st)
@@ -927,7 +894,7 @@ public:
   void
   reset_grid() {
     fence();
-    new_grid();
+    new_grid(std::nullopt);
   }
 
 private:
@@ -978,17 +945,23 @@ private:
   }
 
   void
-  new_grid() {
-    // TODO: support use both with and without initialization
+  new_grid(std::optional<const StateT*> source) {
+
     std::array<int, 4> ig{
       static_cast<int>(grid_size[0]),
       static_cast<int>(grid_size[1]),
       static_cast<int>(grid_size[2]),
       static_cast<int>(grid_size[3])};
-    grid =
-      decltype(grid)(
-        K::view_alloc("grid", current_exec_space()),
-        GridLayout<D>::dimensions(ig));
+    if (source)
+      grid =
+        decltype(grid)(
+          K::ViewAllocateWithoutInitializing("grid"),
+          GridLayout<D>::dimensions(ig));
+    else
+      grid =
+        decltype(grid)(
+          K::view_alloc("grid", current_exec_space()),
+          GridLayout<D>::dimensions(ig));
     std::cout << "alloc grid sz " << grid.extent(0)
               << " " << grid.extent(1)
               << " " << grid.extent(2)
@@ -999,11 +972,24 @@ private:
               << " " << grid.stride(2)
               << " " << grid.stride(3)
               << std::endl;
-    weights =
-      decltype(weights)(
-        K::view_alloc("weights", current_exec_space()),
-        static_cast<int>(grid_size[2]),
-        static_cast<int>(grid_size[3]));
+
+    if (source)
+      weights =
+        decltype(weights)(
+          K::ViewAllocateWithoutInitializing("weights"),
+          static_cast<int>(grid_size[2]),
+          static_cast<int>(grid_size[3]));
+    else
+      weights =
+        decltype(weights)(
+          K::view_alloc("weights", current_exec_space()),
+          static_cast<int>(grid_size[2]),
+          static_cast<int>(grid_size[3]));
+
+    if (source) {
+      K::deep_copy(current_exec_space(), grid, source.value()->grid);
+      K::deep_copy(current_exec_space(), weights, source.value()->weights);
+    }
   }
 };
 
