@@ -394,6 +394,24 @@ public:
   GridderState
   normalize() &&;
 
+  /** apply FFT to grid array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  GridderState
+  apply_fft(bool in_place = true) &;
+
+  /** apply FFT to grid array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  GridderState
+  apply_fft(bool in_place = true) &&;
+
 protected:
   friend class Gridder;
 
@@ -597,14 +615,25 @@ public:
   normalize() {
     state = std::move(state).normalize();
   }
+
+  /** apply FFT to grid array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  void
+  apply_fft(bool in_place = true) {
+    state = std::move(state).apply_fft(in_place);
+  }
 };
 
 /** global initialization of hpg
  *
  * Function is idempotent, but should not be called by a process after a call to
  * hpg::finalize(). All objects created by hpg must only exist between an
- * initialize()/finalize() pair; in particular, any object destructors must be
- * called before the call to finalize(). A common approach is to access hpg
+ * initialize()/finalize() pair; in particular, any hpg object destructors must
+ * be called before the call to finalize(). A common approach is to access hpg
  * within a new scope after the call to initialize():
  *     int main() {
  *       hpg::initialize();

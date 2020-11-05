@@ -281,6 +281,22 @@ GridderState::normalize() && {
   return result;
 }
 
+GridderState
+GridderState::apply_fft(bool in_place) & {
+
+  GridderState result(*this);
+  result.impl->apply_fft(in_place);
+  return result;
+}
+
+GridderState
+GridderState::apply_fft(bool in_place) && {
+
+  GridderState result(std::move(*this));
+  result.impl->apply_fft(in_place);
+  return result;
+}
+
 void
 GridderState::swap(GridderState& other) {
   std::swap(impl, other.impl);

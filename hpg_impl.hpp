@@ -12,6 +12,16 @@
 
 #include <Kokkos_Core.hpp>
 
+#if defined(HPG_ENABLE_SERIAL) || defined(HPG_ENABLE_OPENMP)
+# include <fftw3.h>
+# ifdef HPG_ENABLE_OPENMP
+#  include <omp.h>
+# endif
+#endif
+#ifdef HPG_ENABLE_CUDA
+# include <cufft.h>
+#endif
+
 namespace K = Kokkos;
 namespace KExp = Kokkos::Experimental;
 
@@ -77,6 +87,10 @@ static bool hpg_impl_initialized = false;
 void
 initialize() {
   K::initialize();
+#ifdef HPG_ENABLE_OPENMP
+  auto rc = fftw_init_threads();
+  assert(rc != 0);
+#endif
   hpg_impl_initialized = true;
 }
 
@@ -534,6 +548,346 @@ struct HPG_EXPORT GridNormalizer final {
       });
   }
 };
+
+template <typename T>
+struct FFTW {
+
+  using complex_t = void;
+  using plan_t = void;
+
+  // static void
+  // exec(const plan_t plan, K::complex<T>* in, K::complex<T>* out) {
+  // }
+
+#ifdef HPG_ENABLE_OPENMP
+  static void
+  plan_with_nthreads(int n) {
+  }
+#endif // HPG_ENABLE_OPENMP
+
+  // static std::tuple<plan_t, plan_t>
+  // plan_many(
+  //   int rank, const int *n, int howmany,
+  //   const K::complex<T> *in, const int *inembed,
+  //   int istride, int idist,
+  //   K::complex<T> *out, const int *onembed,
+  //   int ostride, int odist,
+  //   int sign, unsigned flags);
+
+  // static void
+  // destroy_plan(std::tuple<plan_t, plan_t> plan);
+};
+
+template <>
+struct FFTW<double> {
+
+  using complex_t = fftw_complex;
+  using plan_t = fftw_plan;
+
+  static void
+  exec(const plan_t plan, K::complex<double>* in, K::complex<double>* out) {
+    fftw_execute_dft(
+      plan,
+      reinterpret_cast<complex_t*>(in),
+      reinterpret_cast<complex_t*>(out));
+  }
+
+#ifdef HPG_ENABLE_OPENMP
+  static void
+  plan_with_nthreads(int n) {
+    fftw_plan_with_nthreads(n);
+  }
+#endif // HPG_ENABLE_OPENMP
+
+  static std::tuple<plan_t, plan_t>
+  plan_many(
+    int rank, const int *n, int howmany,
+    K::complex<double> *in, const int *inembed,
+    int istride, int idist,
+    K::complex<double> *out, const int *onembed,
+    int ostride, int odist,
+    int sign, unsigned flags) {
+    static_assert(sizeof(*in) == 16);
+    auto plan =
+      fftw_plan_many_dft(
+        rank, n, howmany,
+        reinterpret_cast<complex_t*>(in), inembed, istride, idist,
+        reinterpret_cast<complex_t*>(out), onembed, ostride, odist,
+        sign, flags);
+    return {plan, plan};
+  }
+
+  static void
+  destroy_plan(std::tuple<plan_t, plan_t> plans) {
+    fftw_destroy_plan(std::get<0>(plans));
+  }
+};
+
+template <>
+struct FFTW<float> {
+
+  using complex_t = fftwf_complex;
+  using plan_t = fftwf_plan;
+
+  static void
+  exec(const plan_t plan, K::complex<float>* in, K::complex<float>* out) {
+    fftwf_execute_dft(
+      plan,
+      reinterpret_cast<complex_t*>(in),
+      reinterpret_cast<complex_t*>(out));
+  }
+
+#ifdef HPG_ENABLE_OPENMP
+  static void
+  plan_with_nthreads(int n) {
+    fftwf_plan_with_nthreads(n);
+  }
+#endif // HPG_ENABLE_OPENMP
+
+  static std::tuple<plan_t, plan_t>
+  plan_many(
+    int rank, const int *n, int howmany,
+    K::complex<float> *in, const int *inembed,
+    int istride, int idist,
+    K::complex<float> *out, const int *onembed,
+    int ostride, int odist,
+    int sign, unsigned flags) {
+    static_assert(sizeof(*in) == 8);
+    return
+      {fftwf_plan_many_dft(
+        rank, n, howmany,
+        reinterpret_cast<complex_t*>(in), inembed, istride, idist,
+        reinterpret_cast<complex_t*>(out), onembed, ostride, odist,
+        sign, flags),
+       fftwf_plan_many_dft(
+         rank, n, howmany,
+         reinterpret_cast<complex_t*>(in + 1), inembed, istride, idist,
+         reinterpret_cast<complex_t*>(out + 1), onembed, ostride, odist,
+         sign, flags)};
+  }
+
+  static void
+  destroy_plan(std::tuple<plan_t, plan_t> plans) {
+    fftwf_destroy_plan(std::get<0>(plans));
+    fftwf_destroy_plan(std::get<1>(plans));
+  }
+};
+
+template <typename execution_space>
+struct HPG_EXPORT FFT final {
+
+  // default implementation assumes FFTW3
+
+  template <typename IG, typename OG>
+  static auto
+  grid_fft_handle(execution_space exec, IG& igrid, OG& ogrid) {
+
+    using scalar_t = typename OG::value_type::value_type;
+
+#ifdef HPG_ENABLE_OPENMP
+    if constexpr (std::is_same_v<execution_space, K::Serial>)
+      FFTW<scalar_t>::plan_with_nthreads(1);
+    else
+      FFTW<scalar_t>::plan_with_nthreads(omp_get_max_threads());
+#endif // HPG_ENABLE_OPENMP
+
+    // FIXME: some test that the layout is what is being assumed here!
+
+    // this assumes there is no padding in grid
+    assert(igrid.span() ==
+           igrid.extent(0) * igrid.extent(1)
+           * igrid.extent(2) * igrid.extent(3));
+    int n[2]{igrid.extent_int(0), igrid.extent_int(1)};
+    int stride = igrid.extent_int(2);
+    int dist = igrid.extent_int(0) *igrid.extent_int(1) * igrid.extent_int(3);
+    auto result =
+      FFTW<scalar_t>::plan_many(
+        2, n, igrid.extent_int(3),
+        const_cast<K::complex<scalar_t>*>(&igrid(0, 0, 0, 0)),
+        NULL, stride, dist,
+        &ogrid(0, 0, 0, 0), NULL, stride, dist,
+        FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+    return result;
+  }
+  /** in-place FFT kernel
+   */
+  template <typename grid_layout, typename memory_space>
+  static void
+  in_place_kernel(
+    execution_space exec,
+    const grid_view<grid_layout, memory_space>& grid) {
+
+    using scalar_t =
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+
+    auto handles = grid_fft_handle(exec, grid, grid);
+    auto& [h0, h1] = handles;
+    for (int sto = 0; sto < grid.extent_int(2); ++sto) {
+      FFTW<scalar_t>::exec(h0, &grid(0, 0, sto, 0), &grid(0, 0, sto, 0));
+      std::swap(h0, h1);
+    }
+    FFTW<scalar_t>::destroy_plan(handles);
+  }
+
+  /** out-of-place FFT kernel
+   */
+  template <typename grid_layout, typename memory_space>
+  static void
+  out_of_place_kernel(
+    execution_space exec,
+    const const_grid_view<grid_layout, memory_space>& pre_grid,
+    const grid_view<grid_layout, memory_space>& post_grid) {
+
+    using scalar_t =
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+
+    auto handles = grid_fft_handle(exec, pre_grid, post_grid);
+    auto& [h0, h1] = handles;
+    for (int sto = 0; sto < pre_grid.extent_int(2); ++sto) {
+      FFTW<scalar_t>::exec(
+        h0,
+        const_cast<K::complex<scalar_t>*>(&pre_grid(0, 0, sto, 0)),
+        &post_grid(0, 0, sto, 0));
+      std::swap(h0, h1);
+    }
+    FFTW<scalar_t>::destroy_plan(handles);
+  }
+};
+
+#ifdef HPG_ENABLE_CUDA
+
+template <typename T>
+struct CUFFT {
+  //constexpr cufftType type;
+  static cufftResult
+  exec(cufftHandle, K::complex<T>T*, K::complex<T>*, int) {
+    assert(false);
+    return CUFFT_NOT_SUPPORTED;
+  }
+};
+
+template <>
+struct CUFFT<double> {
+
+  static constexpr cufftType type = CUFFT_Z2Z;
+
+  static cufftResult
+  exec(
+    cufftHandle plan,
+    K::complex<double>* idata,
+    K::complex<double>* odata,
+    int direction) {
+    return
+      cufftExecZ2Z(
+        plan,
+        reinterpret_cast<cufftDoubleComplex*>(idata),
+        reinterpret_cast<cufftDoubleComplex*>(odata),
+        direction);
+  }
+};
+
+template <>
+struct CUFFT<float> {
+
+  static constexpr cufftType type = CUFFT_C2C;
+
+  static cufftResult
+  exec(
+    cufftHandle plan,
+    K::complex<float>* idata,
+    K::complex<float>* odata,
+    int direction) {
+    return
+      cufftExecC2C(
+        plan,
+        reinterpret_cast<cufftComplex*>(idata),
+        reinterpret_cast<cufftComplex*>(odata),
+        direction);
+  }
+};
+
+template <>
+struct HPG_EXPORT FFT<K::Cuda> final {
+
+  template <typename G>
+  static cufftHandle
+  grid_fft_handle(execution_space exec, G& grid) {
+
+    using scalar_t =
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+
+    // this assumes there is no padding in grid
+    assert(grid.span() ==
+           grid.extent(0) * grid.extent(1) * grid.extent(2) * grid.extent(3));
+    int n[2]{grid.extent_int(0), grid.extent_int(1)};
+    cufftHandle result;
+    auto rc =
+      cufftPlanMany(
+        &result, 2, n,
+        NULL, 1, 1,
+        NULL, 1, 1,
+        CUFFT<scalar_t>::type,
+        grid.extent_int(2) * grid.extent_int(3));
+    assert(rc == CUFFT_SUCCESS);
+    rc = cufftSetStream(result, exec.cuda_stream());
+    assert(rc == CUFFT_SUCCESS);
+    return result;
+  }
+
+  /** in-place FFT kernel
+   */
+  template <typename grid_layout, typename memory_space>
+  static void
+  in_place_kernel(
+    execution_space exec,
+    const grid_view<grid_layout, memory_space>& grid) {
+
+    using scalar_t =
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+
+    auto handle = grid_fft_handle(exec, grid);
+    auto rc =
+      CUFFT<scalar_t>::exec(
+        handle,
+        &grid(0, 0, 0, 0),
+        &grid(0, 0, 0, 0),
+        CUFFT_FORWARD);
+    assert(rc == CUFFT_SUCCESS);
+    rc = cufftDestroy(handle);
+    assert(rc == CUFFT_SUCCESS);
+  }
+
+  /** out-of-place FFT kernel
+   */
+  template <typename grid_layout, typename memory_space>
+  static void
+  out_of_place_kernel(
+    execution_space exec,
+    const const_grid_view<grid_layout, memory_space>& pre_grid,
+    const grid_view<grid_layout, memory_space>& post_grid) {
+
+    using scalar_t =
+      std::conditional_t<
+      std::is_same_v<
+        typename grid_view<grid_layout, memory_space>::value_type::value_type,
+        double>,
+      double,
+      float>;
+
+    auto handle = grid_fft_handle(exec, post_grid);
+    auto rc =
+      CUFFT<scalar_t>::exec(
+        handle,
+        &pre_grid(0, 0, 0, 0),
+        post_grid(0, 0, 0, 0),
+        CUFFT_FORWARD);
+    assert(rc == CUFFT_SUCCESS);
+    rc = cufftDestroy(handle);
+    assert(rc == CUFFT_SUCCESS);
+  }
+};
+#endif // HPG_ENABLE_CUDA
+
 } // end namespace Core
 
 /** abstract base class for state implementations */
@@ -585,6 +939,9 @@ struct State {
 
   virtual void
   normalize() = 0;
+
+  virtual void
+  apply_fft(bool in_place) = 0;
 
   virtual ~State() {}
 };
@@ -943,6 +1300,21 @@ public:
       cweights = weights;
     Core::GridNormalizer<execution_space>
       ::kernel(current_exec_space(), grid, cweights);
+    next_exec_space();
+  }
+
+  void
+  apply_fft(bool in_place) override {
+    if (in_place) {
+      Core::FFT<execution_space>
+        ::in_place_kernel(current_exec_space(), grid);
+    } else {
+      const_grid_view<typename GridLayout<D>::layout, memory_space> pre_grid
+        = grid;
+      new_grid(false, false);
+      Core::FFT<execution_space>
+        ::out_of_place_kernel(current_exec_space(), pre_grid, grid);
+    }
     next_exec_space();
   }
 
