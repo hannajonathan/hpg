@@ -435,7 +435,7 @@ namespace Core {
 // specialization of the kernel functions by execution space
 
 template <typename execution_space>
-struct HPG_EXPORT Gridder final {
+struct HPG_EXPORT VisibilityGridder final {
 
   /** gridding kernel
    *
@@ -444,7 +444,7 @@ struct HPG_EXPORT Gridder final {
    */
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
-  grid_visibilities(
+  kernel(
     execution_space exec,
     const const_cf_view<cf_layout, memory_space>& cf,
     const const_visibility_view<memory_space>& visibilities,
@@ -504,12 +504,16 @@ struct HPG_EXPORT Gridder final {
           });
       });
   }
+};
+
+template <typename execution_space>
+struct HPG_EXPORT GridNormalizer final {
 
   /** grid normalization kernel
    */
   template <typename grid_layout, typename memory_space>
   static void
-  normalize(
+  kernel(
     execution_space exec,
     const grid_view<grid_layout, memory_space>& grid,
     const const_weight_view<
@@ -884,7 +888,7 @@ public:
       break;
     }
     const_visibility_view<memory_space> cvis = vis;
-    Core::Gridder<execution_space>::grid_visibilities(
+    Core::VisibilityGridder<execution_space>::kernel(
       current_exec_space(),
       cf,
       cvis,
@@ -936,8 +940,8 @@ public:
   normalize() override {
     const_weight_view<typename execution_space::array_layout, memory_space>
       cweights = weights;
-    Core::Gridder<execution_space>
-      ::normalize(current_exec_space(), grid, cweights);
+    Core::GridNormalizer<execution_space>
+      ::kernel(current_exec_space(), grid, cweights);
     next_exec_space();
   }
 
