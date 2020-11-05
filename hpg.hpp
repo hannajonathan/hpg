@@ -29,6 +29,14 @@ using vis_phase_fp = double;
 // vis_uvw_t can be any type that supports std::get<N>() for element access
 using vis_uvw_t = std::array<vis_uvw_fp, 3>;
 
+// grid_plane_t can be any type that supports std::get<N>() for element
+// access
+/** grid plane index
+ *
+ * an index for a 2d plane of a 4d grid; axis order: stokes, cube
+ */
+using grid_plane_t = std::array<unsigned, 2>;
+
 /**
  * backend device type
  */
@@ -51,31 +59,53 @@ namespace Impl {
 struct HPG_EXPORT State;
 } // end namespace Impl
 
-/** base class for 2d convolution functions */
-class HPG_EXPORT CF2 {
+/** base class for convolution functions */
+class HPG_EXPORT CFArray {
 public:
 
-  unsigned oversampling;
+  virtual unsigned
+  oversampling() const = 0;
 
-  std::array<unsigned, 2> extent;
+  virtual unsigned
+  extent(unsigned dim) const = 0;
 
-  virtual const std::complex<cf_fp>&
-  operator()(unsigned x, unsigned y) const = 0;
+  virtual std::complex<cf_fp>
+  operator()(unsigned x, unsigned y, unsigned polarization, unsigned cube)
+    const = 0;
 
-  virtual ~CF2() {}
+  virtual ~CFArray() {}
 };
 
-/** wrapper for read-only access to grid values */
-class HPG_EXPORT GridArray {
+/** wrapper for read-only access to grid values
+ *
+ * @todo: replace with mdspan?
+ */
+class HPG_EXPORT GridValueArray {
 public:
 
   virtual unsigned
   extent(unsigned dim) const = 0;
 
   virtual std::complex<grid_value_fp>
-  operator()(unsigned x, unsigned y, unsigned plane) const = 0;
+  operator()(unsigned x, unsigned y, unsigned stokes, unsigned cube) const = 0;
 
-  virtual ~GridArray() {}
+  virtual ~GridValueArray() {}
+};
+
+/** wrapper for read-only access to grid weights
+ *
+ * @todo: replace with mdspan?
+ */
+class HPG_EXPORT GridWeightArray {
+public:
+
+  virtual unsigned
+  extent(unsigned dim) const = 0;
+
+  virtual grid_value_fp
+  operator()(unsigned stokes, unsigned cube) const = 0;
+
+  virtual ~GridWeightArray() {}
 };
 
 struct HPG_EXPORT Gridder;
@@ -134,7 +164,7 @@ public:
    * @param device gridder device type
    * @param max_async_tasks maximum number of asynchronous tasks (actual number
    * may be less than requested)
-   * @param grid_size, in logical axis order: X, Y, plane
+   * @param grid_size, in logical axis order: X, Y, stokes, cube
    * @param grid_scale, in X, Y order
    *
    * @sa Gridder::Gridder()
@@ -142,7 +172,7 @@ public:
   GridderState(
     Device device,
     unsigned max_async_tasks,
-    const std::array<unsigned, 3>& grid_size,
+    const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale);
 
   /** copy constructor
@@ -178,9 +208,8 @@ public:
   unsigned
   max_async_tasks() const;
 
-  /** grid size
-   */
-  const std::array<unsigned, 3>&
+  /** grid size */
+  const std::array<unsigned, 4>&
   grid_size() const;
 
   /** grid scale
@@ -196,12 +225,12 @@ public:
    * convolution function for subsequent gridding
    *
    * @param host_device device to use for changing array layout
-   * @param cf 2d convolution function array
+   * @param cf convolution function array
    *
    * @sa Gridder::set_convolution_function()
    */
   GridderState
-  set_convolution_function(Device host_device, const CF2& cf) &;
+  set_convolution_function(Device host_device, const CFArray& cf) &;
 
   /** set convolution function
    *
@@ -211,12 +240,12 @@ public:
    * convolution function for subsequent gridding
    *
    * @param host_device device to use for changing array layout
-   * @param cf 2d convolution function array
+   * @param cf convolution function array
    *
    * @sa Gridder::set_convolution_function()
    */
   GridderState
-  set_convolution_function(Device host_device, const CF2& cf) &&;
+  set_convolution_function(Device host_device, const CFArray& cf) &&;
 
   /** grid some visibilities
    *
@@ -231,9 +260,11 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
+   * @param visibility_grid_planes visibility grid plane indexes
+   * @param visibility_cf_cubes visibility convolution function cube indexes
    * @param visibility_weights visibility weights
    * @param visibility_frequencies visibility frequencies
-   * @param visibility_phase visibility phase difference
+   * @param visibility_phases visibility phase differences
    * @param visibility_coordinates visibility coordinates
    *
    * @sa Gridder::grid_visibilities()
@@ -242,9 +273,11 @@ public:
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_phase_fp>& visibility_phases,
     const std::vector<vis_uvw_t>& visibility_coordinates) &;
 
   /** grid some visibilities
@@ -260,9 +293,11 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
+   * @param visibility_grid_planes visibility grid plane indexes
+   * @param visibility_cf_cubes visibility convolution function cube indexes
    * @param visibility_weights visibility weights
    * @param visibility_frequencies visibility frequencies
-   * @param visibility_phase visibility phase difference
+   * @param visibility_phases visibility phase differences
    * @param visibility_coordinates visibility coordinates
    *
    * @sa Gridder::grid_visibilities()
@@ -271,9 +306,11 @@ public:
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_phase_fp>& visibility_phases,
     const std::vector<vis_uvw_t>& visibility_coordinates) &&;
 
   /** device execution fence
@@ -301,50 +338,26 @@ public:
   GridderState
   fence() &&;
 
-  /** get normalization factor
+  /** get grid plane weights
    *
    * Invokes fence() on target.
    */
-  std::tuple<GridderState, std::complex<grid_value_fp>>
-  get_normalization() const volatile &;
+  std::tuple<GridderState, std::shared_ptr<GridWeightArray>>
+  grid_weights() const volatile &;
 
-  /** get normalization factor
+  /** get grid plane weights
    *
    * Invokes fence() on target.
    */
-  std::tuple<GridderState, std::complex<grid_value_fp>>
-  get_normalization() &&;
+  std::tuple<GridderState, std::shared_ptr<GridWeightArray>>
+  grid_weights() &&;
 
-  /** set normalization factor
-   *
-   * Invokes fence() on target.
-   *
-   * @return value of normalization factor before new value is set
-   */
-  std::tuple<GridderState, std::complex<grid_value_fp>>
-  set_normalization(const std::complex<grid_value_fp>& val = 0) &;
-
-  /** set normalization factor
-   *
-   * Invokes fence() on target.
-   *
-   * @return value of normalization factor before new value is set
-   */
-  std::tuple<GridderState, std::complex<grid_value_fp>>
-  set_normalization(const std::complex<grid_value_fp>& val = 0) &&;
-
-  /** get access to grid values
-   *
-   * Invokes fence() on target
-   */
-  std::tuple<GridderState, std::shared_ptr<GridArray>>
+  /** get access to grid values */
+  std::tuple<GridderState, std::shared_ptr<GridValueArray>>
   grid_values() const volatile &;
 
-  /** get access to grid values
-   *
-   * Invokes fence() on target
-   */
-  std::tuple<GridderState, std::shared_ptr<GridArray>>
+  /** get access to grid values */
+  std::tuple<GridderState, std::shared_ptr<GridValueArray>>
   grid_values() &&;
 
   /** reset grid values to zero
@@ -400,13 +413,13 @@ public:
    * @param device gridder device type
    * @param max_async_tasks maximum number of concurrent tasks (actual number
    * may be less than requested)
-   * @param grid_size, in logical axis order: X, Y, plane
+   * @param grid_size, in logical axis order: X, Y, stokes, cube
    * @param grid_scale, in X, Y order
    */
   Gridder(
     Device device,
     unsigned max_async_tasks,
-    const std::array<unsigned, 3>& grid_size,
+    const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale)
     : state(GridderState(device, max_async_tasks, grid_size, grid_scale)) {}
 
@@ -448,7 +461,7 @@ public:
   }
 
   /** grid size */
-  const std::array<unsigned, 3>&
+  const std::array<unsigned, 4>&
   grid_size() const {
     return state.grid_size();
   }
@@ -467,10 +480,10 @@ public:
    * function is called again
    *
    * @param host_device device to use for changing array layout
-   * @param cf 2d convolution function array
+   * @param cf convolution function array
    */
   void
-  set_convolution_function(Device host_device, const CF2& cf) {
+  set_convolution_function(Device host_device, const CFArray& cf) {
     state = std::move(state).set_convolution_function(host_device, cf);
   }
 
@@ -484,18 +497,22 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
+   * @param visibility_grid_planes visibility grid plane indexes
+   * @param visibility_cf_cubes visibility convolution function cube indexes
    * @param visibility_weights visibility weights
    * @param visibility_frequencies visibility frequencies
-   * @param visibility_phase visibility phase difference
+   * @param visibility_phases visibility phase differences
    * @param visibility_coordinates visibility coordinates
    */
   void
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_phase_fp>& visibility_phases,
     const std::vector<vis_uvw_t>& visibility_coordinates) {
 
     state =
@@ -503,9 +520,11 @@ public:
       .grid_visibilities(
         host_device,
         visibilities,
+        visibility_grid_planes,
+        visibility_cf_cubes,
         visibility_weights,
         visibility_frequencies,
-        visibility_phase,
+        visibility_phases,
         visibility_coordinates);
   }
 
@@ -520,38 +539,22 @@ public:
       std::move(const_cast<Gridder*>(this)->state).fence();
   }
 
-  /** get normalization factor
+  /** get grid plane weights
    *
    * Invokes fence() on target.
    */
-  std::complex<grid_value_fp>
-  get_normalization() const volatile {
-    std::complex<grid_value_fp> result;
+  std::shared_ptr<GridWeightArray>
+  grid_weights() const volatile {
+    std::shared_ptr<GridWeightArray> result;
     std::tie(const_cast<Gridder*>(this)->state, result) =
-      std::move(const_cast<Gridder*>(this)->state).get_normalization();
+      std::move(const_cast<Gridder*>(this)->state).grid_weights();
     return result;
   }
 
-  /** set normalization factor
-   *
-   * Invokes fence() on target.
-   *
-   * @return value of normalization factor before new value is set
-   */
-  std::complex<grid_value_fp>
-  set_normalization(const std::complex<grid_value_fp>& val = 0) {
-    std::complex<grid_value_fp> result;
-    std::tie(state, result) = std::move(state).set_normalization(val);
-    return result;
-  }
-
-  /** get access to grid values
-   *
-   * Invokes fence() on target.
-   */
-  std::shared_ptr<GridArray>
+  /** get access to grid values */
+  std::shared_ptr<GridValueArray>
   grid_values() const volatile {
-    std::shared_ptr<GridArray> result;
+    std::shared_ptr<GridValueArray> result;
     std::tie(const_cast<Gridder*>(this)->state, result) =
       std::move(const_cast<Gridder*>(this)->state).grid_values();
     return result;

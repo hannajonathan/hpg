@@ -8,7 +8,7 @@ GridderState::GridderState() {
 GridderState::GridderState(
   Device device,
   unsigned max_async_tasks,
-  const std::array<unsigned, 3>& grid_size,
+  const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale) {
 
   const unsigned max_active_tasks = max_async_tasks + 1;
@@ -125,7 +125,7 @@ GridderState::max_async_tasks() const {
   return impl->max_active_tasks - 1;
 }
 
-const std::array<unsigned, 3>&
+const std::array<unsigned, 4>&
 GridderState::grid_size() const {
   return impl->grid_size;
 }
@@ -138,7 +138,7 @@ GridderState::grid_scale() const {
 GridderState
 GridderState::set_convolution_function(
   Device host_device,
-  const CF2& cf) & {
+  const CFArray& cf) & {
 
   GridderState result(*this);
   result.impl->set_convolution_function(host_device, cf);
@@ -146,7 +146,9 @@ GridderState::set_convolution_function(
 }
 
 GridderState
-GridderState::set_convolution_function(Device host_device, const CF2& cf) && {
+GridderState::set_convolution_function(
+  Device host_device,
+  const CFArray& cf) && {
 
   GridderState result(std::move(*this));
   result.impl->set_convolution_function(host_device, cf);
@@ -157,9 +159,11 @@ GridderState
 GridderState::grid_visibilities(
   Device host_device,
   const std::vector<std::complex<visibility_fp>>& visibilities,
+  const std::vector<grid_plane_t> visibility_grid_planes,
+  const std::vector<unsigned> visibility_cf_cubes,
   const std::vector<vis_weight_fp>& visibility_weights,
   const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phase,
+  const std::vector<vis_phase_fp>& visibility_phases,
   const std::vector<vis_uvw_t>& visibility_coordinates) & {
 
   GridderState result(*this);
@@ -167,9 +171,11 @@ GridderState::grid_visibilities(
   ->grid_visibilities(
     host_device,
     visibilities,
+    visibility_grid_planes,
+    visibility_cf_cubes,
     visibility_weights,
     visibility_frequencies,
-    visibility_phase,
+    visibility_phases,
     visibility_coordinates);
   return result;
 }
@@ -178,9 +184,11 @@ GridderState
 GridderState::grid_visibilities(
   Device host_device,
   const std::vector<std::complex<visibility_fp>>& visibilities,
+  const std::vector<grid_plane_t> visibility_grid_planes,
+  const std::vector<unsigned> visibility_cf_cubes,
   const std::vector<vis_weight_fp>& visibility_weights,
   const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phase,
+  const std::vector<vis_phase_fp>& visibility_phases,
   const std::vector<vis_uvw_t>& visibility_coordinates) && {
 
   GridderState result(std::move(*this));
@@ -188,9 +196,11 @@ GridderState::grid_visibilities(
   ->grid_visibilities(
     host_device,
     visibilities,
+    visibility_grid_planes,
+    visibility_cf_cubes,
     visibility_weights,
     visibility_frequencies,
-    visibility_phase,
+    visibility_phases,
     visibility_coordinates);
   return result;
 }
@@ -211,42 +221,28 @@ GridderState::fence() && {
   return result;
 }
 
-std::tuple<GridderState, std::complex<grid_value_fp>>
-GridderState::get_normalization() const volatile & {
+std::tuple<GridderState, std::shared_ptr<GridWeightArray>>
+GridderState::grid_weights() const volatile & {
 
   GridderState result(*this);
-  return {std::move(result), result.impl->get_normalization()};
+  return {std::move(result), result.impl->grid_weights()};
 }
 
-std::tuple<GridderState, std::complex<grid_value_fp>>
-GridderState::get_normalization() && {
+std::tuple<GridderState, std::shared_ptr<GridWeightArray>>
+GridderState::grid_weights() && {
 
   GridderState result(std::move(*this));
-  return {std::move(result), result.impl->get_normalization()};
+  return {std::move(result), result.impl->grid_weights()};
 }
 
-std::tuple<GridderState, std::complex<grid_value_fp>>
-GridderState::set_normalization(const std::complex<grid_value_fp>& val) & {
-
-  GridderState result(*this);
-  return {std::move(result), result.impl->set_normalization(val)};
-}
-
-std::tuple<GridderState, std::complex<grid_value_fp>>
-GridderState::set_normalization(const std::complex<grid_value_fp>& val) && {
-
-  GridderState result(std::move(*this));
-  return {std::move(result), result.impl->set_normalization(val)};
-}
-
-std::tuple<GridderState, std::shared_ptr<GridArray>>
+std::tuple<GridderState, std::shared_ptr<GridValueArray>>
 GridderState::grid_values() const volatile & {
 
   GridderState result(*this);
   return {std::move(result), result.impl->grid_values()};
 }
 
-std::tuple<GridderState, std::shared_ptr<GridArray>>
+std::tuple<GridderState, std::shared_ptr<GridValueArray>>
 GridderState::grid_values() && {
 
   GridderState result(std::move(*this));

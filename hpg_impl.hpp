@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <memory>
 #include <type_traits>
 #include <deque>
@@ -31,11 +32,16 @@ struct Visibility {
 
   Visibility(
     const vis_t& value_,
+    const grid_plane_t& grid_plane,
+    unsigned cf_cube_,
     vis_weight_fp weight_,
     vis_frequency_fp freq_,
     vis_phase_fp d_phase_,
     const vis_uvw_t& uvw_)
     : value(value_)
+    , grid_stokes(std::get<0>(grid_plane))
+    , grid_cube(std::get<1>(grid_plane))
+    , cf_cube(cf_cube_)
     , weight(weight_)
     , freq(freq_)
     , d_phase(d_phase_) {
@@ -55,6 +61,9 @@ struct Visibility {
   KOKKOS_INLINE_FUNCTION Visibility& operator=(Visibility&&) = default;
 
   vis_t value;
+  int grid_stokes;
+  int grid_cube;
+  int cf_cube;
   vis_weight_fp weight;
   vis_frequency_fp freq;
   vis_phase_fp d_phase;
@@ -146,19 +155,29 @@ struct DeviceT<Device::HPX> {
 };
 #endif // HPG_ENABLE_HPX
 
-/** Kokkos::View type for grid values */
+/** View type for grid values */
 template <typename Layout, typename memory_space>
-using grid_view = K::View<gv_t***, Layout, memory_space>;
+using grid_view = K::View<gv_t****, Layout, memory_space>;
 
 template <typename Layout, typename memory_space>
-using const_grid_view = K::View<const gv_t***, Layout, memory_space>;
+using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
 
-/** View type for CF2 values */
+/** View type for weight values
+ *
+ * logical axis order: stokes, cube
+ */
 template <typename Layout, typename memory_space>
-using cf2_view = K::View<cf_t****, Layout, memory_space>;
+using weight_view = K::View<grid_value_fp**, Layout, memory_space>;
 
 template <typename Layout, typename memory_space>
-using const_cf2_view = K::View<const cf_t****, Layout, memory_space>;
+using const_weight_view = K::View<const grid_value_fp**, Layout, memory_space>;
+
+/** View type for CF values */
+template <typename Layout, typename memory_space>
+using cf_view = K::View<cf_t******, Layout, memory_space>;
+
+template <typename Layout, typename memory_space>
+using const_cf_view = K::View<const cf_t******, Layout, memory_space>;
 
 /** View type for Visibility values */
 template <typename memory_space>
@@ -181,21 +200,23 @@ struct GridLayout {
       K::LayoutStride>;
 
   /** create Kokkos layout using given grid dimensions
+   *
+   * logical index order: X, Y, stokes, cube
    */
   static layout
-  dimensions(const std::array<int, 3>& dims) {
+  dimensions(const std::array<int, 4>& dims) {
     if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
-      return K::LayoutLeft(dims[0], dims[1], dims[2]);
+      return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3]);
     } else {
-      static const std::array<int, 3> order{1, 0, 2};
-      return K::LayoutStride::order_dimensions(3, order.data(), dims.data());
+      static const std::array<int, 4> order{2, 1, 0, 3};
+      return K::LayoutStride::order_dimensions(4, order.data(), dims.data());
     }
   }
 };
 
-/** device-specific CF2 layout */
+/** device-specific CF layout */
 template <Device D>
-struct CF2Layout {
+struct CFLayout {
 
   /** Kokkos layout type */
   using layout =
@@ -207,23 +228,26 @@ struct CF2Layout {
     K::LayoutStride>;
 
   /**
-   * create Kokkos layout using given CF2
+   * create Kokkos layout using given CFArray
    *
-   * logical layout is X, Y, x, y
+   * logical index order: X, Y, polarization, x, y, cube
    */
   static layout
-  dimensions(const CF2& cf) {
-    std::array<int, 4> dims{
-      static_cast<int>(cf.extent[0] / cf.oversampling),
-      static_cast<int>(cf.extent[1] / cf.oversampling),
-      static_cast<int>(cf.oversampling),
-      static_cast<int>(cf.oversampling)
+  dimensions(const CFArray& cf) {
+    std::array<int, 6> dims{
+      static_cast<int>(cf.extent(0) / cf.oversampling()),
+      static_cast<int>(cf.extent(1) / cf.oversampling()),
+      static_cast<int>(cf.extent(2)),
+      static_cast<int>(cf.oversampling()),
+      static_cast<int>(cf.oversampling()),
+      static_cast<int>(cf.extent(3))
     };
     if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
-      return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3]);
+      return
+        K::LayoutLeft(dims[0], dims[1], dims[2], dims[3], dims[4], dims[5]);
     } else {
-      static const std::array<int, 4> order{1, 0, 3, 2};
-      return K::LayoutStride::order_dimensions(4, order.data(), dims.data());
+      static const std::array<int, 6> order{2, 1, 0, 4, 3, 5};
+      return K::LayoutStride::order_dimensions(6, order.data(), dims.data());
     }
   }
 };
@@ -285,6 +309,10 @@ struct GridVis final {
   int coarse[2];
   int fine[2];
   vis_t value;
+  int grid_stokes;
+  int grid_cube;
+  int cf_cube;
+  vis_weight_fp weight;
   cf_fp cf_im_factor;
 
   KOKKOS_INLINE_FUNCTION GridVis() {};
@@ -294,7 +322,11 @@ struct GridVis final {
     const K::Array<int, 2>& grid_radius,
     const K::Array<int, 2>& oversampling,
     const K::Array<int, 2>& cf_radius,
-    const K::Array<grid_scale_fp, 2>& fine_scale) {
+    const K::Array<grid_scale_fp, 2>& fine_scale)
+    : grid_stokes(vis.grid_stokes)
+    , grid_cube(vis.grid_cube)
+    , cf_cube(vis.cf_cube)
+    , weight(vis.weight) {
 
     static const vis_frequency_fp c = 299792458.0;
     K::complex<vis_phase_fp> phasor;
@@ -404,18 +436,19 @@ struct HPG_EXPORT Gridder final {
   static void
   grid_visibilities(
     execution_space exec,
-    const const_cf2_view<cf_layout, memory_space>& cf,
+    const const_cf_view<cf_layout, memory_space>& cf,
     const const_visibility_view<memory_space>& visibilities,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const grid_view<grid_layout, memory_space>& grid,
-    const K::View<gv_t, memory_space>& norm) {
+    const weight_view<typename execution_space::array_layout, memory_space>&
+    weights) {
 
     const K::Array<int, 2>
       cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
     const K::Array<int, 2>
       grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
     const K::Array<int, 2>
-      oversampling{cf.extent_int(2), cf.extent_int(3)};
+      oversampling{cf.extent_int(3), cf.extent_int(4)};
     const K::Array<grid_scale_fp, 2> fine_scale{
       grid_scale[0] * oversampling[0],
       grid_scale[1] * oversampling[1]};
@@ -435,6 +468,7 @@ struct HPG_EXPORT Gridder final {
           oversampling,
           cf_radius,
           fine_scale);
+        auto wgt = &weights(vis.grid_stokes, vis.grid_cube);
         /* loop over coarseX */
         K::parallel_for(
           K::TeamVectorRange(team_member, cf.extent_int(0)),
@@ -442,14 +476,28 @@ struct HPG_EXPORT Gridder final {
             /* loop over coarseY */
             gv_t n;
             for (int Y = 0; Y < cf.extent_int(1); ++Y) {
-              gv_t cfv = cf(X, Y, vis.fine[0], vis.fine[1]);
-              cfv.imag() *= vis.cf_im_factor;
-              pseudo_atomic_add<execution_space>(
-                grid(vis.coarse[0] + X, vis.coarse[1] + Y, 0),
-                cfv * vis.value);
-              n += cfv;
+              /* look over elements of Mueller matrix column  */
+              for (int P = 0; P < cf.extent_int(2); ++P) {
+                gv_t cfv =
+                  cf(
+                    X,
+                    Y,
+                    P,
+                    vis.fine[0],
+                    vis.fine[1],
+                    vis.cf_cube);
+                cfv.imag() *= vis.cf_im_factor;
+                pseudo_atomic_add<execution_space>(
+                  grid(
+                    vis.coarse[0] + X,
+                    vis.coarse[1] + Y,
+                    vis.grid_stokes,
+                    vis.grid_cube),
+                  cfv * vis.value);
+                n += cfv;
+              }
             }
-            pseudo_atomic_add<execution_space>(norm(), n);
+            K::atomic_add(wgt, std::hypot(n.real(), n.imag()) * vis.weight);
           });
       });
   }
@@ -461,7 +509,7 @@ struct State {
 
   Device device; /**< device type */
   unsigned max_active_tasks; /**< maximum number of active tasks */
-  std::array<unsigned, 3> grid_size; /**< grid size */
+  std::array<unsigned, 4> grid_size; /**< grid size */
   std::array<grid_scale_fp, 2> grid_scale; /**< grid scale */
 
   State(Device device_)
@@ -470,7 +518,7 @@ struct State {
   State(
     Device device_,
     unsigned max_active_tasks_,
-    const std::array<unsigned, 3>& grid_size_,
+    const std::array<unsigned, 4>& grid_size_,
     const std::array<grid_scale_fp, 2>& grid_scale_)
     : device(device_)
     , max_active_tasks(max_active_tasks_)
@@ -478,27 +526,26 @@ struct State {
     , grid_scale(grid_scale_) {}
 
   virtual void
-  set_convolution_function(Device host_device, const CF2& cf) = 0;
+  set_convolution_function(Device host_device, const CFArray& cf) = 0;
 
   virtual void
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_phase_fp>& visibility_phases,
     const std::vector<vis_uvw_t>& visibility_coordinates) = 0;
 
   virtual void
   fence() const volatile = 0;
 
-  virtual std::complex<grid_value_fp>
-  get_normalization() const volatile = 0;
+  virtual std::shared_ptr<GridWeightArray>
+  grid_weights() const volatile = 0;
 
-  virtual std::complex<grid_value_fp>
-  set_normalization(const std::complex<grid_value_fp>&) = 0;
-
-  virtual std::shared_ptr<GridArray>
+  virtual std::shared_ptr<GridValueArray>
   grid_values() const volatile = 0;
 
   virtual void
@@ -508,25 +555,21 @@ struct State {
 };
 
 template <Device D>
-struct StateT;
-
-template <Device D>
-class HPG_EXPORT GridViewArray
-  : public GridArray {
+class HPG_EXPORT GridValueViewArray final
+  : public GridValueArray {
 public:
 
   using memory_space = typename DeviceT<D>::kokkos_device::memory_space;
-
+  using layout = typename GridLayout<D>::layout;
   using grid_t =
-    typename const_grid_view<typename GridLayout<D>::layout, memory_space>
-    ::host_mirror_type;
+    typename const_grid_view<layout, memory_space>::host_mirror_type;
 
   grid_t grid;
 
-  GridViewArray(const grid_t& grid_)
+  GridValueViewArray(const grid_t& grid_)
     : grid(grid_) {}
 
-  ~GridViewArray() {}
+  ~GridValueViewArray() {}
 
   unsigned
   extent(unsigned dim) const override {
@@ -534,31 +577,64 @@ public:
   }
 
   std::complex<grid_value_fp>
-  operator()(unsigned x, unsigned y, unsigned plane) const override {
-    return grid(x, y, plane);
+  operator()(unsigned x, unsigned y, unsigned stokes, unsigned cube)
+    const override {
+
+    return grid(x, y, stokes, cube);
+  }
+};
+
+template <Device D>
+class HPG_EXPORT GridWeightViewArray final
+  : public GridWeightArray {
+ public:
+
+  using memory_space = typename DeviceT<D>::kokkos_device::memory_space;
+  using layout = typename DeviceT<D>::kokkos_device::array_layout;
+  using weight_t =
+    typename const_weight_view<layout, memory_space>::host_mirror_type;
+
+  weight_t weight;
+
+  GridWeightViewArray(const weight_t& weight_)
+    : weight(weight_) {}
+
+  ~GridWeightViewArray() {}
+
+  unsigned
+  extent(unsigned dim) const override {
+    return weight.extent(dim);
+  }
+
+  grid_value_fp
+  operator()(unsigned stokes, unsigned cube) const override {
+
+    return weight(stokes, cube);
   }
 };
 
 template <Device D, typename CFH>
 static void
-init_cf_host(CFH& cf_h, const CF2& cf2) {
+init_cf_host(CFH& cf_h, const CFArray& cf) {
   static_assert(
     K::SpaceAccessibility<
       typename DeviceT<D>::kokkos_device::memory_space,
       K::HostSpace>
     ::accessible);
+
   K::parallel_for(
-    K::MDRangePolicy<
-    K::Rank<2>,
-    typename DeviceT<D>::kokkos_device>(
-      {0, 0},
-      {static_cast<int>(cf2.extent[0]), static_cast<int>(cf2.extent[1])}),
-    [&](int i, int j) {
-      auto X = i / cf2.oversampling;
-      auto x = i % cf2.oversampling;
-      auto Y = j / cf2.oversampling;
-      auto y = j % cf2.oversampling;
-      cf_h(X, Y, x, y) = cf2(i, j);
+    K::MDRangePolicy<K::Rank<4>, typename DeviceT<D>::kokkos_device>(
+      {0, 0, 0, 0},
+      {static_cast<int>(cf.extent(0)),
+       static_cast<int>(cf.extent(1)),
+       static_cast<int>(cf.extent(2)),
+       static_cast<int>(cf.extent(3))}),
+    [&](int i, int j, int poln, int cube) {
+      auto X = i / cf.oversampling();
+      auto x = i % cf.oversampling();
+      auto Y = j / cf.oversampling();
+      auto y = j % cf.oversampling();
+      cf_h(X, Y, poln, x, y, cube) = cf(i, j, poln, cube);
     });
 }
 
@@ -567,9 +643,11 @@ static void
 init_vis(
   VisH& vis_h,
   const std::vector<std::complex<visibility_fp>>& visibilities,
+  const std::vector<grid_plane_t> visibility_grid_planes,
+  const std::vector<unsigned> visibility_cf_cubes,
   const std::vector<vis_weight_fp>& visibility_weights,
   const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phase,
+  const std::vector<vis_phase_fp>& visibility_phases,
   const std::vector<vis_uvw_t>& visibility_coordinates) {
 
   static_assert(
@@ -585,9 +663,11 @@ init_vis(
       vis_h(i) =
         Visibility(
           visibilities[i],
+          visibility_grid_planes[i],
+          visibility_cf_cubes[i],
           visibility_weights[i],
           visibility_frequencies[i],
-          visibility_phase[i],
+          visibility_phases[i],
           visibility_coordinates[i]);
     });
 }
@@ -605,8 +685,8 @@ public:
   using stream_type = typename DeviceT<D>::stream_type;
 
   grid_view<typename GridLayout<D>::layout, memory_space> grid;
-  const_cf2_view<typename CF2Layout<D>::layout, memory_space> cf;
-  K::View<gv_t, memory_space> norm;
+  const_cf_view<typename CFLayout<D>::layout, memory_space> cf;
+  weight_view<typename execution_space::array_layout, memory_space> weights;
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
@@ -617,7 +697,7 @@ public:
 
   StateT(
     unsigned max_active_tasks,
-    const std::array<unsigned, 3> grid_size,
+    const std::array<unsigned, 4> grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale)
     : State(
       D,
@@ -627,7 +707,6 @@ public:
 
     init_exec_spaces();
     new_grid();
-    norm = decltype(norm)(K::view_alloc("norm", current_exec_space()));
   }
 
   StateT(const volatile StateT& st)
@@ -640,10 +719,11 @@ public:
     init_exec_spaces();
 
     const StateT& cst = const_cast<const StateT&>(st);
-    std::array<int, 3> ig{
+    std::array<int, 4> ig{
       static_cast<int>(cst.grid_size[0]),
       static_cast<int>(cst.grid_size[1]),
-      static_cast<int>(cst.grid_size[2])};
+      static_cast<int>(cst.grid_size[2]),
+      static_cast<int>(cst.grid_size[3])};
     grid =
       decltype(grid)(
         K::ViewAllocateWithoutInitializing("grid"),
@@ -651,16 +731,20 @@ public:
     std::cout << "alloc grid sz " << grid.extent(0)
               << " " << grid.extent(1)
               << " " << grid.extent(2)
+              << " " << grid.extent(3)
               << std::endl;
     std::cout << "alloc grid str " << grid.stride(0)
               << " " << grid.stride(1)
               << " " << grid.stride(2)
+              << " " << grid.stride(3)
               << std::endl;
-    norm = decltype(norm)(K::ViewAllocateWithoutInitializing("norm"));
-
-    st.fence();
     K::deep_copy(current_exec_space(), grid, cst.grid);
-    K::deep_copy(current_exec_space(), norm, cst.norm);
+    weights =
+      decltype(weights)(
+        K::ViewAllocateWithoutInitializing("weights"),
+        static_cast<int>(cst.grid_size[2]),
+        static_cast<int>(cst.grid_size[3]));
+    K::deep_copy(current_exec_space(), weights, cst.weights);
   }
 
   StateT(StateT&& st)
@@ -672,7 +756,7 @@ public:
     fence();
     grid = decltype(grid)();
     cf = decltype(cf)();
-    norm = decltype(norm)();
+    weights = decltype(weights)();
     if constexpr(!std::is_void_v<stream_type>) {
       for (unsigned i = 0; i < max_active_tasks; ++i) {
         auto rc = DeviceT<D>::destroy_stream(streams[i]);
@@ -701,26 +785,31 @@ public:
   }
 
   void
-  set_convolution_function(Device host_device, const CF2& cf2) override {
-    cf2_view<typename CF2Layout<D>::layout, memory_space> cf_init(
-      K::ViewAllocateWithoutInitializing("cf2"),
-      CF2Layout<D>::dimensions(cf2));
+  set_convolution_function(Device host_device, const CFArray& cf_array)
+    override {
+    cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
+      K::ViewAllocateWithoutInitializing("cf"),
+      CFLayout<D>::dimensions(cf_array));
     std::cout << "alloc cf sz " << cf_init.extent(0)
               << " " << cf_init.extent(1)
               << " " << cf_init.extent(2)
               << " " << cf_init.extent(3)
+              << " " << cf_init.extent(4)
+              << " " << cf_init.extent(5)
               << std::endl;
     std::cout << "alloc cf str " << cf_init.stride(0)
               << " " << cf_init.stride(1)
               << " " << cf_init.stride(2)
               << " " << cf_init.stride(3)
+              << " " << cf_init.stride(4)
+              << " " << cf_init.stride(5)
               << std::endl;
 
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {
       auto cf_h = K::create_mirror_view(cf_init);
-      init_cf_host<Device::Serial>(cf_h, cf2);
+      init_cf_host<Device::Serial>(cf_h, cf_array);
       K::deep_copy(current_exec_space(), cf_init, cf_h);
       break;
     }
@@ -728,7 +817,7 @@ public:
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP: {
       auto cf_h = K::create_mirror_view(cf_init);
-      init_cf_host<Device::OpenMP>(cf_h, cf2);
+      init_cf_host<Device::OpenMP>(cf_h, cf_array);
       K::deep_copy(current_exec_space(), cf_init, cf_h);
       break;
     }
@@ -744,9 +833,11 @@ public:
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phase,
+    const std::vector<vis_phase_fp>& visibility_phases,
     const std::vector<vis_uvw_t>& visibility_coordinates) override {
 
     visibility_view<memory_space> vis(
@@ -760,9 +851,11 @@ public:
       init_vis<Device::Serial>(
         vis_h,
         visibilities,
+        visibility_grid_planes,
+        visibility_cf_cubes,
         visibility_weights,
         visibility_frequencies,
-        visibility_phase,
+        visibility_phases,
         visibility_coordinates);
       K::deep_copy(current_exec_space(), vis, vis_h);
       break;
@@ -774,9 +867,11 @@ public:
       init_vis<Device::OpenMP>(
         vis_h,
         visibilities,
+        visibility_grid_planes,
+        visibility_cf_cubes,
         visibility_weights,
         visibility_frequencies,
-        visibility_phase,
+        visibility_phases,
         visibility_coordinates);
       K::deep_copy(current_exec_space(), vis, vis_h);
       break;
@@ -787,14 +882,13 @@ public:
       break;
     }
     const_visibility_view<memory_space> cvis = vis;
-    Core::Gridder<execution_space>
-      ::grid_visibilities(
-        current_exec_space(),
-        cf,
-        cvis,
-        grid_scale,
-        grid,
-        norm);
+    Core::Gridder<execution_space>::grid_visibilities(
+      current_exec_space(),
+      cf,
+      cvis,
+      grid_scale,
+      grid,
+      weights);
     next_exec_space();
   }
 
@@ -810,45 +904,24 @@ public:
     }
   }
 
-  std::complex<grid_value_fp>
-  get_normalization() const volatile override {
+  std::shared_ptr<GridWeightArray>
+  grid_weights() const volatile override {
+    fence();
     auto st = const_cast<StateT*>(this);
-    gv_t result;
-    auto nvnorm = st->norm;
-    fence();
-    K::parallel_reduce(
-      K::RangePolicy<execution_space>(st->current_exec_space(), 0, 1),
-      KOKKOS_LAMBDA(int, gv_t& acc) {
-        acc += nvnorm();
-      },
-      result);
-    return result;
+    auto wgts_h = K::create_mirror(st->weights);
+    K::deep_copy(st->current_exec_space(), wgts_h, st->weights);
+    st->current_exec_space().fence();
+    return std::make_shared<GridWeightViewArray<D>>(wgts_h);
   }
 
-  std::complex<grid_value_fp>
-  set_normalization(const std::complex<grid_value_fp>& val) override {
-    gv_t new_val = val;
-    gv_t old_val;
-    fence();
-    auto nvnorm = const_cast<StateT*>(this)->norm;
-    K::parallel_reduce(
-      K::RangePolicy<execution_space>(current_exec_space(), 0, 1),
-      KOKKOS_LAMBDA(int, gv_t& acc) {
-        acc += nvnorm();
-        nvnorm() = new_val;
-      },
-      old_val);
-    return old_val;
-  }
-
-  std::shared_ptr<GridArray>
+  std::shared_ptr<GridValueArray>
   grid_values() const volatile override {
     fence();
     auto st = const_cast<StateT*>(this);
     auto grid_h = K::create_mirror(st->grid);
     K::deep_copy(st->current_exec_space(), grid_h, st->grid);
     st->current_exec_space().fence();
-    return std::make_shared<GridViewArray<D>>(grid_h);
+    return std::make_shared<GridValueViewArray<D>>(grid_h);
   }
 
   void
@@ -867,7 +940,7 @@ private:
     std::swap(grid_size, other.grid_size);
     std::swap(grid_scale, other.grid_scale);
     std::swap(grid, other.grid);
-    std::swap(norm, other.norm);
+    std::swap(weights, other.weights);
   }
 
   void
@@ -906,10 +979,12 @@ private:
 
   void
   new_grid() {
-    std::array<int, 3> ig{
+    // TODO: support use both with and without initialization
+    std::array<int, 4> ig{
       static_cast<int>(grid_size[0]),
       static_cast<int>(grid_size[1]),
-      static_cast<int>(grid_size[2])};
+      static_cast<int>(grid_size[2]),
+      static_cast<int>(grid_size[3])};
     grid =
       decltype(grid)(
         K::view_alloc("grid", current_exec_space()),
@@ -917,11 +992,18 @@ private:
     std::cout << "alloc grid sz " << grid.extent(0)
               << " " << grid.extent(1)
               << " " << grid.extent(2)
+              << " " << grid.extent(3)
               << std::endl;
     std::cout << "alloc grid str " << grid.stride(0)
               << " " << grid.stride(1)
               << " " << grid.stride(2)
+              << " " << grid.stride(3)
               << std::endl;
+    weights =
+      decltype(weights)(
+        K::view_alloc("weights", current_exec_space()),
+        static_cast<int>(grid_size[2]),
+        static_cast<int>(grid_size[3]));
   }
 };
 
