@@ -122,6 +122,8 @@ sum_grid(const hpg::GridValueArray* array) {
 int
 main(int argc, char* argv[]) {
 
+  hpg::ScopeGuard hpg;
+
   std::mt19937 rng(42);
 
   MyCFArray cf = create_cf(rng);
@@ -143,7 +145,6 @@ main(int argc, char* argv[]) {
     phases,
     coordinates);
 
-  hpg::initialize();
 #ifdef HPG_ENABLE_SERIAL
   {
     std::cout << "GridderState Serial" << std::endl;
@@ -252,7 +253,6 @@ main(int argc, char* argv[]) {
     }
   }
 #endif // HPG_ENABLE_CUDA
-  hpg::finalize();
 }
 
 // Local Variables:

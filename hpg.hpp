@@ -602,7 +602,18 @@ public:
 /** global initialization of hpg
  *
  * Function is idempotent, but should not be called by a process after a call to
- * hpg::finalize()
+ * hpg::finalize(). All objects created by hpg must only exist between an
+ * initialize()/finalize() pair; in particular, any object destructors must be
+ * called before the call to finalize(). A common approach is to access hpg
+ * within a new scope after the call to initialize():
+ *     int main() {
+ *       hpg::initialize();
+ *       {
+ *         Gridder g(...);
+ *       }
+ *       hpg::finalize();
+ *     }
+ * Another approach involves the use of a ScopeGuard instance.
  */
 void initialize();
 
@@ -612,6 +623,56 @@ void initialize();
  * to hpg::initialize()
  */
 void finalize();
+
+/** query whether hpg has been initialized
+ *
+ * Note the result will remain "true" after finalization.
+ */
+bool
+is_initialized();
+
+/** hpg scope object
+ *
+ * Intended to help avoid errors caused by objects that exist after the call
+ * to hpg::finalize(). For example,
+ *     int main() {
+ *       // Don't do this!
+ *       hpg::initialize();
+ *       Gridder g();
+ *       hpg::finalize(); // Error! g is still in scope,
+ *                        // ~Gridder is called after finalize()
+ *     }
+ * however, use of a ScopeGuard value as follows helps avoid this error:
+ *     int main() {
+ *       hpg::ScopeGuard hpg_guard;
+ *       Gridder g();
+ *       // OK, because g is destroyed prior to hpg_guard
+ *     }
+ */
+struct ScopeGuard {
+
+private:
+  bool init;
+
+public:
+  ScopeGuard()
+    : init(false) {
+    if (!is_initialized()) {
+      initialize();
+      init = true;
+    }
+  }
+
+  ~ScopeGuard() {
+    if (is_initialized() && init)
+      finalize();
+  }
+
+  ScopeGuard(const ScopeGuard&) = delete;
+
+  ScopeGuard&
+  operator=(const ScopeGuard&) = delete;
+};
 
 } // end namespace hpg
 

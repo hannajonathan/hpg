@@ -70,16 +70,25 @@ struct Visibility {
   K::Array<vis_uvw_fp, 3> uvw;
 };
 
+static bool hpg_impl_initialized = false;
+
 /** implementation initialization function */
 void
 initialize() {
   K::initialize();
+  hpg_impl_initialized = true;
 }
 
 /** implementation finalization function */
 void
 finalize() {
   K::finalize();
+}
+
+/** */
+bool
+is_initialized() {
+  return hpg_impl_initialized;
 }
 
 /** type trait associating Kokkos device with hpg Device */

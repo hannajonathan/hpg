@@ -310,6 +310,11 @@ hpg::finalize() {
   Impl::finalize();
 }
 
+bool
+hpg::is_initialized() {
+  return Impl::is_initialized();
+}
+
 // Local Variables:
 // mode: c++
 // c-basic-offset: 2
