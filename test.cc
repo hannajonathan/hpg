@@ -183,6 +183,13 @@ main(int argc, char* argv[]) {
       auto sum = sum_grid(grid.get());
       std::cout << "sum " << sum << std::endl;
     }
+    g0.normalize();
+    std::cout << "grid normalized" << std::endl;
+    {
+      auto grid = g0.grid_values();
+      auto sum = sum_grid(grid.get());
+      std::cout << "sum " << sum << std::endl;
+    }
     g0.reset_grid();
     std::cout << "grid reset" << std::endl;
     {
@@ -224,6 +231,13 @@ main(int argc, char* argv[]) {
       for (auto ch = 0; ch < grid_size[3]; ++ch)
         std::cout << " " << weights->operator()(sto, ch);
     std::cout << std::endl;
+    {
+      auto grid = g0.grid_values();
+      auto sum = sum_grid(grid.get());
+      std::cout << "sum " << sum << std::endl;
+    }
+    g0.normalize();
+    std::cout << "grid normalized" << std::endl;
     {
       auto grid = g0.grid_values();
       auto sum = sum_grid(grid.get());

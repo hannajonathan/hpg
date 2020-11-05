@@ -265,6 +265,22 @@ GridderState::reset_grid() && {
   return result;
 }
 
+GridderState
+GridderState::normalize() & {
+
+  GridderState result(*this);
+  result.impl->normalize();
+  return result;
+}
+
+GridderState
+GridderState::normalize() && {
+
+  GridderState result(std::move(*this));
+  result.impl->normalize();
+  return result;
+}
+
 void
 GridderState::swap(GridderState& other) {
   std::swap(impl, other.impl);

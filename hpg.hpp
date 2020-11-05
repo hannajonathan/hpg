@@ -352,17 +352,25 @@ public:
   std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
   grid_weights() &&;
 
-  /** get access to grid values */
+  /** get grid values
+   *
+   * Invokes fence() on target.
+   */
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   grid_values() const volatile &;
 
-  /** get access to grid values */
+  /** get grid values
+   *
+   * Invokes fence() on target.
+   */
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   grid_values() &&;
 
   /** reset grid values to zero
    *
    * Invokes fence() on target
+   *
+   * @todo is fence necessary?
    */
   GridderState
   reset_grid() &;
@@ -370,9 +378,25 @@ public:
   /** reset grid values to zero
    *
    * Invokes fence() on target
+   *
+   * @todo is fence necessary?
    */
   GridderState
   reset_grid() &&;
+
+  /** normalize grid values by weights
+   *
+   * May invoke fence() on target.
+   */
+  GridderState
+  normalize() &;
+
+  /** normalize grid values by weights
+   *
+   * May invoke fence() on target.
+   */
+  GridderState
+  normalize() &&;
 
 protected:
   friend class Gridder;
@@ -563,10 +587,21 @@ public:
   /** reset grid values to zero
    *
    * Invokes fence() on target.
+   *
+   * @todo is fence necessary?
    */
   void
   reset_grid() {
     state = std::move(state).reset_grid();
+  }
+
+  /** normalize grid values by weights
+   *
+   * May invoke fence() on target.
+   */
+  void
+  normalize() {
+    state = std::move(state).normalize();
   }
 };
 

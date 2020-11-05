@@ -423,16 +423,17 @@ pseudo_atomic_add<K::HPX, float>(
 
 namespace Core {
 
-/** gridding kernel
- *
- * The function that launches the gridding kernel is wrapped by a class to allow
- * partial specialization by execution space. Note that the default
- * implementation probably is optimal only for many-core devices, probably not
- * for OpenMP. A specialization for the host Serial device is provided, however.
- */
+// we're wrapping each kernel in a class in order to support partial
+// specialization of the kernel functions by execution space
+
 template <typename execution_space>
 struct HPG_EXPORT Gridder final {
 
+  /** gridding kernel
+   *
+   * Note that the default implementation probably is optimal only for many-core
+   * devices, probably not for OpenMP.
+   */
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
   grid_visibilities(
@@ -477,7 +478,7 @@ struct HPG_EXPORT Gridder final {
             /* loop over coarseY */
             gv_t n;
             for (int Y = 0; Y < cf.extent_int(1); ++Y) {
-              /* look over elements of Mueller matrix column  */
+              /* loop over elements of Mueller matrix column  */
               for (int P = 0; P < cf.extent_int(2); ++P) {
                 gv_t cfv = cf(X, Y, P, vis.fine[0], vis.fine[1], vis.cf_cube);
                 cfv.imag() *= vis.cf_im_factor;
@@ -493,6 +494,30 @@ struct HPG_EXPORT Gridder final {
             }
             K::atomic_add(wgt, std::hypot(n.real(), n.imag()) * vis.weight);
           });
+      });
+  }
+
+  /** grid normalization kernel
+   */
+  template <typename grid_layout, typename memory_space>
+  static void
+  normalize(
+    execution_space exec,
+    const grid_view<grid_layout, memory_space>& grid,
+    const const_weight_view<
+      typename execution_space::array_layout, memory_space>& weights) {
+
+    K::parallel_for(
+      "normalization",
+      K::MDRangePolicy<K::Rank<4>, execution_space>(
+        exec,
+        {0, 0, 0, 0},
+        {grid.extent_int(0),
+         grid.extent_int(1),
+         grid.extent_int(2),
+         grid.extent_int(3)}),
+      KOKKOS_LAMBDA(int x, int y, int stokes, int cube) {
+        grid(x, y, stokes, cube) /= weights(stokes, cube);
       });
   }
 };
@@ -544,6 +569,9 @@ struct State {
 
   virtual void
   reset_grid() = 0;
+
+  virtual void
+  normalize() = 0;
 
   virtual ~State() {}
 };
@@ -894,6 +922,15 @@ public:
   reset_grid() {
     fence();
     new_grid(std::nullopt);
+  }
+
+  void
+  normalize() override {
+    const_weight_view<typename execution_space::array_layout, memory_space>
+      cweights = weights;
+    Core::Gridder<execution_space>
+      ::normalize(current_exec_space(), grid, cweights);
+    next_exec_space();
   }
 
 private:
