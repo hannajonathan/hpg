@@ -368,18 +368,14 @@ public:
 
   /** reset grid values to zero
    *
-   * Invokes fence() on target
-   *
-   * @todo is fence necessary?
+   * May invoke fence() on target
    */
   GridderState
   reset_grid() &;
 
   /** reset grid values to zero
    *
-   * Invokes fence() on target
-   *
-   * @todo is fence necessary?
+   * May invoke fence() on target
    */
   GridderState
   reset_grid() &&;
@@ -586,9 +582,7 @@ public:
 
   /** reset grid values to zero
    *
-   * Invokes fence() on target.
-   *
-   * @todo is fence necessary?
+   * May invoke fence() on target.
    */
   void
   reset_grid() {

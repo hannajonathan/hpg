@@ -4,7 +4,6 @@
 #include <cassert>
 #include <cmath>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #include <deque>
 
@@ -727,7 +726,7 @@ public:
       grid_scale) {
 
     init_exec_spaces();
-    new_grid(std::nullopt);
+    new_grid(nullptr);
   }
 
   StateT(const volatile StateT& st)
@@ -920,8 +919,8 @@ public:
 
   void
   reset_grid() {
-    fence();
-    new_grid(std::nullopt);
+    next_exec_space();
+    new_grid(nullptr);
   }
 
   void
@@ -975,13 +974,15 @@ private:
 
   void
   next_exec_space() {
-    exec_space_indexes.push_back(exec_space_indexes.front());
-    exec_space_indexes.pop_front();
-    exec_space_indexes.push_front(-1);
+    if (exec_space_indexes.front() != -1) {
+      exec_space_indexes.push_back(exec_space_indexes.front());
+      exec_space_indexes.pop_front();
+      exec_space_indexes.push_front(-1);
+    }
   }
 
   void
-  new_grid(std::optional<const StateT*> source) {
+  new_grid(const StateT* source) {
 
     std::array<int, 4> ig{
       static_cast<int>(grid_size[0]),
@@ -1023,8 +1024,8 @@ private:
           static_cast<int>(grid_size[3]));
 
     if (source) {
-      K::deep_copy(current_exec_space(), grid, source.value()->grid);
-      K::deep_copy(current_exec_space(), weights, source.value()->weights);
+      K::deep_copy(current_exec_space(), grid, source->grid);
+      K::deep_copy(current_exec_space(), weights, source->weights);
     }
   }
 };
