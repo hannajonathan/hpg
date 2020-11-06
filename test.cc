@@ -119,6 +119,74 @@ sum_grid(const hpg::GridValueArray* array) {
   return result;
 }
 
+template <hpg::Device D>
+void
+run_tests(
+  const std::string& dev_name,
+  hpg::Device host_dev,
+  const MyCFArray& cf,
+  std::vector<std::complex<hpg::visibility_fp>>& vis,
+  std::vector<hpg::grid_plane_t>& grid_planes,
+  std::vector<unsigned>& cf_cubes,
+  std::vector<hpg::vis_weight_fp>& weights,
+  std::vector<hpg::vis_frequency_fp>& frequencies,
+  std::vector<hpg::vis_phase_fp>& phases,
+  std::vector<hpg::vis_uvw_t>& coordinates) {
+
+  {
+    std::cout << "GridderState " << dev_name << std::endl;
+    auto st0 = hpg::GridderState(D, 4, grid_size, {0.1, -0.1});
+    auto st1 = st0.fence();
+    auto st2 = std::move(st0).fence();
+    auto st3 = std::move(st2).set_convolution_function(host_dev, cf);
+    assert(st3.max_async_tasks() == 0);
+  }
+  {
+    std::cout << "Gridder " << dev_name << std::endl;
+    auto g0 = hpg::Gridder(D, 0, grid_size, {0.1, -0.1});
+    std::cout << "constructed" << std::endl;
+    g0.set_convolution_function(host_dev, cf);
+    std::cout << "cf set" << std::endl;
+    g0.grid_visibilities(
+      host_dev,
+      vis,
+      grid_planes,
+      cf_cubes,
+      weights,
+      frequencies,
+      phases,
+      coordinates);
+    std::cout << "gridded" << std::endl;
+    auto weights = g0.grid_weights();
+    std::cout << "weights";
+    for (auto sto = 0; sto < grid_size[2]; ++sto)
+      for (auto ch = 0; ch < grid_size[3]; ++ch)
+        std::cout << " " << weights->operator()(sto, ch);
+    std::cout << std::endl;
+    {
+      auto grid = g0.grid_values();
+      auto sum = sum_grid(grid.get());
+      std::cout << "sum " << sum << std::endl;
+    }
+    g0.normalize();
+    std::cout << "grid normalized" << std::endl;
+    {
+      auto grid = g0.grid_values();
+      auto sum = sum_grid(grid.get());
+      std::cout << "sum " << sum << std::endl;
+    }
+    g0.apply_fft();
+    std::cout << "fft applied" << std::endl;
+    g0.reset_grid();
+    std::cout << "grid reset" << std::endl;
+    {
+      auto grid = g0.grid_values();
+      auto sum = sum_grid(grid.get());
+      std::cout << "sum " << sum << std::endl;
+    }
+  }
+}
+
 int
 main(int argc, char* argv[]) {
 
@@ -146,112 +214,14 @@ main(int argc, char* argv[]) {
     coordinates);
 
 #ifdef HPG_ENABLE_SERIAL
-  {
-    std::cout << "GridderState Serial" << std::endl;
-    auto st0 =
-      hpg::GridderState(hpg::Device::Serial, 4, grid_size, {0.1, -0.1});
-    auto st1 = st0.fence();
-    auto st2 = std::move(st0).fence();
-    auto st3 =
-      std::move(st2).set_convolution_function(hpg::Device::Serial, cf);
-    assert(st3.max_async_tasks() == 0);
-  }
-  {
-    std::cout << "Gridder Serial" << std::endl;
-    auto g0 =
-      hpg::Gridder(hpg::Device::Serial, 0, grid_size, {0.1, -0.1});
-    std::cout << "constructed" << std::endl;
-    g0.set_convolution_function(hpg::Device::OpenMP, cf);
-    std::cout << "cf set" << std::endl;
-    g0.grid_visibilities(
-      hpg::Device::OpenMP,
-      vis,
-      grid_planes,
-      cf_cubes,
-      weights,
-      frequencies,
-      phases,
-      coordinates);
-    std::cout << "gridded" << std::endl;
-    auto weights = g0.grid_weights();
-    std::cout << "weights";
-    for (auto sto = 0; sto < grid_size[2]; ++sto)
-      for (auto ch = 0; ch < grid_size[3]; ++ch)
-        std::cout << " " << weights->operator()(sto, ch);
-    std::cout << std::endl;
-    {
-      auto grid = g0.grid_values();
-      auto sum = sum_grid(grid.get());
-      std::cout << "sum " << sum << std::endl;
-    }
-    g0.normalize();
-    std::cout << "grid normalized" << std::endl;
-    {
-      auto grid = g0.grid_values();
-      auto sum = sum_grid(grid.get());
-      std::cout << "sum " << sum << std::endl;
-    }
-    g0.reset_grid();
-    std::cout << "grid reset" << std::endl;
-    {
-      auto grid = g0.grid_values();
-      auto sum = sum_grid(grid.get());
-      std::cout << "sum " << sum << std::endl;
-    }
-  }
+  run_tests<hpg::Device::Serial>(
+    "Serial", hpg::Device::OpenMP, cf,
+    vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
-  {
-    std::cout << "GridderState Cuda" << std::endl;
-    auto st0 =
-      hpg::GridderState(hpg::Device::Cuda, 2, grid_size, {0.1, -0.1});
-    auto st1 = st0.fence();
-    auto st2 = std::move(st0).fence();
-    auto st3 =
-      std::move(st2).set_convolution_function(hpg::Device::OpenMP, cf);
-  }
-  {
-    std::cout << "Gridder Cuda" << std::endl;
-    auto g0 = hpg::Gridder(hpg::Device::Cuda, 2, grid_size, {0.1, -0.1});
-    std::cout << "constructed" << std::endl;
-    g0.set_convolution_function(hpg::Device::OpenMP, cf);
-    std::cout << "cf set" << std::endl;
-    g0.grid_visibilities(
-      hpg::Device::OpenMP,
-      vis,
-      grid_planes,
-      cf_cubes,
-      weights,
-      frequencies,
-      phases,
-      coordinates);
-    std::cout << "gridded" << std::endl;
-    auto weights = g0.grid_weights();
-    std::cout << "weights";
-    for (auto sto = 0; sto < grid_size[2]; ++sto)
-      for (auto ch = 0; ch < grid_size[3]; ++ch)
-        std::cout << " " << weights->operator()(sto, ch);
-    std::cout << std::endl;
-    {
-      auto grid = g0.grid_values();
-      auto sum = sum_grid(grid.get());
-      std::cout << "sum " << sum << std::endl;
-    }
-    g0.normalize();
-    std::cout << "grid normalized" << std::endl;
-    {
-      auto grid = g0.grid_values();
-      auto sum = sum_grid(grid.get());
-      std::cout << "sum " << sum << std::endl;
-    }
-    g0.reset_grid();
-    std::cout << "grid reset" << std::endl;
-    {
-      auto grid = g0.grid_values();
-      auto sum = sum_grid(grid.get());
-      std::cout << "sum " << sum << std::endl;
-    }
-  }
+  run_tests<hpg::Device::Cuda>(
+    "Cuda", hpg::Device::OpenMP, cf,
+    vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
 #endif // HPG_ENABLE_CUDA
 }
 
