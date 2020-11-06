@@ -5,6 +5,7 @@
 #include <cmath>
 #include <deque>
 #include <memory>
+#include <set>
 #include <type_traits>
 #include <variant>
 
@@ -697,9 +698,19 @@ struct HPG_EXPORT FFT final {
       FFTW<scalar_t>::plan_with_nthreads(omp_get_max_threads());
 #endif // HPG_ENABLE_OPENMP
 
-    for (size_t d = 0; d < 4; ++d)
-      assert(igrid.layout().dimension[d] == strided_grid_layout_order[d]);
-
+    {
+      std::set<std::tuple<size_t, int>> order;
+      for (size_t d = 0; d < 4; ++d)
+        order.emplace(igrid.layout().stride[d], d);
+      assert(
+        std::equal(
+          order.begin(),
+          order.end(),
+          strided_grid_layout_order.begin(),
+          [](const auto& s_d, const auto& i) {
+            return std::get<1>(s_d) == i;
+          }));
+    }
     // this assumes there is no padding in grid
     assert(igrid.span() ==
            igrid.extent(0) * igrid.extent(1)
