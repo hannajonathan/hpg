@@ -699,17 +699,19 @@ struct HPG_EXPORT FFT final {
 #endif // HPG_ENABLE_OPENMP
 
     {
-      std::set<std::tuple<size_t, int>> order;
-      for (size_t d = 0; d < 4; ++d)
-        order.emplace(igrid.layout().stride[d], d);
-      assert(
-        std::equal(
-          order.begin(),
-          order.end(),
-          strided_grid_layout_order.begin(),
-          [](const auto& s_d, const auto& i) {
-            return std::get<1>(s_d) == i;
-          }));
+      // FIXME: this fails when strides aren't unique: dims (5, 5, 1, 3) =>
+      // strides (5, 1, 1, 25)
+      // std::set<std::tuple<size_t, int>> order;
+      // for (size_t d = 0; d < 4; ++d)
+      //   order.emplace(igrid.layout().stride[d], d);
+      // assert(
+      //   std::equal(
+      //     order.begin(),
+      //     order.end(),
+      //     strided_grid_layout_order.begin(),
+      //     [](const auto& s_d, const auto& i) {
+      //       return std::get<1>(s_d) == i;
+      //     }));
     }
     // this assumes there is no padding in grid
     assert(igrid.span() ==
@@ -717,7 +719,7 @@ struct HPG_EXPORT FFT final {
            * igrid.extent(2) * igrid.extent(3));
     int n[2]{igrid.extent_int(0), igrid.extent_int(1)};
     int stride = igrid.extent_int(2);
-    int dist = igrid.extent_int(0) *igrid.extent_int(1) * igrid.extent_int(3);
+    int dist = igrid.extent_int(0) * igrid.extent_int(1) * igrid.extent_int(2);
     auto result =
       FFTW<scalar_t>::plan_many(
         2, n, igrid.extent_int(3),
@@ -1126,9 +1128,6 @@ public:
 
   virtual ~StateT() {
     fence();
-    grid = decltype(grid)();
-    cf = decltype(cf)();
-    weights = decltype(weights)();
     if constexpr(!std::is_void_v<stream_type>) {
       for (unsigned i = 0; i < max_active_tasks; ++i) {
         auto rc = DeviceT<D>::destroy_stream(streams[i]);
