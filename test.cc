@@ -6,8 +6,6 @@
 #include <random>
 #include <vector>
 
-const std::array<unsigned, 4> grid_size{1000, 2000, 2, 1};
-const std::array<unsigned, 4> cf_size{31, 21, 2, 3};
 const unsigned cf_oversampling = 10;
 
 struct MyCFArray final
@@ -18,13 +16,15 @@ struct MyCFArray final
 
   MyCFArray() {}
 
-  MyCFArray(const std::vector<std::complex<hpg::cf_fp>>& values)
+  MyCFArray(
+    const std::array<unsigned, 4>& size,
+    const std::vector<std::complex<hpg::cf_fp>>& values)
     : m_values(values) {
 
-    m_extent[0] = cf_size[0] * cf_oversampling;
-    m_extent[1] = cf_size[1] * cf_oversampling;
-    m_extent[2] = cf_size[2];
-    m_extent[3] = cf_size[3];
+    m_extent[0] = size[0] * cf_oversampling;
+    m_extent[1] = size[1] * cf_oversampling;
+    m_extent[2] = size[2];
+    m_extent[3] = size[3];
   }
 
   unsigned
@@ -49,22 +49,26 @@ struct MyCFArray final
 
 template <typename Generator>
 MyCFArray
-create_cf(Generator& gen) {
+create_cf(const std::array<unsigned, 4>& size, Generator& gen) {
   const unsigned num_values =
-    cf_oversampling * cf_size[0]
-    * cf_oversampling * cf_size[1]
-    * cf_size[2] * cf_size[3];
+    cf_oversampling * size[0]
+    * cf_oversampling * size[1]
+    * size[2] * size[3];
   std::vector<std::complex<hpg::cf_fp>> values;
   values.reserve(num_values);
   std::uniform_real_distribution<hpg::cf_fp> dist(-1.0, 1.0);
   for (auto i = 0; i < num_values; ++i)
     values.emplace_back(dist(gen), dist(gen));
-  return MyCFArray(values);
+  return MyCFArray(size, values);
 }
 
 template <typename Generator>
 void
 init_visibilities(
+  unsigned num_vis,
+  const std::array<unsigned, 4>& grid_size,
+  const std::array<float, 2>& grid_scale,
+  const std::array<unsigned, 4>& cf_size,
   Generator& gen,
   std::vector<std::complex<hpg::visibility_fp>>& vis,
   std::vector<hpg::grid_plane_t>& grid_planes,
@@ -74,7 +78,6 @@ init_visibilities(
   std::vector<hpg::vis_phase_fp>& phases,
   std::vector<hpg::vis_uvw_t>& coordinates) {
 
-  const unsigned num_vis = 1000000;
   vis.clear();
   vis.reserve(num_vis);
   grid_planes.clear();
@@ -90,21 +93,31 @@ init_visibilities(
   coordinates.clear();
   coordinates.reserve(num_vis);
 
-  assert(grid_size[3] == 1);
-  const unsigned gcube = 0;
+  const double inv_lambda = 9.75719;
+  const double freq = 299792458.0 * inv_lambda;
+  std::uniform_int_distribution<unsigned> dist_gcube(0, grid_size[3] - 1);
   std::uniform_int_distribution<unsigned> dist_gsto(0, grid_size[2] - 1);
   std::uniform_int_distribution<unsigned> dist_cfcube(0, cf_size[3] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
-  std::uniform_real_distribution<hpg::vis_uvw_fp> dist_uvw(-475.0, 475.0);
+  double ulim =
+    ((cf_oversampling * (grid_size[0] - 2)) / 2
+     - (cf_oversampling * cf_size[0]) / 2)
+    / (grid_scale[0] * cf_oversampling * inv_lambda);
+  double vlim =
+    ((cf_oversampling * (grid_size[1] - 2)) / 2 -
+     (cf_oversampling * cf_size[1]) / 2)
+    / (grid_scale[1] * cf_oversampling * inv_lambda);
+  std::uniform_real_distribution<hpg::vis_uvw_fp> dist_u(-ulim, ulim);
+  std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
   for (auto i = 0; i < num_vis; ++i) {
     vis.emplace_back(dist_vis(gen), dist_vis(gen));
-    grid_planes.push_back({dist_gsto(gen), gcube});
+    grid_planes.push_back({dist_gsto(gen), dist_gcube(gen)});
     cf_cubes.push_back(dist_cfcube(gen));
     weights.push_back(dist_weight(gen));
-    frequencies.push_back(2.92513197327302e9);
+    frequencies.push_back(freq);
     phases.emplace_back(0.0);
-    coordinates.push_back(hpg::vis_uvw_t({dist_uvw(gen), dist_uvw(gen), 0.0}));
+    coordinates.push_back(hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}));
   }
 }
 
@@ -124,6 +137,8 @@ void
 run_tests(
   const std::string& dev_name,
   hpg::Device host_dev,
+  const std::array<unsigned, 4>& grid_size,
+  const std::array<float, 2>& grid_scale,
   const MyCFArray& cf,
   std::vector<std::complex<hpg::visibility_fp>>& vis,
   std::vector<hpg::grid_plane_t>& grid_planes,
@@ -135,7 +150,7 @@ run_tests(
 
   {
     std::cout << "GridderState " << dev_name << std::endl;
-    auto st0 = hpg::GridderState(D, 4, grid_size, {0.1, -0.1});
+    auto st0 = hpg::GridderState(D, 4, grid_size, grid_scale);
     auto st1 = st0.fence();
     auto st2 = std::move(st0).fence();
     auto st3 = std::move(st2).set_convolution_function(host_dev, cf);
@@ -150,7 +165,7 @@ run_tests(
   }
   {
     std::cout << "Gridder " << dev_name << std::endl;
-    auto g0 = hpg::Gridder(D, 0, grid_size, {0.1, -0.1});
+    auto g0 = hpg::Gridder(D, 0, grid_size, grid_scale);
     std::cout << "constructed" << std::endl;
     g0.set_convolution_function(host_dev, cf);
     std::cout << "cf set" << std::endl;
@@ -194,14 +209,55 @@ run_tests(
   }
 }
 
+template <hpg::Device D>
+void
+dump_grids(
+  const std::string& dev_name,
+  hpg::Device host_dev,
+  const std::array<unsigned, 4>& grid_size,
+  const std::array<float, 2>& grid_scale,
+  const MyCFArray& cf,
+  std::vector<std::complex<hpg::visibility_fp>>& vis,
+  std::vector<hpg::grid_plane_t>& grid_planes,
+  std::vector<unsigned>& cf_cubes,
+  std::vector<hpg::vis_weight_fp>& weights,
+  std::vector<hpg::vis_frequency_fp>& frequencies,
+  std::vector<hpg::vis_phase_fp>& phases,
+  std::vector<hpg::vis_uvw_t>& coordinates) {
+
+  auto g0 = hpg::Gridder(D, 0, grid_size, grid_scale);
+  g0.set_convolution_function(host_dev, cf);
+  g0.grid_visibilities(
+    host_dev,
+    vis,
+    grid_planes,
+    cf_cubes,
+    weights,
+    frequencies,
+    phases,
+    coordinates);
+  g0.normalize();
+  g0.apply_fft();
+  auto gval = g0.grid_values();
+  for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
+    for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
+      std::cout << "cube " << cube << ", sto " << sto << std::endl;
+      for (unsigned y = 0; y < grid_size[1]; ++y) {
+        std::cout << "  " << y << ": ";
+        for (unsigned x = 0; x < grid_size[0]; ++x)
+          std::cout << gval->operator()(x, y, sto, cube) << " ";
+        std::cout << std::endl;
+      }
+    }
+  }
+}
+
 int
 main(int argc, char* argv[]) {
 
   hpg::ScopeGuard hpg;
 
   std::mt19937 rng(42);
-
-  MyCFArray cf = create_cf(rng);
 
   std::vector<std::complex<hpg::visibility_fp>> vis;
   std::vector<hpg::grid_plane_t> grid_planes;
@@ -210,26 +266,69 @@ main(int argc, char* argv[]) {
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
   std::vector<hpg::vis_uvw_t> coordinates;
-  init_visibilities(
-    rng,
-    vis,
-    grid_planes,
-    cf_cubes,
-    weights,
-    frequencies,
-    phases,
-    coordinates);
 
+  {
+    const std::array<unsigned, 4> grid_size{1000, 2000, 2, 1};
+    const std::array<unsigned, 4> cf_size{31, 21, 2, 3};
+    const std::array<float, 2> grid_scale{0.1, -0.1};
+    MyCFArray cf = create_cf(cf_size, rng);
+    init_visibilities(
+      1000000,
+      grid_size,
+      grid_scale,
+      cf_size,
+      rng,
+      vis,
+      grid_planes,
+      cf_cubes,
+      weights,
+      frequencies,
+      phases,
+      coordinates);
 #ifdef HPG_ENABLE_SERIAL
-  run_tests<hpg::Device::Serial>(
-    "Serial", hpg::Device::OpenMP, cf,
-    vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
+    run_tests<hpg::Device::Serial>(
+      "Serial", hpg::Device::OpenMP,
+      grid_size, grid_scale, cf,
+      vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
-  run_tests<hpg::Device::Cuda>(
-    "Cuda", hpg::Device::OpenMP, cf,
-    vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
+    run_tests<hpg::Device::Cuda>(
+      "Cuda", hpg::Device::OpenMP,
+      grid_size, grid_scale, cf,
+      vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
 #endif // HPG_ENABLE_CUDA
+  }
+  {
+    const std::array<unsigned, 4> grid_size{5, 5, 2, 3};
+    const std::array<unsigned, 4> cf_size{3, 3, 1, 1};
+    const std::array<float, 2> grid_scale{0.1, -0.1};
+    MyCFArray cf = create_cf(cf_size, rng);
+    init_visibilities(
+      50,
+      grid_size,
+      grid_scale,
+      cf_size,
+      rng,
+      vis,
+      grid_planes,
+      cf_cubes,
+      weights,
+      frequencies,
+      phases,
+      coordinates);
+#ifdef HPG_ENABLE_SERIAL
+    dump_grids<hpg::Device::Serial>(
+      "Serial", hpg::Device::OpenMP,
+      grid_size, grid_scale, cf,
+      vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_CUDA
+    dump_grids<hpg::Device::Cuda>(
+      "Cuda", hpg::Device::OpenMP,
+      grid_size, grid_scale, cf,
+      vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
+#endif // HPG_ENABLE_CUDA
+  }
 }
 
 // Local Variables:
