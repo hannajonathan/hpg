@@ -211,6 +211,8 @@ template <typename memory_space>
 using const_visibility_view = K::View<const Visibility*, memory_space>;
 
 /** device-specific grid layout */
+static const std::array<int, 4> strided_grid_layout_order{2, 1, 0, 3};
+
 template <Device D>
 struct GridLayout {
 
@@ -223,8 +225,6 @@ struct GridLayout {
       K::LayoutLeft,
       K::LayoutStride>;
 
-  static constexpr std::array<int, 4> strided_order{2, 1, 0, 3};
-
   /** create Kokkos layout using given grid dimensions
    *
    * logical index order: X, Y, stokes, cube
@@ -235,7 +235,10 @@ struct GridLayout {
       return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3]);
     } else {
       return
-        K::LayoutStride::order_dimensions(4, strided_order.data(), dims.data());
+        K::LayoutStride::order_dimensions(
+          4,
+          strided_grid_layout_order.data(),
+          dims.data());
     }
   }
 };
@@ -695,9 +698,7 @@ struct HPG_EXPORT FFT final {
 #endif // HPG_ENABLE_OPENMP
 
     for (size_t d = 0; d < 4; ++d)
-      assert(
-        igrid.layout().dimension[d]
-        == GridLayout<Device::Serial>::strided_order[d]);
+      assert(igrid.layout().dimension[d] == strided_grid_layout_order[d]);
 
     // this assumes there is no padding in grid
     assert(igrid.span() ==
@@ -766,7 +767,7 @@ template <typename T>
 struct CUFFT {
   //constexpr cufftType type;
   static cufftResult
-  exec(cufftHandle, K::complex<T>T*, K::complex<T>*, int) {
+  exec(cufftHandle, K::complex<T>*, K::complex<T>*, int) {
     assert(false);
     return CUFFT_NOT_SUPPORTED;
   }
@@ -817,10 +818,9 @@ struct HPG_EXPORT FFT<K::Cuda> final {
 
   template <typename G>
   static cufftHandle
-  grid_fft_handle(execution_space exec, G& grid) {
+  grid_fft_handle(K::Cuda exec, G& grid) {
 
-    using scalar_t =
-      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+    using scalar_t = typename G::value_type::value_type;
 
     // this assumes there is no padding in grid
     assert(grid.span() ==
@@ -845,7 +845,7 @@ struct HPG_EXPORT FFT<K::Cuda> final {
   template <typename grid_layout, typename memory_space>
   static void
   in_place_kernel(
-    execution_space exec,
+    K::Cuda exec,
     const grid_view<grid_layout, memory_space>& grid) {
 
     using scalar_t =
@@ -868,24 +868,19 @@ struct HPG_EXPORT FFT<K::Cuda> final {
   template <typename grid_layout, typename memory_space>
   static void
   out_of_place_kernel(
-    execution_space exec,
+    K::Cuda exec,
     const const_grid_view<grid_layout, memory_space>& pre_grid,
     const grid_view<grid_layout, memory_space>& post_grid) {
 
     using scalar_t =
-      std::conditional_t<
-      std::is_same_v<
-        typename grid_view<grid_layout, memory_space>::value_type::value_type,
-        double>,
-      double,
-      float>;
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
 
     auto handle = grid_fft_handle(exec, post_grid);
     auto rc =
       CUFFT<scalar_t>::exec(
         handle,
-        &pre_grid(0, 0, 0, 0),
-        post_grid(0, 0, 0, 0),
+        const_cast<K::complex<scalar_t>*>(&pre_grid(0, 0, 0, 0)),
+        &post_grid(0, 0, 0, 0),
         CUFFT_FORWARD);
     assert(rc == CUFFT_SUCCESS);
     rc = cufftDestroy(handle);
