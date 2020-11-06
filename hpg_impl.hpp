@@ -864,11 +864,7 @@ struct HPG_EXPORT FFT<K::Cuda> final {
 
     auto handle = grid_fft_handle(exec, grid);
     auto rc =
-      CUFFT<scalar_t>::exec(
-        handle,
-        &grid(0, 0, 0, 0),
-        &grid(0, 0, 0, 0),
-        CUFFT_FORWARD);
+      CUFFT<scalar_t>::exec(handle, grid.data(), grid.data(), CUFFT_FORWARD);
     assert(rc == CUFFT_SUCCESS);
     rc = cufftDestroy(handle);
     assert(rc == CUFFT_SUCCESS);
@@ -890,8 +886,8 @@ struct HPG_EXPORT FFT<K::Cuda> final {
     auto rc =
       CUFFT<scalar_t>::exec(
         handle,
-        const_cast<K::complex<scalar_t>*>(&pre_grid(0, 0, 0, 0)),
-        &post_grid(0, 0, 0, 0),
+        const_cast<K::complex<scalar_t>*>(pre_grid.data()),
+        post_grid.data(),
         CUFFT_FORWARD);
     assert(rc == CUFFT_SUCCESS);
     rc = cufftDestroy(handle);
