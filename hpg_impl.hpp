@@ -223,6 +223,8 @@ struct GridLayout {
       K::LayoutLeft,
       K::LayoutStride>;
 
+  static constexpr std::array<int, 4> strided_order{2, 1, 0, 3};
+
   /** create Kokkos layout using given grid dimensions
    *
    * logical index order: X, Y, stokes, cube
@@ -232,8 +234,8 @@ struct GridLayout {
     if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
       return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3]);
     } else {
-      static const std::array<int, 4> order{2, 1, 0, 3};
-      return K::LayoutStride::order_dimensions(4, order.data(), dims.data());
+      return
+        K::LayoutStride::order_dimensions(4, strided_order.data(), dims.data());
     }
   }
 };
@@ -691,7 +693,10 @@ struct HPG_EXPORT FFT final {
       FFTW<scalar_t>::plan_with_nthreads(omp_get_max_threads());
 #endif // HPG_ENABLE_OPENMP
 
-    // FIXME: some test that the layout is what is being assumed here!
+    for (size_t d = 0; d < 4; ++d)
+      assert(
+        igrid.layout().dimension[d]
+        == GridLayout<Device::Serial>::strided_order[d]);
 
     // this assumes there is no padding in grid
     assert(igrid.span() ==
