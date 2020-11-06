@@ -266,18 +266,18 @@ GridderState::reset_grid() && {
 }
 
 GridderState
-GridderState::normalize() & {
+GridderState::normalize(grid_value_fp wfactor) & {
 
   GridderState result(*this);
-  result.impl->normalize();
+  result.impl->normalize(wfactor);
   return result;
 }
 
 GridderState
-GridderState::normalize() && {
+GridderState::normalize(grid_value_fp wfactor) && {
 
   GridderState result(std::move(*this));
-  result.impl->normalize();
+  result.impl->normalize(wfactor);
   return result;
 }
 

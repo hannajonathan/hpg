@@ -534,7 +534,8 @@ struct HPG_EXPORT GridNormalizer final {
     execution_space exec,
     const grid_view<grid_layout, memory_space>& grid,
     const const_weight_view<
-      typename execution_space::array_layout, memory_space>& weights) {
+      typename execution_space::array_layout, memory_space>& weights,
+    const grid_value_fp& wfactor) {
 
     K::parallel_for(
       "normalization",
@@ -546,7 +547,7 @@ struct HPG_EXPORT GridNormalizer final {
          grid.extent_int(2),
          grid.extent_int(3)}),
       KOKKOS_LAMBDA(int x, int y, int stokes, int cube) {
-        grid(x, y, stokes, cube) /= weights(stokes, cube);
+        grid(x, y, stokes, cube) /= (wfactor * weights(stokes, cube));
       });
   }
 };
@@ -943,7 +944,7 @@ struct State {
   reset_grid() = 0;
 
   virtual void
-  normalize() = 0;
+  normalize(grid_value_fp wfactor) = 0;
 
   virtual void
   apply_fft(bool in_place) = 0;
@@ -1300,11 +1301,11 @@ public:
   }
 
   void
-  normalize() override {
+  normalize(grid_value_fp wfactor) override {
     const_weight_view<typename execution_space::array_layout, memory_space>
       cweights = weights;
     Core::GridNormalizer<execution_space>
-      ::kernel(current_exec_space(), grid, cweights);
+      ::kernel(current_exec_space(), grid, cweights, wfactor);
     next_exec_space();
   }
 
