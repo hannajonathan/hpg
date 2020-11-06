@@ -42,6 +42,43 @@ option(Hpg_ENABLE_SERIAL "Enable Serial device" OFF)
 option(Hpg_ENABLE_OPENMP "Enable OpenMP device" OFF)
 option(Hpg_ENABLE_CUDA "Enable CUDA device" OFF)
 
+# get findFFTW
+#
+if(Hpg_ENABLE_SERIAL OR Hpg_ENABLE_OPENMP)
+  configure_file(downloadFindFFTW.cmake.in findFFTW-download/CMakeLists.txt)
+  execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+    RESULT_VARIABLE result
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/findFFTW-download )
+  if(result)
+    message(FATAL_ERROR "CMake step for findFFTW failed: ${result}")
+  else()
+    message("CMake step for findFFTW completed (${result}).")
+  endif()
+  execute_process(COMMAND ${CMAKE_COMMAND} --build .
+    RESULT_VARIABLE result
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/findFFTW-download )
+  if(result)
+    message(FATAL_ERROR "Build step for findFFTW failed: ${result}")
+  endif()
+
+  set(findFFTW_DIR ${CMAKE_CURRENT_BINARY_DIR}/findFFTW-src)
+
+  set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${findFFTW_DIR}")
+
+  # find FFTW
+  # TODO: might be good to choose precision according to config variable
+  set(FFTW_COMPONENTS)
+  if(Hpg_ENABLE_SERIAL)
+    list(APPEND FFTW_COMPONENTS DOUBLE_LIB)
+  endif()
+  if(Hpg_ENABLE_OPENMP)
+    list(APPEND FFTW_COMPONENTS DOUBLE_OPENMP_LIB)
+  endif()
+  find_package(FFTW REQUIRED COMPONENTS ${FFTW_COMPONENTS})
+endif()
+
+# find Kokkos
+
 find_package(Kokkos
   REQUIRED COMPONENTS kokkos kokkoscore
   OPTIONAL_COMPONENTS CUDA)
@@ -75,17 +112,23 @@ if(${num_enabled_devices} EQUAL 0)
 endif()
 kokkos_check(DEVICES ${enabled_devices})
 
+# libhpg
+#
 add_library(hpg hpg.cc)
 if(Hpg_ENABLE_SERIAL)
   target_compile_definitions(hpg PUBLIC HPG_ENABLE_SERIAL)
+  if(NOT Hpg_ENABLE_OPENMP)
+    target_link_libraries(hpg FFTW::Double)
+  endif()
 endif()
 if(Hpg_ENABLE_OPENMP)
   target_compile_definitions(hpg PUBLIC HPG_ENABLE_OPENMP)
+  target_link_libraries(hpg FFTW::DoubleOpenMP)
 endif()
 if(Hpg_ENABLE_CUDA)
   target_compile_definitions(hpg PUBLIC HPG_ENABLE_CUDA)
   target_compile_options(hpg PUBLIC --expt-relaxed-constexpr)
-  #target_link_libraries(hpg cufft)
+  target_link_libraries(hpg cufft)
 endif()
 target_link_libraries(hpg Kokkos::kokkoscore)
 target_include_directories(hpg PUBLIC
@@ -103,5 +146,7 @@ install(FILES ${HPG_INCLUDE}
 install(EXPORT HPGConfig DESTINATION share/hpg/cmake)
 export(TARGETS hpg FILE HPGConfig.cmake)
 
+# basic test application
+#
 add_executable(test test.cc)
 target_link_libraries(test hpg)
