@@ -408,21 +408,21 @@ public:
    *
    * May invoke fence() on target.
    *
-   * @param wfactor multiplicative factor applied to weights before
+   * @param wgt_factor multiplicative factor applied to weights before
    * normalization
    */
   GridderState
-  normalize(grid_value_fp wfactor = 1) &;
+  normalize(grid_value_fp wgt_factor = 1) &;
 
   /** normalize grid values by scaled weights
    *
    * May invoke fence() on target.
    *
-   * @param wfactor multiplicative factor applied to weights before
+   * @param wgt_factor multiplicative factor applied to weights before
    * normalization
    */
   GridderState
-  normalize(grid_value_fp wfactor = 1) &&;
+  normalize(grid_value_fp wgt_factor = 1) &&;
 
   /** apply FFT to grid array planes
    *
@@ -643,12 +643,12 @@ public:
    *
    * May invoke fence() on target.
    *
-   * @param wfactor multiplicative factor applied to weights before
+   * @param wgt_factor multiplicative factor applied to weights before
    * normalization
    */
   void
-  normalize(grid_value_fp wfactor = 1) {
-    state = std::move(state).normalize(wfactor);
+  normalize(grid_value_fp wgt_factor = 1) {
+    state = std::move(state).normalize(wgt_factor);
   }
 
   /** apply FFT to grid array planes
