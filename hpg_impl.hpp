@@ -85,14 +85,16 @@ struct Visibility {
 static bool hpg_impl_initialized = false;
 
 /** implementation initialization function */
-void
+bool
 initialize() {
+  bool result = true;
   K::initialize();
 #ifdef HPG_ENABLE_OPENMP
   auto rc = fftw_init_threads();
-  assert(rc != 0);
+  result = rc != 0;
 #endif
-  hpg_impl_initialized = true;
+  hpg_impl_initialized = result;
+  return result;
 }
 
 /** implementation finalization function */
@@ -614,7 +616,9 @@ struct FFTW<double> {
     K::complex<double> *out, const int *onembed,
     int ostride, int odist,
     int sign, unsigned flags) {
+
     static_assert(sizeof(*in) == 16);
+
     auto plan =
       fftw_plan_many_dft(
         rank, n, howmany,
@@ -659,7 +663,9 @@ struct FFTW<float> {
     K::complex<float> *out, const int *onembed,
     int ostride, int odist,
     int sign, unsigned flags) {
+
     static_assert(sizeof(*in) == 8);
+
     return
       {fftwf_plan_many_dft(
         rank, n, howmany,
@@ -730,10 +736,11 @@ struct HPG_EXPORT FFT final {
         FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     return result;
   }
+
   /** in-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-  static void
+  static std::optional<Error>
   in_place_kernel(
     execution_space exec,
     FFTSign sign,
@@ -744,17 +751,23 @@ struct HPG_EXPORT FFT final {
 
     auto handles = grid_fft_handle(exec, sign, grid, grid);
     auto& [h0, h1] = handles;
-    for (int sto = 0; sto < grid.extent_int(2); ++sto) {
-      FFTW<scalar_t>::exec(h0, &grid(0, 0, sto, 0), &grid(0, 0, sto, 0));
-      std::swap(h0, h1);
+    std::optional<Error> result;
+    if (h0 == nullptr || h1 == nullptr)
+      result = Error("fftw in_place_kernel() failed");
+    if (!result) {
+      for (int sto = 0; sto < grid.extent_int(2); ++sto) {
+        FFTW<scalar_t>::exec(h0, &grid(0, 0, sto, 0), &grid(0, 0, sto, 0));
+        std::swap(h0, h1);
+      }
+      FFTW<scalar_t>::destroy_plan(handles);
     }
-    FFTW<scalar_t>::destroy_plan(handles);
+    return result;
   }
 
   /** out-of-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-  static void
+  static std::optional<Error>
   out_of_place_kernel(
     execution_space exec,
     FFTSign sign,
@@ -766,18 +779,31 @@ struct HPG_EXPORT FFT final {
 
     auto handles = grid_fft_handle(exec, sign, pre_grid, post_grid);
     auto& [h0, h1] = handles;
-    for (int sto = 0; sto < pre_grid.extent_int(2); ++sto) {
-      FFTW<scalar_t>::exec(
-        h0,
-        const_cast<K::complex<scalar_t>*>(&pre_grid(0, 0, sto, 0)),
-        &post_grid(0, 0, sto, 0));
-      std::swap(h0, h1);
+    std::optional<Error> result;
+    if (h0 == nullptr || h1 == nullptr)
+      result = Error("fftw in_place_kernel() failed");
+    if (!result) {
+      for (int sto = 0; sto < pre_grid.extent_int(2); ++sto) {
+        FFTW<scalar_t>::exec(
+          h0,
+          const_cast<K::complex<scalar_t>*>(&pre_grid(0, 0, sto, 0)),
+          &post_grid(0, 0, sto, 0));
+        std::swap(h0, h1);
+      }
+      FFTW<scalar_t>::destroy_plan(handles);
     }
-    FFTW<scalar_t>::destroy_plan(handles);
+    return result;
   }
 };
 
 #ifdef HPG_ENABLE_CUDA
+
+static Error
+cufft_error(const std::string& prefix, cufftResult rc) {
+  std::ostringstream oss(prefix);
+  oss << ": cufftResult code " << rc;
+  return Error(oss.str());
+}
 
 template <typename T>
 struct CUFFT {
@@ -834,7 +860,7 @@ template <>
 struct HPG_EXPORT FFT<K::Cuda> final {
 
   template <typename G>
-  static cufftHandle
+  static std::pair<cufftResult_t, cufftHandle>
   grid_fft_handle(K::Cuda exec, G& grid) {
 
     using scalar_t = typename G::value_type::value_type;
@@ -851,16 +877,15 @@ struct HPG_EXPORT FFT<K::Cuda> final {
         NULL, 1, 1,
         CUFFT<scalar_t>::type,
         grid.extent_int(2) * grid.extent_int(3));
-    assert(rc == CUFFT_SUCCESS);
-    rc = cufftSetStream(result, exec.cuda_stream());
-    assert(rc == CUFFT_SUCCESS);
-    return result;
+    if (rc == CUFFT_SUCCESS)
+      rc = cufftSetStream(result, exec.cuda_stream());
+    return {rc, result};
   }
 
   /** in-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-  static void
+  static std::optional<Error>
   in_place_kernel(
     K::Cuda exec,
     FFTSign sign,
@@ -869,18 +894,22 @@ struct HPG_EXPORT FFT<K::Cuda> final {
     using scalar_t =
       typename grid_view<grid_layout, memory_space>::value_type::value_type;
 
-    auto handle = grid_fft_handle(exec, grid);
-    auto rc =
-      CUFFT<scalar_t>::exec(handle, sign, grid.data(), grid.data());
-    assert(rc == CUFFT_SUCCESS);
-    rc = cufftDestroy(handle);
-    assert(rc == CUFFT_SUCCESS);
+    auto [rc, handle] = grid_fft_handle(exec, grid);
+    if (rc == CUFFT_SUCCESS) {
+      rc = CUFFT<scalar_t>::exec(handle, sign, grid.data(), grid.data());
+      auto rc0 = cufftDestroy(handle);
+      assert(rc0 == CUFFT_SUCCESS);
+    }
+    std::optional<Error> result;
+    if (rc != CUFFT_SUCCESS)
+      result = cufft_error("Cuda in_place_kernel() failed: ", rc);
+    return result;
   }
 
   /** out-of-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-  static void
+  static std::optional<Error>
   out_of_place_kernel(
     K::Cuda exec,
     FFTSign sign,
@@ -890,16 +919,21 @@ struct HPG_EXPORT FFT<K::Cuda> final {
     using scalar_t =
       typename grid_view<grid_layout, memory_space>::value_type::value_type;
 
-    auto handle = grid_fft_handle(exec, post_grid);
-    auto rc =
-      CUFFT<scalar_t>::exec(
-        handle,
-        sign,
-        const_cast<K::complex<scalar_t>*>(pre_grid.data()),
-        post_grid.data());
-    assert(rc == CUFFT_SUCCESS);
-    rc = cufftDestroy(handle);
-    assert(rc == CUFFT_SUCCESS);
+    auto [rc, handle] = grid_fft_handle(exec, post_grid);
+    if (rc == CUFFT_SUCCESS) {
+      rc =
+        CUFFT<scalar_t>::exec(
+          handle,
+          sign,
+          const_cast<K::complex<scalar_t>*>(pre_grid.data()),
+          post_grid.data());
+      auto rc0 = cufftDestroy(handle);
+      assert(rc0 == CUFFT_SUCCESS);
+    }
+    std::optional<Error> result;
+    if (rc != CUFFT_SUCCESS)
+      result = cufft_error("cuda out_of_place_kernel() failed: ", rc);
+    return result;
   }
 };
 #endif // HPG_ENABLE_CUDA
@@ -956,7 +990,7 @@ struct State {
   virtual void
   normalize(grid_value_fp wfactor) = 0;
 
-  virtual void
+  virtual std::optional<Error>
   apply_fft(FFTSign sign, bool in_place) = 0;
 
   virtual ~State() {}
@@ -1325,21 +1359,25 @@ public:
       ::kernel(next_exec_space(StreamPhase::COMPUTE), grid, cweights, wfactor);
   }
 
-  void
+  std::optional<Error>
   apply_fft(FFTSign sign, bool in_place) override {
+    std::optional<Error> err;
     if (in_place) {
-      Core::FFT<execution_space>
+      err =
+        Core::FFT<execution_space>
         ::in_place_kernel(next_exec_space(StreamPhase::COMPUTE), sign, grid);
     } else {
       const_grid_view<typename GridLayout<D>::layout, memory_space> pre_grid
         = grid;
       new_grid(false, false);
-      Core::FFT<execution_space>::out_of_place_kernel(
+      err =
+        Core::FFT<execution_space>::out_of_place_kernel(
           next_exec_space(StreamPhase::COMPUTE),
           sign,
           pre_grid,
           grid);
     }
+    return err;
   }
 
 private:

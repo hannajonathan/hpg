@@ -197,7 +197,8 @@ run_tests(
       auto sum = sum_grid(grid.get());
       std::cout << "sum " << sum << std::endl;
     }
-    g0.apply_fft();
+    auto err = g0.apply_fft();
+    assert(!err);
     std::cout << "fft applied" << std::endl;
     g0.reset_grid();
     std::cout << "grid reset" << std::endl;
@@ -237,7 +238,8 @@ dump_grids(
     phases,
     coordinates);
   g0.normalize();
-  g0.apply_fft();
+  auto err = g0.apply_fft();
+  assert(!err);
   auto gval = g0.grid_values();
   for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
     for (unsigned sto = 0; sto < grid_size[2]; ++sto) {

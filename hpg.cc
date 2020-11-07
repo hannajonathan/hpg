@@ -116,22 +116,22 @@ GridderState::operator=(GridderState&& rhs) {
 }
 
 Device
-GridderState::device() const {
+GridderState::device() const noexcept {
   return impl->device;
 }
 
 unsigned
-GridderState::max_async_tasks() const {
+GridderState::max_async_tasks() const noexcept {
   return impl->max_active_tasks - 1;
 }
 
 const std::array<unsigned, 4>&
-GridderState::grid_size() const {
+GridderState::grid_size() const noexcept {
   return impl->grid_size;
 }
 
 const std::array<grid_scale_fp, 2>&
-GridderState::grid_scale() const {
+GridderState::grid_scale() const noexcept {
   return impl->grid_scale;
 }
 
@@ -281,24 +281,24 @@ GridderState::normalize(grid_value_fp wfactor) && {
   return result;
 }
 
-GridderState
+std::tuple<GridderState, std::optional<Error>>
 GridderState::apply_fft(FFTSign sign, bool in_place) & {
 
   GridderState result(*this);
-  result.impl->apply_fft(sign, in_place);
-  return result;
+  auto err = result.impl->apply_fft(sign, in_place);
+  return {std::move(result), std::move(err)};
 }
 
-GridderState
+std::tuple<GridderState, std::optional<Error>>
 GridderState::apply_fft(FFTSign sign, bool in_place) && {
 
   GridderState result(std::move(*this));
-  result.impl->apply_fft(sign, in_place);
-  return result;
+  auto err = result.impl->apply_fft(sign, in_place);
+  return {std::move(result), std::move(err)};
 }
 
 void
-GridderState::swap(GridderState& other) {
+GridderState::swap(GridderState& other) noexcept {
   std::swap(impl, other.impl);
 }
 
@@ -316,9 +316,9 @@ Gridder::operator=(Gridder&& rhs) {
   return *this;
 }
 
-void
+bool
 hpg::initialize() {
-  Impl::initialize();
+  return Impl::initialize();
 }
 
 void

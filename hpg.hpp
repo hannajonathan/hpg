@@ -2,6 +2,8 @@
 
 #include <complex>
 #include <memory>
+#include <optional>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -108,12 +110,29 @@ public:
   virtual ~GridWeightArray() {}
 };
 
+class HPG_EXPORT Error {
+private:
+
+  std::string m_msg;
+
+public:
+  Error(const std::string& msg)
+    : m_msg(msg) {}
+
+  const std::string&
+  message() const {
+    return m_msg;
+  }
+};
+
 struct HPG_EXPORT Gridder;
 
-enum class FFTSign {
+enum class HPG_EXPORT FFTSign {
   POSITIVE,
   NEGATIVE
 };
+
+constexpr FFTSign fft_sign_dflt = FFTSign::POSITIVE;
 
 /** gridder state
  *
@@ -204,23 +223,23 @@ public:
 
   /** device */
   Device
-  device() const;
+  device() const noexcept;
 
   /** maximum active tasks
    *
    * This value may differ from the value provided to the constructor, depending
    * on device limitations */
   unsigned
-  max_async_tasks() const;
+  max_async_tasks() const noexcept;
 
   /** grid size */
   const std::array<unsigned, 4>&
-  grid_size() const;
+  grid_size() const noexcept;
 
   /** grid scale
    */
   const std::array<grid_scale_fp, 2>&
-  grid_scale() const;
+  grid_scale() const noexcept;
 
   /** set convolution function
    *
@@ -412,8 +431,8 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-  GridderState
-  apply_fft(FFTSign sign = FFTSign::POSITIVE, bool in_place = true) &;
+  std::tuple<GridderState, std::optional<Error>>
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &;
 
   /** apply FFT to grid array planes
    *
@@ -422,14 +441,14 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-  GridderState
-  apply_fft(FFTSign sign = FFTSign::POSITIVE, bool in_place = true) &&;
+  std::tuple<GridderState, std::optional<Error>>
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
 
 protected:
   friend class Gridder;
 
   void
-  swap(GridderState& other);
+  swap(GridderState& other) noexcept;
 };
 
 /** Gridder class
@@ -498,7 +517,7 @@ public:
 
   /** device */
   Device
-  device() const {
+  device() const noexcept {
     return state.device();
   }
 
@@ -507,19 +526,19 @@ public:
    * This value may differ from the value provided to the constructor, depending
    * on device limitations */
   unsigned
-  max_async_tasks() const {
+  max_async_tasks() const noexcept {
     return state.max_async_tasks();
   }
 
   /** grid size */
   const std::array<unsigned, 4>&
-  grid_size() const {
+  grid_size() const noexcept {
     return state.grid_size();
   }
 
   /** grid scale */
   const std::array<grid_scale_fp, 2>&
-  grid_scale() const {
+  grid_scale() const noexcept {
     return state.grid_scale();
   }
 
@@ -639,9 +658,12 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-  void
-  apply_fft(FFTSign sign = FFTSign::POSITIVE, bool in_place = true) {
-    state = std::move(state).apply_fft(sign, in_place);
+  std::optional<Error>
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) {
+    std::optional<Error> result;
+    std::tie(const_cast<Gridder*>(this)->state, result) =
+      std::move(const_cast<Gridder*>(this)->state).apply_fft(sign, in_place);
+    return result;
   }
 };
 
@@ -660,8 +682,10 @@ public:
  *       hpg::finalize();
  *     }
  * Another approach involves the use of a ScopeGuard instance.
+ *
+ * @return true, if and only if initialization succeeded
  */
-void initialize();
+bool initialize();
 
 /** global finalization of hpg
  *
