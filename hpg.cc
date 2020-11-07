@@ -282,18 +282,18 @@ GridderState::normalize(grid_value_fp wfactor) && {
 }
 
 GridderState
-GridderState::apply_fft(bool in_place) & {
+GridderState::apply_fft(FFTSign sign, bool in_place) & {
 
   GridderState result(*this);
-  result.impl->apply_fft(in_place);
+  result.impl->apply_fft(sign, in_place);
   return result;
 }
 
 GridderState
-GridderState::apply_fft(bool in_place) && {
+GridderState::apply_fft(FFTSign sign, bool in_place) && {
 
   GridderState result(std::move(*this));
-  result.impl->apply_fft(in_place);
+  result.impl->apply_fft(sign, in_place);
   return result;
 }
 

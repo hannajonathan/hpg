@@ -687,7 +687,7 @@ struct HPG_EXPORT FFT final {
 
   template <typename IG, typename OG>
   static auto
-  grid_fft_handle(execution_space exec, IG& igrid, OG& ogrid) {
+  grid_fft_handle(execution_space exec, FFTSign sign, IG& igrid, OG& ogrid) {
 
     using scalar_t = typename OG::value_type::value_type;
 
@@ -726,7 +726,8 @@ struct HPG_EXPORT FFT final {
         const_cast<K::complex<scalar_t>*>(&igrid(0, 0, 0, 0)),
         NULL, stride, dist,
         &ogrid(0, 0, 0, 0), NULL, stride, dist,
-        FFTW_FORWARD, FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+        ((sign == FFTSign::NEGATIVE) ? FFTW_FORWARD : FFTW_BACKWARD),
+        FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     return result;
   }
   /** in-place FFT kernel
@@ -735,12 +736,13 @@ struct HPG_EXPORT FFT final {
   static void
   in_place_kernel(
     execution_space exec,
+    FFTSign sign,
     const grid_view<grid_layout, memory_space>& grid) {
 
     using scalar_t =
       typename grid_view<grid_layout, memory_space>::value_type::value_type;
 
-    auto handles = grid_fft_handle(exec, grid, grid);
+    auto handles = grid_fft_handle(exec, sign, grid, grid);
     auto& [h0, h1] = handles;
     for (int sto = 0; sto < grid.extent_int(2); ++sto) {
       FFTW<scalar_t>::exec(h0, &grid(0, 0, sto, 0), &grid(0, 0, sto, 0));
@@ -755,13 +757,14 @@ struct HPG_EXPORT FFT final {
   static void
   out_of_place_kernel(
     execution_space exec,
+    FFTSign sign,
     const const_grid_view<grid_layout, memory_space>& pre_grid,
     const grid_view<grid_layout, memory_space>& post_grid) {
 
     using scalar_t =
       typename grid_view<grid_layout, memory_space>::value_type::value_type;
 
-    auto handles = grid_fft_handle(exec, pre_grid, post_grid);
+    auto handles = grid_fft_handle(exec, sign, pre_grid, post_grid);
     auto& [h0, h1] = handles;
     for (int sto = 0; sto < pre_grid.extent_int(2); ++sto) {
       FFTW<scalar_t>::exec(
@@ -794,15 +797,16 @@ struct CUFFT<double> {
   static cufftResult
   exec(
     cufftHandle plan,
+    FFTSign sign,
     K::complex<double>* idata,
-    K::complex<double>* odata,
-    int direction) {
+    K::complex<double>* odata) {
+
     return
       cufftExecZ2Z(
         plan,
         reinterpret_cast<cufftDoubleComplex*>(idata),
         reinterpret_cast<cufftDoubleComplex*>(odata),
-        direction);
+        ((sign == FFTSign::NEGATIVE) ? CUFFT_FORWARD : CUFFT_INVERSE));
   }
 };
 
@@ -814,15 +818,15 @@ struct CUFFT<float> {
   static cufftResult
   exec(
     cufftHandle plan,
+    FFTSign sign,
     K::complex<float>* idata,
-    K::complex<float>* odata,
-    int direction) {
+    K::complex<float>* odata) {
     return
       cufftExecC2C(
         plan,
         reinterpret_cast<cufftComplex*>(idata),
         reinterpret_cast<cufftComplex*>(odata),
-        direction);
+        ((sign == FFTSign::NEGATIVE) ? CUFFT_FORWARD : CUFFT_INVERSE));
   }
 };
 
@@ -859,6 +863,7 @@ struct HPG_EXPORT FFT<K::Cuda> final {
   static void
   in_place_kernel(
     K::Cuda exec,
+    FFTSign sign,
     const grid_view<grid_layout, memory_space>& grid) {
 
     using scalar_t =
@@ -866,7 +871,7 @@ struct HPG_EXPORT FFT<K::Cuda> final {
 
     auto handle = grid_fft_handle(exec, grid);
     auto rc =
-      CUFFT<scalar_t>::exec(handle, grid.data(), grid.data(), CUFFT_FORWARD);
+      CUFFT<scalar_t>::exec(handle, sign, grid.data(), grid.data());
     assert(rc == CUFFT_SUCCESS);
     rc = cufftDestroy(handle);
     assert(rc == CUFFT_SUCCESS);
@@ -878,6 +883,7 @@ struct HPG_EXPORT FFT<K::Cuda> final {
   static void
   out_of_place_kernel(
     K::Cuda exec,
+    FFTSign sign,
     const const_grid_view<grid_layout, memory_space>& pre_grid,
     const grid_view<grid_layout, memory_space>& post_grid) {
 
@@ -888,9 +894,9 @@ struct HPG_EXPORT FFT<K::Cuda> final {
     auto rc =
       CUFFT<scalar_t>::exec(
         handle,
+        sign,
         const_cast<K::complex<scalar_t>*>(pre_grid.data()),
-        post_grid.data(),
-        CUFFT_FORWARD);
+        post_grid.data());
     assert(rc == CUFFT_SUCCESS);
     rc = cufftDestroy(handle);
     assert(rc == CUFFT_SUCCESS);
@@ -951,7 +957,7 @@ struct State {
   normalize(grid_value_fp wfactor) = 0;
 
   virtual void
-  apply_fft(bool in_place) = 0;
+  apply_fft(FFTSign sign, bool in_place) = 0;
 
   virtual ~State() {}
 };
@@ -1320,16 +1326,17 @@ public:
   }
 
   void
-  apply_fft(bool in_place) override {
+  apply_fft(FFTSign sign, bool in_place) override {
     if (in_place) {
       Core::FFT<execution_space>
-        ::in_place_kernel(next_exec_space(StreamPhase::COMPUTE), grid);
+        ::in_place_kernel(next_exec_space(StreamPhase::COMPUTE), sign, grid);
     } else {
       const_grid_view<typename GridLayout<D>::layout, memory_space> pre_grid
         = grid;
       new_grid(false, false);
       Core::FFT<execution_space>::out_of_place_kernel(
           next_exec_space(StreamPhase::COMPUTE),
+          sign,
           pre_grid,
           grid);
     }

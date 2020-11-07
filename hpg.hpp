@@ -110,6 +110,11 @@ public:
 
 struct HPG_EXPORT Gridder;
 
+enum class FFTSign {
+  POSITIVE,
+  NEGATIVE
+};
+
 /** gridder state
  *
  * A container for the entire state needed to do gridding as a value, including
@@ -404,19 +409,21 @@ public:
    *
    * May invoke fence() on target.
    *
+   * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
   GridderState
-  apply_fft(bool in_place = true) &;
+  apply_fft(FFTSign sign = FFTSign::POSITIVE, bool in_place = true) &;
 
   /** apply FFT to grid array planes
    *
    * May invoke fence() on target.
    *
+   * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
   GridderState
-  apply_fft(bool in_place = true) &&;
+  apply_fft(FFTSign sign = FFTSign::POSITIVE, bool in_place = true) &&;
 
 protected:
   friend class Gridder;
@@ -629,11 +636,12 @@ public:
    *
    * May invoke fence() on target.
    *
+   * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
   void
-  apply_fft(bool in_place = true) {
-    state = std::move(state).apply_fft(in_place);
+  apply_fft(FFTSign sign = FFTSign::POSITIVE, bool in_place = true) {
+    state = std::move(state).apply_fft(sign, in_place);
   }
 };
 
