@@ -705,19 +705,12 @@ struct HPG_EXPORT FFT final {
 #endif // HPG_ENABLE_OPENMP
 
     {
-      // FIXME: this fails when strides aren't unique: dims (5, 5, 1, 3) =>
-      // strides (5, 1, 1, 25)
-      // std::set<std::tuple<size_t, int>> order;
-      // for (size_t d = 0; d < 4; ++d)
-      //   order.emplace(igrid.layout().stride[d], d);
-      // assert(
-      //   std::equal(
-      //     order.begin(),
-      //     order.end(),
-      //     strided_grid_layout_order.begin(),
-      //     [](const auto& s_d, const auto& i) {
-      //       return std::get<1>(s_d) == i;
-      //     }));
+      size_t prev_stride = 0;
+      for (size_t d = 0; d < 4; ++d) {
+        assert(
+          prev_stride <= igrid.layout().stride[strided_grid_layout_order[d]]);
+        prev_stride = igrid.layout().stride[strided_grid_layout_order[d]];
+      }
     }
     // this assumes there is no padding in grid
     assert(igrid.span() ==
