@@ -444,6 +444,20 @@ public:
   std::tuple<GridderState, std::optional<Error>>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
 
+  /** rotate grid planes by half
+   *
+   * Primarily for use after application of FFT. May invoke fence() on target.
+   */
+  GridderState
+  rotate_grid() &;
+
+  /** rotate grid planes by half
+   *
+   * Primarily for use after application of FFT. May invoke fence() on target.
+   */
+  GridderState
+  rotate_grid() &&;
+
 protected:
   friend class Gridder;
 
@@ -664,6 +678,15 @@ public:
     std::tie(const_cast<Gridder*>(this)->state, result) =
       std::move(const_cast<Gridder*>(this)->state).apply_fft(sign, in_place);
     return result;
+  }
+
+  /** rotate grid planes by half
+   *
+   * Primarily for use after application of FFT. May invoke fence() on target.
+   */
+  void
+  rotate_grid() {
+    state = std::move(state).rotate_grid();
   }
 };
 

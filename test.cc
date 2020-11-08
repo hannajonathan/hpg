@@ -240,15 +240,34 @@ dump_grids(
   g0.normalize();
   auto err = g0.apply_fft();
   assert(!err);
-  auto gval = g0.grid_values();
-  for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
-    for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
-      std::cout << "cube " << cube << ", sto " << sto << std::endl;
-      for (unsigned y = 0; y < grid_size[1]; ++y) {
-        std::cout << "  " << y << ": ";
-        for (unsigned x = 0; x < grid_size[0]; ++x)
-          std::cout << gval->operator()(x, y, sto, cube) << " ";
-        std::cout << std::endl;
+  {
+    std::cout << "after fft" << std::endl;
+    auto gval = g0.grid_values();
+    for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
+      for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
+        std::cout << "cube " << cube << ", sto " << sto << std::endl;
+        for (unsigned y = 0; y < grid_size[1]; ++y) {
+          std::cout << "  " << y << ": ";
+          for (unsigned x = 0; x < grid_size[0]; ++x)
+            std::cout << gval->operator()(x, y, sto, cube) << " ";
+          std::cout << std::endl;
+        }
+      }
+    }
+  }
+  g0.rotate_grid();
+  {
+    std::cout << "after rotation" << std::endl;
+    auto gval = g0.grid_values();
+    for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
+      for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
+        std::cout << "cube " << cube << ", sto " << sto << std::endl;
+        for (unsigned y = 0; y < grid_size[1]; ++y) {
+          std::cout << "  " << y << ": ";
+          for (unsigned x = 0; x < grid_size[0]; ++x)
+            std::cout << gval->operator()(x, y, sto, cube) << " ";
+          std::cout << std::endl;
+        }
       }
     }
   }
@@ -301,7 +320,7 @@ main(int argc, char* argv[]) {
 #endif // HPG_ENABLE_CUDA
   }
   {
-    const std::array<unsigned, 4> grid_size{5, 5, 2, 3};
+    const std::array<unsigned, 4> grid_size{5, 6, 2, 3};
     const std::array<unsigned, 4> cf_size{3, 3, 1, 1};
     const std::array<float, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);

@@ -297,6 +297,22 @@ GridderState::apply_fft(FFTSign sign, bool in_place) && {
   return {std::move(result), std::move(err)};
 }
 
+GridderState
+GridderState::rotate_grid() & {
+
+  GridderState result(*this);
+  result.impl->rotate_grid();
+  return result;
+}
+
+GridderState
+GridderState::rotate_grid() && {
+
+  GridderState result(std::move(*this));
+  result.impl->rotate_grid();
+  return result;
+}
+
 void
 GridderState::swap(GridderState& other) noexcept {
   std::swap(impl, other.impl);

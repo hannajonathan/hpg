@@ -931,6 +931,162 @@ struct HPG_EXPORT FFT<K::Cuda> final {
 };
 #endif // HPG_ENABLE_CUDA
 
+template <typename execution_space>
+KOKKOS_FORCEINLINE_FUNCTION void
+swap_gv(gv_t& a, gv_t&b) {
+  std::swap(a, b);
+}
+
+#ifdef HPG_ENABLE_CUDA
+template <>
+KOKKOS_FORCEINLINE_FUNCTION void
+swap_gv<K::Cuda>(gv_t& a, gv_t&b) {
+  gv_t tmp;
+  tmp = a;
+  a = b;
+  b = tmp;
+}
+#endif // HPG_ENABLE_CUDA
+
+template <typename execution_space>
+struct HPG_EXPORT GridRotator final {
+
+  template <typename grid_layout, typename memory_space>
+  static void
+  kernel(
+    execution_space exec,
+    const grid_view<grid_layout, memory_space>& grid) {
+
+    using scalar_t =
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+
+    using member_type = typename K::TeamPolicy<execution_space>::member_type;
+
+    int n_x = grid.extent_int(0);
+    int n_y = grid.extent_int(1);
+    int n_sto = grid.extent_int(2);
+    int n_cube = grid.extent_int(3);
+
+    int mid_x = n_x / 2;
+    int mid_y = n_y / 2;
+
+    if (n_x % 2 == 0 && n_y % 2 == 0) {
+      // simpler (faster?) algorithm when both grid side lengths are even
+
+      K::parallel_for(
+        K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
+        KOKKOS_LAMBDA(const member_type& team_member) {
+          auto gplane =
+            K::subview(
+              grid,
+              K::ALL,
+              K::ALL,
+              team_member.league_rank() % n_sto,
+              team_member.league_rank() / n_sto);
+          K::parallel_for(
+            K::TeamVectorRange(team_member, n_x),
+            [=](int x) {
+              for (int y = 0; y < n_y; ++y) {
+                swap_gv<execution_space>(
+                  gplane(x, y),
+                  gplane(x + mid_x, y + mid_y));
+                swap_gv<execution_space>(
+                  gplane(x + mid_x, y),
+                  gplane(x, y + mid_y));
+              }
+            });
+        });
+    } else if (n_x == n_y) {
+      // single-pass algorithm for odd-length, square grid
+
+      K::parallel_for(
+        K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
+        KOKKOS_LAMBDA(const member_type& team_member) {
+          auto gplane =
+            K::subview(
+              grid,
+              K::ALL,
+              K::ALL,
+              team_member.league_rank() % n_sto,
+              team_member.league_rank() / n_sto);
+          K::parallel_for(
+            K::TeamVectorRange(team_member, n_x),
+            [=](int x) {
+              gv_t tmp;
+              int y = 0;
+              for (int i = 0; i <= n_y; ++i) {
+                swap_gv<execution_space>(tmp, gplane(x, y));
+                x += mid_x;
+                if (x >= n_x)
+                  x -= n_x;
+                y += mid_y;
+                if (y >= n_y)
+                  y -= n_y;
+              }
+            });
+        });
+    } else {
+      // two-pass algorithm for the general case
+
+      K::parallel_for(
+        K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
+        KOKKOS_LAMBDA(const member_type& team_member) {
+          auto gplane =
+            K::subview(
+              grid,
+              K::ALL,
+              K::ALL,
+              team_member.league_rank() % n_sto,
+              team_member.league_rank() / n_sto);
+
+          // first pass, parallel over x
+          if (n_y % 2 == 1)
+            K::parallel_for(
+              K::TeamThreadRange(team_member, n_x),
+              [=](int x) {
+                gv_t tmp;
+                int y = 0;
+                for (int i = 0; i <= n_y; ++i) {
+                  swap_gv<execution_space>(tmp, gplane(x, y));
+                  y += mid_y;
+                  if (y >= n_y)
+                    y -= n_y;
+                }
+              });
+          else
+            K::parallel_for(
+              K::TeamThreadRange(team_member, n_x),
+              [=](int x) {
+                for (int y = 0; y < mid_y; ++y)
+                  swap_gv<execution_space>(gplane(x, y), gplane(x, y + mid_y));
+              });
+
+          // second pass, parallel over y
+          if (n_x % 2 == 1)
+            K::parallel_for(
+              K::TeamThreadRange(team_member, n_y),
+              [=](int y) {
+                gv_t tmp;
+                int x = 0;
+                for (int i = 0; i <= n_x; ++i) {
+                  swap_gv<execution_space>(tmp, gplane(x, y));
+                  x += mid_x;
+                  if (x >= n_x)
+                    x -= n_x;
+                }
+              });
+          else
+            K::parallel_for(
+              K::TeamThreadRange(team_member, n_y),
+              [=](int y) {
+                for (int x = 0; x < mid_x; ++x)
+                  swap_gv<execution_space>(gplane(x, y), gplane(x + mid_x, y));
+              });
+        });
+    }
+  }
+};
+
 } // end namespace Core
 
 /** abstract base class for state implementations */
@@ -985,6 +1141,9 @@ struct State {
 
   virtual std::optional<Error>
   apply_fft(FFTSign sign, bool in_place) = 0;
+
+  virtual void
+  rotate_grid() = 0;
 
   virtual ~State() {}
 };
@@ -1371,6 +1530,13 @@ public:
           grid);
     }
     return err;
+  }
+
+  void
+  rotate_grid() override {
+    Core::GridRotator<execution_space>::kernel(
+      next_exec_space(StreamPhase::COMPUTE),
+      grid);
   }
 
 private:
