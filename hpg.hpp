@@ -145,12 +145,12 @@ constexpr FFTSign fft_sign_dflt = FFTSign::POSITIVE;
  * a maximum number of concurrent, asynchronous tasks to run on the requested
  * device. Note that the actual number of concurrent tasks that the new instance
  * supports may be less than the number requested in the constructor. In
- * particular, note that several devices support no asynchronous
- * execution. Class methods that submit work to a device, that is, for either
- * data movement or computation, may block when the number of asynchronously
- * running tasks is at its limit, until one of those running tasks
- * completes. Otherwise, the methods that create device tasks will return as
- * soon the task has been submitted to the device.
+ * particular, several devices support no asynchronous execution. Class methods
+ * that submit work to a device, that is, for either data movement or
+ * computation, may block when the number of asynchronously running tasks is at
+ * its limit, until one of those running tasks completes. Otherwise, the methods
+ * that create device tasks will return as soon the task has been submitted to
+ * the device.
  *
  * In general, using a GridderState method on an instance creates a new (value)
  * copy of the target. For example,
@@ -190,6 +190,11 @@ public:
    * may be less than requested)
    * @param grid_size, in logical axis order: X, Y, stokes, cube
    * @param grid_scale, in X, Y order
+   *
+   * Be aware that the maximum number of asynchronous tasks in a compute phase
+   * will always be one less than the total, effective maximum number of
+   * asynchronous tasks. (Active asynchronous tasks exist in one of two phases,
+   * copy and compute, in alternating sequence.)
    *
    * @sa Gridder::Gridder()
    */
@@ -499,6 +504,11 @@ public:
    * may be less than requested)
    * @param grid_size, in logical axis order: X, Y, stokes, cube
    * @param grid_scale, in X, Y order
+   *
+   * Be aware that the maximum number of asynchronous tasks in a compute phase
+   * will always be one less than the total, effective maximum number of
+   * asynchronous tasks. (Active asynchronous tasks exist in one of two phases,
+   * copy and compute, in alternating sequence.)
    */
   Gridder(
     Device device,
