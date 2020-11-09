@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <variant>
 #include <vector>
 
 #include "hpg_export.h"
@@ -436,7 +437,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-  std::tuple<GridderState, std::optional<Error>>
+  std::variant<Error, GridderState>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &;
 
   /** apply FFT to grid array planes

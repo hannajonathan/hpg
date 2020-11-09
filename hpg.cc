@@ -281,12 +281,15 @@ GridderState::normalize(grid_value_fp wfactor) && {
   return result;
 }
 
-std::tuple<GridderState, std::optional<Error>>
+std::variant<Error, GridderState>
 GridderState::apply_fft(FFTSign sign, bool in_place) & {
 
   GridderState result(*this);
   auto err = result.impl->apply_fft(sign, in_place);
-  return {std::move(result), std::move(err)};
+  if (err)
+    return std::move(err.value());
+  else
+    return std::move(result);
 }
 
 std::tuple<GridderState, std::optional<Error>>
