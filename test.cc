@@ -150,7 +150,7 @@ run_tests(
 
   {
     std::cout << "GridderState " << dev_name << std::endl;
-    auto st0 = hpg::GridderState(D, 4, grid_size, grid_scale);
+    auto st0 = hpg::GridderState(D, 2, grid_size, grid_scale);
     auto st1 = st0.fence();
     auto st2 = std::move(st0).fence();
     auto st3 = std::move(st2).set_convolution_function(host_dev, cf);
@@ -165,7 +165,7 @@ run_tests(
   }
   {
     std::cout << "Gridder " << dev_name << std::endl;
-    auto g0 = hpg::Gridder(D, 0, grid_size, grid_scale);
+    auto g0 = hpg::Gridder(D, 2, grid_size, grid_scale);
     std::cout << "constructed" << std::endl;
     g0.set_convolution_function(host_dev, cf);
     std::cout << "cf set" << std::endl;
@@ -226,7 +226,7 @@ dump_grids(
   std::vector<hpg::vis_phase_fp>& phases,
   std::vector<hpg::vis_uvw_t>& coordinates) {
 
-  auto g0 = hpg::Gridder(D, 0, grid_size, grid_scale);
+  auto g0 = hpg::Gridder(D, 2, grid_size, grid_scale);
   g0.set_convolution_function(host_dev, cf);
   g0.grid_visibilities(
     host_dev,
