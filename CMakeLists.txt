@@ -150,3 +150,11 @@ export(TARGETS hpg FILE HPGConfig.cmake)
 #
 add_executable(test test.cc)
 target_link_libraries(test hpg)
+
+# documentation
+#
+find_package(Doxygen)
+doxygen_add_docs(
+  doc
+  ${PROJECT_SOURCE_DIR}
+  COMMENT "Generate documentation")
