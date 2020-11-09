@@ -974,6 +974,7 @@ struct HPG_EXPORT GridRotator final {
       // simpler (faster?) algorithm when both grid side lengths are even
 
       K::parallel_for(
+        "grid_rotation_ee",
         K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto gplane =
@@ -1000,6 +1001,7 @@ struct HPG_EXPORT GridRotator final {
       // single-pass algorithm for odd-length, square grid
 
       K::parallel_for(
+        "grid_rotation_oo",
         K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto gplane =
@@ -1029,6 +1031,7 @@ struct HPG_EXPORT GridRotator final {
       // two-pass algorithm for the general case
 
       K::parallel_for(
+        "grid_rotation_gen",
         K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto gplane =
@@ -1217,6 +1220,7 @@ init_cf_host(CFH& cf_h, const CFArray& cf) {
     ::accessible);
 
   K::parallel_for(
+    "cf_init",
     K::MDRangePolicy<K::Rank<4>, typename DeviceT<D>::kokkos_device>(
       {0, 0, 0, 0},
       {static_cast<int>(cf.extent(0)),
@@ -1250,6 +1254,7 @@ init_vis(
     K::HostSpace>
     ::accessible);
   K::parallel_for(
+    "vis_init",
     K::RangePolicy<typename DeviceT<D>::kokkos_device>(
       0,
       static_cast<int>(visibilities.size())),
