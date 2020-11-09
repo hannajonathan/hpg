@@ -1293,7 +1293,6 @@ public:
   std::vector<execution_space> exec_spaces;
   mutable std::deque<int> exec_space_indexes;
   mutable StreamPhase current;
-  mutable unsigned num_active_compute_tasks;
 
   StateT(
     unsigned max_active_tasks,
@@ -1477,7 +1476,6 @@ public:
       st->exec_space_indexes.push_back(st->exec_space_indexes.front());
       st->exec_space_indexes.pop_front();
     }
-    num_active_compute_tasks = 0;
     current = StreamPhase::COPY;
   }
 
@@ -1581,11 +1579,7 @@ private:
         exec_space_indexes.pop_front();
         exec_spaces[exec_space_indexes.front()].fence();
       } else if (current == StreamPhase::COPY && next == StreamPhase::COMPUTE) {
-        if (num_active_compute_tasks == max_active_tasks - 1) {
-          exec_spaces[exec_space_indexes[1]].fence();
-          --num_active_compute_tasks;
-        }
-        ++num_active_compute_tasks;
+        exec_spaces[exec_space_indexes[1]].fence();
       }
     }
     current = next;
