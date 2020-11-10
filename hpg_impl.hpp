@@ -861,7 +861,7 @@ struct HPG_EXPORT FFT<K::Cuda> final {
     // this assumes there is no padding in grid
     assert(grid.span() ==
            grid.extent(0) * grid.extent(1) * grid.extent(2) * grid.extent(3));
-    int n[2]{grid.extent_int(0), grid.extent_int(1)};
+    int n[2]{grid.extent_int(1), grid.extent_int(0)};
     cufftHandle result;
     auto rc =
       cufftPlanMany(
@@ -985,9 +985,9 @@ struct HPG_EXPORT GridRotator final {
               team_member.league_rank() % n_sto,
               team_member.league_rank() / n_sto);
           K::parallel_for(
-            K::TeamVectorRange(team_member, n_x),
+            K::TeamVectorRange(team_member, n_x / 2),
             [=](int x) {
-              for (int y = 0; y < n_y; ++y) {
+              for (int y = 0; y < n_y / 2; ++y) {
                 swap_gv<execution_space>(
                   gplane(x, y),
                   gplane(x + mid_x, y + mid_y));

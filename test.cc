@@ -278,8 +278,6 @@ main(int argc, char* argv[]) {
 
   hpg::ScopeGuard hpg;
 
-  std::mt19937 rng(42);
-
   std::vector<std::complex<hpg::visibility_fp>> vis;
   std::vector<hpg::grid_plane_t> grid_planes;
   std::vector<unsigned> cf_cubes;
@@ -289,6 +287,8 @@ main(int argc, char* argv[]) {
   std::vector<hpg::vis_uvw_t> coordinates;
 
   {
+    std::mt19937 rng(42);
+
     const std::array<unsigned, 4> grid_size{1000, 2000, 2, 1};
     const std::array<unsigned, 4> cf_size{31, 21, 2, 3};
     const std::array<float, 2> grid_scale{0.1, -0.1};
@@ -320,6 +320,8 @@ main(int argc, char* argv[]) {
 #endif // HPG_ENABLE_CUDA
   }
   {
+    std::mt19937 rng(42);
+
     const std::array<unsigned, 4> grid_size{5, 6, 2, 3};
     const std::array<unsigned, 4> cf_size{3, 3, 1, 1};
     const std::array<float, 2> grid_scale{0.1, -0.1};
