@@ -1271,6 +1271,24 @@ init_vis(
     });
 }
 
+enum class StreamPhase {
+  COPY,
+  COMPUTE
+};
+
+std::ostream&
+operator<<(std::ostream& str, const StreamPhase& ph) {
+  switch (ph) {
+  case StreamPhase::COPY:
+    str << "COPY";
+    break;
+  case StreamPhase::COMPUTE:
+    str << "COMPUTE";
+    break;
+  }
+  return str;
+}
+
 /** Kokkos state implementation for a device type */
 template <Device D>
 struct HPG_EXPORT StateT final
@@ -1285,11 +1303,6 @@ public:
   grid_view<typename GridLayout<D>::layout, memory_space> grid;
   const_cf_view<typename CFLayout<D>::layout, memory_space> cf;
   weight_view<typename execution_space::array_layout, memory_space> weights;
-
-  enum class StreamPhase {
-    COPY,
-    COMPUTE
-  };
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
@@ -1589,6 +1602,11 @@ private:
         exec_spaces[exec_space_indexes[1]].fence();
       }
     }
+#ifndef NDEBUG
+    std::cout << current << "->"
+              << next << ": "
+              << exec_space_indexes.front() << std::endl;
+#endif // NDEBUG
     current = next;
     return exec_spaces[exec_space_indexes.front()];
   }

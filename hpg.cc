@@ -7,11 +7,11 @@ GridderState::GridderState() {
 
 GridderState::GridderState(
   Device device,
-  unsigned max_async_tasks,
+  unsigned max_added_tasks,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale) {
 
-  const unsigned max_active_tasks = max_async_tasks + 1;
+  const unsigned max_active_tasks = max_added_tasks + 1;
 
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
@@ -121,7 +121,7 @@ GridderState::device() const noexcept {
 }
 
 unsigned
-GridderState::max_async_tasks() const noexcept {
+GridderState::max_added_tasks() const noexcept {
   return impl->max_active_tasks - 1;
 }
 

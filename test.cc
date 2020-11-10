@@ -156,11 +156,11 @@ run_tests(
     auto st3 = std::move(st2).set_convolution_function(host_dev, cf);
 #ifdef HPG_ENABLE_SERIAL
     if constexpr (D == hpg::Device::Serial)
-      assert(st3.max_async_tasks() == 0);
+      assert(st3.max_added_tasks() == 0);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
     if constexpr (D == hpg::Device::OpenMP)
-      assert(st3.max_async_tasks() == 0);
+      assert(st3.max_added_tasks() == 0);
 #endif // HPG_ENABLE_OPENMP
   }
   {

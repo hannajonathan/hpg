@@ -187,21 +187,20 @@ public:
    * create a GridderState
    *
    * @param device gridder device type
-   * @param max_async_tasks maximum number of asynchronous tasks (actual number
+   * @param max_added_tasks maximum number of additional tasks (actual number
    * may be less than requested)
    * @param grid_size, in logical axis order: X, Y, stokes, cube
    * @param grid_scale, in X, Y order
    *
-   * Be aware that the maximum number of asynchronous tasks in a compute phase
-   * will always be one less than the total, effective maximum number of
-   * asynchronous tasks. (Active asynchronous tasks exist in one of two phases,
-   * copy and compute, in alternating sequence.)
+   * max_added_tasks may be used to control the level of concurrency available
+   * to the GridderState instance. In all cases, at least one task is
+   * employed, but some devices support additional, concurrent tasks.
    *
    * @sa Gridder::Gridder()
    */
   GridderState(
     Device device,
-    unsigned max_async_tasks,
+    unsigned max_added_tasks,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale);
 
@@ -231,12 +230,12 @@ public:
   Device
   device() const noexcept;
 
-  /** maximum active tasks
+  /** maximum additional tasks
    *
    * This value may differ from the value provided to the constructor, depending
    * on device limitations */
   unsigned
-  max_async_tasks() const noexcept;
+  max_added_tasks() const noexcept;
 
   /** grid size */
   const std::array<unsigned, 4>&
@@ -501,22 +500,21 @@ public:
   /** constructor
    *
    * @param device gridder device type
-   * @param max_async_tasks maximum number of concurrent tasks (actual number
-   * may be less than requested)
+   * @param max_added_tasks maximum number of concurrent tasks (actual
+   * number may be less than requested)
    * @param grid_size, in logical axis order: X, Y, stokes, cube
    * @param grid_scale, in X, Y order
    *
-   * Be aware that the maximum number of asynchronous tasks in a compute phase
-   * will always be one less than the total, effective maximum number of
-   * asynchronous tasks. (Active asynchronous tasks exist in one of two phases,
-   * copy and compute, in alternating sequence.)
+   * max_added_tasks may be used to control the level of concurrency available
+   * to the GridderState instance. In all cases, at least one task is employed,
+   * but some devices support additional, concurrent tasks.
    */
   Gridder(
     Device device,
-    unsigned max_async_tasks,
+    unsigned max_added_tasks,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale)
-    : state(GridderState(device, max_async_tasks, grid_size, grid_scale)) {}
+    : state(GridderState(device, max_added_tasks, grid_size, grid_scale)) {}
 
   /** copy constructor
    *
@@ -546,13 +544,13 @@ public:
     return state.device();
   }
 
-  /** maximum active tasks
+  /** maximum additional tasks
    *
    * This value may differ from the value provided to the constructor, depending
    * on device limitations */
   unsigned
-  max_async_tasks() const noexcept {
-    return state.max_async_tasks();
+  max_added_tasks() const noexcept {
+    return state.max_added_tasks();
   }
 
   /** grid size */
