@@ -1367,6 +1367,7 @@ public:
     cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
       K::ViewAllocateWithoutInitializing("cf"),
       CFLayout<D>::dimensions(cf_array));
+#ifndef NDEBUG
     std::cout << "alloc cf sz " << cf_init.extent(0)
               << " " << cf_init.extent(1)
               << " " << cf_init.extent(2)
@@ -1381,6 +1382,7 @@ public:
               << " " << cf_init.stride(4)
               << " " << cf_init.stride(5)
               << std::endl;
+#endif // NDEBUG
 
     auto exec = next_exec_space(StreamPhase::COPY);
 
@@ -1615,6 +1617,7 @@ private:
         decltype(grid)(
           K::view_alloc("grid", next_exec_space(StreamPhase::COPY)),
           GridLayout<D>::dimensions(ig));
+#ifndef NDEBUG
     std::cout << "alloc grid sz " << grid.extent(0)
               << " " << grid.extent(1)
               << " " << grid.extent(2)
@@ -1625,6 +1628,7 @@ private:
               << " " << grid.stride(2)
               << " " << grid.stride(3)
               << std::endl;
+#endif // NDEBUG
 
     if (also_weights) {
       if (create_without_init)
