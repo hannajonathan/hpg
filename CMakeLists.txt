@@ -156,5 +156,5 @@ target_link_libraries(test hpg)
 find_package(Doxygen)
 doxygen_add_docs(
   doc
-  ${PROJECT_SOURCE_DIR}
+  hpg.hpp hpg_impl.hpp hpg.cc
   COMMENT "Generate documentation")
