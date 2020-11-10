@@ -38,6 +38,7 @@ using cf_t = K::complex<cf_fp>;
 /** gridded value type */
 using gv_t = K::complex<grid_value_fp>;
 
+/** visibility data plus metadata for gridding */
 struct Visibility {
 
   KOKKOS_INLINE_FUNCTION Visibility() {};
@@ -507,23 +508,27 @@ struct HPG_EXPORT VisibilityGridder final {
           K::TeamVectorRange(team_member, cf.extent_int(0)),
           [=](const int X) {
             /* loop over coarseY */
-            gv_t n;
+            gv_t cf_sum;
             for (int Y = 0; Y < cf.extent_int(1); ++Y) {
               /* loop over elements of Mueller matrix column  */
+              gv_t gv;
               for (int P = 0; P < cf.extent_int(2); ++P) {
-                gv_t cfv = cf(X, Y, P, vis.fine[0], vis.fine[1], vis.cf_cube);
+                cf_t cfv = cf(X, Y, P, vis.fine[0], vis.fine[1], vis.cf_cube);
                 cfv.imag() *= vis.cf_im_factor;
-                pseudo_atomic_add<execution_space>(
-                  grid(
-                    vis.coarse[0] + X,
-                    vis.coarse[1] + Y,
-                    vis.grid_stokes,
-                    vis.grid_cube),
-                  cfv * vis.value);
-                n += cfv;
+                gv += cfv * vis.value;
+                cf_sum += cfv;
               }
+              pseudo_atomic_add<execution_space>(
+                grid(
+                  vis.coarse[0] + X,
+                  vis.coarse[1] + Y,
+                  vis.grid_stokes,
+                  vis.grid_cube),
+                gv);
             }
-            K::atomic_add(wgt, std::hypot(n.real(), n.imag()) * vis.weight);
+            K::atomic_add(
+              wgt,
+              std::hypot(cf_sum.real(), cf_sum.imag()) * vis.weight);
           });
       });
   }
