@@ -32,14 +32,6 @@ using vis_phase_fp = double;
 // vis_uvw_t can be any type that supports std::get<N>() for element access
 using vis_uvw_t = std::array<vis_uvw_fp, 3>;
 
-// grid_plane_t can be any type that supports std::get<N>() for element
-// access
-/** grid plane index
- *
- * an index for a 2d plane of a 4d grid; axis order: stokes, cube
- */
-using grid_plane_t = std::array<unsigned, 2>;
-
 /**
  * backend device type
  */
@@ -73,7 +65,7 @@ public:
   extent(unsigned dim) const = 0;
 
   virtual std::complex<cf_fp>
-  operator()(unsigned x, unsigned y, unsigned polarization, unsigned cube)
+  operator()(unsigned x, unsigned y, unsigned cf_sto, unsigned cube)
     const = 0;
 
   virtual ~CFArray() {}
@@ -289,7 +281,7 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param visibility_grid_planes visibility grid plane indexes
+   * @param visibility_grid_cubes visibility grid cube indexes
    * @param visibility_cf_cubes visibility convolution function cube indexes
    * @param visibility_weights visibility weights
    * @param visibility_frequencies visibility frequencies
@@ -302,7 +294,7 @@ public:
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_grid_cubes,
     const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
@@ -322,7 +314,7 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param visibility_grid_planes visibility grid plane indexes
+   * @param visibility_grid_cubes visibility grid cube indexes
    * @param visibility_cf_cubes visibility convolution function cube indexes
    * @param visibility_weights visibility weights
    * @param visibility_frequencies visibility frequencies
@@ -335,7 +327,7 @@ public:
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_grid_cubes,
     const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
@@ -590,7 +582,7 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param visibility_grid_planes visibility grid plane indexes
+   * @param visibility_grid_cubes visibility grid cube indexes
    * @param visibility_cf_cubes visibility convolution function cube indexes
    * @param visibility_weights visibility weights
    * @param visibility_frequencies visibility frequencies
@@ -601,7 +593,7 @@ public:
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_grid_cubes,
     const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
@@ -613,7 +605,7 @@ public:
       .grid_visibilities(
         host_device,
         visibilities,
-        visibility_grid_planes,
+        visibility_grid_cubes,
         visibility_cf_cubes,
         visibility_weights,
         visibility_frequencies,

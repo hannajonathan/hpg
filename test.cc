@@ -38,11 +38,11 @@ struct MyCFArray final
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned polarization, unsigned cube)
+  operator()(unsigned x, unsigned y, unsigned stokes, unsigned cube)
     const override {
     return
       m_values[
-        ((x * m_extent[1] + y) * m_extent[2] + polarization) * m_extent[3]
+        ((x * m_extent[1] + y) * m_extent[2] + stokes) * m_extent[3]
         + cube];
   }
 };
@@ -71,7 +71,7 @@ init_visibilities(
   const std::array<unsigned, 4>& cf_size,
   Generator& gen,
   std::vector<std::complex<hpg::visibility_fp>>& vis,
-  std::vector<hpg::grid_plane_t>& grid_planes,
+  std::vector<unsigned>& grid_cubes,
   std::vector<unsigned>& cf_cubes,
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
@@ -80,8 +80,8 @@ init_visibilities(
 
   vis.clear();
   vis.reserve(num_vis);
-  grid_planes.clear();
-  grid_planes.reserve(num_vis);
+  grid_cubes.clear();
+  grid_cubes.reserve(num_vis);
   cf_cubes.clear();
   cf_cubes.reserve(num_vis);
   weights.clear();
@@ -112,7 +112,7 @@ init_visibilities(
   std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
   for (auto i = 0; i < num_vis; ++i) {
     vis.emplace_back(dist_vis(gen), dist_vis(gen));
-    grid_planes.push_back({dist_gsto(gen), dist_gcube(gen)});
+    grid_cubes.push_back(dist_gcube(gen));
     cf_cubes.push_back(dist_cfcube(gen));
     weights.push_back(dist_weight(gen));
     frequencies.push_back(freq);
@@ -141,7 +141,7 @@ run_tests(
   const std::array<float, 2>& grid_scale,
   const MyCFArray& cf,
   std::vector<std::complex<hpg::visibility_fp>>& vis,
-  std::vector<hpg::grid_plane_t>& grid_planes,
+  std::vector<unsigned>& grid_cubes,
   std::vector<unsigned>& cf_cubes,
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
@@ -172,7 +172,7 @@ run_tests(
     g0.grid_visibilities(
       host_dev,
       vis,
-      grid_planes,
+      grid_cubes,
       cf_cubes,
       weights,
       frequencies,
@@ -219,7 +219,7 @@ dump_grids(
   const std::array<float, 2>& grid_scale,
   const MyCFArray& cf,
   std::vector<std::complex<hpg::visibility_fp>>& vis,
-  std::vector<hpg::grid_plane_t>& grid_planes,
+  std::vector<unsigned>& grid_cubes,
   std::vector<unsigned>& cf_cubes,
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
@@ -231,7 +231,7 @@ dump_grids(
   g0.grid_visibilities(
     host_dev,
     vis,
-    grid_planes,
+    grid_cubes,
     cf_cubes,
     weights,
     frequencies,
@@ -279,7 +279,7 @@ main(int argc, char* argv[]) {
   hpg::ScopeGuard hpg;
 
   std::vector<std::complex<hpg::visibility_fp>> vis;
-  std::vector<hpg::grid_plane_t> grid_planes;
+  std::vector<unsigned> grid_cubes;
   std::vector<unsigned> cf_cubes;
   std::vector<hpg::vis_weight_fp> weights;
   std::vector<hpg::vis_frequency_fp> frequencies;
@@ -300,7 +300,7 @@ main(int argc, char* argv[]) {
       cf_size,
       rng,
       vis,
-      grid_planes,
+      grid_cubes,
       cf_cubes,
       weights,
       frequencies,
@@ -310,20 +310,20 @@ main(int argc, char* argv[]) {
     run_tests<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
       grid_size, grid_scale, cf,
-      vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
+      vis, grid_cubes, cf_cubes, weights, frequencies, phases, coordinates);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     run_tests<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
       grid_size, grid_scale, cf,
-      vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
+      vis, grid_cubes, cf_cubes, weights, frequencies, phases, coordinates);
 #endif // HPG_ENABLE_CUDA
   }
   {
     std::mt19937 rng(42);
 
     const std::array<unsigned, 4> grid_size{5, 6, 2, 3};
-    const std::array<unsigned, 4> cf_size{3, 3, 1, 1};
+    const std::array<unsigned, 4> cf_size{3, 3, 2, 1};
     const std::array<float, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);
     init_visibilities(
@@ -333,7 +333,7 @@ main(int argc, char* argv[]) {
       cf_size,
       rng,
       vis,
-      grid_planes,
+      grid_cubes,
       cf_cubes,
       weights,
       frequencies,
@@ -343,13 +343,13 @@ main(int argc, char* argv[]) {
     dump_grids<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
       grid_size, grid_scale, cf,
-      vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
+      vis, grid_cubes, cf_cubes, weights, frequencies, phases, coordinates);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     dump_grids<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
       grid_size, grid_scale, cf,
-      vis, grid_planes, cf_cubes, weights, frequencies, phases, coordinates);
+      vis, grid_cubes, cf_cubes, weights, frequencies, phases, coordinates);
 #endif // HPG_ENABLE_CUDA
   }
 }

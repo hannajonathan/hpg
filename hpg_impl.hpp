@@ -45,15 +45,14 @@ struct Visibility {
 
   Visibility(
     const vis_t& value_,
-    const grid_plane_t& grid_plane,
+    unsigned grid_cube_,
     unsigned cf_cube_,
     vis_weight_fp weight_,
     vis_frequency_fp freq_,
     vis_phase_fp d_phase_,
     const vis_uvw_t& uvw_)
     : value(value_)
-    , grid_stokes(std::get<0>(grid_plane))
-    , grid_cube(std::get<1>(grid_plane))
+    , grid_cube(grid_cube_)
     , cf_cube(cf_cube_)
     , weight(weight_)
     , freq(freq_)
@@ -74,7 +73,6 @@ struct Visibility {
   KOKKOS_INLINE_FUNCTION Visibility& operator=(Visibility&&) = default;
 
   vis_t value;
-  int grid_stokes;
   int grid_cube;
   int cf_cube;
   vis_weight_fp weight;
@@ -263,7 +261,7 @@ struct CFLayout {
   /**
    * create Kokkos layout using given CFArray
    *
-   * logical index order: X, Y, polarization, x, y, cube
+   * logical index order: X, Y, stokes, x, y, cube
    */
   static layout
   dimensions(const CFArray& cf) {
@@ -321,6 +319,7 @@ sincos(T ph, T* sn, T* cs) {
 }
 
 #ifdef KOKKOS_ENABLE_CUDA
+// FIXME: change exec space to K::Cuda
 template <>
 __device__ __forceinline__ void
 sincos<K::CudaSpace, float>(float ph, float* sn, float* cs) {
@@ -342,7 +341,6 @@ struct GridVis final {
   int coarse[2];
   int fine[2];
   vis_t value;
-  int grid_stokes;
   int grid_cube;
   int cf_cube;
   vis_weight_fp weight;
@@ -356,8 +354,7 @@ struct GridVis final {
     const K::Array<int, 2>& oversampling,
     const K::Array<int, 2>& cf_radius,
     const K::Array<grid_scale_fp, 2>& fine_scale)
-    : grid_stokes(vis.grid_stokes)
-    , grid_cube(vis.grid_cube)
+    : grid_cube(vis.grid_cube)
     , cf_cube(vis.cf_cube)
     , weight(vis.weight) {
 
@@ -502,33 +499,27 @@ struct HPG_EXPORT VisibilityGridder final {
           oversampling,
           cf_radius,
           fine_scale);
-        auto wgt = &weights(vis.grid_stokes, vis.grid_cube);
         /* loop over coarseX */
         K::parallel_for(
           K::TeamVectorRange(team_member, cf.extent_int(0)),
           [=](const int X) {
             /* loop over coarseY */
-            gv_t cf_sum;
+            gv_t cf_sum[4];
             for (int Y = 0; Y < cf.extent_int(1); ++Y) {
               /* loop over elements of Mueller matrix column  */
-              gv_t gv;
-              for (int P = 0; P < cf.extent_int(2); ++P) {
-                cf_t cfv = cf(X, Y, P, vis.fine[0], vis.fine[1], vis.cf_cube);
+              for (int S = 0; S < cf.extent_int(2); ++S) {
+                cf_t cfv = cf(X, Y, S, vis.fine[0], vis.fine[1], vis.cf_cube);
                 cfv.imag() *= vis.cf_im_factor;
-                gv += cfv * vis.value;
-                cf_sum += cfv;
+                pseudo_atomic_add<execution_space>(
+                  grid(vis.coarse[0] + X, vis.coarse[1] + Y, S, vis.grid_cube),
+                  gv_t(cfv * vis.value));
+                cf_sum[S] += cfv;
               }
-              pseudo_atomic_add<execution_space>(
-                grid(
-                  vis.coarse[0] + X,
-                  vis.coarse[1] + Y,
-                  vis.grid_stokes,
-                  vis.grid_cube),
-                gv);
             }
-            K::atomic_add(
-              wgt,
-              std::hypot(cf_sum.real(), cf_sum.imag()) * vis.weight);
+            for (int S = 0; S < cf.extent_int(2); ++S)
+              K::atomic_add(
+                &weights(S, vis.grid_cube),
+                std::hypot(cf_sum[S].real(), cf_sum[S].imag()) * vis.weight);
           });
       });
   }
@@ -1125,7 +1116,7 @@ struct State {
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_grid_cubes,
     const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
@@ -1246,7 +1237,7 @@ static void
 init_vis(
   VisH& vis_h,
   const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<grid_plane_t> visibility_grid_planes,
+  const std::vector<unsigned> visibility_grid_cubes,
   const std::vector<unsigned> visibility_cf_cubes,
   const std::vector<vis_weight_fp>& visibility_weights,
   const std::vector<vis_frequency_fp>& visibility_frequencies,
@@ -1267,7 +1258,7 @@ init_vis(
       vis_h(i) =
         Visibility(
           visibilities[i],
-          visibility_grid_planes[i],
+          visibility_grid_cubes[i],
           visibility_cf_cubes[i],
           visibility_weights[i],
           visibility_frequencies[i],
@@ -1382,6 +1373,9 @@ public:
   void
   set_convolution_function(Device host_device, const CFArray& cf_array)
     override {
+
+    assert(cf_array.extent(2) == grid_size[2]);
+
     cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
       K::ViewAllocateWithoutInitializing("cf"),
       CFLayout<D>::dimensions(cf_array));
@@ -1432,7 +1426,7 @@ public:
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<grid_plane_t> visibility_grid_planes,
+    const std::vector<unsigned> visibility_grid_cubes,
     const std::vector<unsigned> visibility_cf_cubes,
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
@@ -1452,7 +1446,7 @@ public:
       init_vis<Device::Serial>(
         vis_h,
         visibilities,
-        visibility_grid_planes,
+        visibility_grid_cubes,
         visibility_cf_cubes,
         visibility_weights,
         visibility_frequencies,
@@ -1468,7 +1462,7 @@ public:
       init_vis<Device::OpenMP>(
         vis_h,
         visibilities,
-        visibility_grid_planes,
+        visibility_grid_cubes,
         visibility_cf_cubes,
         visibility_weights,
         visibility_frequencies,

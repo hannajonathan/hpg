@@ -159,7 +159,7 @@ GridderState
 GridderState::grid_visibilities(
   Device host_device,
   const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<grid_plane_t> visibility_grid_planes,
+  const std::vector<unsigned> visibility_grid_cubes,
   const std::vector<unsigned> visibility_cf_cubes,
   const std::vector<vis_weight_fp>& visibility_weights,
   const std::vector<vis_frequency_fp>& visibility_frequencies,
@@ -171,7 +171,7 @@ GridderState::grid_visibilities(
   ->grid_visibilities(
     host_device,
     visibilities,
-    visibility_grid_planes,
+    visibility_grid_cubes,
     visibility_cf_cubes,
     visibility_weights,
     visibility_frequencies,
@@ -184,7 +184,7 @@ GridderState
 GridderState::grid_visibilities(
   Device host_device,
   const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<grid_plane_t> visibility_grid_planes,
+  const std::vector<unsigned> visibility_grid_cubes,
   const std::vector<unsigned> visibility_cf_cubes,
   const std::vector<vis_weight_fp>& visibility_weights,
   const std::vector<vis_frequency_fp>& visibility_frequencies,
@@ -196,7 +196,7 @@ GridderState::grid_visibilities(
   ->grid_visibilities(
     host_device,
     visibilities,
-    visibility_grid_planes,
+    visibility_grid_cubes,
     visibility_cf_cubes,
     visibility_weights,
     visibility_frequencies,
