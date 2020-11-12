@@ -588,8 +588,11 @@ struct HPG_EXPORT VisibilityGridder final {
           cf_radius,
           fine_scale);
         scratch_wgts_view cfw(team_member.team_scratch(0));
-        if (team_member.team_rank() == 0)
-          cfw(0).init();
+        K::parallel_for(
+          K::TeamVectorRange(team_member, cf.extent_int(2)),
+          [=](const int S) {
+            cfw(0).wgts[S] = 0;
+          });
         team_member.team_barrier();
         /* loop over coarseX */
         K::parallel_reduce(
