@@ -37,16 +37,16 @@ using vis_uvw_t = std::array<vis_uvw_fp, 3>;
  */
 enum class HPG_EXPORT Device {
 #ifdef HPG_ENABLE_SERIAL
-  Serial,
+  Serial, /**< serial device */
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
-  OpenMP,
+  OpenMP, /**< OpenMP device */
 #endif // HPG_ENABLE_OPENMP
 #ifdef HPG_ENABLE_CUDA
-  Cuda,
+  Cuda, /**< CUDA device */
 #endif // HPG_ENABLE_CUDA
 #ifdef HPG_ENABLE_HPX
-  HPX,
+  HPX, /**< HIP device */
 #endif // HPG_ENABLE_HPX
 };
 

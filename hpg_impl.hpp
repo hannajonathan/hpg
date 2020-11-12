@@ -44,13 +44,13 @@ struct Visibility {
   KOKKOS_INLINE_FUNCTION Visibility() {};
 
   Visibility(
-    const vis_t& value_,
-    unsigned grid_cube_,
-    unsigned cf_cube_,
-    vis_weight_fp weight_,
-    vis_frequency_fp freq_,
-    vis_phase_fp d_phase_,
-    const vis_uvw_t& uvw_)
+    const vis_t& value_, /**< visibility value */
+    unsigned grid_cube_, /**< grid cube index */
+    unsigned cf_cube_, /**< cf cube index */
+    vis_weight_fp weight_, /**< visibility weight */
+    vis_frequency_fp freq_, /**< frequency */
+    vis_phase_fp d_phase_, /**< phase angle */
+    const vis_uvw_t& uvw_ /** < uvw coordinates */)
     : value(value_)
     , grid_cube(grid_cube_)
     , cf_cube(cf_cube_)
@@ -102,7 +102,7 @@ finalize() {
   K::finalize();
 }
 
-/** */
+/** implementation initialization state */
 bool
 is_initialized() {
   return hpg_impl_initialized;
@@ -215,6 +215,7 @@ using const_visibility_view = K::View<const Visibility*, memory_space>;
 /** device-specific grid layout */
 static const std::array<int, 4> strided_grid_layout_order{2, 1, 0, 3};
 
+/** device-specific grid array layout */
 template <Device D>
 struct GridLayout {
 
@@ -245,7 +246,7 @@ struct GridLayout {
   }
 };
 
-/** device-specific CF layout */
+/** device-specific CF array layout */
 template <Device D>
 struct CFLayout {
 
@@ -317,32 +318,33 @@ sincos(T ph, T* sn, T* cs) {
 }
 
 #ifdef KOKKOS_ENABLE_CUDA
-// FIXME: change exec space to K::Cuda
 template <>
 __device__ __forceinline__ void
-sincos<K::CudaSpace, float>(float ph, float* sn, float* cs) {
+sincos<K::Cuda, float>(float ph, float* sn, float* cs) {
   ::sincosf(ph, sn, cs);
 }
 template <>
 __device__ __forceinline__ void
-sincos<K::CudaSpace, double>(double ph, double* sn, double* cs) {
+sincos<K::Cuda, double>(double ph, double* sn, double* cs) {
   ::sincos(ph, sn, cs);
 }
 #endif
 
-/**
- * helper class for computing visibility value and index metadata
+/** helper class for computing visibility value and index metadata
+ *
+ * Basically exists to encapsulate conversion from a Visibility value to several
+ * visibility metadata values needed by gridding kernel
  */
 template <typename execution_space>
 struct GridVis final {
 
   int major[2]; /**< major grid coordinate */
   int minor[2]; /**< minor grid coordinate */
-  vis_t value;
-  int grid_cube;
-  int cf_cube;
-  vis_weight_fp weight;
-  cf_fp cf_im_factor;
+  vis_t value; /**< visibility value */
+  int grid_cube; /**< grid cube index */
+  int cf_cube; /**< cf cube index */
+  vis_weight_fp weight; /**< visibility weight */
+  cf_fp cf_im_factor; /**< weight conjugation factor */
 
   KOKKOS_INLINE_FUNCTION GridVis() {};
 
@@ -448,10 +450,15 @@ pseudo_atomic_add<K::HPX, float>(
 }
 #endif // HPG_ENABLE_HPX
 
+/** compute kernels
+ *
+ * A separate namespace, since these kernels may be accessed directly, without
+ * the rest of libhpg.
+ */
 namespace Core {
 
 /** cf weight array type for reduction by gridding kernel */
-struct cf_wgt_array {
+struct HPG_EXPORT cf_wgt_array final {
   static constexpr int n_sto = 4;
 
   cf_t wgts[n_sto];
@@ -486,8 +493,12 @@ struct cf_wgt_array {
   }
 };
 
+/** cf weight reducer class
+ *
+ * for use with Kokkos::parallel_reduce()
+ */
 template <typename space>
-struct SumCFWgts {
+struct HPG_EXPORT SumCFWgts final {
 public:
 
   typedef SumCFWgts reducer;
@@ -537,14 +548,15 @@ public:
 // we're wrapping each kernel in a class in order to support partial
 // specialization of the kernel functions by execution space
 
+
+/** gridding kernel
+ *
+ * Note that the default implementation probably is optimal only for many-core
+ * devices, probably not OpenMP (although it is correct on all devices).
+ */
 template <typename execution_space>
 struct HPG_EXPORT VisibilityGridder final {
 
-  /** gridding kernel
-   *
-   * Note that the default implementation probably is optimal only for many-core
-   * devices, probably not for OpenMP.
-   */
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
   kernel(
@@ -623,11 +635,11 @@ struct HPG_EXPORT VisibilityGridder final {
   }
 };
 
+/** grid normalization kernel
+ */
 template <typename execution_space>
 struct HPG_EXPORT GridNormalizer final {
 
-  /** grid normalization kernel
-   */
   template <typename grid_layout, typename memory_space>
   static void
   kernel(
@@ -652,6 +664,7 @@ struct HPG_EXPORT GridNormalizer final {
   }
 };
 
+/** fftw function class templated on fp precision */
 template <typename T>
 struct FFTW {
 
@@ -780,6 +793,10 @@ struct FFTW<float> {
   }
 };
 
+/** FFT kernels
+ *
+ * Both in-place and out-of-place versions
+ */
 template <typename execution_space>
 struct HPG_EXPORT FFT final {
 
@@ -892,6 +909,7 @@ cufft_error(const std::string& prefix, cufftResult rc) {
   return Error(oss.str());
 }
 
+/** cufft function class templated on fp precision */
 template <typename T>
 struct CUFFT {
   //constexpr cufftType type;
@@ -943,6 +961,8 @@ struct CUFFT<float> {
   }
 };
 
+/** fft kernels for Cuda
+ */
 template <>
 struct HPG_EXPORT FFT<K::Cuda> final {
 
@@ -1025,6 +1045,7 @@ struct HPG_EXPORT FFT<K::Cuda> final {
 };
 #endif // HPG_ENABLE_CUDA
 
+/** swap visibility values */
 template <typename execution_space>
 KOKKOS_FORCEINLINE_FUNCTION void
 swap_gv(gv_t& a, gv_t&b) {
@@ -1042,6 +1063,11 @@ swap_gv<K::Cuda>(gv_t& a, gv_t&b) {
 }
 #endif // HPG_ENABLE_CUDA
 
+/** grid rotation kernel
+ *
+ * Useful after FFT to rotate grid planes by half the grid plane size in each
+ * dimension
+ */
 template <typename execution_space>
 struct HPG_EXPORT GridRotator final {
 
@@ -1245,6 +1271,7 @@ struct State {
   virtual ~State() {}
 };
 
+/** concrete sub-class of abstract GridValueArray */
 template <Device D>
 class HPG_EXPORT GridValueViewArray final
   : public GridValueArray {
@@ -1275,6 +1302,7 @@ public:
   }
 };
 
+/** concrete sub-class of abstract GridWeightArray */
 template <Device D>
 class HPG_EXPORT GridWeightViewArray final
   : public GridWeightArray {
@@ -1304,6 +1332,7 @@ class HPG_EXPORT GridWeightViewArray final
   }
 };
 
+/** initialize CF array view from CFArray instance */
 template <Device D, typename CFH>
 static void
 init_cf_host(CFH& cf_h, const CFArray& cf) {
@@ -1330,6 +1359,7 @@ init_cf_host(CFH& cf_h, const CFArray& cf) {
     });
 }
 
+/** initialize visibility array view from visibility values and metadata */
 template <Device D, typename VisH>
 static void
 init_vis(
@@ -1365,6 +1395,7 @@ init_vis(
     });
 }
 
+/** names for stream states */
 enum class StreamPhase {
   COPY,
   COMPUTE
