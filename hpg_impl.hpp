@@ -609,14 +609,15 @@ struct HPG_EXPORT VisibilityGridder final {
             }
           },
           SumCFWgts<execution_space>(cfw(0)));
-        if (team_member.team_rank() == 0) {
-          for (int S = 0; S < cf.extent_int(2); ++S)
+        K::parallel_for(
+          K::TeamVectorRange(team_member, cf.extent_int(2)),
+          [=](const int S) {
             K::atomic_add(
               &weights(S, vis.grid_cube),
               grid_value_fp(
                 std::hypot(cfw(0).wgts[S].real(), cfw(0).wgts[S].imag())
                 * vis.weight));
-        }
+          });
       });
   }
 };
