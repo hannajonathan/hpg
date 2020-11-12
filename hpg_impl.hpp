@@ -407,7 +407,7 @@ struct GridVis final {
  */
 template <typename execution_space, typename T>
 KOKKOS_FORCEINLINE_FUNCTION void
-pseudo_atomic_add(K::complex<T>& acc, const K::complex<T>& val) {
+pseudo_atomic_add(volatile K::complex<T>& acc, const K::complex<T>& val) {
   K::atomic_add(&acc, val);
 }
 
@@ -415,7 +415,7 @@ pseudo_atomic_add(K::complex<T>& acc, const K::complex<T>& val) {
 template <>
 KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add<K::Cuda, double>(
-  K::complex<double>& acc, const K::complex<double>& val) {
+  volatile K::complex<double>& acc, const K::complex<double>& val) {
 
   K::atomic_add(&acc.real(), val.real());
   K::atomic_add(&acc.imag(), val.imag());
@@ -424,7 +424,7 @@ pseudo_atomic_add<K::Cuda, double>(
 template <>
 KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add<K::Cuda, float>(
-  K::complex<float>& acc, const K::complex<float>& val) {
+  volatile K::complex<float>& acc, const K::complex<float>& val) {
 
   K::atomic_add(&acc.real(), val.real());
   K::atomic_add(&acc.imag(), val.imag());
@@ -434,7 +434,7 @@ pseudo_atomic_add<K::Cuda, float>(
 template <>
 KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add<K::HPX, double>(
-  K::complex<double>& acc, const K::complex<double>& val) {
+  volatile K::complex<double>& acc, const K::complex<double>& val) {
 
   K::atomic_add(&acc.real(), val.real());
   K::atomic_add(&acc.imag(), val.imag());
@@ -443,7 +443,7 @@ pseudo_atomic_add<K::HPX, double>(
 template <>
 KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add<K::HPX, float>(
-  K::complex<float>& acc, const K::complex<float>& val) {
+  volatile K::complex<float>& acc, const K::complex<float>& val) {
 
   K::atomic_add(&acc.real(), val.real());
   K::atomic_add(&acc.imag(), val.imag());
