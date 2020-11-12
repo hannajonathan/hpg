@@ -452,6 +452,90 @@ pseudo_atomic_add<K::HPX, float>(
 
 namespace Core {
 
+/** cf weight array type for reduction by gridding kernel */
+struct cf_wgt_array {
+  static constexpr int n_sto = 4;
+
+  cf_t wgts[n_sto];
+
+  KOKKOS_INLINE_FUNCTION cf_wgt_array() {
+     init();
+  }
+
+  KOKKOS_INLINE_FUNCTION cf_wgt_array(const cf_wgt_array& rhs) {
+    for (int i = 0; i < n_sto; ++i)
+      wgts[i] = rhs.wgts[i];
+  }
+
+
+  KOKKOS_INLINE_FUNCTION void
+  init() {
+    for (int i = 0; i < n_sto; ++i)
+      wgts[i] = 0;
+  }
+
+  KOKKOS_INLINE_FUNCTION cf_wgt_array&
+  operator +=(const cf_wgt_array& src) {
+    for (int i = 0; i < n_sto; ++i)
+      wgts[i] += src.wgts[i];
+    return *this;
+  }
+
+  KOKKOS_INLINE_FUNCTION void
+  operator +=(const volatile cf_wgt_array& src) volatile {
+    for (int i = 0; i < n_sto; ++i)
+      wgts[i] += src.wgts[i];
+  }
+};
+
+template <typename space>
+struct SumCFWgts {
+public:
+
+  typedef SumCFWgts reducer;
+  typedef cf_wgt_array value_type;
+  typedef
+    Kokkos::View<value_type[1], space, K::MemoryUnmanaged> result_view_type;
+
+private:
+  value_type & value;
+
+public:
+
+  KOKKOS_INLINE_FUNCTION
+  SumCFWgts(value_type& value_): value(value_) {}
+
+  KOKKOS_INLINE_FUNCTION void
+  join(value_type& dest, const value_type& src)  const {
+    dest += src;
+  }
+
+  KOKKOS_INLINE_FUNCTION void
+  join(volatile value_type& dest, const volatile value_type& src) const {
+    dest += src;
+  }
+
+  KOKKOS_INLINE_FUNCTION void
+  init( value_type& val)  const {
+    val.init();
+  }
+
+  KOKKOS_INLINE_FUNCTION value_type&
+  reference() const {
+    return value;
+  }
+
+  KOKKOS_INLINE_FUNCTION result_view_type
+  view() const {
+    return result_view_type(&value);
+  }
+
+  KOKKOS_INLINE_FUNCTION bool
+  references_scalar() const {
+    return true;
+  }
+};
+
 // we're wrapping each kernel in a class in order to support partial
 // specialization of the kernel functions by execution space
 
@@ -486,12 +570,16 @@ struct HPG_EXPORT VisibilityGridder final {
 
     using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
+    using scratch_wgts_view =
+      K::View<cf_wgt_array[1], typename execution_space::scratch_memory_space>;
+
     K::parallel_for(
       "gridding",
       K::TeamPolicy<execution_space>(
         exec,
         static_cast<int>(visibilities.size()),
-        K::AUTO),
+        K::AUTO)
+      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size())),
       KOKKOS_LAMBDA(const member_type& team_member) {
         GridVis<execution_space> vis(
           visibilities(team_member.league_rank()),
@@ -499,12 +587,15 @@ struct HPG_EXPORT VisibilityGridder final {
           oversampling,
           cf_radius,
           fine_scale);
+        scratch_wgts_view cfw(team_member.team_scratch(0));
+        if (team_member.team_rank() == 0)
+          cfw(0).init();
+        team_member.team_barrier();
         /* loop over coarseX */
-        K::parallel_for(
+        K::parallel_reduce(
           K::TeamVectorRange(team_member, cf.extent_int(0)),
-          [=](const int X) {
+          [=](const int X, cf_wgt_array& cfw_l) {
             /* loop over coarseY */
-            gv_t cf_sum[4];
             for (int Y = 0; Y < cf.extent_int(1); ++Y) {
               /* loop over elements of Mueller matrix column  */
               for (int S = 0; S < cf.extent_int(2); ++S) {
@@ -513,14 +604,17 @@ struct HPG_EXPORT VisibilityGridder final {
                 pseudo_atomic_add<execution_space>(
                   grid(vis.coarse[0] + X, vis.coarse[1] + Y, S, vis.grid_cube),
                   gv_t(cfv * vis.value));
-                cf_sum[S] += cfv;
+                cfw_l.wgts[S] += cfv;
               }
             }
-            for (int S = 0; S < cf.extent_int(2); ++S)
-              K::atomic_add(
-                &weights(S, vis.grid_cube),
-                std::hypot(cf_sum[S].real(), cf_sum[S].imag()) * vis.weight);
-          });
+          },
+          SumCFWgts<execution_space>(cfw(0)));
+        for (int S = 0; S < cf.extent_int(2); ++S)
+          K::atomic_add(
+            &weights(S, vis.grid_cube),
+            grid_value_fp(
+              std::hypot(cfw(0).wgts[S].real(), cfw(0).wgts[S].imag())
+              * vis.weight));
       });
   }
 };
