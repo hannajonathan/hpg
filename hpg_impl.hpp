@@ -283,8 +283,7 @@ struct CFLayout {
   }
 };
 
-/**
- * convert a UV coordinate to coarse and fine grid coordinates
+/** convert UV coordinate to major and minor grid coordinates
  */
 KOKKOS_FUNCTION std::tuple<int, int>
 compute_vis_coord(
@@ -296,20 +295,19 @@ compute_vis_coord(
   grid_scale_fp fine_scale) {
 
   long fine_coord = std::lrint((double(coord) * inv_lambda) * fine_scale);
-  long nearest_coarse_fine_coord =
+  long nearest_major_fine_coord =
     std::lrint(double(fine_coord) / oversampling) * oversampling;
-  int coarse = nearest_coarse_fine_coord / oversampling - cf_radius + g_offset;
-  int fine;
-  if (fine_coord >= nearest_coarse_fine_coord)
-    fine = fine_coord - nearest_coarse_fine_coord;
+  int major = nearest_major_fine_coord / oversampling - cf_radius + g_offset;
+  int minor;
+  if (fine_coord >= nearest_major_fine_coord)
+    minor = fine_coord - nearest_major_fine_coord;
   else
-    fine = fine_coord - (nearest_coarse_fine_coord - oversampling);
-  assert(0 <= fine && fine < oversampling);
-  return {coarse, fine};
+    minor = fine_coord - (nearest_major_fine_coord - oversampling);
+  assert(0 <= minor && minor < oversampling);
+  return {major, minor};
 }
 
-/**
- * portable sincos()
+/** portable sincos()
  */
 template <typename execution_space, typename T>
 KOKKOS_FORCEINLINE_FUNCTION void
@@ -338,8 +336,8 @@ sincos<K::CudaSpace, double>(double ph, double* sn, double* cs) {
 template <typename execution_space>
 struct GridVis final {
 
-  int coarse[2];
-  int fine[2];
+  int major[2]; /**< major grid coordinate */
+  int minor[2]; /**< minor grid coordinate */
   vis_t value;
   int grid_cube;
   int cf_cube;
@@ -372,8 +370,8 @@ struct GridVis final {
         vis.uvw[0],
         inv_lambda,
         fine_scale[0]);
-    coarse[0] = c0;
-    fine[0] = f0;
+    major[0] = c0;
+    minor[0] = f0;
     auto [c1, f1] =
       compute_vis_coord(
         grid_radius[1],
@@ -382,8 +380,8 @@ struct GridVis final {
         vis.uvw[1],
         inv_lambda,
         fine_scale[1]);
-    coarse[1] = c1;
-    fine[1] = f1;
+    major[1] = c1;
+    minor[1] = f1;
     cf_im_factor = (vis.uvw[2] > 0) ? -1 : 1;
   }
 
@@ -594,18 +592,18 @@ struct HPG_EXPORT VisibilityGridder final {
             cfw(0).wgts[S] = 0;
           });
         team_member.team_barrier();
-        /* loop over coarseX */
+        /* loop over majorX */
         K::parallel_reduce(
           K::TeamVectorRange(team_member, cf.extent_int(0)),
           [=](const int X, cf_wgt_array& cfw_l) {
-            /* loop over coarseY */
+            /* loop over majorY */
             for (int Y = 0; Y < cf.extent_int(1); ++Y) {
-              /* loop over elements of Mueller matrix column  */
+              /* loop over elements (rows) of Mueller matrix column  */
               for (int S = 0; S < cf.extent_int(2); ++S) {
-                cf_t cfv = cf(X, Y, S, vis.fine[0], vis.fine[1], vis.cf_cube);
+                cf_t cfv = cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
                 cfv.imag() *= vis.cf_im_factor;
                 pseudo_atomic_add<execution_space>(
-                  grid(vis.coarse[0] + X, vis.coarse[1] + Y, S, vis.grid_cube),
+                  grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
                   gv_t(cfv * vis.value));
                 cfw_l.wgts[S] += cfv;
               }
