@@ -597,6 +597,7 @@ struct HPG_EXPORT VisibilityGridder final {
           oversampling,
           cf_radius,
           fine_scale);
+        // accumulate weights in scratch memory for this visibility
         scratch_wgts_view cfw(team_member.team_scratch(0));
         K::parallel_for(
           K::TeamVectorRange(team_member, cf.extent_int(2)),
@@ -622,6 +623,8 @@ struct HPG_EXPORT VisibilityGridder final {
             }
           },
           SumCFWgts<execution_space>(cfw(0)));
+        team_member.team_barrier();
+        // update weights array
         K::parallel_for(
           K::TeamVectorRange(team_member, cf.extent_int(2)),
           [=](const int S) {
