@@ -597,6 +597,10 @@ struct HPG_EXPORT VisibilityGridder final {
           oversampling,
           cf_radius,
           fine_scale);
+        // convenience variables
+        const int N_X = cf.extent_int(0);
+        const int N_Y = cf.extent_int(1);
+        const int N_S = cf.extent_int(2);
         // accumulate weights in scratch memory for this visibility
         scratch_wgts_view cfw(team_member.team_scratch(0));
         K::parallel_for(
@@ -607,12 +611,12 @@ struct HPG_EXPORT VisibilityGridder final {
         team_member.team_barrier();
         /* loop over majorX */
         K::parallel_reduce(
-          K::TeamVectorRange(team_member, cf.extent_int(0)),
+          K::TeamVectorRange(team_member, N_X),
           [=](const int X, cf_wgt_array& cfw_l) {
             /* loop over majorY */
-            for (int Y = 0; Y < cf.extent_int(1); ++Y) {
+            for (int Y = 0; Y < N_Y; ++Y) {
               /* loop over elements (rows) of Mueller matrix column  */
-              for (int S = 0; S < cf.extent_int(2); ++S) {
+              for (int S = 0; S < N_S; ++S) {
                 cf_t cfv = cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
                 cfv.imag() *= vis.cf_im_factor;
                 pseudo_atomic_add<execution_space>(
@@ -623,10 +627,13 @@ struct HPG_EXPORT VisibilityGridder final {
             }
           },
           SumCFWgts<execution_space>(cfw(0)));
+        // by Kokkos reduction semantics the following barrier should not be
+        // needed, but recent Slack discussion indicates a possible bug, so we
+        // use it here until the issue is resolved
         team_member.team_barrier();
         // update weights array
         K::parallel_for(
-          K::TeamVectorRange(team_member, cf.extent_int(2)),
+          K::TeamVectorRange(team_member, N_S),
           [=](const int S) {
             K::atomic_add(
               &weights(S, vis.grid_cube),
