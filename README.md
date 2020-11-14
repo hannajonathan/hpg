@@ -41,3 +41,5 @@ following statement in `CMakeLists.txt`:
 ``` cmake
 target_link_libraries(MyProgram hpg)
 ```
+
+Client code should include only the header `hpg.hpp` (in particular, such code must not include `hpg_impl.hpp`).
