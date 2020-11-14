@@ -1,3 +1,5 @@
+#pragma once
+
 #include "hpg.hpp"
 
 #include <algorithm>
