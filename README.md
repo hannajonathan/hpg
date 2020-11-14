@@ -18,7 +18,7 @@ High performance gridding (kernel) implementation library.
 Compilers:
 * [gcc](https://gcc.gnu.org), v9.3.0 or later
 * [clang](https://clang.llvm.org), v10.0.0 or later
-* *nvcc*, *via* *Kokkos'* `nvcc_wrapper` if *gcc* and *CUDA*
+* *nvcc*, *via* *Kokkos'* `nvcc_wrapper` if using *gcc* and *CUDA*
 
 ## Build instructions
 
@@ -34,12 +34,15 @@ library installation. When building for *CUDA* using *gcc*, *Kokkos'*
 ## Using libhpg
 
 The *HPG* installation includes a *CMake* package configuration file
-that defines the `hpg` target. To build an executable with the target
-name `MyProgram` against the *libhpg* library, simply include the
+that defines the `hpg` target. To build the *CMake* target `MyProgram`
+against the *libhpg* library, simply include something like the
 following statement in `CMakeLists.txt`:
 
 ``` cmake
 target_link_libraries(MyProgram hpg)
 ```
 
-Client code should include only the header `hpg.hpp` (in particular, such code must not include `hpg_impl.hpp`).
+Most client code should include only the header `hpg.hpp`, which hides
+from the client code all use by the *HPG* implementation of *Kokkos*
+types and concepts. However, if direct access to the *Kokkos* kernels
+is desired, the header `hpg_impl.h` may be used.
