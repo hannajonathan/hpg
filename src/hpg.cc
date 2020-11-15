@@ -135,6 +135,11 @@ GridderState::grid_scale() const noexcept {
   return impl->grid_scale;
 }
 
+bool
+GridderState::is_null() const noexcept {
+  return !bool(impl);
+}
+
 GridderState
 GridderState::set_convolution_function(
   Device host_device,

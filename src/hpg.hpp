@@ -238,6 +238,11 @@ public:
   const std::array<grid_scale_fp, 2>&
   grid_scale() const noexcept;
 
+  /** query whether null state
+   */
+  bool
+  is_null() const noexcept;
+
   /** set convolution function
    *
    * May invoke fence() on target.
@@ -555,6 +560,12 @@ public:
   const std::array<grid_scale_fp, 2>&
   grid_scale() const noexcept {
     return state.grid_scale();
+  }
+
+  /** query whether null state */
+  bool
+  is_null() const noexcept {
+    return state.is_null();
   }
 
   /** set convolution function
