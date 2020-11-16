@@ -1,6 +1,6 @@
-add_executable(utGridderState utGridderState.cc)
-target_link_libraries(utGridderState hpg gtest)
-add_test(NAME utGridderState COMMAND utGridderState)
+add_executable(GridderStateUnitTests GridderStateUnitTests.cc)
+target_link_libraries(GridderStateUnitTests hpg gtest)
+add_test(NAME GridderStateUnitTests COMMAND GridderStateUnitTests)
 
 # basic test application
 #
