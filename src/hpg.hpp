@@ -255,7 +255,7 @@ public:
    *
    * @sa Gridder::set_convolution_function()
    */
-  GridderState
+  std::variant<Error, GridderState>
   set_convolution_function(Device host_device, const CFArray& cf) &;
 
   /** set convolution function
@@ -270,7 +270,7 @@ public:
    *
    * @sa Gridder::set_convolution_function()
    */
-  GridderState
+  std::tuple<std::optional<Error>, GridderState>
   set_convolution_function(Device host_device, const CFArray& cf) &&;
 
   /** grid some visibilities
@@ -578,9 +578,13 @@ public:
    * @param host_device device to use for changing array layout
    * @param cf convolution function array
    */
-  void
+  std::optional<Error>
   set_convolution_function(Device host_device, const CFArray& cf) {
-    state = std::move(state).set_convolution_function(host_device, cf);
+    std::optional<Error> result;
+    std::tie(result, const_cast<Gridder*>(this)->state) =
+      std::move(const_cast<Gridder*>(this)->state)
+      .set_convolution_function(host_device, cf);
+    return result;
   }
 
   /** grid visibilities

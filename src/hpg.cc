@@ -140,24 +140,28 @@ GridderState::is_null() const noexcept {
   return !bool(impl);
 }
 
-GridderState
+std::variant<Error, GridderState>
 GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) & {
 
   GridderState result(*this);
-  result.impl->set_convolution_function(host_device, cf);
-  return result;
+  auto error = result.impl->set_convolution_function(host_device, cf);
+  if (error)
+    return std::move(error.value());
+  else
+    return std::move(result);
+
 }
 
-GridderState
+std::tuple<std::optional<Error>, GridderState>
 GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) && {
 
   GridderState result(std::move(*this));
-  result.impl->set_convolution_function(host_device, cf);
-  return result;
+  auto error = result.impl->set_convolution_function(host_device, cf);
+  return {std::move(error), std::move(result)};
 }
 
 GridderState
@@ -290,9 +294,9 @@ std::variant<Error, GridderState>
 GridderState::apply_fft(FFTSign sign, bool in_place) & {
 
   GridderState result(*this);
-  auto err = result.impl->apply_fft(sign, in_place);
-  if (err)
-    return std::move(err.value());
+  auto error = result.impl->apply_fft(sign, in_place);
+  if (error)
+    return std::move(error.value());
   else
     return std::move(result);
 }
@@ -301,8 +305,8 @@ std::tuple<std::optional<Error>, GridderState>
 GridderState::apply_fft(FFTSign sign, bool in_place) && {
 
   GridderState result(std::move(*this));
-  auto err = result.impl->apply_fft(sign, in_place);
-  return {std::move(err), std::move(result)};
+  auto error = result.impl->apply_fft(sign, in_place);
+  return {std::move(error), std::move(result)};
 }
 
 GridderState

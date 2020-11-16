@@ -1245,7 +1245,7 @@ struct State {
     , grid_size(grid_size_)
     , grid_scale(grid_scale_) {}
 
-  virtual void
+  virtual std::optional<Error>
   set_convolution_function(Device host_device, const CFArray& cf) = 0;
 
   virtual void
@@ -1512,11 +1512,15 @@ public:
     return StateT(*this);
   }
 
-  void
+  std::optional<Error>
   set_convolution_function(Device host_device, const CFArray& cf_array)
     override {
 
-    assert(cf_array.extent(2) == grid_size[2]);
+    if (cf_array.extent(2) != grid_size[2])
+      return Error("Unequal size of Stokes dimension in grid and CF");
+    if (cf_array.extent(0) > grid_size[0] * cf_array.oversampling()
+        || cf_array.extent(1) > grid_size[1] * cf_array.oversampling())
+      return Error("CF support size exceeds grid size");
 
     cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
       K::ViewAllocateWithoutInitializing("cf"),
@@ -1562,6 +1566,7 @@ public:
       break;
     }
     cf = cf_init;
+    return std::nullopt;
   }
 
   void

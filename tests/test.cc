@@ -153,7 +153,9 @@ run_tests(
     auto st0 = hpg::GridderState(D, 2, grid_size, grid_scale);
     auto st1 = st0.fence();
     auto st2 = std::move(st0).fence();
-    auto st3 = std::move(st2).set_convolution_function(host_dev, cf);
+    auto st3 =
+      std::get<hpg::GridderState>(
+        std::move(st2).set_convolution_function(host_dev, cf));
 #ifdef HPG_ENABLE_SERIAL
     if constexpr (D == hpg::Device::Serial)
       assert(st3.max_added_tasks() == 0);
