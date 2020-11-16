@@ -233,13 +233,11 @@ public:
   const std::array<unsigned, 4>&
   grid_size() const noexcept;
 
-  /** grid scale
-   */
+  /** grid scale */
   const std::array<grid_scale_fp, 2>&
   grid_scale() const noexcept;
 
-  /** query whether null state
-   */
+  /** null state query */
   bool
   is_null() const noexcept;
 
@@ -562,7 +560,7 @@ public:
     return state.grid_scale();
   }
 
-  /** query whether null state */
+  /** null state query */
   bool
   is_null() const noexcept {
     return state.is_null();
