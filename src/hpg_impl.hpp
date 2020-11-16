@@ -1472,6 +1472,7 @@ public:
 
     init_exec_spaces();
     new_grid(const_cast<const StateT*>(&st), true);
+    cf = const_cast<const StateT*>(&st)->cf;
   }
 
   StateT(StateT&& st)
@@ -1710,6 +1711,7 @@ private:
     std::swap(grid_size, other.grid_size);
     std::swap(grid_scale, other.grid_scale);
     std::swap(grid, other.grid);
+    std::swap(cf, other.cf);
     std::swap(weights, other.weights);
   }
 
