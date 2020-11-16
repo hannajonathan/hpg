@@ -443,7 +443,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-  std::tuple<GridderState, std::optional<Error>>
+  std::tuple<std::optional<Error>, GridderState>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
 
   /** rotate grid planes by half
@@ -687,7 +687,7 @@ public:
   std::optional<Error>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) {
     std::optional<Error> result;
-    std::tie(const_cast<Gridder*>(this)->state, result) =
+    std::tie(result, const_cast<Gridder*>(this)->state) =
       std::move(const_cast<Gridder*>(this)->state).apply_fft(sign, in_place);
     return result;
   }

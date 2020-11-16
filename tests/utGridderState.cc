@@ -101,7 +101,7 @@ TEST(GridderStateSerial, CopyOrMove) {
     EXPECT_FALSE(gs.is_null());
     ASSERT_TRUE(std::holds_alternative<hpg::GridderState>(fft_rc));
     hpg::GridderState& gs1 = std::get<hpg::GridderState>(fft_rc);
-    auto [gs2, opterr] = std::move(gs1).apply_fft();
+    auto [opterr, gs2] = std::move(gs1).apply_fft();
     EXPECT_TRUE(gs1.is_null());
     EXPECT_FALSE(gs2.is_null());
   }

@@ -297,12 +297,12 @@ GridderState::apply_fft(FFTSign sign, bool in_place) & {
     return std::move(result);
 }
 
-std::tuple<GridderState, std::optional<Error>>
+std::tuple<std::optional<Error>, GridderState>
 GridderState::apply_fft(FFTSign sign, bool in_place) && {
 
   GridderState result(std::move(*this));
   auto err = result.impl->apply_fft(sign, in_place);
-  return {std::move(result), std::move(err)};
+  return {std::move(err), std::move(result)};
 }
 
 GridderState
