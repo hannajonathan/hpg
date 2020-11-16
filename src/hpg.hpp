@@ -58,6 +58,10 @@ struct HPG_EXPORT State;
 class HPG_EXPORT CFArray {
 public:
 
+  static constexpr unsigned rank = 4;
+
+  using scalar_type = std::complex<cf_fp>;
+
   virtual unsigned
   oversampling() const = 0;
 
@@ -78,6 +82,10 @@ public:
 class HPG_EXPORT GridValueArray {
 public:
 
+  static constexpr unsigned rank = 4;
+
+  using scalar_type = std::complex<grid_value_fp>;
+
   virtual unsigned
   extent(unsigned dim) const = 0;
 
@@ -93,6 +101,10 @@ public:
  */
 class HPG_EXPORT GridWeightArray {
 public:
+
+  static constexpr unsigned rank = 2;
+
+  using scalar_type = grid_value_fp;
 
   virtual unsigned
   extent(unsigned dim) const = 0;
