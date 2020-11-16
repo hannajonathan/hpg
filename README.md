@@ -23,9 +23,10 @@ Compilers:
 ## Build instructions
 
 CMake build options:
-* `Hpg_ENABLE_SERIAL`: enable serial implementation
-* `Hpg_ENABLE_OPENMP`: enable OpenMP implementation
-* `Hpg_ENABLE_CUDA`: enable CUDA implementation
+* `Hpg_ENABLE_ALL`: enable all devices enabled by Kokkos installation (default: `ON`)
+* `Hpg_ENABLE_SERIAL`: enable serial implementation (default: value of `Hpg_ENABLE_ALL`)
+* `Hpg_ENABLE_OPENMP`: enable OpenMP implementation (default: value of `Hpg_ENABLE_ALL`)
+* `Hpg_ENABLE_CUDA`: enable CUDA implementation (default: value of `Hpg_ENABLE_ALL`)
 
 Note that the selected implementation(s) must be enabled in the *Kokkos*
 library installation. When building for *CUDA* using *gcc*, *Kokkos'*
