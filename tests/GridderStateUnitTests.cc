@@ -275,8 +275,7 @@ TEST(GridderState, CopyOrMove) {
     const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto gs1 =
-      std::get<hpg::GridderState>(
-        gs.set_convolution_function(default_host_device, cf));
+      std::get<1>(gs.set_convolution_function(default_host_device, cf));
     init_visibilities(
       10,
       grid_size,
@@ -338,10 +337,14 @@ TEST(GridderState, CopyOrMove) {
     EXPECT_FALSE(gs2.is_null());
   }
   {
-    auto fft_rc = gs.apply_fft();
+    auto rc_fft = gs.apply_fft();
     EXPECT_FALSE(gs.is_null());
-    ASSERT_TRUE(std::holds_alternative<hpg::GridderState>(fft_rc));
-    hpg::GridderState& gs1 = std::get<hpg::GridderState>(fft_rc);
+#if HPG_API >= 17
+    ASSERT_TRUE(std::holds_alternative<hpg::GridderState>(rc_fft));
+#else
+    ASSERT_FALSE(std::get<0>(rc_fft));
+#endif
+    hpg::GridderState& gs1 = std::get<1>(rc_fft);
     auto [opterr, gs2] = std::move(gs1).apply_fft();
     EXPECT_TRUE(gs1.is_null());
     EXPECT_FALSE(gs2.is_null());
@@ -377,7 +380,11 @@ TEST(GridderState, CFError) {
     const std::array<unsigned, 4> cf_size{3, 3, 1, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto error_or_gs = gs.set_convolution_function(default_host_device, cf);
+#if HPG_API >= 17
     EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs));
+#else
+    EXPECT_TRUE(std::get<0>(error_or_gs));
+#endif
     auto [error, gs1] =
       hpg::GridderState(gs).set_convolution_function(default_host_device, cf);
     EXPECT_TRUE(error);
@@ -387,7 +394,11 @@ TEST(GridderState, CFError) {
     const std::array<unsigned, 4> cf_size{8, 3, 4, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto error_or_gs = gs.set_convolution_function(default_host_device, cf);
+#if HPG_API >= 17
     EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs));
+#else
+    EXPECT_TRUE(std::get<0>(error_or_gs));
+#endif
     auto [error, gs1] =
       hpg::GridderState(gs).set_convolution_function(default_host_device, cf);
     EXPECT_TRUE(error);
@@ -397,7 +408,11 @@ TEST(GridderState, CFError) {
     const std::array<unsigned, 4> cf_size{3, 8, 4, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto error_or_gs = gs.set_convolution_function(default_host_device, cf);
+#if HPG_API >= 17
     EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs));
+#else
+    EXPECT_TRUE(std::get<0>(error_or_gs));
+#endif
     auto [error, gs1] =
       hpg::GridderState(gs).set_convolution_function(default_host_device, cf);
     EXPECT_TRUE(error);
@@ -425,8 +440,7 @@ TEST(GridderState, Reset) {
     const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto gs1 =
-      std::get<hpg::GridderState>(
-        gs.set_convolution_function(default_host_device, cf));
+      std::get<1>(gs.set_convolution_function(default_host_device, cf));
     init_visibilities(
       10,
       grid_size,

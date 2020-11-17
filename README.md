@@ -27,10 +27,15 @@ CMake build options:
 * `Hpg_ENABLE_SERIAL`: enable serial implementation (default: value of `Hpg_ENABLE_ALL`)
 * `Hpg_ENABLE_OPENMP`: enable OpenMP implementation (default: value of `Hpg_ENABLE_ALL`)
 * `Hpg_ENABLE_CUDA`: enable CUDA implementation (default: value of `Hpg_ENABLE_ALL`)
+* `Hpg_API`: C++ standard for top-level HPG API (default: 11)
 
 Note that the selected implementation(s) must be enabled in the *Kokkos*
 library installation. When building for *CUDA* using *gcc*, *Kokkos'*
 `nvcc_wrapper` must be used to build *HPG*.
+
+Building *libhpg* requires a compiler that supports C++17 or later,
+although the C++ language standard of the *HPG* API can be selected by
+the user as noted above.
 
 ## Using libhpg
 

@@ -1,12 +1,16 @@
 #pragma once
 
+#include "hpg_config.hpp"
+
 #include <complex>
 #include <memory>
-#include <optional>
 #include <string>
 #include <tuple>
-#include <variant>
 #include <vector>
+#if (HPG_API >= 17)
+# include <optional>
+# include <variant>
+#endif
 
 #include "hpg_export.h"
 
@@ -52,6 +56,7 @@ enum class HPG_EXPORT Device {
 
 namespace Impl {
 struct HPG_EXPORT State;
+struct HPG_EXPORT GridderState;
 } // end namespace Impl
 
 /** base class for convolution functions */
@@ -174,6 +179,7 @@ constexpr FFTSign fft_sign_dflt = FFTSign::POSITIVE;
 struct GridderState {
 protected:
   friend class Gridder;
+  friend class Impl::GridderState;
 
   // state cannot be a unique_ptr since Impl::State is here an incomplete type
   std::shared_ptr<Impl::State> impl; /**< state implementation */
@@ -264,9 +270,18 @@ public:
    * @param cf convolution function array
    *
    * @sa Gridder::set_convolution_function()
+   *
+   * @todo const?
    */
+#if HPG_API >= 17
   std::variant<Error, GridderState>
-  set_convolution_function(Device host_device, const CFArray& cf) &;
+  set_convolution_function(Device host_device, const CFArray& cf)
+    const volatile &;
+#else // HPG_API < 17
+  std::tuple<std::unique_ptr<Error>, GridderState>
+  set_convolution_function(Device host_device, const CFArray& cf)
+    const volatile &;
+#endif //HPG_API >= 17
 
   /** set convolution function
    *
@@ -280,8 +295,13 @@ public:
    *
    * @sa Gridder::set_convolution_function()
    */
+#if HPG_API >= 17
   std::tuple<std::optional<Error>, GridderState>
   set_convolution_function(Device host_device, const CFArray& cf) &&;
+#else // HPG_API < 17
+  std::tuple<std::unique_ptr<Error>, GridderState>
+  set_convolution_function(Device host_device, const CFArray& cf) &&;
+#endif // HPG_API >= 17
 
   /** grid some visibilities
    *
@@ -314,7 +334,7 @@ public:
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
     const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) &;
+    const std::vector<vis_uvw_t>& visibility_coordinates) const volatile &;
 
   /** grid some visibilities
    *
@@ -407,7 +427,7 @@ public:
    * May invoke fence() on target
    */
   GridderState
-  reset_grid() &;
+  reset_grid() const volatile &;
 
   /** reset grid values to zero
    *
@@ -424,7 +444,7 @@ public:
    * normalization
    */
   GridderState
-  normalize(grid_value_fp wgt_factor = 1) &;
+  normalize(grid_value_fp wgt_factor = 1) const volatile &;
 
   /** normalize grid values by scaled weights
    *
@@ -443,8 +463,15 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
+#if HPG_API >= 17
   std::variant<Error, GridderState>
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &;
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true)
+    const volatile &;
+#else // HPG_API < 17
+  std::tuple<std::unique_ptr<Error>, GridderState>
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true)
+    const volatile &;
+#endif // HPG_API >= 17
 
   /** apply FFT to grid array planes
    *
@@ -453,15 +480,19 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
+#if HPG_API >= 17
   std::tuple<std::optional<Error>, GridderState>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
-
+#else // HPG_API < 17
+  std::tuple<std::unique_ptr<Error>, GridderState>
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
+#endif // HPG_API >= 17
   /** rotate grid planes by half
    *
    * Primarily for use after application of FFT. May invoke fence() on target.
    */
   GridderState
-  rotate_grid() &;
+  rotate_grid() const volatile &;
 
   /** rotate grid planes by half
    *
@@ -588,6 +619,7 @@ public:
    * @param host_device device to use for changing array layout
    * @param cf convolution function array
    */
+#if HPG_API >= 17
   std::optional<Error>
   set_convolution_function(Device host_device, const CFArray& cf) {
     std::optional<Error> result;
@@ -596,6 +628,16 @@ public:
       .set_convolution_function(host_device, cf);
     return result;
   }
+#else // HPG_API < 17
+  std::unique_ptr<Error>
+  set_convolution_function(Device host_device, const CFArray& cf) {
+    std::unique_ptr<Error> result;
+    std::tie(result, const_cast<Gridder*>(this)->state) =
+      std::move(const_cast<Gridder*>(this)->state)
+      .set_convolution_function(host_device, cf);
+    return result;
+  }
+#endif // HPG_API >= 17
 
   /** grid visibilities
    *
@@ -698,6 +740,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
+#if HPG_API >= 17
   std::optional<Error>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) {
     std::optional<Error> result;
@@ -705,6 +748,15 @@ public:
       std::move(const_cast<Gridder*>(this)->state).apply_fft(sign, in_place);
     return result;
   }
+#else // HPG_API < 17
+  std::unique_ptr<Error>
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) {
+    std::unique_ptr<Error> result;
+    std::tie(result, const_cast<Gridder*>(this)->state) =
+      std::move(const_cast<Gridder*>(this)->state).apply_fft(sign, in_place);
+    return result;
+  }
+#endif // HPG_API >= 17
 
   /** rotate grid planes by half
    *

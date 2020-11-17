@@ -1,6 +1,59 @@
 #include "hpg_impl.hpp"
 
+#include <optional>
+#include <variant>
+
 using namespace hpg;
+
+struct Impl::GridderState {
+
+  static std::variant<Error, ::hpg::GridderState>
+  set_convolution_function(
+    const volatile ::hpg::GridderState& st,
+    Device host_device,
+    const CFArray& cf) {
+
+    ::hpg::GridderState result(st);
+    auto error = result.impl->set_convolution_function(host_device, cf);
+    if (error)
+      return std::move(error.value());
+    else
+      return std::move(result);
+  }
+
+  static std::tuple<std::optional<Error>, ::hpg::GridderState>
+  set_convolution_function(
+    ::hpg::GridderState&& st,
+    Device host_device,
+    const CFArray& cf) {
+
+    ::hpg::GridderState result(std::move(st));
+    auto error = result.impl->set_convolution_function(host_device, cf);
+    return {std::move(error), std::move(result)};
+  }
+
+  static std::variant<Error, ::hpg::GridderState>
+  apply_fft(
+    const volatile ::hpg::GridderState& st,
+    FFTSign sign,
+    bool in_place) {
+
+    ::hpg::GridderState result(st);
+    auto error = result.impl->apply_fft(sign, in_place);
+    if (error)
+      return std::move(error.value());
+    else
+      return std::move(result);
+  }
+
+  static std::tuple<std::optional<Error>, ::hpg::GridderState>
+  apply_fft(::hpg::GridderState&& st, FFTSign sign, bool in_place) {
+
+    ::hpg::GridderState result(std::move(st));
+    auto error = result.impl->apply_fft(sign, in_place);
+    return {std::move(error), std::move(result)};
+  }
+};
 
 GridderState::GridderState() {
 }
@@ -140,29 +193,59 @@ GridderState::is_null() const noexcept {
   return !bool(impl);
 }
 
+#if HPG_API >= 17
 std::variant<Error, GridderState>
 GridderState::set_convolution_function(
   Device host_device,
-  const CFArray& cf) & {
+  const CFArray& cf) const volatile & {
 
-  GridderState result(*this);
-  auto error = result.impl->set_convolution_function(host_device, cf);
-  if (error)
-    return std::move(error.value());
-  else
-    return std::move(result);
-
+  return Impl::GridderState::set_convolution_function(*this, host_device, cf);
 }
+#else
+std::tuple<std::unique_ptr<Error>, GridderState>
+GridderState::set_convolution_function(
+  Device host_device,
+  const CFArray& cf) const volatile & {
 
+  auto err_or_gs =
+    Impl::GridderState::set_convolution_function(*this, host_device, cf);
+  if (std::holds_alternative<Error>(err_or_gs))
+    return {std::make_unique<Error>(std::get<Error>(err_or_gs)), *this};
+  else
+    return {
+      std::unique_ptr<Error>(),
+      std::move(std::get<GridderState>(err_or_gs))};
+}
+#endif
+
+#if HPG_API >= 17
 std::tuple<std::optional<Error>, GridderState>
 GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) && {
 
-  GridderState result(std::move(*this));
-  auto error = result.impl->set_convolution_function(host_device, cf);
-  return {std::move(error), std::move(result)};
+  return
+    Impl::GridderState
+    ::set_convolution_function(std::move(*this), host_device, cf);
 }
+#else
+std::tuple<std::unique_ptr<Error>, GridderState>
+GridderState::set_convolution_function(
+  Device host_device,
+  const CFArray& cf) && {
+
+  std::optional<Error> oerr;
+  GridderState gs;
+  std::tie(oerr, gs) =
+    std::move(
+      Impl::GridderState
+      ::set_convolution_function(std::move(*this), host_device, cf));
+  std::unique_ptr<Error> err;
+  if (oerr)
+    err =  std::make_unique<Error>(oerr.value());
+  return {std::move(err), std::move(gs)};
+}
+#endif
 
 GridderState
 GridderState::grid_visibilities(
@@ -173,7 +256,7 @@ GridderState::grid_visibilities(
   const std::vector<vis_weight_fp>& visibility_weights,
   const std::vector<vis_frequency_fp>& visibility_frequencies,
   const std::vector<vis_phase_fp>& visibility_phases,
-  const std::vector<vis_uvw_t>& visibility_coordinates) & {
+  const std::vector<vis_uvw_t>& visibility_coordinates) const volatile & {
 
   GridderState result(*this);
   result.impl
@@ -259,7 +342,7 @@ GridderState::grid_values() && {
 }
 
 GridderState
-GridderState::reset_grid() & {
+GridderState::reset_grid() const volatile & {
 
   GridderState result(*this);
   result.impl->reset_grid();
@@ -275,7 +358,7 @@ GridderState::reset_grid() && {
 }
 
 GridderState
-GridderState::normalize(grid_value_fp wfactor) & {
+GridderState::normalize(grid_value_fp wfactor) const volatile & {
 
   GridderState result(*this);
   result.impl->normalize(wfactor);
@@ -290,27 +373,48 @@ GridderState::normalize(grid_value_fp wfactor) && {
   return result;
 }
 
+#if HPG_API >= 17
 std::variant<Error, GridderState>
-GridderState::apply_fft(FFTSign sign, bool in_place) & {
+GridderState::apply_fft(FFTSign sign, bool in_place) const volatile & {
 
-  GridderState result(*this);
-  auto error = result.impl->apply_fft(sign, in_place);
-  if (error)
-    return std::move(error.value());
-  else
-    return std::move(result);
+  return Impl::GridderState::apply_fft(*this, sign, in_place);
 }
+#else
+std::tuple<std::unique_ptr<Error>, GridderState>
+GridderState::apply_fft(FFTSign sign, bool in_place) const volatile & {
+  auto err_or_gs = Impl::GridderState::apply_fft(*this, sign, in_place);
+  if (std::holds_alternative<Error>(err_or_gs))
+    return {std::make_unique<Error>(std::get<Error>(err_or_gs)), *this};
+  else
+    return {
+      std::unique_ptr<Error>(),
+      std::move(std::get<GridderState>(err_or_gs))};
+}
+#endif
 
+#if HPG_API >= 17
 std::tuple<std::optional<Error>, GridderState>
 GridderState::apply_fft(FFTSign sign, bool in_place) && {
 
-  GridderState result(std::move(*this));
-  auto error = result.impl->apply_fft(sign, in_place);
-  return {std::move(error), std::move(result)};
+  return Impl::GridderState::apply_fft(std::move(*this), sign, in_place);
 }
+#else
+std::tuple<std::unique_ptr<Error>, GridderState>
+GridderState::apply_fft(FFTSign sign, bool in_place) && {
+
+  std::optional<Error> oerr;
+  GridderState gs;
+  std::tie(oerr, gs) =
+    std::move(Impl::GridderState::apply_fft(std::move(*this), sign, in_place));
+  std::unique_ptr<Error> err;
+  if (oerr)
+    err =  std::make_unique<Error>(oerr.value());
+  return {std::move(err), std::move(gs)};
+}
+#endif
 
 GridderState
-GridderState::rotate_grid() & {
+GridderState::rotate_grid() const volatile & {
 
   GridderState result(*this);
   result.impl->rotate_grid();

@@ -2,6 +2,19 @@ option(Hpg_ENABLE_ALL "Enable all devices enabled by Kokkos installation" ON)
 option(Hpg_ENABLE_SERIAL "Enable Serial device" ${Hpg_ENABLE_ALL})
 option(Hpg_ENABLE_OPENMP "Enable OpenMP device" ${Hpg_ENABLE_ALL})
 option(Hpg_ENABLE_CUDA "Enable CUDA device" ${Hpg_ENABLE_ALL})
+set(Hpg_API 11 CACHE STRING "HPG API C++ standard")
+
+# validate value of Hpg_API
+#
+set(HPG_API_OPTIONS 11 17)
+set_property(CACHE Hpg_API PROPERTY STRINGS HPG_API_OPTIONS)
+list(FIND HPG_API_OPTIONS ${Hpg_API} VALID_HPG_API)
+if(VALID_HPG_API LESS 0)
+  message(FATAL_ERROR "Invalid Hpg_API; supported options are ${HPG_API_OPTIONS}")
+endif()
+
+# stuff value of Hpg_API into config header
+configure_file(hpg_config.hpp.in hpg_config.hpp)
 
 # find Kokkos
 #

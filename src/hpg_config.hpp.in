@@ -1,0 +1,3 @@
+#pragma once
+
+#define HPG_API @Hpg_API@
