@@ -480,7 +480,7 @@ TEST(GridderState, Reset) {
 
     auto [gs8, weights8] = gs4.grid_weights();
     EXPECT_TRUE(values_eq(weights.get(), weights8.get()));
-    auto [gs9, weights9] = gs5.grid_values();
+    auto [gs9, weights9] = gs5.grid_weights();
     EXPECT_FALSE(has_non_zero(weights9.get()));
   }
 }
