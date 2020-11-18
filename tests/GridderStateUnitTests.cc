@@ -2,6 +2,8 @@
 #include "gtest/gtest.h"
 
 #include <array>
+#include <cassert>
+#include <iostream>
 #include <random>
 
 #if defined(HPG_ENABLE_OPENMP)
@@ -485,9 +487,41 @@ TEST(GridderState, Reset) {
 
 int
 main(int argc, char **argv) {
-  hpg::ScopeGuard hpg;
+  std::ostringstream oss;
+  oss << "Using ";
+  switch (default_device) {
+#ifdef HPG_ENABLE_SERIAL
+  case hpg::Device::Serial:
+    oss << "Serial";
+    break;
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_OPENMP
+  case hpg::Device::OpenMP:
+    oss << "OpenMP";
+    break;
+#endif // HPG_ENABLE_OPENMP
+#ifdef HPG_ENABLE_CUDA
+  case hpg::Device::Cuda:
+    oss << "Cuda";
+    break;
+#endif // HPG_ENABLE_CUDA
+  default:
+    assert(false);
+    break;
+  }
+  oss << " device for tests";
+  std::cout << oss.str() << std::endl;
+
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  int rc;
+  {
+    // weird, but using ScopeGuard/initialize/finalize at function scope can
+    // sometimes hang this program on exit (but not when executed by ctest)
+    hpg::initialize();
+    rc = RUN_ALL_TESTS();
+    hpg::finalize();
+  }
+  return rc;
 }
 
 // Local Variables:
