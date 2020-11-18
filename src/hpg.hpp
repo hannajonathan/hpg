@@ -535,6 +535,9 @@ public:
 
   mutable GridderState state; /**< state maintained by instances */
 
+  /** default constructur */
+  Gridder() {}
+
   /** constructor
    *
    * @param device gridder device type
