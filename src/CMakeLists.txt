@@ -13,9 +13,6 @@ if(VALID_HPG_API LESS 0)
   message(FATAL_ERROR "Invalid Hpg_API; supported options are ${HPG_API_OPTIONS}")
 endif()
 
-# stuff value of Hpg_API into config header
-configure_file(hpg_config.hpp.in hpg_config.hpp)
-
 # find Kokkos
 #
 set(HAVE_SERIAL -1)
@@ -73,20 +70,24 @@ endif()
 #
 add_library(hpg hpg.cc)
 if(HAVE_SERIAL GREATER -1)
-  target_compile_definitions(hpg PUBLIC HPG_ENABLE_SERIAL)
+  set(HPG_ENABLE_SERIAL ${Hpg_ENABLE_SERIAL})
   if(HAVE_OPENMP LESS 0)
     target_link_libraries(hpg PRIVATE FFTW::Double)
   endif()
 endif()
 if(HAVE_OPENMP GREATER -1)
-  target_compile_definitions(hpg PUBLIC HPG_ENABLE_OPENMP)
+  set(HPG_ENABLE_OPENMP ${Hpg_ENABLE_OPENMP})
   target_link_libraries(hpg PRIVATE FFTW::DoubleOpenMP)
 endif()
 if(HAVE_CUDA GREATER -1)
-  target_compile_definitions(hpg PUBLIC HPG_ENABLE_CUDA)
+  set(HPG_ENABLE_CUDA ${Hpg_ENABLE_CUDA})
   target_compile_options(hpg PRIVATE --expt-relaxed-constexpr)
   target_link_libraries(hpg PRIVATE cufft)
 endif()
+
+# use configuration file to save some variables that affect API
+configure_file(hpg_config.hpp.in hpg_config.hpp)
+
 target_link_libraries(hpg PRIVATE Kokkos::kokkoscore)
 target_include_directories(hpg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

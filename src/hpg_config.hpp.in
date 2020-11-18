@@ -1,3 +1,7 @@
 #pragma once
 
 #define HPG_API @Hpg_API@
+
+#cmakedefine HPG_ENABLE_SERIAL
+#cmakedefine HPG_ENABLE_OPENMP
+#cmakedefine HPG_ENABLE_CUDA
