@@ -1,3 +1,5 @@
+include(GNUInstallDirs)
+
 option(Hpg_ENABLE_ALL "Enable all devices enabled by Kokkos installation" ON)
 option(Hpg_ENABLE_SERIAL "Enable Serial device" ${Hpg_ENABLE_ALL})
 option(Hpg_ENABLE_OPENMP "Enable OpenMP device" ${Hpg_ENABLE_ALL})
@@ -88,6 +90,12 @@ endif()
 # use configuration file to save some variables that affect API
 configure_file(hpg_config.hpp.in hpg_config.hpp)
 
+set(hpg_PUBLIC_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/hpg_impl.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/hpg.hpp
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_config.hpp
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_export.h)
+set_target_properties(hpg PROPERTIES PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}")
 target_link_libraries(hpg PRIVATE Kokkos::kokkoscore)
 target_include_directories(hpg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -98,7 +106,5 @@ include(GenerateExportHeader)
 generate_export_header(hpg)
 
 install(TARGETS hpg EXPORT HPGConfig)
-install(FILES ${HPG_INCLUDE}
-  DESTINATION ${CMAKE_INSTALL_FULL_INCLUDEDIR}/hpg)
 install(EXPORT HPGConfig DESTINATION share/hpg/cmake)
 export(TARGETS hpg FILE HPGConfig.cmake)
