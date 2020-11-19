@@ -1486,8 +1486,8 @@ public:
     weights = decltype(weights)();
     cf = decltype(cf)();
     if constexpr(!std::is_void_v<stream_type>) {
-      for (unsigned i = 0; i < max_active_tasks; ++i) {
-        auto rc = DeviceT<D>::destroy_stream(streams[i]);
+      for (auto& str : streams) {
+        auto rc = DeviceT<D>::destroy_stream(str);
         assert(rc);
       }
     }
@@ -1637,7 +1637,7 @@ public:
   void
   fence() const volatile override {
     auto st = const_cast<StateT*>(this);
-    for (unsigned i = 0; i < st->max_active_tasks; ++i) {
+    for (unsigned i = 0; i < st->exec_space_indexes.size(); ++i) {
       st->exec_spaces[st->exec_space_indexes.front()].fence();
       st->exec_space_indexes.push_back(st->exec_space_indexes.front());
       st->exec_space_indexes.pop_front();
