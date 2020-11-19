@@ -1,3 +1,5 @@
+add_subdirectory(dependencies)
+
 add_executable(GridderStateUnitTests GridderStateUnitTests.cc)
 target_link_libraries(GridderStateUnitTests hpg gtest)
 add_test(NAME GridderStateUnitTests COMMAND GridderStateUnitTests)

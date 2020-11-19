@@ -95,7 +95,10 @@ set(hpg_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_config.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_export.h)
-set_target_properties(hpg PROPERTIES PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}")
+set_target_properties(hpg PROPERTIES
+  VERSION 0.0.1
+  SOVERSION 0
+  PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}")
 target_link_libraries(hpg PRIVATE Kokkos::kokkoscore)
 target_include_directories(hpg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -106,5 +109,5 @@ include(GenerateExportHeader)
 generate_export_header(hpg)
 
 install(TARGETS hpg EXPORT HPGConfig)
-install(EXPORT HPGConfig DESTINATION share/hpg/cmake)
+install(EXPORT HPGConfig DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/hpg)
 export(TARGETS hpg FILE HPGConfig.cmake)
