@@ -41,6 +41,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(cmake)
 
+add_subdirectory(dependencies)
+
 add_subdirectory(src)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
