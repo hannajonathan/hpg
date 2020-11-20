@@ -566,7 +566,7 @@ public:
  * Note that the default implementation probably is optimal only for many-core
  * devices, probably not OpenMP (although it is correct on all devices).
  */
-template <typename execution_space>
+template <typename execution_space, unsigned version>
 struct HPG_EXPORT VisibilityGridder final {
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
@@ -659,7 +659,7 @@ struct HPG_EXPORT VisibilityGridder final {
 
 /** grid normalization kernel
  */
-template <typename execution_space>
+template <typename execution_space, unsigned version>
 struct HPG_EXPORT GridNormalizer final {
 
   template <typename grid_layout, typename memory_space>
@@ -819,7 +819,7 @@ struct FFTW<float> {
  *
  * Both in-place and out-of-place versions
  */
-template <typename execution_space>
+template <typename execution_space, unsigned version>
 struct HPG_EXPORT FFT final {
 
   // default implementation assumes FFTW3
@@ -986,7 +986,7 @@ struct CUFFT<float> {
 /** fft kernels for Cuda
  */
 template <>
-struct HPG_EXPORT FFT<K::Cuda> final {
+struct HPG_EXPORT FFT<K::Cuda, 0> final {
 
   template <typename G>
   static std::pair<cufftResult_t, cufftHandle>
@@ -1090,7 +1090,7 @@ swap_gv<K::Cuda>(gv_t& a, gv_t&b) {
  * Useful after FFT to shift grid planes by half the grid plane size in each
  * dimension
  */
-template <typename execution_space>
+template <typename execution_space, unsigned version>
 struct HPG_EXPORT GridShifter final {
 
   template <typename grid_layout, typename memory_space>
@@ -1116,7 +1116,7 @@ struct HPG_EXPORT GridShifter final {
       // simpler (faster?) algorithm when both grid side lengths are even
 
       K::parallel_for(
-        "grid_rotation_ee",
+        "grid_shift_ee",
         K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto gplane =
@@ -1241,6 +1241,7 @@ struct State {
   unsigned max_active_tasks; /**< maximum number of active tasks */
   std::array<unsigned, 4> grid_size; /**< grid size */
   std::array<grid_scale_fp, 2> grid_scale; /**< grid scale */
+  std::array<unsigned, 4> implementation_versions; /**< impl versions*/
 
   State(Device device_)
     : device(device_) {}
@@ -1249,11 +1250,33 @@ struct State {
     Device device_,
     unsigned max_active_tasks_,
     const std::array<unsigned, 4>& grid_size_,
-    const std::array<grid_scale_fp, 2>& grid_scale_)
+    const std::array<grid_scale_fp, 2>& grid_scale_,
+    const std::array<unsigned, 4>& implementation_versions_)
     : device(device_)
     , max_active_tasks(max_active_tasks_)
     , grid_size(grid_size_)
-    , grid_scale(grid_scale_) {}
+    , grid_scale(grid_scale_)
+    , implementation_versions(implementation_versions_) {}
+
+  unsigned
+  visibility_gridder_version() const {
+    return implementation_versions[0];
+  }
+
+  unsigned
+  grid_normalizer_version() const {
+    return implementation_versions[1];
+  }
+
+  unsigned
+  fft_version() const {
+    return implementation_versions[2];
+  }
+
+  unsigned
+  grid_shifter_version() const {
+    return implementation_versions[3];
+  }
 
   virtual std::optional<Error>
   set_convolution_function(Device host_device, const CFArray& cf) = 0;
@@ -1462,12 +1485,14 @@ public:
   StateT(
     unsigned max_active_tasks,
     const std::array<unsigned, 4> grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale)
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const std::array<unsigned, 4>& implementation_versions)
     : State(
       D,
       std::min(max_active_tasks, DeviceT<D>::active_task_limit),
       grid_size,
-      grid_scale) {
+      grid_scale,
+      implementation_versions) {
 
     init_exec_spaces();
     new_grid(true, true);
@@ -1478,7 +1503,8 @@ public:
       D,
       const_cast<const StateT&>(st).max_active_tasks,
       const_cast<const StateT&>(st).grid_size,
-      const_cast<const StateT&>(st).grid_scale) {
+      const_cast<const StateT&>(st).grid_scale,
+      const_cast<const StateT&>(st).implementation_versions) {
 
     init_exec_spaces();
     new_grid(const_cast<const StateT*>(&st), true);
@@ -1635,13 +1661,20 @@ public:
     }
 
     const_visibility_view<memory_space> cvis = vis;
-    Core::VisibilityGridder<execution_space>::kernel(
-      next_exec_space(StreamPhase::COMPUTE),
-      cf,
-      cvis,
-      grid_scale,
-      grid,
-      weights);
+    switch (visibility_gridder_version()) {
+    case 0:
+      Core::VisibilityGridder<execution_space, 0>::kernel(
+        next_exec_space(StreamPhase::COMPUTE),
+        cf,
+        cvis,
+        grid_scale,
+        grid,
+        weights);
+      break;
+    default:
+      assert(false);
+      break;
+    }
   }
 
   void
@@ -1684,36 +1717,67 @@ public:
   normalize(grid_value_fp wfactor) override {
     const_weight_view<typename execution_space::array_layout, memory_space>
       cweights = weights;
-    Core::GridNormalizer<execution_space>
-      ::kernel(next_exec_space(StreamPhase::COMPUTE), grid, cweights, wfactor);
+    switch (grid_normalizer_version()) {
+    case 0:
+      Core::GridNormalizer<execution_space, 0>::kernel(
+        next_exec_space(StreamPhase::COMPUTE),
+        grid,
+        cweights,
+        wfactor);
+      break;
+    default:
+      assert(false);
+      break;
+    }
   }
 
   std::optional<Error>
   apply_fft(FFTSign sign, bool in_place) override {
     std::optional<Error> err;
     if (in_place) {
-      err =
-        Core::FFT<execution_space>
-        ::in_place_kernel(next_exec_space(StreamPhase::COMPUTE), sign, grid);
+      switch (fft_version()) {
+      case 0:
+        err =
+          Core::FFT<execution_space, 0>
+          ::in_place_kernel(next_exec_space(StreamPhase::COMPUTE), sign, grid);
+        break;
+      default:
+        assert(false);
+        break;
+      }
     } else {
       const_grid_view<typename GridLayout<D>::layout, memory_space> pre_grid
         = grid;
       new_grid(false, false);
-      err =
-        Core::FFT<execution_space>::out_of_place_kernel(
-          next_exec_space(StreamPhase::COMPUTE),
-          sign,
-          pre_grid,
-          grid);
+      switch (fft_version()) {
+      case 0:
+        err =
+          Core::FFT<execution_space, 0>::out_of_place_kernel(
+            next_exec_space(StreamPhase::COMPUTE),
+            sign,
+            pre_grid,
+            grid);
+        break;
+      default:
+        assert(false);
+        break;
+      }
     }
     return err;
   }
 
   void
   shift_grid() override {
-    Core::GridShifter<execution_space>::kernel(
-      next_exec_space(StreamPhase::COMPUTE),
-      grid);
+    switch (grid_shifter_version()) {
+    case 0:
+      Core::GridShifter<execution_space, 0>::kernel(
+        next_exec_space(StreamPhase::COMPUTE),
+        grid);
+      break;
+    default:
+      assert(false);
+      break;
+    }
   }
 
 private:
@@ -1728,6 +1792,7 @@ private:
     std::swap(grid, other.grid);
     std::swap(cf, other.cf);
     std::swap(weights, other.weights);
+    std::swap(implementation_versions, other.implementation_versions);
   }
 
   void

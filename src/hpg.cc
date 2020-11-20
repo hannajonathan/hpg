@@ -98,7 +98,15 @@ GridderState::GridderState(
   Device device,
   unsigned max_added_tasks,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale) {
+  const std::array<grid_scale_fp, 2>& grid_scale
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  , const std::array<unsigned, 4>& implementation_versions
+#endif
+  ) {
+
+#ifndef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  std::array<unsigned, 4> implementation_versions{0, 0, 0, 0};
+#endif
 
   const unsigned max_active_tasks = max_added_tasks + 1;
 
@@ -109,7 +117,8 @@ GridderState::GridderState(
       std::make_shared<Impl::StateT<Device::Serial>>(
         max_active_tasks,
         grid_size,
-        grid_scale);
+        grid_scale,
+        implementation_versions);
 #else
     assert(false);
 #endif // HPG_ENABLE_SERIAL
@@ -120,7 +129,8 @@ GridderState::GridderState(
       std::make_shared<Impl::StateT<Device::OpenMP>>(
         max_active_tasks,
         grid_size,
-        grid_scale);
+        grid_scale,
+        implementation_versions);
 #else
     assert(false);
 #endif // HPG_ENABLE_OPENMP
@@ -131,7 +141,8 @@ GridderState::GridderState(
       std::make_shared<Impl::StateT<Device::Cuda>>(
         max_active_tasks,
         grid_size,
-        grid_scale);
+        grid_scale,
+        implementation_versions);
 #else
     assert(false);
 #endif //HPG_ENABLE_CUDA
@@ -142,7 +153,8 @@ GridderState::GridderState(
       std::make_shared<Impl::StateT<Device::HPX>>(
         max_active_tasks,
         grid_size,
-        grid_scale);
+        grid_scale,
+        implementation_versions);
 #else
     assert(false);
 #endif // HPG_ENABLE_HPX

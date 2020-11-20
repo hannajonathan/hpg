@@ -5,6 +5,9 @@ option(Hpg_ENABLE_SERIAL "Enable Serial device" ${Hpg_ENABLE_ALL})
 option(Hpg_ENABLE_OPENMP "Enable OpenMP device" ${Hpg_ENABLE_ALL})
 option(Hpg_ENABLE_CUDA "Enable CUDA device" ${Hpg_ENABLE_ALL})
 set(Hpg_API 11 CACHE STRING "HPG API C++ standard")
+option(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  "Enable experimental kernel versions" OFF)
+mark_as_advanced(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
 
 # validate value of Hpg_API
 #
@@ -85,6 +88,10 @@ if(HAVE_CUDA GREATER -1)
   set(HPG_ENABLE_CUDA ${Hpg_ENABLE_CUDA})
   target_compile_options(hpg PRIVATE --expt-relaxed-constexpr)
   target_link_libraries(hpg PRIVATE cufft)
+endif()
+if(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
+  set(HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ${Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS})
 endif()
 
 # use configuration file to save some variables that affect API
