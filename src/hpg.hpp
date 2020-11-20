@@ -164,14 +164,18 @@ constexpr FFTSign fft_sign_dflt = FFTSign::POSITIVE;
  *
  * In general, using a GridderState method on an instance creates a new (value)
  * copy of the target. For example,
+ * @code{.cpp}
  *    GridderState s0;
  *    GridderState s1 = s0.fence();
+ * @endcode
  * will create a copy of s0. Note that a copy will include the grid and the
  * convolution function array. (Many of these methods are const volatile on the
  * target since a fence operation may be involved.) To avoid the copy, the
  * following pattern can be used instead:
+ * @code{.cpp}
  *    GridderState s0;
  *    GridderState s1 = std::move(s0).fence();
+ * @endcode
  * Note, however, that the value of s0 in the previous example after the call to
  * fence() will be in the null state, which is likely not of much further use to
  * the caller.
@@ -778,6 +782,7 @@ public:
  * initialize()/finalize() pair; in particular, any hpg object destructors must
  * be called before the call to finalize(). A common approach is to access hpg
  * within a new scope after the call to initialize():
+ * @code{.cpp}
  *     int main() {
  *       hpg::initialize();
  *       {
@@ -785,6 +790,7 @@ public:
  *       }
  *       hpg::finalize();
  *     }
+ * @endcode
  * Another approach involves the use of a ScopeGuard instance.
  *
  * @return true, if and only if initialization succeeded
@@ -809,6 +815,7 @@ is_initialized();
  *
  * Intended to help avoid errors caused by objects that exist after the call
  * to hpg::finalize(). For example,
+ * @code{.cpp}
  *     int main() {
  *       // Don't do this!
  *       hpg::initialize();
@@ -816,12 +823,15 @@ is_initialized();
  *       hpg::finalize(); // Error! g is still in scope,
  *                        // ~Gridder is called after finalize()
  *     }
+ * @endcode
  * however, use of a ScopeGuard value as follows helps avoid this error:
+ * @code{.cpp}
  *     int main() {
  *       hpg::ScopeGuard hpg_guard;
  *       Gridder g();
  *       // OK, because g is destroyed prior to hpg_guard
  *     }
+ * @endcode
  */
 struct ScopeGuard {
 
