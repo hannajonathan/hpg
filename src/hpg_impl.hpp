@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cfenv>
 #include <cmath>
 #include <deque>
 #include <memory>
@@ -93,6 +94,15 @@ initialize() {
 #ifdef HPG_ENABLE_OPENMP
   auto rc = fftw_init_threads();
   result = rc != 0;
+#endif
+#if defined(HPG_ENABLE_CUDA) \
+  && (defined(HPG_ENABLE_OPENMP) || defined(HPG_ENABLE_SERIAL))
+  if (std::fegetround() != FE_TONEAREST)
+    std::cerr << "hpg::initialize() WARNING:"
+              << " Host rounding mode not set to FE_TONEAREST " << std::endl
+              << "  To avoid potential inconsistency in gridding on "
+              << "  host vs gridding on device,"
+              << "  set rounding mode to FE_TONEAREST" << std::endl;
 #endif
   hpg_impl_initialized = result;
   return result;
