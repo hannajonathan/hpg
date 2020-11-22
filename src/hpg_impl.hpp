@@ -116,7 +116,7 @@ finalize() {
 
 /** implementation initialization state */
 bool
-is_initialized() {
+is_initialized() noexcept {
   return hpg_impl_initialized;
 }
 

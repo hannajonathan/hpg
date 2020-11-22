@@ -4,6 +4,7 @@
 
 #include <complex>
 #include <memory>
+#include <set>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -40,18 +41,10 @@ using vis_uvw_t = std::array<vis_uvw_fp, 3>;
  * backend device type
  */
 enum class HPG_EXPORT Device {
-#ifdef HPG_ENABLE_SERIAL
   Serial, /**< serial device */
-#endif // HPG_ENABLE_SERIAL
-#ifdef HPG_ENABLE_OPENMP
   OpenMP, /**< OpenMP device */
-#endif // HPG_ENABLE_OPENMP
-#ifdef HPG_ENABLE_CUDA
   Cuda, /**< CUDA device */
-#endif // HPG_ENABLE_CUDA
-#ifdef HPG_ENABLE_HPX
   HPX, /**< HIP device */
-#endif // HPG_ENABLE_HPX
 };
 
 namespace Impl {
@@ -196,6 +189,8 @@ public:
    */
   GridderState();
 
+protected:
+
   /** constructor
    *
    * create a GridderState
@@ -217,6 +212,23 @@ public:
     unsigned max_added_tasks,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale);
+
+public:
+
+  /** GridderState factory method
+   *
+   * does not throw an exception if device argument names an unsupported device
+   */
+#if HPG_API >= 17
+  static std::variant<Error, GridderState>
+#else // HPG_API < 17
+  static std::tuple<std::unique_ptr<Error>, GridderState>
+#endif // HPG_API >= 17
+  create(
+    Device device,
+    unsigned max_added_tasks,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale) noexcept;
 
   /** copy constructor
    *
@@ -279,13 +291,11 @@ public:
    */
 #if HPG_API >= 17
   std::variant<Error, GridderState>
-  set_convolution_function(Device host_device, const CFArray& cf)
-    const volatile &;
 #else // HPG_API < 17
   std::tuple<std::unique_ptr<Error>, GridderState>
+#endif //HPG_API >= 17
   set_convolution_function(Device host_device, const CFArray& cf)
     const volatile &;
-#endif //HPG_API >= 17
 
   /** set convolution function
    *
@@ -301,11 +311,10 @@ public:
    */
 #if HPG_API >= 17
   std::tuple<std::optional<Error>, GridderState>
-  set_convolution_function(Device host_device, const CFArray& cf) &&;
 #else // HPG_API < 17
   std::tuple<std::unique_ptr<Error>, GridderState>
-  set_convolution_function(Device host_device, const CFArray& cf) &&;
 #endif // HPG_API >= 17
+  set_convolution_function(Device host_device, const CFArray& cf) &&;
 
   /** grid some visibilities
    *
@@ -469,13 +478,11 @@ public:
    */
 #if HPG_API >= 17
   std::variant<Error, GridderState>
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true)
-    const volatile &;
 #else // HPG_API < 17
   std::tuple<std::unique_ptr<Error>, GridderState>
+#endif // HPG_API >= 17
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true)
     const volatile &;
-#endif // HPG_API >= 17
 
   /** apply FFT to grid array planes
    *
@@ -486,11 +493,11 @@ public:
    */
 #if HPG_API >= 17
   std::tuple<std::optional<Error>, GridderState>
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
 #else // HPG_API < 17
   std::tuple<std::unique_ptr<Error>, GridderState>
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
 #endif // HPG_API >= 17
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
+
   /** rotate grid planes by half
    *
    * Primarily for use after application of FFT. May invoke fence() on target.
@@ -535,12 +542,16 @@ protected:
  * @sa GridderState
  */
 class Gridder {
-public:
+protected:
 
   mutable GridderState state; /**< state maintained by instances */
 
+public:
+
   /** default constructur */
   Gridder() {}
+
+protected:
 
   /** constructor
    *
@@ -560,6 +571,48 @@ public:
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale)
     : state(GridderState(device, max_added_tasks, grid_size, grid_scale)) {}
+
+public:
+
+  /** Gridder factory method
+   *
+   * does not throw an exception if device argument names an unsupported device
+   */
+#if HPG_API >= 17
+  static std::variant<Error, Gridder>
+  create(
+    Device device,
+    unsigned max_added_tasks,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale) noexcept {
+
+    auto err_or_gs =
+      GridderState::create(device, max_added_tasks, grid_size, grid_scale);
+    if (std::holds_alternative<GridderState>(err_or_gs))
+      return Gridder(std::move(std::get<GridderState>(err_or_gs)));
+    else
+      return Error(std::get<Error>(err_or_gs));
+  }
+#else // HPG_API < 17
+  static std::tuple<std::unique_ptr<Error>, Gridder>
+  create(
+    Device device,
+    unsigned max_added_tasks,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale) noexcept {
+
+    auto err_and_gs =
+      GridderState::create(device, max_added_tasks, grid_size, grid_scale);
+    if (!std::get<0>(err_and_gs))
+      return {
+        std::unique_ptr<Error>(),
+        Gridder(std::move(std::get<1>(err_and_gs)))};
+    else
+      return {
+        std::move(std::get<1>(err_and_gs)),
+        Gridder()};
+  }
+#endif // HPG_API >= 17
 
   /** copy constructor
    *
@@ -628,23 +681,16 @@ public:
    */
 #if HPG_API >= 17
   std::optional<Error>
-  set_convolution_function(Device host_device, const CFArray& cf) {
-    std::optional<Error> result;
-    std::tie(result, const_cast<Gridder*>(this)->state) =
-      std::move(const_cast<Gridder*>(this)->state)
-      .set_convolution_function(host_device, cf);
-    return result;
-  }
 #else // HPG_API < 17
   std::unique_ptr<Error>
+#endif // HPG_API >= 17
   set_convolution_function(Device host_device, const CFArray& cf) {
-    std::unique_ptr<Error> result;
+    decltype(set_convolution_function(host_device, cf)) result;
     std::tie(result, const_cast<Gridder*>(this)->state) =
       std::move(const_cast<Gridder*>(this)->state)
       .set_convolution_function(host_device, cf);
     return result;
   }
-#endif // HPG_API >= 17
 
   /** grid visibilities
    *
@@ -773,6 +819,11 @@ public:
   rotate_grid() {
     state = std::move(state).rotate_grid();
   }
+
+protected:
+
+  Gridder(GridderState&& st)
+    : state(std::move(st)) {}
 };
 
 /** global initialization of hpg
@@ -809,7 +860,15 @@ void finalize();
  * Note the result will remain "true" after finalization.
  */
 bool
-is_initialized();
+is_initialized() noexcept;
+
+/** query supported devices */
+const std::set<Device>&
+devices() noexcept;
+
+/** query support host devices */
+const std::set<Device>&
+host_devices() noexcept;
 
 /** hpg scope object
  *

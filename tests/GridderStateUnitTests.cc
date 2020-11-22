@@ -192,7 +192,9 @@ TEST(GridderState, ConstructorArgs) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
   hpg::GridderState gs0;
-  hpg::GridderState gs1(default_device, 0, grid_size, grid_scale);
+  auto gs1 =
+    std::get<1>(
+      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
 
   EXPECT_TRUE(gs0.is_null());
   EXPECT_FALSE(gs1.is_null());
@@ -206,7 +208,9 @@ TEST(GridderState, ConstructorArgs) {
 TEST(GridderState, Copies) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
-  hpg::GridderState gs0(default_device, 0, grid_size, grid_scale);
+  auto gs0 =
+    std::get<1>(
+      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
   hpg::GridderState gs1 = gs0;
 
   EXPECT_FALSE(gs0.is_null());
@@ -225,7 +229,9 @@ TEST(GridderState, Copies) {
 TEST(GridderState, Moves) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
-  hpg::GridderState gs0(default_device, 0, grid_size, grid_scale);
+  auto gs0 =
+    std::get<1>(
+      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
   hpg::GridderState gs1 = std::move(gs0);
 
   EXPECT_TRUE(gs0.is_null());
@@ -244,7 +250,9 @@ TEST(GridderState, Moves) {
 TEST(GridderState, InitValues) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
-  hpg::GridderState gs(default_device, 0, grid_size, grid_scale);
+  auto gs =
+    std::get<1>(
+      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
 
   auto [gs1, values] = std::move(gs).grid_values();
   for (size_t i = 0; i < 4; ++i)
@@ -261,7 +269,9 @@ TEST(GridderState, InitValues) {
 TEST(GridderState, CopyOrMove) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
-  hpg::GridderState gs(default_device, 0, grid_size, grid_scale);
+  auto gs =
+    std::get<1>(
+      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
 
   std::mt19937 rng(42);
 
@@ -365,7 +375,9 @@ TEST(GridderState, CopyOrMove) {
 TEST(GridderState, CFError) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
-  hpg::GridderState gs(default_device, 0, grid_size, grid_scale);
+  auto gs =
+    std::get<1>(
+      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
 
   std::mt19937 rng(42);
 
@@ -426,7 +438,9 @@ TEST(GridderState, CFError) {
 TEST(GridderState, Reset) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
-  hpg::GridderState gs(default_device, 0, grid_size, grid_scale);
+  auto gs =
+    std::get<1>(
+      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
 
   std::mt19937 rng(42);
 

@@ -192,7 +192,8 @@ TEST(Gridder, ConstructorArgs) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
   hpg::Gridder g0;
-  hpg::Gridder g1(default_device, 0, grid_size, grid_scale);
+  auto g1 =
+    std::get<1>(hpg::Gridder::create(default_device, 0, grid_size, grid_scale));
 
   EXPECT_TRUE(g0.is_null());
   EXPECT_FALSE(g1.is_null());
@@ -206,7 +207,8 @@ TEST(Gridder, ConstructorArgs) {
 TEST(Gridder, Copies) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
-  hpg::Gridder g0(default_device, 0, grid_size, grid_scale);
+  auto g0 =
+    std::get<1>(hpg::Gridder::create(default_device, 0, grid_size, grid_scale));
   hpg::Gridder g1 = g0;
 
   EXPECT_FALSE(g0.is_null());
@@ -225,7 +227,8 @@ TEST(Gridder, Copies) {
 TEST(Gridder, Moves) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
-  hpg::Gridder g0(default_device, 0, grid_size, grid_scale);
+  auto g0 =
+    std::get<1>(hpg::Gridder::create(default_device, 0, grid_size, grid_scale));
   hpg::Gridder g1 = std::move(g0);
 
   EXPECT_TRUE(g0.is_null());
@@ -244,7 +247,8 @@ TEST(Gridder, Moves) {
 TEST(Gridder, InitValues) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
-  hpg::Gridder g(default_device, 0, grid_size, grid_scale);
+  auto g =
+    std::get<1>(hpg::Gridder::create(default_device, 0, grid_size, grid_scale));
 
   auto values = g.grid_values();
   for (size_t i = 0; i < 4; ++i)
@@ -262,7 +266,8 @@ TEST(Gridder, InitValues) {
 TEST(Gridder, CFError) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
-  hpg::Gridder g(default_device, 0, grid_size, grid_scale);
+  auto g =
+    std::get<1>(hpg::Gridder::create(default_device, 0, grid_size, grid_scale));
 
   std::mt19937 rng(42);
 
@@ -301,7 +306,8 @@ TEST(Gridder, CFError) {
 TEST(Gridder, Reset) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
-  hpg::Gridder g(default_device, 0, grid_size, grid_scale);
+  auto g =
+    std::get<1>(hpg::Gridder::create(default_device, 0, grid_size, grid_scale));
 
   std::mt19937 rng(42);
 

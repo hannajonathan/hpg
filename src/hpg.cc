@@ -74,8 +74,10 @@ GridderState::GridderState(
         max_active_tasks,
         grid_size,
         grid_scale);
-    break;
+#else
+    assert(false);
 #endif // HPG_ENABLE_SERIAL
+    break;
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     impl =
@@ -83,8 +85,10 @@ GridderState::GridderState(
         max_active_tasks,
         grid_size,
         grid_scale);
-    break;
+#else
+    assert(false);
 #endif // HPG_ENABLE_OPENMP
+    break;
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     impl =
@@ -92,8 +96,10 @@ GridderState::GridderState(
         max_active_tasks,
         grid_size,
         grid_scale);
+#else
+    assert(false);
+#endif //HPG_ENABLE_CUDA
     break;
-#endif // HPG_ENABLE_CUDA
 #ifdef HPG_ENABLE_HPX
   case Device::HPX:
     impl =
@@ -101,13 +107,48 @@ GridderState::GridderState(
         max_active_tasks,
         grid_size,
         grid_scale);
-    break;
+#else
+    assert(false);
 #endif // HPG_ENABLE_HPX
+    break;
   default:
     assert(false);
     break;
   }
 }
+
+#if HPG_API >= 17
+std::variant<Error, GridderState>
+GridderState::create(
+  Device device,
+  unsigned max_added_tasks,
+  const std::array<unsigned, 4>& grid_size,
+  const std::array<grid_scale_fp, 2>& grid_scale) noexcept {
+
+  if (devices().count(device) > 0)
+    return GridderState(device, max_added_tasks, grid_size, grid_scale);
+  else
+    return Error("Requested device is not enabled");
+
+}
+#else // HPG_API < 17
+std::tuple<std::unique_ptr<Error>, GridderState>
+GridderState::create(
+  Device device,
+  unsigned max_added_tasks,
+  const std::array<unsigned, 4>& grid_size,
+  const std::array<grid_scale_fp, 2>& grid_scale) noexcept {
+
+  if (devices().count(device) > 0)
+    return {
+      std::unique_ptr<Error>(),
+      GridderState(device, max_added_tasks, grid_size, grid_scale)};
+  else
+    return {
+      std::make_unique<Error>("Requested device is not enabled"),
+      GridderState()};
+}
+#endif // HPG_API >= 17
 
 GridderState::GridderState(const volatile GridderState& h) {
   *this = h;
@@ -199,7 +240,10 @@ GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) const volatile & {
 
-  return Impl::GridderState::set_convolution_function(*this, host_device, cf);
+  if (host_devices().count(host_device) > 0)
+    return Impl::GridderState::set_convolution_function(*this, host_device, cf);
+  else
+    return Error("Requested host device is not enabled");
 }
 #else
 std::tuple<std::unique_ptr<Error>, GridderState>
@@ -207,14 +251,20 @@ GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) const volatile & {
 
-  auto err_or_gs =
-    Impl::GridderState::set_convolution_function(*this, host_device, cf);
-  if (std::holds_alternative<Error>(err_or_gs))
-    return {std::make_unique<Error>(std::get<Error>(err_or_gs)), *this};
-  else
+  if (host_devices().count(host_device) > 0) {
+    auto err_or_gs =
+      Impl::GridderState::set_convolution_function(*this, host_device, cf);
+    if (std::holds_alternative<Error>(err_or_gs))
+      return {std::make_unique<Error>(std::get<Error>(err_or_gs)), *this};
+    else
+      return {
+        std::unique_ptr<Error>(),
+        std::move(std::get<GridderState>(err_or_gs))};
+  } else {
     return {
-      std::unique_ptr<Error>(),
-      std::move(std::get<GridderState>(err_or_gs))};
+      std::make_unique<Error>("Requested host device is not enabled"),
+      std::move(GridderState())};
+  }
 }
 #endif
 
@@ -224,9 +274,12 @@ GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) && {
 
-  return
-    Impl::GridderState
-    ::set_convolution_function(std::move(*this), host_device, cf);
+  if (host_devices().count(host_device) > 0)
+    return
+      Impl::GridderState
+      ::set_convolution_function(std::move(*this), host_device, cf);
+  else
+    return {Error("Requested host device is not enabled"), std::move(*this)};
 }
 #else
 std::tuple<std::unique_ptr<Error>, GridderState>
@@ -234,16 +287,22 @@ GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) && {
 
-  std::optional<Error> oerr;
-  GridderState gs;
-  std::tie(oerr, gs) =
+  if (host_devices().count(host_device) > 0) {
+    std::optional<Error> oerr;
+    GridderState gs;
+    std::tie(oerr, gs) =
     std::move(
       Impl::GridderState
       ::set_convolution_function(std::move(*this), host_device, cf));
-  std::unique_ptr<Error> err;
-  if (oerr)
-    err =  std::make_unique<Error>(oerr.value());
-  return {std::move(err), std::move(gs)};
+    std::unique_ptr<Error> err;
+    if (oerr)
+      err =  std::make_unique<Error>(oerr.value());
+    return {std::move(err), std::move(gs)};
+  } else {
+    return {
+      std:make_unique<Error>("Requested host device is not enabled"),
+      std::move(*this)};
+  }
 }
 #endif
 
@@ -458,8 +517,40 @@ hpg::finalize() {
   Impl::finalize();
 }
 
+const std::set<Device>&
+hpg::devices() noexcept {
+  static const std::set<Device> result{
+#ifdef HPG_ENABLE_SERIAL
+    Device::Serial,
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    Device::OpenMP,
+#endif
+#ifdef HPG_ENABLE_CUDA
+    Device::Cuda,
+#endif
+#ifdef HPG_ENABLE_HPX
+    Device::HPX,
+#endif
+  };
+  return result;
+}
+
+const std::set<Device>&
+hpg::host_devices() noexcept {
+  static const std::set<Device> result{
+#ifdef HPG_ENABLE_SERIAL
+    Device::Serial,
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    Device::OpenMP,
+#endif
+  };
+  return result;
+}
+
 bool
-hpg::is_initialized() {
+hpg::is_initialized() noexcept {
   return Impl::is_initialized();
 }
 
