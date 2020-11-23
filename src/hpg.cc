@@ -588,7 +588,7 @@ Gridder::create(
       Gridder(std::move(std::get<1>(err_and_gs)))};
   else
     return {
-      std::move(std::get<1>(err_and_gs)),
+      std::move(std::get<0>(err_and_gs)),
       Gridder()};
 }
 #endif // HPG_API >= 17
@@ -645,8 +645,8 @@ Gridder::set_convolution_function(Device host_device, const CFArray& cf) {
   return result;
 }
 #else // HPG_API < 17
-Gridder::std::unique_ptr<Error>
-set_convolution_function(Device host_device, const CFArray& cf) {
+std::unique_ptr<Error>
+Gridder::set_convolution_function(Device host_device, const CFArray& cf) {
   std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).set_convolution_function(host_device, cf);
@@ -758,7 +758,7 @@ Gridder::apply_fft(FFTSign sign, bool in_place) {
 #else // HPG_API < 17
 std::unique_ptr<Error>
 Gridder::apply_fft(FFTSign sign, bool in_place) {
-  std::unique_ptr<Erro> result;
+  std::unique_ptr<Error> result;
   std::tie(result, state) = std::move(state).apply_fft(sign, in_place);
   return result;
 }

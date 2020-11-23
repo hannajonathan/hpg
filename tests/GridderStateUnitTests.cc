@@ -361,8 +361,13 @@ TEST(GridderState, CopyOrMove) {
     hpg::GridderState& gs1 = std::get<1>(rc_fft);
     auto err_or_gs2 = std::move(gs1).apply_fft();
     EXPECT_TRUE(gs1.is_null());
+
+#if HPG_API >= 17
     ASSERT_TRUE(std::holds_alternative<hpg::GridderState>(err_or_gs2));
-    EXPECT_FALSE(std::get<hpg::GridderState>(err_or_gs2).is_null());
+#else
+    ASSERT_FALSE(std::get<0>(err_or_gs2));
+#endif
+    EXPECT_FALSE(std::get<1>(err_or_gs2).is_null());
   }
   {
     auto gs1 = gs.shift_grid();
