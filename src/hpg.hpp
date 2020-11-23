@@ -558,7 +558,7 @@ protected:
 public:
 
   /** default constructur */
-  Gridder() {}
+  Gridder();
 
 protected:
 
@@ -578,8 +578,7 @@ protected:
     Device device,
     unsigned max_added_tasks,
     const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale)
-    : state(GridderState(device, max_added_tasks, grid_size, grid_scale)) {}
+    const std::array<grid_scale_fp, 2>& grid_scale);
 
 public:
 
@@ -589,50 +588,23 @@ public:
    */
 #if HPG_API >= 17
   static std::variant<Error, Gridder>
-  create(
-    Device device,
-    unsigned max_added_tasks,
-    const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale) noexcept {
-
-    auto err_or_gs =
-      GridderState::create(device, max_added_tasks, grid_size, grid_scale);
-    if (std::holds_alternative<GridderState>(err_or_gs))
-      return Gridder(std::move(std::get<GridderState>(err_or_gs)));
-    else
-      return Error(std::get<Error>(err_or_gs));
-  }
 #else // HPG_API < 17
   static std::tuple<std::unique_ptr<Error>, Gridder>
+#endif // HPG_API >= 17
   create(
     Device device,
     unsigned max_added_tasks,
     const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale) noexcept {
-
-    auto err_and_gs =
-      GridderState::create(device, max_added_tasks, grid_size, grid_scale);
-    if (!std::get<0>(err_and_gs))
-      return {
-        std::unique_ptr<Error>(),
-        Gridder(std::move(std::get<1>(err_and_gs)))};
-    else
-      return {
-        std::move(std::get<1>(err_and_gs)),
-        Gridder()};
-  }
-#endif // HPG_API >= 17
+    const std::array<grid_scale_fp, 2>& grid_scale) noexcept;
 
   /** copy constructor
    *
    * Invokes fence() on argument.
    */
-  Gridder(const volatile Gridder& other)
-    : state(other.state) {}
+  Gridder(const volatile Gridder& other);
 
   /** move constructor */
-  Gridder(Gridder&& other)
-    : state(std::move(other).state) {}
+  Gridder(Gridder&& other);
 
   /** copy assignment
    *
@@ -647,36 +619,26 @@ public:
 
   /** device */
   Device
-  device() const noexcept {
-    return state.device();
-  }
+  device() const noexcept;
 
   /** maximum additional tasks
    *
    * This value may differ from the value provided to the constructor, depending
    * on device limitations */
   unsigned
-  max_added_tasks() const noexcept {
-    return state.max_added_tasks();
-  }
+  max_added_tasks() const noexcept;
 
   /** grid size */
   const std::array<unsigned, 4>&
-  grid_size() const noexcept {
-    return state.grid_size();
-  }
+  grid_size() const noexcept;
 
   /** grid scale */
   const std::array<grid_scale_fp, 2>&
-  grid_scale() const noexcept {
-    return state.grid_scale();
-  }
+  grid_scale() const noexcept;
 
   /** null state query */
   bool
-  is_null() const noexcept {
-    return state.is_null();
-  }
+  is_null() const noexcept;
 
   /** set convolution function
    *
@@ -690,25 +652,10 @@ public:
    */
 #if HPG_API >= 17
   std::optional<Error>
-  set_convolution_function(Device host_device, const CFArray& cf) {
-    std::optional<Error> result;
-    auto err_or_gs =
-      std::move(state).set_convolution_function(host_device, cf);
-    if (std::holds_alternative<GridderState>(err_or_gs))
-      state = std::move(std::get<GridderState>(err_or_gs));
-    else
-      result = std::move(std::get<Error>(err_or_gs));
-    return result;
-  }
 #else // HPG_API < 17
   std::unique_ptr<Error>
-  set_convolution_function(Device host_device, const CFArray& cf) {
-    std::unique_ptr<Error> result;
-    std::tie(result, state) =
-      std::move(state).set_convolution_function(host_device, cf);
-    return result;
-  }
 #endif //HPG_API >= 17
+  set_convolution_function(Device host_device, const CFArray& cf);
 
   /** grid visibilities
    *
@@ -729,36 +676,9 @@ public:
    */
 #if HPG_API >= 17
   std::optional<Error>
-  grid_visibilities(
-    Device host_device,
-    const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<unsigned> visibility_grid_cubes,
-    const std::vector<unsigned> visibility_cf_cubes,
-    const std::vector<vis_weight_fp>& visibility_weights,
-    const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) {
-
-    std::optional<Error> result;
-    auto err_or_gs =
-      std::move(state)
-      .grid_visibilities(
-        host_device,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates);
-    if (std::holds_alternative<GridderState>(err_or_gs))
-      state = std::move(std::get<GridderState>(err_or_gs));
-    else
-      result = std::move(std::get<Error>(err_or_gs));
-    return result;
-  }
 #else // HPG_API < 17
   std::unique_ptr<Error>
+#endif // HPG_API >= 17
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
@@ -767,23 +687,7 @@ public:
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
     const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) {
-
-    std::unique_ptr<Error> result;
-    std::tie(result, state) =
-      std::move(state)
-      .grid_visibilities(
-        host_device,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates);
-    return result;
-  }
-#endif
+    const std::vector<vis_uvw_t>& visibility_coordinates);
 
   /** device execution fence
    *
@@ -791,40 +695,25 @@ public:
    * required by users.
    */
   void
-  fence() const volatile {
-    const_cast<Gridder*>(this)->state =
-      std::move(const_cast<Gridder*>(this)->state).fence();
-  }
+  fence() const volatile;
 
   /** get grid plane weights
    *
    * Invokes fence() on target.
    */
   std::unique_ptr<GridWeightArray>
-  grid_weights() const volatile {
-    std::unique_ptr<GridWeightArray> result;
-    std::tie(const_cast<Gridder*>(this)->state, result) =
-      std::move(const_cast<Gridder*>(this)->state).grid_weights();
-    return result;
-  }
+  grid_weights() const volatile;
 
   /** get access to grid values */
   std::unique_ptr<GridValueArray>
-  grid_values() const volatile {
-    std::unique_ptr<GridValueArray> result;
-    std::tie(const_cast<Gridder*>(this)->state, result) =
-      std::move(const_cast<Gridder*>(this)->state).grid_values();
-    return result;
-  }
+  grid_values() const volatile;
 
   /** reset grid values to zero
    *
    * May invoke fence() on target.
    */
   void
-  reset_grid() {
-    state = std::move(state).reset_grid();
-  }
+  reset_grid();
 
   /** normalize grid values by weights
    *
@@ -834,9 +723,7 @@ public:
    * normalization
    */
   void
-  normalize(grid_value_fp wgt_factor = 1) {
-    state = std::move(state).normalize(wgt_factor);
-  }
+  normalize(grid_value_fp wgt_factor = 1);
 
   /** apply FFT to grid array planes
    *
@@ -847,37 +734,21 @@ public:
    */
 #if HPG_API >= 17
   std::optional<Error>
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) {
-    std::optional<Error> result;
-    auto err_or_gs = std::move(state).apply_fft(sign, in_place);
-    if (std::holds_alternative<GridderState>(err_or_gs))
-      state = std::move(std::get<GridderState>(err_or_gs));
-    else
-      result = std::move(std::get<Error>(err_or_gs));
-    return result;
-  }
 #else // HPG_API < 17
   std::unique_ptr<Error>
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) {
-    std::unique_ptr<Erro> result;
-    std::tie(result, state) = std::move(state).apply_fft(sign, in_place);
-    return result;
-  }
 #endif //HPG_API >= 17
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true);
 
   /** rotate grid planes by half
    *
    * Primarily for use after application of FFT. May invoke fence() on target.
    */
   void
-  rotate_grid() {
-    state = std::move(state).rotate_grid();
-  }
+  rotate_grid();
 
 protected:
 
-  Gridder(GridderState&& st)
-    : state(std::move(st)) {}
+  Gridder(GridderState&& st);
 };
 
 /** global initialization of hpg
