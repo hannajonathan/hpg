@@ -25,12 +25,46 @@ struct Impl::GridderState {
   static std::variant<Error, ::hpg::GridderState>
   set_convolution_function(GS&& st, Device host_device, const CFArray& cf) {
 
-    ::hpg::GridderState result(std::forward<GS>(st));
-    auto error = result.impl->set_convolution_function(host_device, cf);
-    if (error)
-      return std::move(error.value());
-    else
-      return std::move(result);
+    if (host_devices().count(host_device) > 0) {
+      ::hpg::GridderState result(std::forward<GS>(st));
+      auto error = result.impl->set_convolution_function(host_device, cf);
+      if (error)
+        return std::move(error.value());
+      else
+        return std::move(result);
+    } else {
+      return DisabledHostDeviceError();
+    }
+  }
+
+  template <typename GS>
+  static std::variant<Error, ::hpg::GridderState>
+  grid_visibilities(
+    GS&& st,
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<unsigned> visibility_grid_cubes,
+    const std::vector<unsigned> visibility_cf_cubes,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phases,
+    const std::vector<vis_uvw_t>& visibility_coordinates) {
+
+    if (host_devices().count(host_device) > 0) {
+      ::hpg::GridderState result(std::forward<GS>(st));
+      result.impl->grid_visibilities(
+        host_device,
+        visibilities,
+        visibility_grid_cubes,
+        visibility_cf_cubes,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phases,
+        visibility_coordinates);
+      return result;
+    } else {
+      return DisabledHostDeviceError();
+    }
   }
 
   template <typename GS>
@@ -238,10 +272,7 @@ GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) const volatile & {
 
-  if (host_devices().count(host_device) > 0)
-    return Impl::GridderState::set_convolution_function(*this, host_device, cf);
-  else
-    return DisabledHostDeviceError();
+  return Impl::GridderState::set_convolution_function(*this, host_device, cf);
 }
 #else
 std::tuple<std::unique_ptr<Error>, GridderState>
@@ -249,12 +280,9 @@ GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) const volatile & {
 
-  if (host_devices().count(host_device) > 0)
-    return
-      variant_to_tuple(
-        Impl::GridderState::set_convolution_function(*this, host_device, cf));
-  else
-    return variant_to_tuple(DisabledHostDeviceError());
+  return
+    variant_to_tuple(
+      Impl::GridderState::set_convolution_function(*this, host_device, cf));
 }
 #endif
 
@@ -264,26 +292,20 @@ GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) && {
 
-  if (host_devices().count(host_device) > 0)
-    return
+  return
+    Impl::GridderState
+    ::set_convolution_function(std::move(*this), host_device, cf);
+}
+#else
+std::tuple<std::unique_ptr<Error>, GridderState>
+GridderState::set_convolution_function(
+  Device host_device,
+  const CFArray& cf) && {
+
+  return
+    variant_to_tuple(
       Impl::GridderState
-      ::set_convolution_function(std::move(*this), host_device, cf);
-  else
-    return DisabledHostDeviceError();
-}
-#else
-std::tuple<std::unique_ptr<Error>, GridderState>
-GridderState::set_convolution_function(
-  Device host_device,
-  const CFArray& cf) && {
-
-  if (host_devices().count(host_device) > 0)
-    return
-      variant_to_tuple(
-        Impl::GridderState
-        ::set_convolution_function(std::move(*this), host_device, cf));
-  else
-    return variant_to_tuple(DisabledHostDeviceError());
+      ::set_convolution_function(std::move(*this), host_device, cf));
 }
 #endif
 
@@ -299,10 +321,9 @@ GridderState::grid_visibilities(
   const std::vector<vis_phase_fp>& visibility_phases,
   const std::vector<vis_uvw_t>& visibility_coordinates) const volatile & {
 
-  if (host_devices().count(host_device) > 0) {
-    GridderState result(*this);
-    result.impl
-    ->grid_visibilities(
+  return
+    Impl::GridderState::grid_visibilities(
+      *this,
       host_device,
       visibilities,
       visibility_grid_cubes,
@@ -311,10 +332,6 @@ GridderState::grid_visibilities(
       visibility_frequencies,
       visibility_phases,
       visibility_coordinates);
-    return result;
-  } else {
-    return DisabledHostDeviceError();
-  }
 }
 #else
 std::tuple<std::unique_ptr<Error>, GridderState>
@@ -328,22 +345,18 @@ GridderState::grid_visibilities(
   const std::vector<vis_phase_fp>& visibility_phases,
   const std::vector<vis_uvw_t>& visibility_coordinates) const volatile & {
 
-  if (host_devices().count(host_device) > 0) {
-    GridderState result(*this);
-    result.impl
-    ->grid_visibilities(
-      host_device,
-      visibilities,
-      visibility_grid_cubes,
-      visibility_cf_cubes,
-      visibility_weights,
-      visibility_frequencies,
-      visibility_phases,
-      visibility_coordinates);
-    return {std::unique_ptr<Error>(), std::move(result)};
-  } else {
-    return {std::make_unique<DisabledHostDeviceError>(), GridderState()};
-  }
+  return
+    variant_to_tuple(
+      Impl::GridderState::grid_visibilities(
+        *this,
+        host_device,
+        visibilities,
+        visibility_grid_cubes,
+        visibility_cf_cubes,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phases,
+        visibility_coordinates));
 }
 #endif
 
@@ -359,10 +372,9 @@ GridderState::grid_visibilities(
   const std::vector<vis_phase_fp>& visibility_phases,
   const std::vector<vis_uvw_t>& visibility_coordinates) && {
 
-  if (host_devices().count(host_device) > 0) {
-    GridderState result(std::move(*this));
-    result.impl
-    ->grid_visibilities(
+  return
+    Impl::GridderState::grid_visibilities(
+      std::move(*this),
       host_device,
       visibilities,
       visibility_grid_cubes,
@@ -371,10 +383,7 @@ GridderState::grid_visibilities(
       visibility_frequencies,
       visibility_phases,
       visibility_coordinates);
-    return result;
-  } else {
-    return DisabledHostDeviceError();
-  }
+
 }
 #else
 std::tuple<std::unique_ptr<Error>, GridderState>
@@ -388,22 +397,18 @@ GridderState::grid_visibilities(
   const std::vector<vis_phase_fp>& visibility_phases,
   const std::vector<vis_uvw_t>& visibility_coordinates) && {
 
-  if (host_devices().count(host_device) > 0) {
-    GridderState result(std::move(*this));
-    result.impl
-    ->grid_visibilities(
-      host_device,
-      visibilities,
-      visibility_grid_cubes,
-      visibility_cf_cubes,
-      visibility_weights,
-      visibility_frequencies,
-      visibility_phases,
-      visibility_coordinates);
-    return {std::unique_ptr<Error>(), std::move(result)};
-  } else {
-    return {std::make_unique<DisabledHostDeviceError>(), GridderState()};
-  }
+  return
+    variant_to_tuple(
+      Impl::GridderState::grid_visibilities(
+        std::move(*this),
+        host_device,
+        visibilities,
+        visibility_grid_cubes,
+        visibility_cf_cubes,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phases,
+        visibility_coordinates));
 }
 #endif
 
