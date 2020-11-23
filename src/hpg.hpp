@@ -808,6 +808,18 @@ is_value(const std::variant<Error, T>& et) {
   return std::holds_alternative<T>(et);
 }
 
+template <typename ET>
+inline auto
+get_value(ET&& et) {
+  return std::get<1>(std::forward<ET>(et));
+}
+
+template <typename ET>
+inline auto
+get_error(ET&& et) {
+  return std::get<0>(std::forward<ET>(et));
+}
+
 #else // HPG_API < 17
 
 template <typename T>
@@ -821,19 +833,31 @@ inline bool
 is_value(const std::tuple<std::unique_ptr<Error>, T>& et) {
   return !is_error(et);
 }
+
+template <typename T>
+inline const T&
+get_value(const std::tuple<std::unique_ptr<Error>, T>& et) {
+  return std::get<T>(et);
+}
+
+template <typename T>
+inline const Error&
+get_error(const std::tuple<std::unique_ptr<Error>, T>& et) {
+  return *std::get<Error>(et);
+}
+
+template <typename T>
+inline T&&
+get_value(std::tuple<std::unique_ptr<Error>, T>&& et) {
+  return std::get<T>(et);
+}
+
+template <typename T>
+inline Error&&
+get_error(std::tuple<std::unique_ptr<Error>, T>&& et) {
+  return std::move(*std::get<Error>(et));
+}
 #endif // HPG_API >= 17
-
-template <typename ET>
-inline auto
-get_value(ET&& et) {
-  return std::get<1>(std::forward<ET>(et));
-}
-
-template <typename ET>
-inline auto
-get_error(ET&& et) {
-  return std::get<0>(std::forward<ET>(et));
-}
 
 /** hpg scope object
  *
