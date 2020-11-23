@@ -5,6 +5,20 @@
 
 using namespace hpg;
 
+struct DisabledDeviceError
+  : public Error {
+
+  DisabledDeviceError()
+    : Error("Requested device is not enabled") {}
+};
+
+struct DisabledHostDeviceError
+  : public Error {
+
+  DisabledHostDeviceError()
+    : Error("Requested host device is not enabled") {}
+};
+
 struct Impl::GridderState {
 
   static std::variant<Error, ::hpg::GridderState>
@@ -128,7 +142,7 @@ GridderState::create(
   if (devices().count(device) > 0)
     return GridderState(device, max_added_tasks, grid_size, grid_scale);
   else
-    return Error("Requested device is not enabled");
+    return DisabledDeviceError();
 
 }
 #else // HPG_API < 17
@@ -144,9 +158,7 @@ GridderState::create(
       std::unique_ptr<Error>(),
       GridderState(device, max_added_tasks, grid_size, grid_scale)};
   else
-    return {
-      std::make_unique<Error>("Requested device is not enabled"),
-      GridderState()};
+    return {std::make_unique<DisabledDeviceError>(), GridderState()};
 }
 #endif // HPG_API >= 17
 
@@ -243,7 +255,7 @@ GridderState::set_convolution_function(
   if (host_devices().count(host_device) > 0)
     return Impl::GridderState::set_convolution_function(*this, host_device, cf);
   else
-    return Error("Requested host device is not enabled");
+    return DisabledHostDeviceError();
 }
 #else
 std::tuple<std::unique_ptr<Error>, GridderState>
@@ -261,9 +273,8 @@ GridderState::set_convolution_function(
         std::unique_ptr<Error>(),
         std::move(std::get<GridderState>(err_or_gs))};
   } else {
-    return {
-      std::make_unique<Error>("Requested host device is not enabled"),
-      std::move(GridderState())};
+    return
+      {std::make_unique<DisabledHostDeviceError>(), std::move(GridderState())};
   }
 }
 #endif
@@ -279,7 +290,7 @@ GridderState::set_convolution_function(
       Impl::GridderState
       ::set_convolution_function(std::move(*this), host_device, cf);
   else
-    return {Error("Requested host device is not enabled"), std::move(*this)};
+    return {DisabledHostDeviceError(), std::move(*this)};
 }
 #else
 std::tuple<std::unique_ptr<Error>, GridderState>
@@ -299,9 +310,7 @@ GridderState::set_convolution_function(
       err =  std::make_unique<Error>(oerr.value());
     return {std::move(err), std::move(gs)};
   } else {
-    return {
-      std:make_unique<Error>("Requested host device is not enabled"),
-      std::move(*this)};
+    return {std:make_unique<DisabledHostDeviceError>(), std::move(*this)};
   }
 }
 #endif
