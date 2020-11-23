@@ -310,7 +310,7 @@ public:
    * @sa Gridder::set_convolution_function()
    */
 #if HPG_API >= 17
-  std::tuple<std::optional<Error>, GridderState>
+  std::variant<Error, GridderState>
 #else // HPG_API < 17
   std::tuple<std::unique_ptr<Error>, GridderState>
 #endif // HPG_API >= 17
@@ -338,7 +338,11 @@ public:
    *
    * @sa Gridder::grid_visibilities()
    */
-  GridderState
+#if HPG_API >= 17
+  std::variant<Error, GridderState>
+#else // HPG_API < 17
+  std::tuple<std::unique_ptr<Error>, GridderState>
+#endif // HPG_API >= 17
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
@@ -371,7 +375,11 @@ public:
    *
    * @sa Gridder::grid_visibilities()
    */
-  GridderState
+#if HPG_API >= 17
+  std::variant<Error, GridderState>
+#else // HPG_API < 17
+  std::tuple<std::unique_ptr<Error>, GridderState>
+#endif // HPG_API >= 17
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
@@ -492,7 +500,7 @@ public:
    * @param in_place run FFT in-place, without allocation of another grid
    */
 #if HPG_API >= 17
-  std::tuple<std::optional<Error>, GridderState>
+  std::variant<Error, GridderState>
 #else // HPG_API < 17
   std::tuple<std::unique_ptr<Error>, GridderState>
 #endif // HPG_API >= 17
@@ -681,16 +689,25 @@ public:
    */
 #if HPG_API >= 17
   std::optional<Error>
-#else // HPG_API < 17
-  std::unique_ptr<Error>
-#endif // HPG_API >= 17
   set_convolution_function(Device host_device, const CFArray& cf) {
-    decltype(set_convolution_function(host_device, cf)) result;
-    std::tie(result, const_cast<Gridder*>(this)->state) =
-      std::move(const_cast<Gridder*>(this)->state)
-      .set_convolution_function(host_device, cf);
+    std::optional<Error> result;
+    auto err_or_gs =
+      std::move(state).set_convolution_function(host_device, cf);
+    if (std::holds_alternative<GridderState>(err_or_gs))
+      state = std::move(std::get<GridderState>(err_or_gs));
+    else
+      result = std::move(std::get<Error>(err_or_gs));
     return result;
   }
+#else // HPG_API < 17
+  std::unique_ptr<Error>
+  set_convolution_function(Device host_device, const CFArray& cf) {
+    std::unique_ptr<Error> result;
+    std::tie(result, state) =
+      std::move(state).set_convolution_function(host_device, cf);
+    return result;
+  }
+#endif //HPG_API >= 17
 
   /** grid visibilities
    *
@@ -709,7 +726,8 @@ public:
    * @param visibility_phases visibility phase differences
    * @param visibility_coordinates visibility coordinates
    */
-  void
+#if HPG_API >= 17
+  std::optional<Error>
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
@@ -720,7 +738,8 @@ public:
     const std::vector<vis_phase_fp>& visibility_phases,
     const std::vector<vis_uvw_t>& visibility_coordinates) {
 
-    state =
+    std::optional<Error> result;
+    auto err_or_gs =
       std::move(state)
       .grid_visibilities(
         host_device,
@@ -731,7 +750,39 @@ public:
         visibility_frequencies,
         visibility_phases,
         visibility_coordinates);
+    if (std::holds_alternative<GridderState>(err_or_gs))
+      state = std::move(std::get<GridderState>(err_or_gs));
+    else
+      result = std::move(std::get<Error>(err_or_gs));
+    return result;
   }
+#else // HPG_API < 17
+  std::unique_ptr<Error>
+  grid_visibilities(
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<unsigned> visibility_grid_cubes,
+    const std::vector<unsigned> visibility_cf_cubes,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phases,
+    const std::vector<vis_uvw_t>& visibility_coordinates) {
+
+    std::unique_ptr<Error> result;
+    std::tie(result, state) =
+      std::move(state)
+      .grid_visibilities(
+        host_device,
+        visibilities,
+        visibility_grid_cubes,
+        visibility_cf_cubes,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phases,
+        visibility_coordinates);
+    return result;
+  }
+#endif
 
   /** device execution fence
    *
@@ -797,19 +848,21 @@ public:
   std::optional<Error>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) {
     std::optional<Error> result;
-    std::tie(result, const_cast<Gridder*>(this)->state) =
-      std::move(const_cast<Gridder*>(this)->state).apply_fft(sign, in_place);
+    auto err_or_gs = std::move(state).apply_fft(sign, in_place);
+    if (std::holds_alternative<GridderState>(err_or_gs))
+      state = std::move(std::get<GridderState>(err_or_gs));
+    else
+      result = std::move(std::get<Error>(err_or_gs));
     return result;
   }
 #else // HPG_API < 17
   std::unique_ptr<Error>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) {
-    std::unique_ptr<Error> result;
-    std::tie(result, const_cast<Gridder*>(this)->state) =
-      std::move(const_cast<Gridder*>(this)->state).apply_fft(sign, in_place);
+    std::unique_ptr<Erro> result;
+    std::tie(result, state) = std::move(state).apply_fft(sign, in_place);
     return result;
   }
-#endif // HPG_API >= 17
+#endif //HPG_API >= 17
 
   /** rotate grid planes by half
    *

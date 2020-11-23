@@ -302,15 +302,16 @@ TEST(GridderState, CopyOrMove) {
       phases,
       coordinates);
     auto gs2 =
-      gs1.grid_visibilities(
-        default_host_device,
-        vis,
-        grid_cubes,
-        cf_cubes,
-        weights,
-        frequencies,
-        phases,
-        coordinates);
+      std::get<1>(
+        gs1.grid_visibilities(
+          default_host_device,
+          vis,
+          grid_cubes,
+          cf_cubes,
+          weights,
+          frequencies,
+          phases,
+          coordinates));
 
     // gridded visibilities should be in gs2, not gs1
     auto [gs3, values] = std::move(gs1).grid_values();
@@ -319,15 +320,16 @@ TEST(GridderState, CopyOrMove) {
     EXPECT_FALSE(has_non_zero(values.get()));
 
     auto gs4 =
-      std::move(gs3).grid_visibilities(
-        default_host_device,
-        vis,
-        grid_cubes,
-        cf_cubes,
-        weights,
-        frequencies,
-        phases,
-        coordinates);
+      std::get<1>(
+        std::move(gs3).grid_visibilities(
+          default_host_device,
+          vis,
+          grid_cubes,
+          cf_cubes,
+          weights,
+          frequencies,
+          phases,
+          coordinates));
 
     // gs2 and gs4 should have same grid values
     auto [gs5, values5] = std::move(gs2).grid_values();
@@ -357,9 +359,10 @@ TEST(GridderState, CopyOrMove) {
     ASSERT_FALSE(std::get<0>(rc_fft));
 #endif
     hpg::GridderState& gs1 = std::get<1>(rc_fft);
-    auto [opterr, gs2] = std::move(gs1).apply_fft();
+    auto err_or_gs2 = std::move(gs1).apply_fft();
     EXPECT_TRUE(gs1.is_null());
-    EXPECT_FALSE(gs2.is_null());
+    ASSERT_TRUE(std::holds_alternative<hpg::GridderState>(err_or_gs2));
+    EXPECT_FALSE(std::get<hpg::GridderState>(err_or_gs2).is_null());
   }
   {
     auto gs1 = gs.rotate_grid();
@@ -399,9 +402,13 @@ TEST(GridderState, CFError) {
 #else
     EXPECT_TRUE(std::get<0>(error_or_gs));
 #endif
-    auto [error, gs1] =
+    auto error_or_gs1 =
       hpg::GridderState(gs).set_convolution_function(default_host_device, cf);
-    EXPECT_TRUE(error);
+#if HPG_API >= 17
+    EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs1));
+#else
+    EXPECT_TRUE(std::get<0>(error_or_gs1));
+#endif
   }
   {
     // X dimension too large
@@ -413,9 +420,13 @@ TEST(GridderState, CFError) {
 #else
     EXPECT_TRUE(std::get<0>(error_or_gs));
 #endif
-    auto [error, gs1] =
+    auto error_or_gs1 =
       hpg::GridderState(gs).set_convolution_function(default_host_device, cf);
-    EXPECT_TRUE(error);
+#if HPG_API >= 17
+    EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs1));
+#else
+    EXPECT_TRUE(std::get<0>(error_or_gs1));
+#endif
   }
   {
     // Y dimension too large
@@ -427,9 +438,14 @@ TEST(GridderState, CFError) {
 #else
     EXPECT_TRUE(std::get<0>(error_or_gs));
 #endif
-    auto [error, gs1] =
+    auto error_or_gs1 =
       hpg::GridderState(gs).set_convolution_function(default_host_device, cf);
-    EXPECT_TRUE(error);
+#if HPG_API >= 17
+    EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs1));
+#else
+    EXPECT_TRUE(std::get<0>(error_or_gs1));
+#endif
+
   }
 }
 
@@ -471,15 +487,16 @@ TEST(GridderState, Reset) {
       phases,
       coordinates);
     auto gs2 =
-      std::move(gs1).grid_visibilities(
-        default_host_device,
-        vis,
-        grid_cubes,
-        cf_cubes,
-        weights,
-        frequencies,
-        phases,
-        coordinates);
+      std::get<1>(
+        std::move(gs1).grid_visibilities(
+          default_host_device,
+          vis,
+          grid_cubes,
+          cf_cubes,
+          weights,
+          frequencies,
+          phases,
+          coordinates));
 
     auto [gs3, values] = std::move(gs2).grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));
