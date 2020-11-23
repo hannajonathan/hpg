@@ -849,13 +849,13 @@ get_error(const std::tuple<std::unique_ptr<Error>, T>& et) {
 template <typename T>
 inline T&&
 get_value(std::tuple<std::unique_ptr<Error>, T>&& et) {
-  return std::get<T>(et);
+  return std::get<T>(std::move(et));
 }
 
 template <typename T>
 inline Error&&
 get_error(std::tuple<std::unique_ptr<Error>, T>&& et) {
-  return std::move(*std::get<Error>(et));
+  return std::move(*std::get<Error>(std::move(et)));
 }
 #endif // HPG_API >= 17
 
