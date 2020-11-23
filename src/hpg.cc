@@ -46,6 +46,15 @@ struct Impl::GridderState {
   }
 };
 
+static std::tuple<std::unique_ptr<Error>, GridderState>
+variant_to_tuple(std::variant<Error, GridderState>&& t) {
+  if (std::holds_alternative<Error>(t))
+    return
+      {std::make_unique<Error>(std::move(std::get<Error>(t))), GridderState()};
+  else
+    return {std::unique_ptr<Error>(), std::move(std::get<GridderState>(t))};
+}
+
 GridderState::GridderState() {
 }
 
@@ -240,18 +249,12 @@ GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) const volatile & {
 
-  if (host_devices().count(host_device) > 0) {
-    auto err_or_gs =
-      Impl::GridderState::set_convolution_function(*this, host_device, cf);
-    if (std::holds_alternative<Error>(err_or_gs))
-      return {std::make_unique<Error>(std::get<Error>(err_or_gs)), *this};
-    else
-      return {
-        std::unique_ptr<Error>(),
-        std::move(std::get<GridderState>(err_or_gs))};
-  } else {
-    return {std::make_unique<DisabledHostDeviceError>(), GridderState()};
-  }
+  if (host_devices().count(host_device) > 0)
+    return
+      variant_to_tuple(
+        Impl::GridderState::set_convolution_function(*this, host_device, cf));
+  else
+    return variant_to_tuple(DisabledHostDeviceError());
 }
 #endif
 
@@ -274,20 +277,13 @@ GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) && {
 
-  if (host_devices().count(host_device) > 0) {
-    auto err_or_gs =
-      Impl::GridderState
-      ::set_convolution_function(std::move(*this), host_device, cf);
-    if (std::holds_alternative<Error>(err_or_gs))
-      return
-        {std::make_unique<Error>(std::get<Error>(err_or_gs)), GridderState()};
-    else
-      return {
-        std::unique_ptr<Error>(),
-        std::move(std::get<GridderState>(err_or_gs))};
-  } else {
-    return {std:make_unique<DisabledHostDeviceError>(), GridderState()};
-  }
+  if (host_devices().count(host_device) > 0)
+    return
+      variant_to_tuple(
+        Impl::GridderState
+        ::set_convolution_function(std::move(*this), host_device, cf));
+  else
+    return variant_to_tuple(DisabledHostDeviceError());
 }
 #endif
 
@@ -496,13 +492,8 @@ GridderState::apply_fft(FFTSign sign, bool in_place) const volatile & {
 #else
 std::tuple<std::unique_ptr<Error>, GridderState>
 GridderState::apply_fft(FFTSign sign, bool in_place) const volatile & {
-  auto err_or_gs = Impl::GridderState::apply_fft(*this, sign, in_place);
-  if (std::holds_alternative<Error>(err_or_gs))
-    return {std::make_unique<Error>(std::get<Error>(err_or_gs)), *this};
-  else
-    return {
-      std::unique_ptr<Error>(),
-      std::move(std::get<GridderState>(err_or_gs))};
+
+  return variant_to_tuple(Impl::GridderState::apply_fft(*this, sign, in_place));
 }
 #endif
 
@@ -516,16 +507,9 @@ GridderState::apply_fft(FFTSign sign, bool in_place) && {
 std::tuple<std::unique_ptr<Error>, GridderState>
 GridderState::apply_fft(FFTSign sign, bool in_place) && {
 
-  auto err_or_gs =
-    std::move(Impl::GridderState::apply_fft(std::move(*this), sign, in_place));
-  if (std::holds_alternative<Error>(err_or_gs))
-    return {
-      std::make_unique<Error>(std::get<Error>(err_or_gs)),
-      GridderState()};
-  else
-    return {
-      std::unique_ptr<Error>(),
-      std::move(std::get<GridderState>(err_or_gs))};
+  return
+    variant_to_tuple(
+      Impl::GridderState::apply_fft(std::move(*this), sign, in_place));
 }
 #endif
 

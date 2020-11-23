@@ -119,6 +119,7 @@ private:
   std::string m_msg;
 
 public:
+
   Error(const std::string& msg)
     : m_msg(msg) {}
 
