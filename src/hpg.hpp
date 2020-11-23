@@ -82,6 +82,8 @@ private:
 
   std::string m_msg;
 
+  ErrorType m_type;
+
 public:
 
   Error(const std::string& msg, ErrorType err = ErrorType::Other)
@@ -287,7 +289,6 @@ public:
 
   ScopeGuard&
   operator=(const ScopeGuard&) = delete;
->>>>>>> Define and use rval_t
 };
 
 /** convolution function array value floating point type */

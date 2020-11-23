@@ -118,3 +118,8 @@ generate_export_header(hpg)
 install(TARGETS hpg EXPORT HPGConfig)
 install(EXPORT HPGConfig DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/hpg)
 export(TARGETS hpg FILE HPGConfig.cmake)
+
+# minigridder
+#
+add_executable(minigridder minigridder.cc)
+target_link_libraries(minigridder hpg Kokkos::kokkoscore)
