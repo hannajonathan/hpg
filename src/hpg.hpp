@@ -795,6 +795,46 @@ devices() noexcept;
 const std::set<Device>&
 host_devices() noexcept;
 
+#if HPG_API >= 17
+template <typename T>
+inline bool
+is_error(const std::variant<Error, T>& et) {
+  return std::holds_alternative<Error>(et);
+}
+
+template <typename T>
+inline bool
+is_value(const std::variant<Error, T>& et) {
+  return std::holds_alternative<T>(et);
+}
+
+#else // HPG_API < 17
+
+template <typename T>
+inline bool
+is_error(const std::tuple<std::unique_ptr<Error>, T>& et) {
+  return bool(std::get<0>(et));
+}
+
+template <typename T>
+inline bool
+is_value(const std::tuple<std::unique_ptr<Error>, T>& et) {
+  return !is_error(et);
+}
+#endif // HPG_API >= 17
+
+template <typename ET>
+inline auto
+get_value(ET&& et) {
+  return std::get<1>(std::forward<ET>(et));
+}
+
+template <typename ET>
+inline auto
+get_error(ET&& et) {
+  return std::get<0>(std::forward<ET>(et));
+}
+
 /** hpg scope object
  *
  * Intended to help avoid errors caused by objects that exist after the call

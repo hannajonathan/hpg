@@ -353,20 +353,12 @@ TEST(GridderState, CopyOrMove) {
   {
     auto rc_fft = gs.apply_fft();
     EXPECT_FALSE(gs.is_null());
-#if HPG_API >= 17
-    ASSERT_TRUE(std::holds_alternative<hpg::GridderState>(rc_fft));
-#else
-    ASSERT_FALSE(std::get<0>(rc_fft));
-#endif
+    ASSERT_TRUE(hpg::is_value(rc_fft));
     hpg::GridderState& gs1 = std::get<1>(rc_fft);
     auto err_or_gs2 = std::move(gs1).apply_fft();
     EXPECT_TRUE(gs1.is_null());
 
-#if HPG_API >= 17
-    ASSERT_TRUE(std::holds_alternative<hpg::GridderState>(err_or_gs2));
-#else
-    ASSERT_FALSE(std::get<0>(err_or_gs2));
-#endif
+    ASSERT_TRUE(hpg::is_value(err_or_gs2));
     EXPECT_FALSE(std::get<1>(err_or_gs2).is_null());
   }
   {
@@ -402,55 +394,21 @@ TEST(GridderState, CFError) {
     const std::array<unsigned, 4> cf_size{3, 3, 1, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto error_or_gs = gs.set_convolution_function(default_host_device, cf);
-#if HPG_API >= 17
-    EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs));
-#else
-    EXPECT_TRUE(std::get<0>(error_or_gs));
-#endif
-    auto error_or_gs1 =
-      hpg::GridderState(gs).set_convolution_function(default_host_device, cf);
-#if HPG_API >= 17
-    EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs1));
-#else
-    EXPECT_TRUE(std::get<0>(error_or_gs1));
-#endif
+    EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
   {
     // X dimension too large
     const std::array<unsigned, 4> cf_size{8, 3, 4, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto error_or_gs = gs.set_convolution_function(default_host_device, cf);
-#if HPG_API >= 17
-    EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs));
-#else
-    EXPECT_TRUE(std::get<0>(error_or_gs));
-#endif
-    auto error_or_gs1 =
-      hpg::GridderState(gs).set_convolution_function(default_host_device, cf);
-#if HPG_API >= 17
-    EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs1));
-#else
-    EXPECT_TRUE(std::get<0>(error_or_gs1));
-#endif
+    EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
   {
     // Y dimension too large
     const std::array<unsigned, 4> cf_size{3, 8, 4, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto error_or_gs = gs.set_convolution_function(default_host_device, cf);
-#if HPG_API >= 17
-    EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs));
-#else
-    EXPECT_TRUE(std::get<0>(error_or_gs));
-#endif
-    auto error_or_gs1 =
-      hpg::GridderState(gs).set_convolution_function(default_host_device, cf);
-#if HPG_API >= 17
-    EXPECT_TRUE(std::holds_alternative<hpg::Error>(error_or_gs1));
-#else
-    EXPECT_TRUE(std::get<0>(error_or_gs1));
-#endif
-
+    EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
 }
 
