@@ -507,19 +507,19 @@ public:
 #endif // HPG_API >= 17
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
 
-  /** rotate grid planes by half
+  /** shift grid planes by half
    *
    * Primarily for use after application of FFT. May invoke fence() on target.
    */
   GridderState
-  rotate_grid() const volatile &;
+  shift_grid() const volatile &;
 
-  /** rotate grid planes by half
+  /** shift grid planes by half
    *
    * Primarily for use after application of FFT. May invoke fence() on target.
    */
   GridderState
-  rotate_grid() &&;
+  shift_grid() &&;
 
 protected:
   friend class Gridder;
@@ -739,12 +739,12 @@ public:
 #endif //HPG_API >= 17
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true);
 
-  /** rotate grid planes by half
+  /** shift grid planes by half
    *
    * Primarily for use after application of FFT. May invoke fence() on target.
    */
   void
-  rotate_grid();
+  shift_grid();
 
 protected:
 

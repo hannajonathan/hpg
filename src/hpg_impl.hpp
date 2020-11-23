@@ -1087,11 +1087,11 @@ swap_gv<K::Cuda>(gv_t& a, gv_t&b) {
 
 /** grid rotation kernel
  *
- * Useful after FFT to rotate grid planes by half the grid plane size in each
+ * Useful after FFT to shift grid planes by half the grid plane size in each
  * dimension
  */
 template <typename execution_space>
-struct HPG_EXPORT GridRotator final {
+struct HPG_EXPORT GridShifter final {
 
   template <typename grid_layout, typename memory_space>
   static void
@@ -1288,7 +1288,7 @@ struct State {
   apply_fft(FFTSign sign, bool in_place) = 0;
 
   virtual void
-  rotate_grid() = 0;
+  shift_grid() = 0;
 
   virtual ~State() {}
 };
@@ -1710,8 +1710,8 @@ public:
   }
 
   void
-  rotate_grid() override {
-    Core::GridRotator<execution_space>::kernel(
+  shift_grid() override {
+    Core::GridShifter<execution_space>::kernel(
       next_exec_space(StreamPhase::COMPUTE),
       grid);
   }

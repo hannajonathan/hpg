@@ -365,9 +365,9 @@ TEST(GridderState, CopyOrMove) {
     EXPECT_FALSE(std::get<hpg::GridderState>(err_or_gs2).is_null());
   }
   {
-    auto gs1 = gs.rotate_grid();
+    auto gs1 = gs.shift_grid();
     EXPECT_FALSE(gs.is_null());
-    auto gs2 = std::move(gs1).rotate_grid();
+    auto gs2 = std::move(gs1).shift_grid();
     EXPECT_TRUE(gs1.is_null());
     EXPECT_FALSE(gs2.is_null());
   }

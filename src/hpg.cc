@@ -519,18 +519,18 @@ GridderState::apply_fft(FFTSign sign, bool in_place) && {
 #endif
 
 GridderState
-GridderState::rotate_grid() const volatile & {
+GridderState::shift_grid() const volatile & {
 
   GridderState result(*this);
-  result.impl->rotate_grid();
+  result.impl->shift_grid();
   return result;
 }
 
 GridderState
-GridderState::rotate_grid() && {
+GridderState::shift_grid() && {
 
   GridderState result(std::move(*this));
-  result.impl->rotate_grid();
+  result.impl->shift_grid();
   return result;
 }
 
@@ -765,8 +765,8 @@ Gridder::apply_fft(FFTSign sign, bool in_place) {
 #endif //HPG_API >= 17
 
 void
-Gridder::rotate_grid() {
-  state = std::move(state).rotate_grid();
+Gridder::shift_grid() {
+  state = std::move(state).shift_grid();
 }
 
 bool

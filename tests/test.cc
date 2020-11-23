@@ -258,7 +258,7 @@ dump_grids(
       }
     }
   }
-  g0.rotate_grid();
+  g0.shift_grid();
   {
     std::cout << "after rotation" << std::endl;
     auto gval = g0.grid_values();
