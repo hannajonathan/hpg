@@ -123,6 +123,16 @@ is_error(const rval_t<T>& rv) {
 #endif // HPG_API >= 17
 }
 
+/** type trait to get value type from rval_t type */
+template <typename T>
+struct rval_value {
+  using type = void;
+};
+template <typename T>
+struct rval_value<rval_t<T>> {
+  using type = T;
+};
+
 /** query whether rval_t value contains a (non-error) value */
 template <typename T>
 inline bool
