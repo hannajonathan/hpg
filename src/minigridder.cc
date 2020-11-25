@@ -258,13 +258,21 @@ struct TrialSpec {
     const int& cfsize_,
     const int& oversampling_,
     const int& visibilities_,
-    const int& repeats_)
+    const int& repeats_
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4> versions_
+#endif
+    )
     : device(device_)
     , gsize(gsize_)
     , cfsize(cfsize_)
     , oversampling(oversampling_)
     , visibilities(visibilities_)
-    , repeats(repeats_) {}
+    , repeats(repeats_)
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , versions(versions_)
+#endif
+ {}
 
   hpg::Device device;
   int gsize;
@@ -272,6 +280,9 @@ struct TrialSpec {
   int oversampling;
   int visibilities;
   int repeats;
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  std::array<unsigned, 4> versions;
+#endif
 
   // TODO: replace the pad_right() usage with io manipulators
 
@@ -279,6 +290,9 @@ struct TrialSpec {
   static constexpr const char* id_names[]
   {"status",
    "dev",
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+   "vsn",
+#endif
    "grid",
    "cf",
    "osmp",
@@ -309,7 +323,15 @@ struct TrialSpec {
     std::ostringstream oss;
     std::array<char, id_col_width - 1> buff;
     std::snprintf(buff.data(), buff.size(), "%g", double(visibilities));
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    std::ostringstream vsns;
+    vsns << versions[0] << "," << versions[1] << ","
+         << versions[2] << "," << versions[3];
+#endif
     oss << pad_right(device_codes.at(device))
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        << pad_right(vsns.str())
+#endif
         << pad_right(std::to_string(gsize))
         << pad_right(std::to_string(cfsize))
         << pad_right(std::to_string(oversampling))
@@ -541,7 +563,11 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
             spec.device,
             1,
             input_data.gsize,
-            default_scale);
+            default_scale
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+            , spec.versions
+#endif
+            );
       })
     .and_then(
       // set convolution function
@@ -635,7 +661,11 @@ run_trials(
                 cfsize,
                 oversampling,
                 num_visibilities,
-                num_repeats);
+                num_repeats
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+                , {0, 0, 0, 0}
+#endif
+                );
               run_hpg_trial(spec, input_data);
             }
           }
@@ -701,7 +731,7 @@ main(int argc, char* argv[]) {
   {
     hpg::Device dflt = hpg::Device::OpenMP;
     args
-      .add_argument("-i", "--impl")
+      .add_argument("-d", "--device")
       .default_value(argwrap<std::vector<hpg::Device>>({dflt}))
       .help("device ["s + device_codes.at(dflt) + "]")
       .action(parse_devices);
@@ -724,7 +754,7 @@ main(int argc, char* argv[]) {
     args.get<argwrap<std::vector<unsigned>>>("--visibilities").val;
   auto repeats = args.get<argwrap<std::vector<unsigned>>>("--repeats").val;
   auto devices =
-    args.get<argwrap<std::vector<hpg::Device>>>("--impl").val;
+    args.get<argwrap<std::vector<hpg::Device>>>("--device").val;
 
   hpg::ScopeGuard hpg;
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)

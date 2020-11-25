@@ -477,7 +477,11 @@ public:
     Device device,
     unsigned max_added_tasks,
     const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale) noexcept;
+    const std::array<grid_scale_fp, 2>& grid_scale
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ) noexcept;
 
   /** copy constructor
    *

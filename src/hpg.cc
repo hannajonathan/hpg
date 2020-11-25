@@ -165,36 +165,34 @@ GridderState::GridderState(
   }
 }
 
-#if HPG_API >= 17
-std::variant<Error, GridderState>
+rval_t<GridderState>
 GridderState::create(
   Device device,
   unsigned max_added_tasks,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale) noexcept {
+  const std::array<grid_scale_fp, 2>& grid_scale
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  , const std::array<unsigned, 4>& versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  ) noexcept {
 
   if (devices().count(device) > 0)
-    return GridderState(device, max_added_tasks, grid_size, grid_scale);
+    return
+      rval<GridderState>(
+        GridderState(
+          device,
+          max_added_tasks,
+          grid_size,
+          grid_scale
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+          , versions
+#endif
+          ));
   else
-    return DisabledDeviceError();
+    return
+      rval<GridderState>(DisabledDeviceError());
 
 }
-#else // HPG_API < 17
-std::tuple<std::unique_ptr<Error>, GridderState>
-GridderState::create(
-  Device device,
-  unsigned max_added_tasks,
-  const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale) noexcept {
-
-  if (devices().count(device) > 0)
-    return {
-      std::unique_ptr<Error>(),
-      GridderState(device, max_added_tasks, grid_size, grid_scale)};
-  else
-    return {std::make_unique<DisabledDeviceError>(), GridderState()};
-}
-#endif // HPG_API >= 17
 
 GridderState::GridderState(const volatile GridderState& h) {
   *this = h;
