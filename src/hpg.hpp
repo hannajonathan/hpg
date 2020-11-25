@@ -185,6 +185,63 @@ rval(const Error& err) {
 #endif // HPG_API >= 17
 }
 
+/** apply function that returns a plain value to an rval_t */
+template <typename RV, typename F>
+auto
+map(RV&& rv, F f) {
+#if HPG_API >= 17
+  using T = std::invoke_result_t<F, typename rval_value<RV>::type>;
+#else // HPG_API < 17
+  using T = typename std::result_of<F(typename rval_value<RV>::type)>::type;
+#endif // HPG_API >= 17
+  if (hpg::is_value(rv))
+    return rval<T>(f(hpg::get_value(std::forward<RV>(rv))));
+  else
+    return rval<T>(hpg::get_error(std::forward<RV>(rv)));
+}
+
+/** apply function that returns an rval_t value to an rval_t */
+template <typename RV, typename F>
+auto
+flatmap(RV&& rv, F f) {
+#if HPG_API >= 17
+  using T =
+    typename
+    rval_value<std::invoke_result_t<F, typename rval_value<RV>::type>>::type;
+#else // HPG_API < 17
+  using T =
+    typename rval_value<
+      typename std::result_of<F(typename rval_value<RV>::type)>::type>::type;
+#endif // HPG_API >= 17
+
+  if (hpg::is_value(rv))
+    return f(hpg::get_value(std::forward<RV>(rv)));
+  else
+    return rval<T>(hpg::get_error(std::forward<RV>(rv)));
+}
+
+/** apply function depending on contained value type with common result type */
+template <typename RV, typename ValF, typename ErrF>
+auto
+fold(RV&& rv, ValF vf, ErrF ef) {
+#if HPG_API >= 17
+  static_assert(
+    std::is_same_v<
+      std::invoke_result_t<ValF, typename rval_value<RV>::type>,
+      std::invoke_result_t<ErrF, Error>>);
+#else // HPG_API < 17
+  static_assert(
+    std::is_same_v<
+      typename std::result_of<ValF(typename rval_value<RV>::type)>::type,
+      typename std::result_of<ErrF(Error)>::type>);
+#endif // HPG_API >= 17
+
+  if (hpg::is_value(rv))
+    return vf(hpg::get_value(std::forward<RV>(rv)));
+  else
+    return ef(hpg::get_error(std::forward<RV>(rv)));
+}
+
 /** hpg scope object
  *
  * Intended to help avoid errors caused by objects that exist after the call
