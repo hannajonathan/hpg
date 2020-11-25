@@ -9,14 +9,16 @@ struct DisabledDeviceError
   : public Error {
 
   DisabledDeviceError()
-    : Error("Requested device is not enabled") {}
+    : Error("Requested device is not enabled", ErrorType::DisabledDevice) {}
 };
 
 struct DisabledHostDeviceError
   : public Error {
 
   DisabledHostDeviceError()
-    : Error("Requested host device is not enabled") {}
+    : Error(
+      "Requested host device is not enabled",
+      ErrorType::DisabledHostDevice) {}
 };
 
 struct Impl::GridderState {

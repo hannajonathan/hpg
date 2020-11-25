@@ -17,6 +17,38 @@
 
 namespace hpg {
 
+/** error types
+ */
+enum class HPG_EXPORT ErrorType {
+  DisabledDevice,
+  DisabledHostDevice,
+  Other
+};
+
+class HPG_EXPORT Error {
+private:
+
+  ErrorType m_type;
+
+  std::string m_msg;
+
+public:
+
+  Error(const std::string& msg, ErrorType err = ErrorType::Other)
+    : m_type(err)
+    , m_msg(msg) {}
+
+  const std::string&
+  message() const {
+    return m_msg;
+  }
+
+  ErrorType
+  type() const {
+    return m_type;
+  }
+};
+
 /** convolution function array value floating point type */
 using cf_fp = float;
 /** visibility value floating point type */
@@ -111,22 +143,6 @@ public:
   operator()(unsigned stokes, unsigned cube) const = 0;
 
   virtual ~GridWeightArray() {}
-};
-
-class HPG_EXPORT Error {
-private:
-
-  std::string m_msg;
-
-public:
-
-  Error(const std::string& msg)
-    : m_msg(msg) {}
-
-  const std::string&
-  message() const {
-    return m_msg;
-  }
 };
 
 struct HPG_EXPORT Gridder;
