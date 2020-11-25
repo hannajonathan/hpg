@@ -261,9 +261,8 @@ TEST(Gridder, InitValues) {
   EXPECT_FALSE(has_non_zero(weights.get()));
 }
 
-// test that Gridder::set_convolution_function() returns errors for erroneous
-// CFArray arguments
-TEST(Gridder, CFError) {
+// tests for Gridder::set_convolution_function()
+TEST(Gridder, CF) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
   auto g =
@@ -279,6 +278,15 @@ TEST(Gridder, CFError) {
   std::vector<hpg::vis_phase_fp> phases;
   std::vector<hpg::vis_uvw_t> coordinates;
 
+  {
+    const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
+    MyCFArray cf = create_cf(10, cf_size, rng);
+    auto oerr = g.set_convolution_function(default_host_device, cf);
+    EXPECT_FALSE(bool(oerr));
+    // do it again
+    auto oerr1 = g.set_convolution_function(default_host_device, cf);
+    EXPECT_FALSE(bool(oerr1));
+  }
   {
     // incorrect Stokes dimension size
     const std::array<unsigned, 4> cf_size{3, 3, 1, 3};
