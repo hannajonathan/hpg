@@ -123,3 +123,6 @@ export(TARGETS hpg FILE HPGConfig.cmake)
 #
 add_executable(minigridder minigridder.cc)
 target_link_libraries(minigridder hpg Kokkos::kokkoscore)
+if(HAVE_CUDA GREATER -1)
+  target_compile_options(minigridder PRIVATE --expt-relaxed-constexpr)
+endif()
