@@ -17,6 +17,58 @@
 
 namespace hpg {
 
+/** global initialization of hpg
+ *
+ * Function is idempotent, but should not be called by a process after a call to
+ * hpg::finalize(). All objects created by hpg must only exist between an
+ * initialize()/finalize() pair; in particular, any hpg object destructors must
+ * be called before the call to finalize(). A common approach is to access hpg
+ * within a new scope after the call to initialize():
+ * @code{.cpp}
+ *     int main() {
+ *       hpg::initialize();
+ *       {
+ *         Gridder g(...);
+ *       }
+ *       hpg::finalize();
+ *     }
+ * @endcode
+ * Another approach involves the use of a ScopeGuard instance.
+ *
+ * @return true, if and only if initialization succeeded
+ */
+bool initialize();
+
+/** global finalization of hpg
+ *
+ * Function is idempotent, but should only be called by a process after a call
+ * to hpg::initialize()
+ */
+void finalize();
+
+/** query whether hpg has been initialized
+ *
+ * Note the result will remain "true" after finalization.
+ */
+bool
+is_initialized() noexcept;
+
+/** backend device type
+ */
+enum class HPG_EXPORT Device {
+  Serial, /**< serial device */
+  OpenMP, /**< OpenMP device */
+  Cuda, /**< CUDA device */
+  HPX, /**< HIP device */
+};
+
+/** query supported devices */
+const std::set<Device>&
+devices() noexcept;
+
+/** query support host devices */
+const std::set<Device>&
+host_devices() noexcept;
 /** error types
  */
 enum class HPG_EXPORT ErrorType {
@@ -27,8 +79,6 @@ enum class HPG_EXPORT ErrorType {
 
 class HPG_EXPORT Error {
 private:
-
-  ErrorType m_type;
 
   std::string m_msg;
 
@@ -47,6 +97,130 @@ public:
   type() const {
     return m_type;
   }
+};
+
+/** type for containing a value or an error
+ *
+ * normally appears as a return value type for a method or function that can
+ * fail
+ */
+#if HPG_API >= 17
+template <typename T>
+using rval_t = std::variant<Error, T>;
+#else // HPG_API < 17
+template <typename T>
+using rval_t = std::tuple<std::unique_ptr<Error>, T>;
+#endif // HPG_API >= 17
+
+/** query whether rval_t value contains an error */
+template <typename T>
+inline bool
+is_error(const rval_t<T>& rv) {
+#if HPG_API >= 17
+  return std::holds_alternative<Error>(rv);
+#else // HPG_API < 17
+  return bool(std::get<0>(rv));
+#endif // HPG_API >= 17
+}
+
+/** query whether rval_t value contains a (non-error) value */
+template <typename T>
+inline bool
+is_value(const rval_t<T>& rv) {
+#if HPG_API >= 17
+  return std::holds_alternative<T>(rv);
+#else // HPG_API < 17
+  return !bool(std::get<0>(rv));
+#endif // HPG_API >= 17
+}
+
+/** get value from an rval_t value */
+template <typename RV>
+inline auto
+get_value(RV&& rv) {
+  return std::get<1>(std::forward<RV>(rv));
+}
+
+/** get error from an rval_t value */
+template <typename RV>
+inline auto
+get_error(RV&& rv) {
+#if HPG_API >= 17
+  return std::get<0>(std::forward<RV>(rv));
+#else // HPG_API < 17
+  return *std::get<0>(std::forward<RV>(rv));
+#endif // HPG_API >= 17
+}
+
+/** create an rval_t value from a (non-error) value */
+template <typename T>
+inline rval_t<T>
+rval(T&& t) {
+#if HPG_API >= 17
+  return rval_t<T>(std::forward<T>(t));
+#else // HPG_API < 17
+  return {std::unique_ptr<Error>(), std::forward<T>(t)};
+#endif // HPG_API >= 17
+}
+
+/** create an rval_t value from an Error
+ */
+template <typename T>
+inline rval_t<T>
+rval(const Error& err) {
+#if HPG_API >= 17
+  return rval_t<T>(err);
+#else // HPG_API < 17
+  return {std::make_unique<Error>(err), T()};
+#endif // HPG_API >= 17
+}
+
+/** hpg scope object
+ *
+ * Intended to help avoid errors caused by objects that exist after the call
+ * to hpg::finalize(). For example,
+ * @code{.cpp}
+ *     int main() {
+ *       // Don't do this!
+ *       hpg::initialize();
+ *       Gridder g();
+ *       hpg::finalize(); // Error! g is still in scope,
+ *                        // ~Gridder is called after finalize()
+ *     }
+ * @endcode
+ * however, use of a ScopeGuard value as follows helps avoid this error:
+ * @code{.cpp}
+ *     int main() {
+ *       hpg::ScopeGuard hpg_guard;
+ *       Gridder g();
+ *       // OK, because g is destroyed prior to hpg_guard
+ *     }
+ * @endcode
+ */
+struct ScopeGuard {
+
+private:
+  bool init;
+
+public:
+  ScopeGuard()
+    : init(false) {
+    if (!is_initialized()) {
+      initialize();
+      init = true;
+    }
+  }
+
+  ~ScopeGuard() {
+    if (is_initialized() && init)
+      finalize();
+  }
+
+  ScopeGuard(const ScopeGuard&) = delete;
+
+  ScopeGuard&
+  operator=(const ScopeGuard&) = delete;
+>>>>>>> Define and use rval_t
 };
 
 /** convolution function array value floating point type */
@@ -68,16 +242,6 @@ using vis_phase_fp = double;
 
 // vis_uvw_t can be any type that supports std::get<N>() for element access
 using vis_uvw_t = std::array<vis_uvw_fp, 3>;
-
-/**
- * backend device type
- */
-enum class HPG_EXPORT Device {
-  Serial, /**< serial device */
-  OpenMP, /**< OpenMP device */
-  Cuda, /**< CUDA device */
-  HPX, /**< HIP device */
-};
 
 namespace Impl {
 struct HPG_EXPORT State;
@@ -240,11 +404,7 @@ public:
    *
    * does not throw an exception if device argument names an unsupported device
    */
-#if HPG_API >= 17
-  static std::variant<Error, GridderState>
-#else // HPG_API < 17
-  static std::tuple<std::unique_ptr<Error>, GridderState>
-#endif // HPG_API >= 17
+  static rval_t<GridderState>
   create(
     Device device,
     unsigned max_added_tasks,
@@ -310,11 +470,7 @@ public:
    *
    * @todo const?
    */
-#if HPG_API >= 17
-  std::variant<Error, GridderState>
-#else // HPG_API < 17
-  std::tuple<std::unique_ptr<Error>, GridderState>
-#endif //HPG_API >= 17
+  rval_t<GridderState>
   set_convolution_function(Device host_device, const CFArray& cf)
     const volatile &;
 
@@ -330,11 +486,7 @@ public:
    *
    * @sa Gridder::set_convolution_function()
    */
-#if HPG_API >= 17
-  std::variant<Error, GridderState>
-#else // HPG_API < 17
-  std::tuple<std::unique_ptr<Error>, GridderState>
-#endif // HPG_API >= 17
+  rval_t<GridderState>
   set_convolution_function(Device host_device, const CFArray& cf) &&;
 
   /** grid some visibilities
@@ -359,11 +511,7 @@ public:
    *
    * @sa Gridder::grid_visibilities()
    */
-#if HPG_API >= 17
-  std::variant<Error, GridderState>
-#else // HPG_API < 17
-  std::tuple<std::unique_ptr<Error>, GridderState>
-#endif // HPG_API >= 17
+  rval_t<GridderState>
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
@@ -396,11 +544,7 @@ public:
    *
    * @sa Gridder::grid_visibilities()
    */
-#if HPG_API >= 17
-  std::variant<Error, GridderState>
-#else // HPG_API < 17
-  std::tuple<std::unique_ptr<Error>, GridderState>
-#endif // HPG_API >= 17
+  rval_t<GridderState>
   grid_visibilities(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
@@ -505,11 +649,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-#if HPG_API >= 17
-  std::variant<Error, GridderState>
-#else // HPG_API < 17
-  std::tuple<std::unique_ptr<Error>, GridderState>
-#endif // HPG_API >= 17
+  rval_t<GridderState>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true)
     const volatile &;
 
@@ -520,11 +660,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-#if HPG_API >= 17
-  std::variant<Error, GridderState>
-#else // HPG_API < 17
-  std::tuple<std::unique_ptr<Error>, GridderState>
-#endif // HPG_API >= 17
+  rval_t<GridderState>
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
 
   /** shift grid planes by half
@@ -606,11 +742,7 @@ public:
    *
    * does not throw an exception if device argument names an unsupported device
    */
-#if HPG_API >= 17
-  static std::variant<Error, Gridder>
-#else // HPG_API < 17
-  static std::tuple<std::unique_ptr<Error>, Gridder>
-#endif // HPG_API >= 17
+  static rval_t<Gridder>
   create(
     Device device,
     unsigned max_added_tasks,
@@ -769,161 +901,6 @@ public:
 protected:
 
   Gridder(GridderState&& st);
-};
-
-/** global initialization of hpg
- *
- * Function is idempotent, but should not be called by a process after a call to
- * hpg::finalize(). All objects created by hpg must only exist between an
- * initialize()/finalize() pair; in particular, any hpg object destructors must
- * be called before the call to finalize(). A common approach is to access hpg
- * within a new scope after the call to initialize():
- * @code{.cpp}
- *     int main() {
- *       hpg::initialize();
- *       {
- *         Gridder g(...);
- *       }
- *       hpg::finalize();
- *     }
- * @endcode
- * Another approach involves the use of a ScopeGuard instance.
- *
- * @return true, if and only if initialization succeeded
- */
-bool initialize();
-
-/** global finalization of hpg
- *
- * Function is idempotent, but should only be called by a process after a call
- * to hpg::initialize()
- */
-void finalize();
-
-/** query whether hpg has been initialized
- *
- * Note the result will remain "true" after finalization.
- */
-bool
-is_initialized() noexcept;
-
-/** query supported devices */
-const std::set<Device>&
-devices() noexcept;
-
-/** query support host devices */
-const std::set<Device>&
-host_devices() noexcept;
-
-#if HPG_API >= 17
-template <typename T>
-inline bool
-is_error(const std::variant<Error, T>& et) {
-  return std::holds_alternative<Error>(et);
-}
-
-template <typename T>
-inline bool
-is_value(const std::variant<Error, T>& et) {
-  return std::holds_alternative<T>(et);
-}
-
-template <typename ET>
-inline auto
-get_value(ET&& et) {
-  return std::get<1>(std::forward<ET>(et));
-}
-
-template <typename ET>
-inline auto
-get_error(ET&& et) {
-  return std::get<0>(std::forward<ET>(et));
-}
-
-#else // HPG_API < 17
-
-template <typename T>
-inline bool
-is_error(const std::tuple<std::unique_ptr<Error>, T>& et) {
-  return bool(std::get<0>(et));
-}
-
-template <typename T>
-inline bool
-is_value(const std::tuple<std::unique_ptr<Error>, T>& et) {
-  return !is_error(et);
-}
-
-template <typename T>
-inline const T&
-get_value(const std::tuple<std::unique_ptr<Error>, T>& et) {
-  return std::get<T>(et);
-}
-
-template <typename T>
-inline const Error&
-get_error(const std::tuple<std::unique_ptr<Error>, T>& et) {
-  return *std::get<Error>(et);
-}
-
-template <typename T>
-inline T&&
-get_value(std::tuple<std::unique_ptr<Error>, T>&& et) {
-  return std::get<T>(std::move(et));
-}
-
-template <typename T>
-inline Error&&
-get_error(std::tuple<std::unique_ptr<Error>, T>&& et) {
-  return std::move(*std::get<Error>(std::move(et)));
-}
-#endif // HPG_API >= 17
-
-/** hpg scope object
- *
- * Intended to help avoid errors caused by objects that exist after the call
- * to hpg::finalize(). For example,
- * @code{.cpp}
- *     int main() {
- *       // Don't do this!
- *       hpg::initialize();
- *       Gridder g();
- *       hpg::finalize(); // Error! g is still in scope,
- *                        // ~Gridder is called after finalize()
- *     }
- * @endcode
- * however, use of a ScopeGuard value as follows helps avoid this error:
- * @code{.cpp}
- *     int main() {
- *       hpg::ScopeGuard hpg_guard;
- *       Gridder g();
- *       // OK, because g is destroyed prior to hpg_guard
- *     }
- * @endcode
- */
-struct ScopeGuard {
-
-private:
-  bool init;
-
-public:
-  ScopeGuard()
-    : init(false) {
-    if (!is_initialized()) {
-      initialize();
-      init = true;
-    }
-  }
-
-  ~ScopeGuard() {
-    if (is_initialized() && init)
-      finalize();
-  }
-
-  ScopeGuard(const ScopeGuard&) = delete;
-
-  ScopeGuard&
-  operator=(const ScopeGuard&) = delete;
 };
 
 } // end namespace hpg

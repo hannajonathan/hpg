@@ -82,13 +82,13 @@ struct Impl::GridderState {
   }
 };
 
-static std::tuple<std::unique_ptr<Error>, GridderState>
-variant_to_tuple(std::variant<Error, GridderState>&& t) {
-  if (std::holds_alternative<Error>(t))
-    return
-      {std::make_unique<Error>(std::move(std::get<Error>(t))), GridderState()};
+template <typename T>
+static rval_t<T>
+to_rval(std::variant<Error, T>&& t) {
+  if (std::holds_alternative<T>(t))
+    return rval<T>(std::get<T>(std::move(t)));
   else
-    return {std::unique_ptr<Error>(), std::move(std::get<GridderState>(t))};
+    return rval<T>(std::get<Error>(std::move(t)));
 }
 
 GridderState::GridderState() {
@@ -280,51 +280,28 @@ GridderState::is_null() const noexcept {
   return !bool(impl);
 }
 
-#if HPG_API >= 17
-std::variant<Error, GridderState>
-GridderState::set_convolution_function(
-  Device host_device,
-  const CFArray& cf) const volatile & {
-
-  return Impl::GridderState::set_convolution_function(*this, host_device, cf);
-}
-#else
-std::tuple<std::unique_ptr<Error>, GridderState>
+rval_t<GridderState>
 GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) const volatile & {
 
   return
-    variant_to_tuple(
+    to_rval(
       Impl::GridderState::set_convolution_function(*this, host_device, cf));
 }
-#endif
 
-#if HPG_API >= 17
-std::variant<Error, GridderState>
+rval_t<GridderState>
 GridderState::set_convolution_function(
   Device host_device,
   const CFArray& cf) && {
 
   return
-    Impl::GridderState
-    ::set_convolution_function(std::move(*this), host_device, cf);
-}
-#else
-std::tuple<std::unique_ptr<Error>, GridderState>
-GridderState::set_convolution_function(
-  Device host_device,
-  const CFArray& cf) && {
-
-  return
-    variant_to_tuple(
+    to_rval(
       Impl::GridderState
       ::set_convolution_function(std::move(*this), host_device, cf));
 }
-#endif
 
-#if HPG_API >= 17
-std::variant<Error, GridderState>
+rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
   const std::vector<std::complex<visibility_fp>>& visibilities,
@@ -336,31 +313,7 @@ GridderState::grid_visibilities(
   const std::vector<vis_uvw_t>& visibility_coordinates) const volatile & {
 
   return
-    Impl::GridderState::grid_visibilities(
-      *this,
-      host_device,
-      visibilities,
-      visibility_grid_cubes,
-      visibility_cf_cubes,
-      visibility_weights,
-      visibility_frequencies,
-      visibility_phases,
-      visibility_coordinates);
-}
-#else
-std::tuple<std::unique_ptr<Error>, GridderState>
-GridderState::grid_visibilities(
-  Device host_device,
-  const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<unsigned> visibility_grid_cubes,
-  const std::vector<unsigned> visibility_cf_cubes,
-  const std::vector<vis_weight_fp>& visibility_weights,
-  const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phases,
-  const std::vector<vis_uvw_t>& visibility_coordinates) const volatile & {
-
-  return
-    variant_to_tuple(
+    to_rval(
       Impl::GridderState::grid_visibilities(
         *this,
         host_device,
@@ -372,10 +325,8 @@ GridderState::grid_visibilities(
         visibility_phases,
         visibility_coordinates));
 }
-#endif
 
-#if HPG_API >= 17
-std::variant<Error, GridderState>
+rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
   const std::vector<std::complex<visibility_fp>>& visibilities,
@@ -387,32 +338,7 @@ GridderState::grid_visibilities(
   const std::vector<vis_uvw_t>& visibility_coordinates) && {
 
   return
-    Impl::GridderState::grid_visibilities(
-      std::move(*this),
-      host_device,
-      visibilities,
-      visibility_grid_cubes,
-      visibility_cf_cubes,
-      visibility_weights,
-      visibility_frequencies,
-      visibility_phases,
-      visibility_coordinates);
-
-}
-#else
-std::tuple<std::unique_ptr<Error>, GridderState>
-GridderState::grid_visibilities(
-  Device host_device,
-  const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<unsigned> visibility_grid_cubes,
-  const std::vector<unsigned> visibility_cf_cubes,
-  const std::vector<vis_weight_fp>& visibility_weights,
-  const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phases,
-  const std::vector<vis_uvw_t>& visibility_coordinates) && {
-
-  return
-    variant_to_tuple(
+    to_rval(
       Impl::GridderState::grid_visibilities(
         std::move(*this),
         host_device,
@@ -423,8 +349,8 @@ GridderState::grid_visibilities(
         visibility_frequencies,
         visibility_phases,
         visibility_coordinates));
+
 }
-#endif
 
 GridderState
 GridderState::fence() const volatile & {
@@ -502,35 +428,18 @@ GridderState::normalize(grid_value_fp wfactor) && {
   return result;
 }
 
-#if HPG_API >= 17
-std::variant<Error, GridderState>
+rval_t<GridderState>
 GridderState::apply_fft(FFTSign sign, bool in_place) const volatile & {
 
-  return Impl::GridderState::apply_fft(*this, sign, in_place);
+  return to_rval(Impl::GridderState::apply_fft(*this, sign, in_place));
 }
-#else
-std::tuple<std::unique_ptr<Error>, GridderState>
-GridderState::apply_fft(FFTSign sign, bool in_place) const volatile & {
 
-  return variant_to_tuple(Impl::GridderState::apply_fft(*this, sign, in_place));
-}
-#endif
-
-#if HPG_API >= 17
-std::variant<Error, GridderState>
-GridderState::apply_fft(FFTSign sign, bool in_place) && {
-
-  return Impl::GridderState::apply_fft(std::move(*this), sign, in_place);
-}
-#else
-std::tuple<std::unique_ptr<Error>, GridderState>
+rval_t<GridderState>
 GridderState::apply_fft(FFTSign sign, bool in_place) && {
 
   return
-    variant_to_tuple(
-      Impl::GridderState::apply_fft(std::move(*this), sign, in_place));
+    to_rval(Impl::GridderState::apply_fft(std::move(*this), sign, in_place));
 }
-#endif
 
 GridderState
 GridderState::shift_grid() const volatile & {
@@ -571,8 +480,7 @@ Gridder::Gridder(Gridder&& other)
 Gridder::Gridder(GridderState&& st)
   : state(std::move(st)) {}
 
-#if HPG_API >= 17
-std::variant<Error, Gridder>
+rval_t<Gridder>
 Gridder::create(
   Device device,
   unsigned max_added_tasks,
@@ -581,31 +489,11 @@ Gridder::create(
 
   auto err_or_gs =
     GridderState::create(device, max_added_tasks, grid_size, grid_scale);
-  if (std::holds_alternative<GridderState>(err_or_gs))
-    return Gridder(std::move(std::get<GridderState>(err_or_gs)));
+  if (is_value(err_or_gs))
+    return rval(Gridder(std::move(get_value(err_or_gs))));
   else
-    return Error(std::get<Error>(err_or_gs));
+    return rval<Gridder>(std::move(get_error(err_or_gs)));
 }
-#else // HPG_API < 17
-std::tuple<std::unique_ptr<Error>, Gridder>
-Gridder::create(
-  Device device,
-  unsigned max_added_tasks,
-  const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale) noexcept {
-
-  auto err_and_gs =
-    GridderState::create(device, max_added_tasks, grid_size, grid_scale);
-  if (!std::get<0>(err_and_gs))
-    return {
-      std::unique_ptr<Error>(),
-      Gridder(std::move(std::get<1>(err_and_gs)))};
-  else
-    return {
-      std::move(std::get<0>(err_and_gs)),
-      Gridder()};
-}
-#endif // HPG_API >= 17
 
 Gridder&
 Gridder::operator=(const volatile Gridder& rhs) {
