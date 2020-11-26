@@ -225,7 +225,7 @@ template <typename memory_space>
 using const_visibility_view = K::View<const Visibility*, memory_space>;
 
 /** device-specific grid layout */
-static const std::array<int, 4> strided_grid_layout_order{2, 1, 0, 3};
+static const std::array<int, 4> strided_grid_layout_order{1, 2, 0, 3};
 
 /** device-specific grid array layout */
 template <Device D>
@@ -290,7 +290,7 @@ struct CFLayout {
       return
         K::LayoutLeft(dims[0], dims[1], dims[2], dims[3], dims[4], dims[5]);
     } else {
-      static const std::array<int, 6> order{2, 1, 0, 4, 3, 5};
+      static const std::array<int, 6> order{1, 2, 0, 4, 3, 5};
       return K::LayoutStride::order_dimensions(6, order.data(), dims.data());
     }
   }
@@ -625,10 +625,10 @@ struct HPG_EXPORT VisibilityGridder final {
         K::parallel_reduce(
           K::TeamVectorRange(team_member, N_X),
           [=](const int X, cf_wgt_array& cfw_l) {
-            /* loop over majorY */
-            for (int Y = 0; Y < N_Y; ++Y) {
-              /* loop over elements (rows) of Mueller matrix column  */
-              for (int S = 0; S < N_S; ++S) {
+            /* loop over elements (rows) of Mueller matrix column  */
+            for (int S = 0; S < N_S; ++S){
+              /* loop over majorY */
+              for (int Y = 0; Y < N_Y; ++Y) {
                 cf_t cfv = cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
                 cfv.imag() *= vis.cf_im_factor;
                 pseudo_atomic_add<execution_space>(
