@@ -561,7 +561,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
         return
           hpg::GridderState::create(
             spec.device,
-            1,
+            4,
             input_data.gsize,
             default_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -637,7 +637,8 @@ run_trials(
   const std::vector<unsigned>& oversamplings,
   const std::vector<unsigned>& visibilities,
   const std::vector<unsigned>& repeats,
-  const std::vector<hpg::Device>& devices) {
+  const std::vector<hpg::Device>& devices,
+  const std::vector<unsigned>& kernels) {
 
   using rand_pool_type = typename K::Random_XorShift64_Pool<K::OpenMP>;
 
@@ -655,18 +656,20 @@ run_trials(
                 num_visibilities,
                 rand_pool_type(348842));
             for (auto& device : devices) {
-              TrialSpec spec(
-                device,
-                gsize,
-                cfsize,
-                oversampling,
-                num_visibilities,
-                num_repeats
+              for (auto& kernel : kernels) {
+                TrialSpec spec(
+                  device,
+                  gsize,
+                  cfsize,
+                  oversampling,
+                  num_visibilities,
+                  num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-                , {0, 0, 0, 0}
+                  , {kernel, 0, 0, 0}
 #endif
-                );
-              run_hpg_trial(spec, input_data);
+                  );
+                run_hpg_trial(spec, input_data);
+              }
             }
           }
         }
@@ -736,6 +739,14 @@ main(int argc, char* argv[]) {
       .help("device ["s + device_codes.at(dflt) + "]")
       .action(parse_devices);
   }
+  {
+    unsigned dflt = 0;
+    args
+      .add_argument("-k", "--kernel")
+      .default_value(argwrap<std::vector<unsigned>>({dflt}))
+      .help("gridding kernel version ["s + std::to_string(dflt) + "]")
+      .action(parse_unsigned_args);
+  }
 
   /* parse the command line arguments */
   try {
@@ -755,10 +766,18 @@ main(int argc, char* argv[]) {
   auto repeats = args.get<argwrap<std::vector<unsigned>>>("--repeats").val;
   auto devices =
     args.get<argwrap<std::vector<hpg::Device>>>("--device").val;
+  auto kernels = args.get<argwrap<std::vector<unsigned>>>("--kernel").val;
 
   hpg::ScopeGuard hpg;
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)
-    run_trials(gsize, cfsize, oversampling, visibilities, repeats, devices);
+    run_trials(
+      gsize,
+      cfsize,
+      oversampling,
+      visibilities,
+      repeats,
+      devices,
+      kernels);
   else
     std::cerr << "OpenMP device is not enabled: no tests will be run"
               << std::endl;
