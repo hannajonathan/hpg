@@ -224,6 +224,10 @@ using visibility_view = K::View<Visibility*, memory_space>;
 template <typename memory_space>
 using const_visibility_view = K::View<const Visibility*, memory_space>;
 
+/** view type for unmanaged view of vector data on host */
+template <typename T>
+using vector_view = K::View<T*, K::HostSpace, K::MemoryTraits<K::Unmanaged>>;
+
 /** device-specific grid layout */
 static const std::array<int, 4> strided_grid_layout_order{1, 2, 0, 3};
 
@@ -666,7 +670,13 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
   kernel(
     execution_space exec,
     const const_cf_view<cf_layout, memory_space>& cf,
-    const const_visibility_view<memory_space>& visibilities,
+    const K::View<const vis_t*, memory_space>& visibilities,
+    const K::View<const unsigned*, memory_space>& grid_cubes,
+    const K::View<const unsigned*, memory_space>& cf_cubes,
+    const K::View<const vis_weight_fp*, memory_space>& vis_weights,
+    const K::View<const vis_frequency_fp*, memory_space>& frequencies,
+    const K::View<const vis_phase_fp*, memory_space>& phases,
+    const K::View<const vis_uvw_t*, memory_space>& coordinates,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
@@ -695,8 +705,16 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
         K::AUTO)
       .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size())),
       KOKKOS_LAMBDA(const member_type& team_member) {
+        auto i = team_member.league_rank();
         GridVis<execution_space> vis(
-          visibilities(team_member.league_rank()),
+          Visibility(
+            visibilities(i),
+            grid_cubes(i),
+            cf_cubes(i),
+            vis_weights(i),
+            frequencies(i),
+            phases(i),
+            coordinates(i)),
           grid_radius,
           oversampling,
           cf_radius,
@@ -1521,7 +1539,6 @@ init_vis(
     typename DeviceT<D>::kokkos_device::memory_space,
     K::HostSpace>
     ::accessible);
-  std::cout << "init_vis+" << std::endl;
   K::parallel_for(
     "vis_init",
     K::RangePolicy<typename DeviceT<D>::kokkos_device>(
@@ -1538,7 +1555,6 @@ init_vis(
           visibility_phases[i],
           visibility_coordinates[i]);
     });
-  std::cout << "init_vis-" << std::endl;
 }
 
 /** names for stream states */
@@ -1785,53 +1801,60 @@ public:
 
     auto exec_copy = next_exec_space(StreamPhase::COPY);
 
-    visibility_view<memory_space> vis(
-      K::ViewAllocateWithoutInitializing("visibilities"),
-      visibilities.size());
-
-    switch (host_device) {
-#ifdef HPG_ENABLE_SERIAL
-    case Device::Serial: {
-      auto vis_h = K::create_mirror_view(vis);
-      init_vis<Device::Serial>(
-        vis_h,
+    auto len = visibilities.size();
+    auto [vis_h, vis] =
+      copy_to_device_view<vis_t>(
+        "visibilities",
         visibilities,
+        len,
+        exec_copy);
+    auto [grid_cubes_h, grid_cubes] =
+      copy_to_device_view<unsigned>(
+        "grid_cubes",
         visibility_grid_cubes,
+        len,
+        exec_copy);
+    auto [cf_cubes_h, cf_cubes] =
+      copy_to_device_view<unsigned>(
+        "cf_cubes",
         visibility_cf_cubes,
+        len,
+        exec_copy);
+    auto [vis_weights_h, vis_weights] =
+      copy_to_device_view<vis_weight_fp>(
+        "vis_weights",
         visibility_weights,
+        len,
+        exec_copy);
+    auto [frequencies_h, frequencies] =
+      copy_to_device_view<vis_frequency_fp>(
+        "frequencies",
         visibility_frequencies,
+        len,
+        exec_copy);
+    auto [phases_h, phases] =
+      copy_to_device_view<vis_phase_fp>(
+        "phases",
         visibility_phases,
-        visibility_coordinates);
-      K::deep_copy(exec_copy, vis, vis_h);
-      break;
-    }
-#endif // HPG_ENABLE_SERIAL
-#ifdef HPG_ENABLE_OPENMP
-    case Device::OpenMP: {
-      auto vis_h = K::create_mirror_view(vis);
-      init_vis<Device::OpenMP>(
-        vis_h,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates);
-      K::deep_copy(exec_copy, vis, vis_h);
-      break;
-    }
-#endif // HPG_ENABLE_OPENMP
-    default:
-      assert(false);
-      break;
-    }
+        len,
+        exec_copy);
+    auto [coordinates_h, coordinates] =
+      copy_to_device_view<vis_uvw_t>(
+        "coordinates",
+        visibility_coordinates,
+        len,
+        exec_copy);
 
-    const_visibility_view<memory_space> cvis = vis;
-    Core::VisibilityGridder<execution_space, 0>::kernel(
+    Core::VisibilityGridder<execution_space, 1>::kernel(
       next_exec_space(StreamPhase::COMPUTE),
       cf,
-      cvis,
+      vis,
+      grid_cubes,
+      cf_cubes,
+      vis_weights,
+      frequencies,
+      phases,
+      coordinates,
       grid_scale,
       grid,
       weights);
@@ -2093,6 +2116,27 @@ private:
       K::deep_copy(exec, grid, st->grid);
       if (also_weights)
         K::deep_copy(exec, weights, st->weights);
+    }
+  }
+
+  template <typename DT, typename ST>
+  static std::tuple<
+    vector_view<const DT>,
+    K::View<const DT*, memory_space>>
+  copy_to_device_view(
+    const char* name,
+    const std::vector<ST>& vect,
+    size_t len,
+    execution_space& exec) {
+
+    vector_view<const DT> hview(reinterpret_cast<const DT*>(vect.data()), len);
+    if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
+      K::View<DT*, memory_space>
+        dview(K::ViewAllocateWithoutInitializing(name), len);
+      K::deep_copy(exec, dview, hview);
+      return {hview, dview};
+    } else {
+      return {hview, hview};
     }
   }
 };
