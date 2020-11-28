@@ -744,6 +744,7 @@ struct FFTW<double> {
     int istride, int idist,
     K::complex<double> *out, const int *onembed,
     int ostride, int odist,
+    int /*sstride*/,
     int sign, unsigned flags) {
 
     static_assert(sizeof(*in) == 16);
@@ -791,6 +792,7 @@ struct FFTW<float> {
     int istride, int idist,
     K::complex<float> *out, const int *onembed,
     int ostride, int odist,
+    int sstride,
     int sign, unsigned flags) {
 
     static_assert(sizeof(*in) == 8);
@@ -803,8 +805,8 @@ struct FFTW<float> {
         sign, flags),
        fftwf_plan_many_dft(
          rank, n, howmany,
-         reinterpret_cast<complex_t*>(in + 1), inembed, istride, idist,
-         reinterpret_cast<complex_t*>(out + 1), onembed, ostride, odist,
+         reinterpret_cast<complex_t*>(in + sstride), inembed, istride, idist,
+         reinterpret_cast<complex_t*>(out + sstride), onembed, ostride, odist,
          sign, flags)};
   }
 
@@ -850,14 +852,18 @@ struct HPG_EXPORT FFT final {
            igrid.extent(0) * igrid.extent(1)
            * igrid.extent(2) * igrid.extent(3));
     int n[2]{igrid.extent_int(0), igrid.extent_int(1)};
-    int stride = igrid.extent_int(2);
+    int stride = 1;
     int dist = igrid.extent_int(0) * igrid.extent_int(1) * igrid.extent_int(2);
+    int nembed[2]{
+      igrid.extent_int(0) * igrid.extent_int(2),
+      igrid.extent_int(1)};
     auto result =
       FFTW<scalar_t>::plan_many(
         2, n, igrid.extent_int(3),
         const_cast<K::complex<scalar_t>*>(&igrid(0, 0, 0, 0)),
-        NULL, stride, dist,
-        &ogrid(0, 0, 0, 0), NULL, stride, dist,
+        nembed, stride, dist,
+        &ogrid(0, 0, 0, 0), nembed, stride, dist,
+        igrid.extent_int(1),
         ((sign == FFTSign::NEGATIVE) ? FFTW_FORWARD : FFTW_BACKWARD),
         FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
     return result;
@@ -1605,8 +1611,9 @@ public:
     return std::nullopt;
   }
 
+  template <unsigned version>
   void
-  grid_visibilities(
+  grid_visibilities_impl(
     Device host_device,
     const std::vector<std::complex<visibility_fp>>& visibilities,
     const std::vector<unsigned> visibility_grid_cubes,
@@ -1614,7 +1621,21 @@ public:
     const std::vector<vis_weight_fp>& visibility_weights,
     const std::vector<vis_frequency_fp>& visibility_frequencies,
     const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) override {
+    const std::vector<vis_uvw_t>& visibility_coordinates) {
+    assert(false);
+  }
+
+  template <>
+  void
+  grid_visibilities_impl<0>(
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<unsigned> visibility_grid_cubes,
+    const std::vector<unsigned> visibility_cf_cubes,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phases,
+    const std::vector<vis_uvw_t>& visibility_coordinates) {
 
     auto exec_copy = next_exec_space(StreamPhase::COPY);
 
@@ -1661,16 +1682,117 @@ public:
     }
 
     const_visibility_view<memory_space> cvis = vis;
+    Core::VisibilityGridder<execution_space, 0>::kernel(
+      next_exec_space(StreamPhase::COMPUTE),
+      cf,
+      cvis,
+      grid_scale,
+      grid,
+      weights);
+  }
+
+  template <>
+  void
+  grid_visibilities_impl<1>(
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<unsigned> visibility_grid_cubes,
+    const std::vector<unsigned> visibility_cf_cubes,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phases,
+    const std::vector<vis_uvw_t>& visibility_coordinates) {
+
+    auto exec_copy = next_exec_space(StreamPhase::COPY);
+
+    visibility_view<memory_space> vis(
+      K::ViewAllocateWithoutInitializing("visibilities"),
+      visibilities.size());
+
+    switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+    case Device::Serial: {
+      auto vis_h = K::create_mirror_view(vis);
+      init_vis<Device::Serial>(
+        vis_h,
+        visibilities,
+        visibility_grid_cubes,
+        visibility_cf_cubes,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phases,
+        visibility_coordinates);
+      K::deep_copy(exec_copy, vis, vis_h);
+      break;
+    }
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_OPENMP
+    case Device::OpenMP: {
+      auto vis_h = K::create_mirror_view(vis);
+      init_vis<Device::OpenMP>(
+        vis_h,
+        visibilities,
+        visibility_grid_cubes,
+        visibility_cf_cubes,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phases,
+        visibility_coordinates);
+      K::deep_copy(exec_copy, vis, vis_h);
+      break;
+    }
+#endif // HPG_ENABLE_OPENMP
+    default:
+      assert(false);
+      break;
+    }
+
+    const_visibility_view<memory_space> cvis = vis;
+    Core::VisibilityGridder<execution_space, 1>::kernel(
+      next_exec_space(StreamPhase::COMPUTE),
+      cf,
+      cvis,
+      grid_scale,
+      grid,
+      weights);
+  }
+
+  void
+  grid_visibilities(
+    Device host_device,
+    const std::vector<std::complex<visibility_fp>>& visibilities,
+    const std::vector<unsigned> visibility_grid_cubes,
+    const std::vector<unsigned> visibility_cf_cubes,
+    const std::vector<vis_weight_fp>& visibility_weights,
+    const std::vector<vis_frequency_fp>& visibility_frequencies,
+    const std::vector<vis_phase_fp>& visibility_phases,
+    const std::vector<vis_uvw_t>& visibility_coordinates) override {
+
     switch (visibility_gridder_version()) {
     case 0:
-      Core::VisibilityGridder<execution_space, 0>::kernel(
-        next_exec_space(StreamPhase::COMPUTE),
-        cf,
-        cvis,
-        grid_scale,
-        grid,
-        weights);
+      grid_visibilities_impl<0>(
+        host_device,
+        visibilities,
+        visibility_grid_cubes,
+        visibility_cf_cubes,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phases,
+        visibility_coordinates);
       break;
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    case 1:
+      grid_visibilities_impl<1>(
+        host_device,
+        visibilities,
+        visibility_grid_cubes,
+        visibility_cf_cubes,
+        visibility_weights,
+        visibility_frequencies,
+        visibility_phases,
+        visibility_coordinates);
+      break;
+#endif
     default:
       assert(false);
       break;
