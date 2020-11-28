@@ -74,6 +74,7 @@ host_devices() noexcept;
 enum class HPG_EXPORT ErrorType {
   DisabledDevice,
   DisabledHostDevice,
+  IncompatibleVisVectorLengths,
   Other
 };
 

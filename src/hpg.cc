@@ -21,6 +21,15 @@ struct DisabledHostDeviceError
       ErrorType::DisabledHostDevice) {}
 };
 
+struct IncompatibleVisVectorLengthError
+  : public Error {
+
+  IncompatibleVisVectorLengthError()
+    : Error (
+      "Incompatible visibility vector lengths",
+      ErrorType::IncompatibleVisVectorLengths) {}
+};
+
 struct Impl::GridderState {
 
   template <typename GS>
@@ -51,6 +60,15 @@ struct Impl::GridderState {
     const std::vector<vis_frequency_fp>& visibility_frequencies,
     const std::vector<vis_phase_fp>& visibility_phases,
     const std::vector<vis_uvw_t>& visibility_coordinates) {
+
+    auto len = visibilities.size();
+    if (visibility_grid_cubes.size() < len
+        || visibility_cf_cubes.size() < len
+        || visibility_weights.size() < len
+        || visibility_frequencies.size() < len
+        || visibility_phases.size() < len
+        || visibility_coordinates.size() < len)
+      return IncompatibleVisVectorLengthError();
 
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
