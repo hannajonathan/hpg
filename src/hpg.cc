@@ -249,7 +249,7 @@ GridderState::operator=(const volatile GridderState& rhs) {
 GridderState&
 GridderState::operator=(GridderState&& rhs) {
 
-  impl = std::move(std::move(rhs).impl);
+  impl = std::move(rhs).impl; // TODO: is this OK, or do I need another move()?
   return *this;
 }
 
