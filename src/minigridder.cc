@@ -298,9 +298,7 @@ struct TrialSpec {
    "osmp",
    "nvis",
    "rpt",
-   "vis/s",
-   "Gf/s",
-   "GB/s"};
+   "vis/s"};
 
   static std::string
   pad_right(const std::string& s) {
@@ -359,50 +357,15 @@ struct TrialSpec {
       vr.size(),
       "%-9.2e",
       total_visibilities() / seconds);
-    std::array<char, id_col_width - 1> bw;
-    std::snprintf(bw.data(), bw.size(), "%-9.2e", gbytes_rw() / seconds);
-    std::array<char, id_col_width - 1> gf;
-    std::snprintf(gf.data(), gf.size(), "%-9.2e", gflops() / seconds);
     oss << pad_right("RUN")
         << pad_right(id())
-        << pad_right(vr.data())
-        << pad_right(gf.data())
-        << bw.data();
+        << pad_right(vr.data());
     return oss.str();
-  }
-
-  double
-  gbytes_rw() const {
-    /* Two complex read accesses (cf and grid), one complex write access (grid),
-     * and a read of the fields of a Visibility per visibility per point in
-     * cf. Visibility read accounted for outside of loop over cf, since that
-     * reflects the current implementation. */
-    // FIXME: this could be improved now that I'm using hpg implementation
-    return
-      1.0e-9
-      * repeats
-      * double(visibilities)
-      * (cfsize * cfsize
-         * (sizeof(std::complex<hpg::cf_fp>)
-            + 2 * sizeof(std::complex<hpg::grid_value_fp>))
-         + sizeof(std::complex<hpg::visibility_fp>));
   }
 
   double
   total_visibilities() const {
     return double(visibilities) * repeats;
-  }
-
-  double
-  gflops() const {
-    /* One complex multiplication and one complex addition per visibility per cf
-     * domain point, which is 4 fp multiplications and 4 fp additions. Note that
-     * this is probably a mix of single and double precision ops */
-    return
-      1.0e-9
-      * repeats
-      * double(visibilities)
-      * (cfsize * cfsize * 8);
   }
 };
 
