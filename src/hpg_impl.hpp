@@ -2085,6 +2085,9 @@ private:
 
   int
   next_exec_space(StreamPhase next) {
+#ifndef NDEBUG
+    int prev_idx = exec_space_indexes.front();
+#endif
     if (max_active_tasks > 1) {
       if (current == StreamPhase::COMPUTE && next == StreamPhase::COPY) {
         exec_space_indexes.push_back(exec_space_indexes.front());
@@ -2097,9 +2100,9 @@ private:
     if (current == StreamPhase::COMPUTE && next == StreamPhase::COPY)
       std::get<1>(exec_spaces[exec_space_indexes.front()]).clear();
 #ifndef NDEBUG
-    std::cout << current << "->"
-              << next << ": "
-              << exec_space_indexes.front() << std::endl;
+    std::cout << current << "(" << prev_idx << ")->"
+              << next << "(" << exec_space_indexes.front() << ")"
+              << std::endl;
 #endif // NDEBUG
     current = next;
     return exec_space_indexes.front();
