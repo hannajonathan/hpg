@@ -587,13 +587,13 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<unsigned> visibility_grid_cubes,
-    const std::vector<unsigned> visibility_cf_cubes,
-    const std::vector<vis_weight_fp>& visibility_weights,
-    const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) const volatile &;
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& visibility_grid_cubes,
+    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_weight_fp>&& visibility_weights,
+    std::vector<vis_frequency_fp>&& visibility_frequencies,
+    std::vector<vis_phase_fp>&& visibility_phases,
+    std::vector<vis_uvw_t>&& visibility_coordinates) const volatile &;
 
   /** grid some visibilities
    *
@@ -620,13 +620,13 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<unsigned> visibility_grid_cubes,
-    const std::vector<unsigned> visibility_cf_cubes,
-    const std::vector<vis_weight_fp>& visibility_weights,
-    const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) &&;
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& visibility_grid_cubes,
+    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_weight_fp>&& visibility_weights,
+    std::vector<vis_frequency_fp>&& visibility_frequencies,
+    std::vector<vis_phase_fp>&& visibility_phases,
+    std::vector<vis_uvw_t>&& visibility_coordinates) &&;
 
   /** device execution fence
    *
@@ -906,13 +906,13 @@ public:
 #endif // HPG_API >= 17
   grid_visibilities(
     Device host_device,
-    const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<unsigned> visibility_grid_cubes,
-    const std::vector<unsigned> visibility_cf_cubes,
-    const std::vector<vis_weight_fp>& visibility_weights,
-    const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates);
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& visibility_grid_cubes,
+    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_weight_fp>&& visibility_weights,
+    std::vector<vis_frequency_fp>&& visibility_frequencies,
+    std::vector<vis_phase_fp>&& visibility_phases,
+    std::vector<vis_uvw_t>&& visibility_coordinates);
 
   /** device execution fence
    *

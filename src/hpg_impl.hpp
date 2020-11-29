@@ -3,6 +3,7 @@
 #include "hpg.hpp"
 
 #include <algorithm>
+#include <any>
 #include <cassert>
 #include <cfenv>
 #include <cmath>
@@ -1401,13 +1402,13 @@ struct State {
   virtual void
   grid_visibilities(
     Device host_device,
-    const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<unsigned> visibility_grid_cubes,
-    const std::vector<unsigned> visibility_cf_cubes,
-    const std::vector<vis_weight_fp>& visibility_weights,
-    const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) = 0;
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& visibility_grid_cubes,
+    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_weight_fp>&& visibility_weights,
+    std::vector<vis_frequency_fp>&& visibility_frequencies,
+    std::vector<vis_phase_fp>&& visibility_phases,
+    std::vector<vis_uvw_t>&& visibility_coordinates) = 0;
 
   virtual void
   fence() const volatile = 0;
@@ -1596,6 +1597,7 @@ public:
   std::vector<
     std::conditional_t<std::is_void_v<stream_type>, int, stream_type>> streams;
   std::vector<execution_space> exec_spaces;
+  std::vector<std::vector<std::any>> exec_space_states;
   mutable std::deque<int> exec_space_indexes;
   mutable StreamPhase current;
 
@@ -1725,13 +1727,13 @@ public:
   void
   default_grid_visibilities(
     Device host_device,
-    const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<unsigned> visibility_grid_cubes,
-    const std::vector<unsigned> visibility_cf_cubes,
-    const std::vector<vis_weight_fp>& visibility_weights,
-    const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) {
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& visibility_grid_cubes,
+    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_weight_fp>&& visibility_weights,
+    std::vector<vis_frequency_fp>&& visibility_frequencies,
+    std::vector<vis_phase_fp>&& visibility_phases,
+    std::vector<vis_uvw_t>&& visibility_coordinates) {
 
     auto exec_copy = next_exec_space(StreamPhase::COPY);
 
@@ -1791,59 +1793,91 @@ public:
   void
   alt1_grid_visibilities(
     Device host_device,
-    const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<unsigned> visibility_grid_cubes,
-    const std::vector<unsigned> visibility_cf_cubes,
-    const std::vector<vis_weight_fp>& visibility_weights,
-    const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) {
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& visibility_grid_cubes,
+    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_weight_fp>&& visibility_weights,
+    std::vector<vis_frequency_fp>&& visibility_frequencies,
+    std::vector<vis_phase_fp>&& visibility_phases,
+    std::vector<vis_uvw_t>&& visibility_coordinates) {
 
     auto exec_copy = next_exec_space(StreamPhase::COPY);
 
+    auto& exec_state = exec_space_states[exec_space_indexes.front()];
+
     auto len = visibilities.size();
+
+    exec_state.emplace_back(std::move(visibilities));
     auto [vis_h, vis] =
-      copy_to_device_view<vis_t>(
+      StateT<D>::copy_to_device_view<vis_t>(
         "visibilities",
-        visibilities,
+        std::any_cast<const std::vector<std::complex<visibility_fp>>>(
+          &exec_state.back()),
         len,
         exec_copy);
+    exec_state.push_back(vis_h);
+    exec_state.push_back(vis);
+
+    exec_state.emplace_back(std::move(visibility_grid_cubes));
     auto [grid_cubes_h, grid_cubes] =
-      copy_to_device_view<unsigned>(
+      StateT<D>::copy_to_device_view<unsigned>(
         "grid_cubes",
-        visibility_grid_cubes,
+        std::any_cast<const std::vector<unsigned>>(&exec_state.back()),
         len,
         exec_copy);
+    exec_state.push_back(grid_cubes_h);
+    exec_state.push_back(grid_cubes);
+
+    exec_state.emplace_back(std::move(visibility_cf_cubes));
     auto [cf_cubes_h, cf_cubes] =
-      copy_to_device_view<unsigned>(
+      StateT<D>::copy_to_device_view<unsigned>(
         "cf_cubes",
-        visibility_cf_cubes,
+        std::any_cast<const std::vector<unsigned>>(&exec_state.back()),
         len,
         exec_copy);
+    exec_state.push_back(cf_cubes_h);
+    exec_state.push_back(cf_cubes);
+
+    exec_state.emplace_back(std::move(visibility_weights));
     auto [vis_weights_h, vis_weights] =
-      copy_to_device_view<vis_weight_fp>(
+      StateT<D>::copy_to_device_view<vis_weight_fp>(
         "vis_weights",
-        visibility_weights,
+        std::any_cast<const std::vector<vis_weight_fp>>(&exec_state.back()),
         len,
         exec_copy);
+    exec_state.push_back(vis_weights_h);
+    exec_state.push_back(vis_weights);
+
+    exec_state.emplace_back(std::move(visibility_frequencies));
     auto [frequencies_h, frequencies] =
-      copy_to_device_view<vis_frequency_fp>(
+      StateT<D>::copy_to_device_view<vis_frequency_fp>(
         "frequencies",
-        visibility_frequencies,
+        std::any_cast<const std::vector<vis_frequency_fp>>(
+          &exec_state.back()),
         len,
         exec_copy);
+    exec_state.push_back(frequencies_h);
+    exec_state.push_back(frequencies);
+
+    exec_state.emplace_back(std::move(visibility_phases));
     auto [phases_h, phases] =
-      copy_to_device_view<vis_phase_fp>(
+      StateT<D>::copy_to_device_view<vis_phase_fp>(
         "phases",
-        visibility_phases,
+        std::any_cast<const std::vector<vis_phase_fp>>(&exec_state.back()),
         len,
         exec_copy);
+    exec_state.push_back(phases_h);
+    exec_state.push_back(phases);
+
+    exec_state.emplace_back(std::move(visibility_coordinates));
     auto [coordinates_h, coordinates] =
-      copy_to_device_view<vis_uvw_t>(
+      StateT<D>::copy_to_device_view<vis_uvw_t>(
         "coordinates",
-        visibility_coordinates,
+        std::any_cast<const std::vector<vis_uvw_t>>(&exec_state.back()),
         len,
         exec_copy);
+    exec_state.push_back(coordinates_h);
+    exec_state.push_back(coordinates);
 
     Core::VisibilityGridder<execution_space, 1>::kernel(
       next_exec_space(StreamPhase::COMPUTE),
@@ -1864,37 +1898,37 @@ public:
   void
   grid_visibilities(
     Device host_device,
-    const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<unsigned> visibility_grid_cubes,
-    const std::vector<unsigned> visibility_cf_cubes,
-    const std::vector<vis_weight_fp>& visibility_weights,
-    const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) override {
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& visibility_grid_cubes,
+    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_weight_fp>&& visibility_weights,
+    std::vector<vis_frequency_fp>&& visibility_frequencies,
+    std::vector<vis_phase_fp>&& visibility_phases,
+    std::vector<vis_uvw_t>&& visibility_coordinates) override {
 
     switch (visibility_gridder_version()) {
     case 0:
       default_grid_visibilities(
         host_device,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates);
+        std::move(visibilities),
+        std::move(visibility_grid_cubes),
+        std::move(visibility_cf_cubes),
+        std::move(visibility_weights),
+        std::move(visibility_frequencies),
+        std::move(visibility_phases),
+        std::move(visibility_coordinates));
       break;
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     case 1:
       alt1_grid_visibilities(
         host_device,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates);
+        std::move(visibilities),
+        std::move(visibility_grid_cubes),
+        std::move(visibility_cf_cubes),
+        std::move(visibility_weights),
+        std::move(visibility_frequencies),
+        std::move(visibility_phases),
+        std::move(visibility_coordinates));
       break;
 #endif
     default:
@@ -1908,6 +1942,7 @@ public:
     auto st = const_cast<StateT*>(this);
     for (unsigned i = 0; i < st->exec_space_indexes.size(); ++i) {
       st->exec_spaces[st->exec_space_indexes.front()].fence();
+      st->exec_space_states[st->exec_space_indexes.front()].clear();
       st->exec_space_indexes.push_back(st->exec_space_indexes.front());
       st->exec_space_indexes.pop_front();
     }
@@ -2036,6 +2071,7 @@ private:
         exec_space_indexes.push_back(i);
       }
     }
+    exec_space_states.resize(max_active_tasks);
     current = StreamPhase::COPY;
   }
 
@@ -2050,6 +2086,8 @@ private:
         exec_spaces[exec_space_indexes[1]].fence();
       }
     }
+    if (current == StreamPhase::COMPUTE && next == StreamPhase::COPY)
+      exec_space_states[exec_space_indexes.front()].clear();
 #ifndef NDEBUG
     std::cout << current << "->"
               << next << ": "
@@ -2125,11 +2163,11 @@ private:
     K::View<const DT*, memory_space>>
   copy_to_device_view(
     const char* name,
-    const std::vector<ST>& vect,
+    const std::vector<ST>* vect,
     size_t len,
     execution_space& exec) {
 
-    vector_view<const DT> hview(reinterpret_cast<const DT*>(vect.data()), len);
+    vector_view<const DT> hview(reinterpret_cast<const DT*>(vect->data()), len);
     if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
       K::View<DT*, memory_space>
         dview(K::ViewAllocateWithoutInitializing(name), len);

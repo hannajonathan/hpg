@@ -174,13 +174,13 @@ run_tests(
     std::cout << "cf set" << std::endl;
     g0.grid_visibilities(
       host_dev,
-      vis,
-      grid_cubes,
-      cf_cubes,
-      weights,
-      frequencies,
-      phases,
-      coordinates);
+      std::remove_reference_t<decltype(vis)>(vis),
+      std::remove_reference_t<decltype(grid_cubes)>(grid_cubes),
+      std::remove_reference_t<decltype(cf_cubes)>(cf_cubes),
+      std::remove_reference_t<decltype(weights)>(weights),
+      std::remove_reference_t<decltype(frequencies)>(frequencies),
+      std::remove_reference_t<decltype(phases)>(phases),
+      std::remove_reference_t<decltype(coordinates)>(coordinates));
     std::cout << "gridded" << std::endl;
     auto weights = g0.grid_weights();
     std::cout << "weights";
@@ -233,13 +233,13 @@ dump_grids(
   g0.set_convolution_function(host_dev, MyCFArray(cf));
   g0.grid_visibilities(
     host_dev,
-    vis,
-    grid_cubes,
-    cf_cubes,
-    weights,
-    frequencies,
-    phases,
-    coordinates);
+    std::remove_reference_t<decltype(vis)>(vis),
+    std::remove_reference_t<decltype(grid_cubes)>(grid_cubes),
+    std::remove_reference_t<decltype(cf_cubes)>(cf_cubes),
+    std::remove_reference_t<decltype(weights)>(weights),
+    std::remove_reference_t<decltype(frequencies)>(frequencies),
+    std::remove_reference_t<decltype(phases)>(phases),
+    std::remove_reference_t<decltype(coordinates)>(coordinates));
   g0.normalize();
   auto err = g0.apply_fft();
   assert(!err);

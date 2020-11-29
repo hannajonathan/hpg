@@ -352,13 +352,13 @@ TEST(Gridder, Reset) {
       coordinates);
     g.grid_visibilities(
       default_host_device,
-      vis,
-      grid_cubes,
-      cf_cubes,
-      weights,
-      frequencies,
-      phases,
-      coordinates);
+      std::move(vis),
+      std::move(grid_cubes),
+      std::move(cf_cubes),
+      std::move(weights),
+      std::move(frequencies),
+      std::move(phases),
+      std::move(coordinates));
 
     auto values = g.grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));

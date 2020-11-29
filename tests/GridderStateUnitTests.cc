@@ -306,13 +306,13 @@ TEST(GridderState, CopyOrMove) {
       std::get<1>(
         gs1.grid_visibilities(
           default_host_device,
-          vis,
-          grid_cubes,
-          cf_cubes,
-          weights,
-          frequencies,
-          phases,
-          coordinates));
+          decltype(vis)(vis),
+          decltype(grid_cubes)(grid_cubes),
+          decltype(cf_cubes)(cf_cubes),
+          decltype(weights)(weights),
+          decltype(frequencies)(frequencies),
+          decltype(phases)(phases),
+          decltype(coordinates)(coordinates)));
 
     // gridded visibilities should be in gs2, not gs1
     auto [gs3, values] = std::move(gs1).grid_values();
@@ -324,13 +324,13 @@ TEST(GridderState, CopyOrMove) {
       std::get<1>(
         std::move(gs3).grid_visibilities(
           default_host_device,
-          vis,
-          grid_cubes,
-          cf_cubes,
-          weights,
-          frequencies,
-          phases,
-          coordinates));
+          std::move(vis),
+          std::move(grid_cubes),
+          std::move(cf_cubes),
+          std::move(weights),
+          std::move(frequencies),
+          std::move(phases),
+          std::move(coordinates)));
 
     // gs2 and gs4 should have same grid values
     auto [gs5, values5] = std::move(gs2).grid_values();
@@ -461,13 +461,13 @@ TEST(GridderState, Reset) {
       std::get<1>(
         std::move(gs1).grid_visibilities(
           default_host_device,
-          vis,
-          grid_cubes,
-          cf_cubes,
-          weights,
-          frequencies,
-          phases,
-          coordinates));
+          std::move(vis),
+          std::move(grid_cubes),
+          std::move(cf_cubes),
+          std::move(weights),
+          std::move(frequencies),
+          std::move(phases),
+          std::move(coordinates)));
 
     auto [gs3, values] = std::move(gs2).grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));

@@ -597,13 +597,13 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
             std::get<1>(std::move(t_gs))
             .grid_visibilities(
               hpg::Device::OpenMP,
-              input_data.visibilities,
-              input_data.grid_cubes,
-              input_data.cf_cubes,
-              input_data.weights,
-              input_data.frequencies,
-              input_data.phases,
-              input_data.coordinates),
+              decltype(input_data.visibilities)(input_data.visibilities),
+              decltype(input_data.grid_cubes)(input_data.grid_cubes),
+              decltype(input_data.cf_cubes)(input_data.cf_cubes),
+              decltype(input_data.weights)(input_data.weights),
+              decltype(input_data.frequencies)(input_data.frequencies),
+              decltype(input_data.phases)(input_data.phases),
+              decltype(input_data.coordinates)(input_data.coordinates)),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));

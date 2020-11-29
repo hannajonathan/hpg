@@ -54,13 +54,13 @@ struct Impl::GridderState {
   grid_visibilities(
     GS&& st,
     Device host_device,
-    const std::vector<std::complex<visibility_fp>>& visibilities,
-    const std::vector<unsigned> visibility_grid_cubes,
-    const std::vector<unsigned> visibility_cf_cubes,
-    const std::vector<vis_weight_fp>& visibility_weights,
-    const std::vector<vis_frequency_fp>& visibility_frequencies,
-    const std::vector<vis_phase_fp>& visibility_phases,
-    const std::vector<vis_uvw_t>& visibility_coordinates) {
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& visibility_grid_cubes,
+    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_weight_fp>&& visibility_weights,
+    std::vector<vis_frequency_fp>&& visibility_frequencies,
+    std::vector<vis_phase_fp>&& visibility_phases,
+    std::vector<vis_uvw_t>&& visibility_coordinates) {
 
     auto len = visibilities.size();
     if (visibility_grid_cubes.size() < len
@@ -75,13 +75,13 @@ struct Impl::GridderState {
       ::hpg::GridderState result(std::forward<GS>(st));
       result.impl->grid_visibilities(
         host_device,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates);
+        std::move(visibilities),
+        std::move(visibility_grid_cubes),
+        std::move(visibility_cf_cubes),
+        std::move(visibility_weights),
+        std::move(visibility_frequencies),
+        std::move(visibility_phases),
+        std::move(visibility_coordinates));
       return result;
     } else {
       return DisabledHostDeviceError();
@@ -324,51 +324,51 @@ GridderState::set_convolution_function(Device host_device, CFArray&& cf) && {
 rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
-  const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<unsigned> visibility_grid_cubes,
-  const std::vector<unsigned> visibility_cf_cubes,
-  const std::vector<vis_weight_fp>& visibility_weights,
-  const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phases,
-  const std::vector<vis_uvw_t>& visibility_coordinates) const volatile & {
+  std::vector<std::complex<visibility_fp>>&& visibilities,
+  std::vector<unsigned>&& visibility_grid_cubes,
+  std::vector<unsigned>&& visibility_cf_cubes,
+  std::vector<vis_weight_fp>&& visibility_weights,
+  std::vector<vis_frequency_fp>&& visibility_frequencies,
+  std::vector<vis_phase_fp>&& visibility_phases,
+  std::vector<vis_uvw_t>&& visibility_coordinates) const volatile & {
 
   return
     to_rval(
       Impl::GridderState::grid_visibilities(
         *this,
         host_device,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates));
+        std::move(visibilities),
+        std::move(visibility_grid_cubes),
+        std::move(visibility_cf_cubes),
+        std::move(visibility_weights),
+        std::move(visibility_frequencies),
+        std::move(visibility_phases),
+        std::move(visibility_coordinates)));
 }
 
 rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
-  const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<unsigned> visibility_grid_cubes,
-  const std::vector<unsigned> visibility_cf_cubes,
-  const std::vector<vis_weight_fp>& visibility_weights,
-  const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phases,
-  const std::vector<vis_uvw_t>& visibility_coordinates) && {
+  std::vector<std::complex<visibility_fp>>&& visibilities,
+  std::vector<unsigned>&& visibility_grid_cubes,
+  std::vector<unsigned>&& visibility_cf_cubes,
+  std::vector<vis_weight_fp>&& visibility_weights,
+  std::vector<vis_frequency_fp>&& visibility_frequencies,
+  std::vector<vis_phase_fp>&& visibility_phases,
+  std::vector<vis_uvw_t>&& visibility_coordinates) && {
 
   return
     to_rval(
       Impl::GridderState::grid_visibilities(
         std::move(*this),
-        host_device,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates));
+        std::move(host_device),
+        std::move(visibilities),
+        std::move(visibility_grid_cubes),
+        std::move(visibility_cf_cubes),
+        std::move(visibility_weights),
+        std::move(visibility_frequencies),
+        std::move(visibility_phases),
+        std::move(visibility_coordinates)));
 
 }
 
@@ -582,26 +582,26 @@ Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
 std::optional<Error>
 Gridder::grid_visibilities(
   Device host_device,
-  const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<unsigned> visibility_grid_cubes,
-  const std::vector<unsigned> visibility_cf_cubes,
-  const std::vector<vis_weight_fp>& visibility_weights,
-  const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phases,
-  const std::vector<vis_uvw_t>& visibility_coordinates) {
+  std::vector<std::complex<visibility_fp>>&& visibilities,
+  std::vector<unsigned>&& visibility_grid_cubes,
+  std::vector<unsigned>&& visibility_cf_cubes,
+  std::vector<vis_weight_fp>&& visibility_weights,
+  std::vector<vis_frequency_fp>&& visibility_frequencies,
+  std::vector<vis_phase_fp>&& visibility_phases,
+  std::vector<vis_uvw_t>&& visibility_coordinates) {
 
   std::optional<Error> result;
   auto err_or_gs =
     std::move(state)
     .grid_visibilities(
       host_device,
-      visibilities,
-      visibility_grid_cubes,
-      visibility_cf_cubes,
-      visibility_weights,
-      visibility_frequencies,
-      visibility_phases,
-      visibility_coordinates);
+      std::move(visibilities),
+      std::move(visibility_grid_cubes),
+      std::move(visibility_cf_cubes),
+      std::move(visibility_weights),
+      std::move(visibility_frequencies),
+      std::move(visibility_phases),
+      std::move(visibility_coordinates));
   if (std::holds_alternative<GridderState>(err_or_gs))
     state = std::move(std::get<GridderState>(err_or_gs));
   else
@@ -612,26 +612,26 @@ Gridder::grid_visibilities(
 std::unique_ptr<Error>
 Gridder::grid_visibilities(
   Device host_device,
-  const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<unsigned> visibility_grid_cubes,
-  const std::vector<unsigned> visibility_cf_cubes,
-  const std::vector<vis_weight_fp>& visibility_weights,
-  const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phases,
-  const std::vector<vis_uvw_t>& visibility_coordinates) {
+  std::vector<std::complex<visibility_fp>>&& visibilities,
+  std::vector<unsigned>&& visibility_grid_cubes,
+  std::vector<unsigned>&& visibility_cf_cubes,
+  std::vector<vis_weight_fp>&& visibility_weights,
+  std::vector<vis_frequency_fp>&& visibility_frequencies,
+  std::vector<vis_phase_fp>&& visibility_phases,
+  std::vector<vis_uvw_t>&& visibility_coordinates) {
 
   std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state)
     .grid_visibilities(
       host_device,
-      visibilities,
-      visibility_grid_cubes,
-      visibility_cf_cubes,
-      visibility_weights,
-      visibility_frequencies,
-      visibility_phases,
-      visibility_coordinates);
+      std::move(visibilities),
+      std::move(visibility_grid_cubes),
+      std::move(visibility_cf_cubes),
+      std::move(visibility_weights),
+      std::move(visibility_frequencies),
+      std::move(visibility_phases),
+      std::move(visibility_coordinates));
   return result;
 }
 #endif
