@@ -34,11 +34,12 @@ struct Impl::GridderState {
 
   template <typename GS>
   static std::variant<Error, ::hpg::GridderState>
-  set_convolution_function(GS&& st, Device host_device, const CFArray& cf) {
+  set_convolution_function(GS&& st, Device host_device, CFArray&& cf) {
 
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
-      auto error = result.impl->set_convolution_function(host_device, cf);
+      auto error =
+        result.impl->set_convolution_function(host_device, std::move(cf));
       if (error)
         return std::move(error.value());
       else
@@ -297,24 +298,27 @@ GridderState::is_null() const noexcept {
 }
 
 rval_t<GridderState>
-GridderState::set_convolution_function(
-  Device host_device,
-  const CFArray& cf) const volatile & {
+GridderState::set_convolution_function(Device host_device, CFArray&& cf)
+  const volatile & {
 
   return
     to_rval(
-      Impl::GridderState::set_convolution_function(*this, host_device, cf));
+      Impl::GridderState::set_convolution_function(
+        *this,
+        host_device,
+        std::move(cf)));
 }
 
 rval_t<GridderState>
-GridderState::set_convolution_function(
-  Device host_device,
-  const CFArray& cf) && {
+GridderState::set_convolution_function(Device host_device, CFArray&& cf) && {
 
   return
     to_rval(
       Impl::GridderState
-      ::set_convolution_function(std::move(*this), host_device, cf));
+      ::set_convolution_function(
+        std::move(*this),
+        host_device,
+        std::move(cf)));
 }
 
 rval_t<GridderState>
@@ -552,10 +556,11 @@ Gridder::is_null() const noexcept {
 
 #if HPG_API >= 17
 std::optional<Error>
-Gridder::set_convolution_function(Device host_device, const CFArray& cf) {
+Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
+
   std::optional<Error> result;
   auto err_or_gs =
-    std::move(state).set_convolution_function(host_device, cf);
+    std::move(state).set_convolution_function(host_device, std::move(cf));
   if (std::holds_alternative<GridderState>(err_or_gs))
     state = std::move(std::get<GridderState>(err_or_gs));
   else
@@ -564,10 +569,11 @@ Gridder::set_convolution_function(Device host_device, const CFArray& cf) {
 }
 #else // HPG_API < 17
 std::unique_ptr<Error>
-Gridder::set_convolution_function(Device host_device, const CFArray& cf) {
+Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
+
   std::unique_ptr<Error> result;
   std::tie(result, state) =
-    std::move(state).set_convolution_function(host_device, cf);
+    std::move(state).set_convolution_function(host_device, std::move(cf));
   return result;
 }
 #endif //HPG_API >= 17

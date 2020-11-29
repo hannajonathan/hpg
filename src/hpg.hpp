@@ -544,7 +544,7 @@ public:
    * @todo const?
    */
   rval_t<GridderState>
-  set_convolution_function(Device host_device, const CFArray& cf)
+  set_convolution_function(Device host_device, CFArray&& cf)
     const volatile &;
 
   /** set convolution function
@@ -560,7 +560,7 @@ public:
    * @sa Gridder::set_convolution_function()
    */
   rval_t<GridderState>
-  set_convolution_function(Device host_device, const CFArray& cf) &&;
+  set_convolution_function(Device host_device, CFArray&& cf) &&;
 
   /** grid some visibilities
    *
@@ -880,7 +880,7 @@ public:
 #else // HPG_API < 17
   std::unique_ptr<Error>
 #endif //HPG_API >= 17
-  set_convolution_function(Device host_device, const CFArray& cf);
+  set_convolution_function(Device host_device, CFArray&&);
 
   /** grid visibilities
    *

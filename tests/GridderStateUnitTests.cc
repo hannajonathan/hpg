@@ -287,7 +287,8 @@ TEST(GridderState, CopyOrMove) {
     const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto gs1 =
-      std::get<1>(gs.set_convolution_function(default_host_device, cf));
+      std::get<1>(
+        gs.set_convolution_function(default_host_device, MyCFArray(cf)));
     init_visibilities(
       10,
       grid_size,
@@ -392,22 +393,28 @@ TEST(GridderState, CFError) {
   {
     // incorrect Stokes dimension size
     const std::array<unsigned, 4> cf_size{3, 3, 1, 3};
-    MyCFArray cf = create_cf(10, cf_size, rng);
-    auto error_or_gs = gs.set_convolution_function(default_host_device, cf);
+    auto error_or_gs =
+      gs.set_convolution_function(
+        default_host_device,
+        create_cf(10, cf_size, rng));
     EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
   {
     // X dimension too large
     const std::array<unsigned, 4> cf_size{8, 3, 4, 3};
-    MyCFArray cf = create_cf(10, cf_size, rng);
-    auto error_or_gs = gs.set_convolution_function(default_host_device, cf);
+    auto error_or_gs =
+      gs.set_convolution_function(
+        default_host_device,
+        create_cf(10, cf_size, rng));
     EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
   {
     // Y dimension too large
     const std::array<unsigned, 4> cf_size{3, 8, 4, 3};
-    MyCFArray cf = create_cf(10, cf_size, rng);
-    auto error_or_gs = gs.set_convolution_function(default_host_device, cf);
+    auto error_or_gs =
+      gs.set_convolution_function(
+        default_host_device,
+        create_cf(10, cf_size, rng));
     EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
 }
@@ -435,7 +442,8 @@ TEST(GridderState, Reset) {
     const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
     MyCFArray cf = create_cf(10, cf_size, rng);
     auto gs1 =
-      std::get<1>(gs.set_convolution_function(default_host_device, cf));
+      std::get<1>(
+        gs.set_convolution_function(default_host_device, MyCFArray(cf)));
     init_visibilities(
       10,
       grid_size,

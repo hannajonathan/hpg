@@ -406,23 +406,6 @@ struct TrialSpec {
   }
 };
 
-/** representation of input data
- */
-struct InputData {
-  std::unique_ptr<hpg::CFArray> cf;
-  std::array<unsigned, 4> gsize;
-  int oversampling;
-
-  std::vector<std::complex<hpg::visibility_fp>> visibilities;
-  std::vector<unsigned> grid_cubes;
-  std::vector<unsigned> cf_cubes;
-  std::vector<hpg::vis_weight_fp> weights;
-  std::vector<hpg::vis_frequency_fp> frequencies;
-  std::vector<hpg::vis_phase_fp> phases;
-  std::vector<hpg::vis_uvw_t> coordinates;
-
-};
-
 struct CFArray final
   : public hpg::CFArray {
 
@@ -464,6 +447,23 @@ struct CFArray final
       m_values[
         ((x * m_extent[1] + y) * m_extent[2] + stokes) * m_extent[3] + cube];
   }
+};
+
+/** representation of input data
+ */
+struct InputData {
+  CFArray cf;
+  std::array<unsigned, 4> gsize;
+  int oversampling;
+
+  std::vector<std::complex<hpg::visibility_fp>> visibilities;
+  std::vector<unsigned> grid_cubes;
+  std::vector<unsigned> cf_cubes;
+  std::vector<hpg::vis_weight_fp> weights;
+  std::vector<hpg::vis_frequency_fp> frequencies;
+  std::vector<hpg::vis_phase_fp> phases;
+  std::vector<hpg::vis_uvw_t> coordinates;
+
 };
 
 /** create visibility data
@@ -545,7 +545,7 @@ create_input_data(
         std::complex<hpg::cf_fp>(rstate.frand(-1, 1), rstate.frand(-1, 1));
       generator.free_state(rstate);
     });
-  result.cf = std::make_unique<CFArray>(cfsize, oversampling, cf_values);
+  result.cf = CFArray(cfsize, oversampling, cf_values);
   return result;
 }
 
@@ -574,7 +574,9 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
       [&](hpg::GridderState&& gs) {
         return
           std::move(gs)
-          .set_convolution_function(hpg::Device::OpenMP, *input_data.cf);
+          .set_convolution_function(
+            hpg::Device::OpenMP,
+            CFArray(input_data.cf));
       })
     .map(
       // start timer after convolution function initialization completes

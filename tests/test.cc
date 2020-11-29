@@ -156,7 +156,7 @@ run_tests(
     auto st2 = std::move(st0).fence();
     auto st3 =
       std::get<hpg::GridderState>(
-        std::move(st2).set_convolution_function(host_dev, cf));
+        std::move(st2).set_convolution_function(host_dev, MyCFArray(cf)));
 #ifdef HPG_ENABLE_SERIAL
     if constexpr (D == hpg::Device::Serial)
       assert(st3.max_added_tasks() == 0);
@@ -170,7 +170,7 @@ run_tests(
     std::cout << "Gridder " << dev_name << std::endl;
     auto g0 = std::get<1>(hpg::Gridder::create(D, 2, grid_size, grid_scale));
     std::cout << "constructed" << std::endl;
-    g0.set_convolution_function(host_dev, cf);
+    g0.set_convolution_function(host_dev, MyCFArray(cf));
     std::cout << "cf set" << std::endl;
     g0.grid_visibilities(
       host_dev,
@@ -230,7 +230,7 @@ dump_grids(
   std::vector<hpg::vis_uvw_t>& coordinates) {
 
   auto g0 = std::get<1>(hpg::Gridder::create(D, 2, grid_size, grid_scale));
-  g0.set_convolution_function(host_dev, cf);
+  g0.set_convolution_function(host_dev, MyCFArray(cf));
   g0.grid_visibilities(
     host_dev,
     vis,

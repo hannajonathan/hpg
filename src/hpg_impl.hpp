@@ -1396,7 +1396,7 @@ struct State {
   }
 
   virtual std::optional<Error>
-  set_convolution_function(Device host_device, const CFArray& cf) = 0;
+  set_convolution_function(Device host_device, CFArray&& cf) = 0;
 
   virtual void
   grid_visibilities(
@@ -1666,7 +1666,7 @@ public:
   }
 
   std::optional<Error>
-  set_convolution_function(Device host_device, const CFArray& cf_array)
+  set_convolution_function(Device host_device, CFArray&& cf_array)
     override {
 
     if (cf_array.extent(2) != grid_size[2])
