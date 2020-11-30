@@ -119,7 +119,7 @@ using rval_t = std::tuple<std::unique_ptr<Error>, T>;
 
 /** query whether rval_t value contains an error */
 template <typename T>
-inline bool
+HPG_EXPORT inline bool
 is_error(const rval_t<T>& rv) {
 #if HPG_API >= 17
   return std::holds_alternative<Error>(rv);
@@ -130,7 +130,7 @@ is_error(const rval_t<T>& rv) {
 
 /** type trait to get value type from rval_t type */
 template <typename T>
-struct rval_value {
+struct HPG_EXPORT rval_value {
   using type = void;
 };
 template <typename T>
@@ -140,7 +140,7 @@ struct rval_value<rval_t<T>> {
 
 /** query whether rval_t value contains a (non-error) value */
 template <typename T>
-inline bool
+HPG_EXPORT inline bool
 is_value(const rval_t<T>& rv) {
 #if HPG_API >= 17
   return std::holds_alternative<T>(rv);
@@ -151,14 +151,14 @@ is_value(const rval_t<T>& rv) {
 
 /** get value from an rval_t value */
 template <typename RV>
-inline auto
+HPG_EXPORT inline auto
 get_value(RV&& rv) {
   return std::get<1>(std::forward<RV>(rv));
 }
 
 /** get error from an rval_t value */
 template <typename RV>
-inline auto
+HPG_EXPORT inline auto
 get_error(RV&& rv) {
 #if HPG_API >= 17
   return std::get<0>(std::forward<RV>(rv));
@@ -169,7 +169,7 @@ get_error(RV&& rv) {
 
 /** create an rval_t value from a (non-error) value */
 template <typename T>
-inline rval_t<T>
+HPG_EXPORT inline rval_t<T>
 rval(T&& t) {
 #if HPG_API >= 17
   return rval_t<T>(std::forward<T>(t));
@@ -181,7 +181,7 @@ rval(T&& t) {
 /** create an rval_t value from an Error
  */
 template <typename T>
-inline rval_t<T>
+HPG_EXPORT inline rval_t<T>
 rval(const Error& err) {
 #if HPG_API >= 17
   return rval_t<T>(err);
@@ -192,7 +192,7 @@ rval(const Error& err) {
 
 /** apply function that returns a plain value to an rval_t */
 template <typename RV, typename F>
-auto
+HPG_EXPORT auto
 map(RV&& rv, F f) {
 #if HPG_API >= 17
   using T = std::invoke_result_t<F, typename rval_value<RV>::type>;
@@ -207,7 +207,7 @@ map(RV&& rv, F f) {
 
 /** apply function that returns an rval_t value to an rval_t */
 template <typename RV, typename F>
-auto
+HPG_EXPORT auto
 flatmap(RV&& rv, F f) {
 #if HPG_API >= 17
   using T =
@@ -227,7 +227,7 @@ flatmap(RV&& rv, F f) {
 
 /** apply function depending on contained value type with common result type */
 template <typename RV, typename ValF, typename ErrF>
-auto
+HPG_EXPORT auto
 fold(RV&& rv, ValF vf, ErrF ef) {
 #if HPG_API >= 17
   static_assert(
@@ -269,7 +269,7 @@ fold(RV&& rv, ValF vf, ErrF ef) {
  *     }
  * @endcode
  */
-struct ScopeGuard {
+struct HPG_EXPORT ScopeGuard {
 
 private:
   bool init;
@@ -380,7 +380,7 @@ public:
   virtual ~GridWeightArray() {}
 };
 
-struct HPG_EXPORT Gridder;
+class HPG_EXPORT Gridder;
 
 enum class HPG_EXPORT FFTSign {
   POSITIVE,
@@ -425,7 +425,7 @@ constexpr FFTSign fft_sign_dflt = FFTSign::POSITIVE;
  * fence() will be in the null state, which is likely not of much further use to
  * the caller.
  */
-struct GridderState {
+class HPG_EXPORT GridderState {
 protected:
   friend class Gridder;
   friend class Impl::GridderState;
@@ -783,7 +783,7 @@ protected:
  *
  * @sa GridderState
  */
-class Gridder {
+class HPG_EXPORT Gridder {
 protected:
 
   mutable GridderState state; /**< state maintained by instances */
