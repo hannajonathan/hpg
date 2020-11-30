@@ -151,22 +151,52 @@ is_value(const rval_t<T>& rv) {
 }
 
 /** get value from an rval_t value */
+#if __cplusplus >= 201402L
 template <typename RV>
 HPG_EXPORT inline auto
 get_value(RV&& rv) {
   return std::get<1>(std::forward<RV>(rv));
 }
+#else // __cplusplus < 201402L
+template <typename RV>
+HPG_EXPORT inline const typename rval_value<RV>::type&
+get_value(const RV& rv) {
+  return std::get<1>(rv);
+}
+template <typename RV>
+HPG_EXPORT inline typename rval_value<RV>::type&&
+get_value(RV&& rv) {
+  return std::get<1>(std::move(rv));
+}
+#endif // __cplusplus >= 201402L
 
 /** get error from an rval_t value */
+#if __cplusplus >= 201402L
 template <typename RV>
 HPG_EXPORT inline auto
 get_error(RV&& rv) {
-#if HPG_API >= 17
+# if HPG_API >= 17
   return std::get<0>(std::forward<RV>(rv));
-#else // HPG_API < 17
+# else
   return *std::get<0>(std::forward<RV>(rv));
-#endif // HPG_API >= 17
+# endif
 }
+#else // __cplusplus < 201402L
+template <typename RV>
+HPG_EXPORT inline const typename rval_value<RV>::type&
+get_error(const RV& rv) {
+# if HPG_API >= 17
+#  error "Unsupported c++ standard and HPG API version"
+# else // HPG_API < 17
+  return *std::get<0>(rv);
+# endif // HPG_API >= 17
+}
+template <typename RV>
+HPG_EXPORT inline typename rval_value<RV>::type&&
+get_error(RV&& rv) {
+  return *std::get<0>(std::move(rv));
+}
+#endif // __cplusplus >= 201402L
 
 /** create an rval_t value from a (non-error) value */
 template <typename T>
@@ -191,6 +221,7 @@ rval(const Error& err) {
 #endif // HPG_API >= 17
 }
 
+#if __cplusplus >= 201402L
 /** apply function that returns a plain value to an rval_t */
 template <typename RV, typename F>
 HPG_EXPORT auto
@@ -200,10 +231,10 @@ map(RV&& rv, F f) {
 #else // HPG_API < 17
   using T = typename std::result_of<F(typename rval_value<RV>::type)>::type;
 #endif // HPG_API >= 17
-  if (hpg::is_value(rv))
-    return rval<T>(f(hpg::get_value(std::forward<RV>(rv))));
+  if (is_value(rv))
+    return rval<T>(f(get_value(std::forward<RV>(rv))));
   else
-    return rval<T>(hpg::get_error(std::forward<RV>(rv)));
+    return rval<T>(get_error(std::forward<RV>(rv)));
 }
 
 /** apply function that returns an rval_t value to an rval_t */
@@ -220,10 +251,10 @@ flatmap(RV&& rv, F f) {
       typename std::result_of<F(typename rval_value<RV>::type)>::type>::type;
 #endif // HPG_API >= 17
 
-  if (hpg::is_value(rv))
-    return f(hpg::get_value(std::forward<RV>(rv)));
+  if (is_value(rv))
+    return f(get_value(std::forward<RV>(rv)));
   else
-    return rval<T>(hpg::get_error(std::forward<RV>(rv)));
+    return rval<T>(get_error(std::forward<RV>(rv)));
 }
 
 /** apply function depending on contained value type with common result type */
@@ -235,18 +266,19 @@ fold(RV&& rv, ValF vf, ErrF ef) {
     std::is_same_v<
       std::invoke_result_t<ValF, typename rval_value<RV>::type>,
       std::invoke_result_t<ErrF, Error>>);
-#else // HPG_API < 17
+#else // hpg_api < 17
   static_assert(
     std::is_same<
       typename std::result_of<ValF(typename rval_value<RV>::type)>::type,
       typename std::result_of<ErrF(Error)>::type>::value);
-#endif // HPG_API >= 17
+#endif // hpg_api >= 17
 
-  if (hpg::is_value(rv))
-    return vf(hpg::get_value(std::forward<RV>(rv)));
+  if (is_value(rv))
+    return vf(get_value(std::forward<RV>(rv)));
   else
-    return ef(hpg::get_error(std::forward<RV>(rv)));
+    return ef(get_error(std::forward<RV>(rv)));
 }
+#endif // __cplusplus >= 201402L
 
 /** hpg scope object
  *
