@@ -100,6 +100,8 @@ public:
   type() const {
     return m_type;
   }
+
+  virtual ~Error() {}
 };
 
 /** type for containing a value or an error
@@ -494,6 +496,8 @@ public:
    */
   GridderState(GridderState&&);
 
+  virtual ~GridderState() {}
+
   /** copy assignment
    *
    * Copies all state. Invokes fence() on argument.
@@ -841,6 +845,8 @@ public:
   /** move assignment*/
   Gridder&
   operator=(Gridder&&);
+
+  virtual ~Gridder() {}
 
   /** device */
   Device
