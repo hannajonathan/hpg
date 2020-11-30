@@ -217,7 +217,7 @@ rval(const Error& err) {
 #if HPG_API >= 17
   return rval_t<T>(err);
 #else // HPG_API < 17
-  return {std::make_unique<Error>(err), T()};
+  return {std::unique_ptr<Error>(new Error(err)), T()};
 #endif // HPG_API >= 17
 }
 
