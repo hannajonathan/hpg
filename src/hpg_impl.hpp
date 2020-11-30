@@ -1598,7 +1598,7 @@ public:
     std::conditional_t<std::is_void_v<stream_type>, int, stream_type>> streams;
   std::vector<std::tuple<execution_space, std::vector<std::any>>> exec_spaces;
   mutable std::deque<int> exec_space_indexes;
-  mutable StreamPhase current;
+  mutable StreamPhase current = StreamPhase::COPY;
 
   StateT(
     unsigned max_active_tasks,
