@@ -30,6 +30,35 @@ struct IncompatibleVisVectorLengthError
       ErrorType::IncompatibleVisVectorLengths) {}
 };
 
+Error::Error(const std::string& msg, ErrorType err)
+  : m_type(err)
+  , m_msg(msg) {}
+
+const std::string&
+Error::message() const {
+  return m_msg;
+}
+
+ErrorType
+Error::type() const {
+  return m_type;
+}
+
+Error::~Error() {}
+
+ScopeGuard::ScopeGuard()
+  : init(false) {
+  if (!is_initialized()) {
+    initialize();
+    init = true;
+  }
+}
+
+ScopeGuard::~ScopeGuard() {
+  if (is_initialized() && init)
+    finalize();
+}
+
 struct Impl::GridderState {
 
   template <typename GS>
@@ -272,6 +301,8 @@ GridderState::operator=(GridderState&& rhs) {
   return *this;
 }
 
+GridderState::~GridderState() {}
+
 Device
 GridderState::device() const noexcept {
   return impl->device;
@@ -499,6 +530,8 @@ Gridder::Gridder(Gridder&& other)
 
 Gridder::Gridder(GridderState&& st)
   : state(std::move(st)) {}
+
+Gridder::~Gridder() {}
 
 rval_t<Gridder>
 Gridder::create(

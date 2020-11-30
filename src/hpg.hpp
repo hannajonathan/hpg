@@ -88,21 +88,15 @@ private:
 
 public:
 
-  Error(const std::string& msg, ErrorType err = ErrorType::Other)
-    : m_type(err)
-    , m_msg(msg) {}
+  Error(const std::string& msg, ErrorType err = ErrorType::Other);
 
   const std::string&
-  message() const {
-    return m_msg;
-  }
+  message() const;
 
   ErrorType
-  type() const {
-    return m_type;
-  }
+  type() const;
 
-  virtual ~Error() {}
+  virtual ~Error();
 };
 
 /** type for containing a value or an error
@@ -308,18 +302,9 @@ private:
   bool init;
 
 public:
-  ScopeGuard()
-    : init(false) {
-    if (!is_initialized()) {
-      initialize();
-      init = true;
-    }
-  }
+  ScopeGuard();
 
-  ~ScopeGuard() {
-    if (is_initialized() && init)
-      finalize();
-  }
+  ~ScopeGuard();
 
   ScopeGuard(const ScopeGuard&) = delete;
 
@@ -529,7 +514,7 @@ public:
    */
   GridderState(GridderState&&);
 
-  virtual ~GridderState() {}
+  virtual ~GridderState();
 
   /** copy assignment
    *
@@ -879,7 +864,7 @@ public:
   Gridder&
   operator=(Gridder&&);
 
-  virtual ~Gridder() {}
+  virtual ~Gridder();
 
   /** device */
   Device
