@@ -69,6 +69,7 @@ devices() noexcept;
 /** query support host devices */
 const std::set<Device>&
 host_devices() noexcept;
+
 /** error types
  */
 enum class HPG_EXPORT ErrorType {
@@ -81,9 +82,9 @@ enum class HPG_EXPORT ErrorType {
 class HPG_EXPORT Error {
 private:
 
-  std::string m_msg;
-
   ErrorType m_type;
+
+  std::string m_msg;
 
 public:
 
@@ -236,9 +237,9 @@ fold(RV&& rv, ValF vf, ErrF ef) {
       std::invoke_result_t<ErrF, Error>>);
 #else // HPG_API < 17
   static_assert(
-    std::is_same_v<
+    std::is_same<
       typename std::result_of<ValF(typename rval_value<RV>::type)>::type,
-      typename std::result_of<ErrF(Error)>::type>);
+      typename std::result_of<ErrF(Error)>::type>::value);
 #endif // HPG_API >= 17
 
   if (hpg::is_value(rv))
