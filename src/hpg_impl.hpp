@@ -1577,6 +1577,22 @@ operator<<(std::ostream& str, const StreamPhase& ph) {
   return str;
 }
 
+template <Device D>
+struct ExecSpace {
+  using kokkos_device = typename DeviceT<D>::kokkos_device;
+  using execution_space = typename kokkos_device::execution_space;
+  using memory_space = typename execution_space::memory_space;
+
+  execution_space space;
+  const_cf_view<typename CFLayout<D>::layout, memory_space> cf_d;
+  typename const_cf_view<typename CFLayout<D>::layout, memory_space>::HostMirror
+    cf_h;
+  std::vector<std::any> vis_state;
+
+  ExecSpace(execution_space sp)
+    : space(sp) {}
+};
+
 /** Kokkos state implementation for a device type */
 template <Device D>
 struct HPG_EXPORT StateT final
@@ -1589,14 +1605,13 @@ public:
   using stream_type = typename DeviceT<D>::stream_type;
 
   grid_view<typename GridLayout<D>::layout, memory_space> grid;
-  const_cf_view<typename CFLayout<D>::layout, memory_space> cf;
   weight_view<typename execution_space::array_layout, memory_space> weights;
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
   std::vector<
     std::conditional_t<std::is_void_v<stream_type>, int, stream_type>> streams;
-  std::vector<std::tuple<execution_space, std::vector<std::any>>> exec_spaces;
+  std::vector<ExecSpace<D>> exec_spaces;
   mutable std::deque<int> exec_space_indexes;
   mutable StreamPhase current = StreamPhase::COPY;
 
@@ -1624,9 +1639,9 @@ public:
       const_cast<const StateT&>(st).grid_scale,
       const_cast<const StateT&>(st).implementation_versions) {
 
-    init_exec_spaces();
+    // gotta use a pointer to st here to avoid infinite recursion
+    init_exec_spaces(const_cast<const StateT*>(&st));
     new_grid(const_cast<const StateT*>(&st), true);
-    cf = const_cast<const StateT*>(&st)->cf;
   }
 
   StateT(StateT&& st)
@@ -1638,7 +1653,7 @@ public:
     fence();
     grid = decltype(grid)();
     weights = decltype(weights)();
-    cf = decltype(cf)();
+    exec_spaces.clear();
     if constexpr(!std::is_void_v<stream_type>) {
       for (auto& str : streams) {
         auto rc = DeviceT<D>::destroy_stream(str);
@@ -1696,22 +1711,23 @@ public:
               << std::endl;
 #endif // NDEBUG
 
-    auto [exec, exec_st] = exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec = exec_spaces[next_exec_space(StreamPhase::COPY)];
 
+    typename decltype(cf_init)::HostMirror cf_h;
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {
-      auto cf_h = K::create_mirror_view(cf_init);
+      cf_h = K::create_mirror_view(cf_init);
       init_cf_host<Device::Serial>(cf_h, cf_array);
-      K::deep_copy(exec, cf_init, cf_h);
+      K::deep_copy(exec.space, cf_init, cf_h);
       break;
     }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP: {
-      auto cf_h = K::create_mirror_view(cf_init);
+      cf_h = K::create_mirror_view(cf_init);
       init_cf_host<Device::OpenMP>(cf_h, cf_array);
-      K::deep_copy(exec, cf_init, cf_h);
+      K::deep_copy(exec.space, cf_init, cf_h);
       break;
     }
 #endif // HPG_ENABLE_SERIAL
@@ -1719,7 +1735,8 @@ public:
       assert(false);
       break;
     }
-    cf = cf_init;
+    exec.cf_d = cf_init;
+    exec.cf_h = cf_h;
     return std::nullopt;
   }
 
@@ -1734,17 +1751,17 @@ public:
     std::vector<vis_phase_fp>&& visibility_phases,
     std::vector<vis_uvw_t>&& visibility_coordinates) {
 
-    auto exec_copy =
-      std::get<0>(exec_spaces[next_exec_space(StreamPhase::COPY)]);
+    auto& exec_copy = exec_spaces[next_exec_space(StreamPhase::COPY)];
 
     visibility_view<memory_space> vis(
       K::ViewAllocateWithoutInitializing("visibilities"),
       visibilities.size());
 
+    typename decltype(vis)::HostMirror vis_h;
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {
-      auto vis_h = K::create_mirror_view(vis);
+      vis_h = K::create_mirror_view(vis);
       init_vis<Device::Serial>(
         vis_h,
         visibilities,
@@ -1754,13 +1771,13 @@ public:
         visibility_frequencies,
         visibility_phases,
         visibility_coordinates);
-      K::deep_copy(exec_copy, vis, vis_h);
+      K::deep_copy(exec_copy.space, vis, vis_h);
       break;
     }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP: {
-      auto vis_h = K::create_mirror_view(vis);
+      vis_h = K::create_mirror_view(vis);
       init_vis<Device::OpenMP>(
         vis_h,
         visibilities,
@@ -1770,7 +1787,7 @@ public:
         visibility_frequencies,
         visibility_phases,
         visibility_coordinates);
-      K::deep_copy(exec_copy, vis, vis_h);
+      K::deep_copy(exec_copy.space, vis, vis_h);
       break;
     }
 #endif // HPG_ENABLE_OPENMP
@@ -1779,10 +1796,14 @@ public:
       break;
     }
 
+    exec_copy.vis_state.push_back(vis);
+    exec_copy.vis_state.push_back(vis_h);
+
+    auto& exec_compute = exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     const_visibility_view<memory_space> cvis = vis;
     Core::VisibilityGridder<execution_space, 0>::kernel(
-      std::get<0>(exec_spaces[next_exec_space(StreamPhase::COMPUTE)]),
-      cf,
+      exec_compute.space,
+      exec_compute.cf_d,
       cvis,
       grid_scale,
       grid,
@@ -1801,86 +1822,89 @@ public:
     std::vector<vis_phase_fp>&& visibility_phases,
     std::vector<vis_uvw_t>&& visibility_coordinates) {
 
-    auto& [exec_copy, exec_state] =
-      exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec_copy = exec_spaces[next_exec_space(StreamPhase::COPY)];
 
     auto len = visibilities.size();
 
-    exec_state.emplace_back(std::move(visibilities));
+    exec_copy.vis_state.emplace_back(std::move(visibilities));
     auto [vis_h, vis] =
       StateT<D>::copy_to_device_view<vis_t>(
         "visibilities",
         std::any_cast<const std::vector<std::complex<visibility_fp>>>(
-          &exec_state.back()),
+          &exec_copy.vis_state.back()),
         len,
-        exec_copy);
-    exec_state.push_back(vis_h);
-    exec_state.push_back(vis);
+        exec_copy.space);
+    exec_copy.vis_state.push_back(vis_h);
+    exec_copy.vis_state.push_back(vis);
 
-    exec_state.emplace_back(std::move(visibility_grid_cubes));
+    exec_copy.vis_state.emplace_back(std::move(visibility_grid_cubes));
     auto [grid_cubes_h, grid_cubes] =
       StateT<D>::copy_to_device_view<unsigned>(
         "grid_cubes",
-        std::any_cast<const std::vector<unsigned>>(&exec_state.back()),
+        std::any_cast<const std::vector<unsigned>>(&exec_copy.vis_state.back()),
         len,
-        exec_copy);
-    exec_state.push_back(grid_cubes_h);
-    exec_state.push_back(grid_cubes);
+        exec_copy.space);
+    exec_copy.vis_state.push_back(grid_cubes_h);
+    exec_copy.vis_state.push_back(grid_cubes);
 
-    exec_state.emplace_back(std::move(visibility_cf_cubes));
+    exec_copy.vis_state.emplace_back(std::move(visibility_cf_cubes));
     auto [cf_cubes_h, cf_cubes] =
       StateT<D>::copy_to_device_view<unsigned>(
         "cf_cubes",
-        std::any_cast<const std::vector<unsigned>>(&exec_state.back()),
+        std::any_cast<const std::vector<unsigned>>(&exec_copy.vis_state.back()),
         len,
-        exec_copy);
-    exec_state.push_back(cf_cubes_h);
-    exec_state.push_back(cf_cubes);
+        exec_copy.space);
+    exec_copy.vis_state.push_back(cf_cubes_h);
+    exec_copy.vis_state.push_back(cf_cubes);
 
-    exec_state.emplace_back(std::move(visibility_weights));
+    exec_copy.vis_state.emplace_back(std::move(visibility_weights));
     auto [vis_weights_h, vis_weights] =
       StateT<D>::copy_to_device_view<vis_weight_fp>(
         "vis_weights",
-        std::any_cast<const std::vector<vis_weight_fp>>(&exec_state.back()),
+        std::any_cast<const std::vector<vis_weight_fp>>(
+          &exec_copy.vis_state.back()),
         len,
-        exec_copy);
-    exec_state.push_back(vis_weights_h);
-    exec_state.push_back(vis_weights);
+        exec_copy.space);
+    exec_copy.vis_state.push_back(vis_weights_h);
+    exec_copy.vis_state.push_back(vis_weights);
 
-    exec_state.emplace_back(std::move(visibility_frequencies));
+    exec_copy.vis_state.emplace_back(std::move(visibility_frequencies));
     auto [frequencies_h, frequencies] =
       StateT<D>::copy_to_device_view<vis_frequency_fp>(
         "frequencies",
         std::any_cast<const std::vector<vis_frequency_fp>>(
-          &exec_state.back()),
+          &exec_copy.vis_state.back()),
         len,
-        exec_copy);
-    exec_state.push_back(frequencies_h);
-    exec_state.push_back(frequencies);
+        exec_copy.space);
+    exec_copy.vis_state.push_back(frequencies_h);
+    exec_copy.vis_state.push_back(frequencies);
 
-    exec_state.emplace_back(std::move(visibility_phases));
+    exec_copy.vis_state.emplace_back(std::move(visibility_phases));
     auto [phases_h, phases] =
       StateT<D>::copy_to_device_view<vis_phase_fp>(
         "phases",
-        std::any_cast<const std::vector<vis_phase_fp>>(&exec_state.back()),
+        std::any_cast<const std::vector<vis_phase_fp>>(
+          &exec_copy.vis_state.back()),
         len,
-        exec_copy);
-    exec_state.push_back(phases_h);
-    exec_state.push_back(phases);
+        exec_copy.space);
+    exec_copy.vis_state.push_back(phases_h);
+    exec_copy.vis_state.push_back(phases);
 
-    exec_state.emplace_back(std::move(visibility_coordinates));
+    exec_copy.vis_state.emplace_back(std::move(visibility_coordinates));
     auto [coordinates_h, coordinates] =
       StateT<D>::copy_to_device_view<vis_uvw_t>(
         "coordinates",
-        std::any_cast<const std::vector<vis_uvw_t>>(&exec_state.back()),
+        std::any_cast<const std::vector<vis_uvw_t>>(
+          &exec_copy.vis_state.back()),
         len,
-        exec_copy);
-    exec_state.push_back(coordinates_h);
-    exec_state.push_back(coordinates);
+        exec_copy.space);
+    exec_copy.vis_state.push_back(coordinates_h);
+    exec_copy.vis_state.push_back(coordinates);
 
+    auto& exec_compute = exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 1>::kernel(
-      std::get<0>(exec_spaces[next_exec_space(StreamPhase::COMPUTE)]),
-      cf,
+      exec_compute.space,
+      exec_compute.cf_d,
       vis,
       grid_cubes,
       cf_cubes,
@@ -1940,9 +1964,9 @@ public:
   fence() const volatile override {
     auto st = const_cast<StateT*>(this);
     for (unsigned i = 0; i < st->exec_space_indexes.size(); ++i) {
-      auto& [esp, est] = st->exec_spaces[st->exec_space_indexes.front()];
-      esp.fence();
-      est.clear();
+      auto& exec = st->exec_spaces[st->exec_space_indexes.front()];
+      exec.space.fence();
+      exec.vis_state.clear();
       st->exec_space_indexes.push_back(st->exec_space_indexes.front());
       st->exec_space_indexes.pop_front();
     }
@@ -1952,22 +1976,20 @@ public:
   std::unique_ptr<GridWeightArray>
   grid_weights() const volatile override {
     auto st = const_cast<StateT*>(this);
-    auto exec =
-      std::get<0>(st->exec_spaces[st->next_exec_space(StreamPhase::COPY)]);
+    auto& exec = st->exec_spaces[st->next_exec_space(StreamPhase::COPY)];
     auto wgts_h = K::create_mirror(st->weights);
-    K::deep_copy(exec, wgts_h, st->weights);
-    exec.fence();
+    K::deep_copy(exec.space, wgts_h, st->weights);
+    exec.space.fence();
     return std::make_unique<GridWeightViewArray<D>>(wgts_h);
   }
 
   std::unique_ptr<GridValueArray>
   grid_values() const volatile override {
     auto st = const_cast<StateT*>(this);
-    auto exec =
-      std::get<0>(st->exec_spaces[st->next_exec_space(StreamPhase::COPY)]);
+    auto& exec = st->exec_spaces[st->next_exec_space(StreamPhase::COPY)];
     auto grid_h = K::create_mirror(st->grid);
-    K::deep_copy(exec, grid_h, st->grid);
-    exec.fence();
+    K::deep_copy(exec.space, grid_h, st->grid);
+    exec.space.fence();
     return std::make_unique<GridValueViewArray<D>>(grid_h);
   }
 
@@ -1983,7 +2005,7 @@ public:
     switch (grid_normalizer_version()) {
     case 0:
       Core::GridNormalizer<execution_space, 0>::kernel(
-        std::get<0>(exec_spaces[next_exec_space(StreamPhase::COMPUTE)]),
+        exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
         grid,
         cweights,
         wfactor);
@@ -2003,7 +2025,7 @@ public:
         err =
           Core::FFT<execution_space, 0>
           ::in_place_kernel(
-            std::get<0>(exec_spaces[next_exec_space(StreamPhase::COMPUTE)]),
+            exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
             sign,
             grid);
         break;
@@ -2019,7 +2041,7 @@ public:
       case 0:
         err =
           Core::FFT<execution_space, 0>::out_of_place_kernel(
-            std::get<0>(exec_spaces[next_exec_space(StreamPhase::COMPUTE)]),
+            exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
             sign,
             pre_grid,
             grid);
@@ -2037,7 +2059,7 @@ public:
     switch (grid_shifter_version()) {
     case 0:
       Core::GridShifter<execution_space, 0>::kernel(
-        std::get<0>(exec_spaces[next_exec_space(StreamPhase::COMPUTE)]),
+        exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
         grid);
       break;
     default:
@@ -2056,28 +2078,31 @@ private:
     std::swap(grid_size, other.grid_size);
     std::swap(grid_scale, other.grid_scale);
     std::swap(grid, other.grid);
-    std::swap(cf, other.cf);
     std::swap(weights, other.weights);
     std::swap(implementation_versions, other.implementation_versions);
   }
 
   void
-  init_exec_spaces() {
+  init_exec_spaces(const StateT* ost = nullptr) {
     streams.resize(max_active_tasks);
     exec_spaces.reserve(max_active_tasks);
     for (unsigned i = 0; i < max_active_tasks; ++i) {
       if constexpr (!std::is_void_v<stream_type>) {
         auto rc = DeviceT<D>::create_stream(streams[i]);
         assert(rc);
-        exec_spaces.emplace_back(
-          execution_space(streams[i]),
-          std::vector<std::any>{});
+        exec_spaces.emplace_back(execution_space(streams[i]));
         exec_space_indexes.push_back(i);
       } else {
-        exec_spaces.emplace_back(
-          execution_space(),
-          std::vector<std::any>{});
+        exec_spaces.emplace_back(execution_space());
         exec_space_indexes.push_back(i);
+      }
+    }
+    if (ost) {
+      auto& st_esp = ost->exec_spaces;
+      for (unsigned i = 0; i < max_active_tasks; ++i) {
+        exec_spaces[i].cf_d = st_esp[i].cf_d;
+        exec_spaces[i].cf_h = st_esp[i].cf_h;
+        exec_spaces[i].vis_state = st_esp[i].vis_state;
       }
     }
     current = StreamPhase::COPY;
@@ -2085,27 +2110,31 @@ private:
 
   int
   next_exec_space(StreamPhase next) {
-#ifndef NDEBUG
-    int prev_idx = exec_space_indexes.front();
-#endif
+    int old_idx = exec_space_indexes.front();
+    int new_idx = old_idx;
     if (max_active_tasks > 1) {
       if (current == StreamPhase::COMPUTE && next == StreamPhase::COPY) {
-        exec_space_indexes.push_back(exec_space_indexes.front());
+        auto& old_esp = exec_spaces[old_idx];
+        exec_space_indexes.push_back(old_idx);
         exec_space_indexes.pop_front();
-        std::get<0>(exec_spaces[exec_space_indexes.front()]).fence();
+        new_idx = exec_space_indexes.front();
+        auto& new_esp = exec_spaces[new_idx];
+        new_esp.space.fence();
+        new_esp.cf_d = old_esp.cf_d;
+        new_esp.cf_h = old_esp.cf_h;
       } else if (current == StreamPhase::COPY && next == StreamPhase::COMPUTE) {
-        std::get<0>(exec_spaces[exec_space_indexes[1]]).fence();
+        exec_spaces[exec_space_indexes[1]].space.fence();
       }
     }
     if (current == StreamPhase::COMPUTE && next == StreamPhase::COPY)
-      std::get<1>(exec_spaces[exec_space_indexes.front()]).clear();
+      exec_spaces[new_idx].vis_state.clear();
 #ifndef NDEBUG
-    std::cout << current << "(" << prev_idx << ")->"
-              << next << "(" << exec_space_indexes.front() << ")"
+    std::cout << current << "(" << old_idx << ")->"
+              << next << "(" << new_idx << ")"
               << std::endl;
 #endif // NDEBUG
     current = next;
-    return exec_space_indexes.front();
+    return new_idx;
   }
 
   void
@@ -2132,7 +2161,7 @@ private:
         decltype(grid)(
           K::view_alloc(
             "grid",
-            std::get<0>(exec_spaces[next_exec_space(StreamPhase::COPY)])),
+            exec_spaces[next_exec_space(StreamPhase::COPY)].space),
           GridLayout<D>::dimensions(ig));
 #ifndef NDEBUG
     std::cout << "alloc grid sz " << grid.extent(0)
@@ -2159,16 +2188,16 @@ private:
           decltype(weights)(
             K::view_alloc(
               "weights",
-              std::get<0>(exec_spaces[next_exec_space(StreamPhase::COPY)])),
+              exec_spaces[next_exec_space(StreamPhase::COPY)].space),
             static_cast<int>(grid_size[2]),
             static_cast<int>(grid_size[3]));
     }
     if (std::holds_alternative<const StateT*>(source)) {
-      auto exec = std::get<0>(exec_spaces[next_exec_space(StreamPhase::COPY)]);
+      auto& exec = exec_spaces[next_exec_space(StreamPhase::COPY)];
       auto st = std::get<const StateT*>(source);
-      K::deep_copy(exec, grid, st->grid);
+      K::deep_copy(exec.space, grid, st->grid);
       if (also_weights)
-        K::deep_copy(exec, weights, st->weights);
+        K::deep_copy(exec.space, weights, st->weights);
     }
   }
 
