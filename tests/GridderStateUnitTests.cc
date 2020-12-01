@@ -487,6 +487,99 @@ TEST(GridderState, Reset) {
   }
 }
 
+// test that GridderState supports multiple calls to grid_visibilities()
+// interspersed by calls to set_convolution_function()
+TEST(GridderState, Sequences) {
+  std::array<unsigned, 4> grid_size{6, 5, 4, 3};
+  std::array<float, 2> grid_scale{0.1, -0.1};
+  auto gs =
+    std::get<1>(
+      hpg::GridderState::create(default_device, 1, grid_size, grid_scale));
+
+  std::mt19937 rng(42);
+
+  std::vector<std::complex<hpg::visibility_fp>> vis;
+  std::vector<unsigned> grid_cubes;
+  std::vector<unsigned> cf_cubes;
+  std::vector<hpg::vis_weight_fp> weights;
+  std::vector<hpg::vis_frequency_fp> frequencies;
+  std::vector<hpg::vis_phase_fp> phases;
+  std::vector<hpg::vis_uvw_t> coordinates;
+
+  {
+    const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
+    MyCFArray cf = create_cf(10, cf_size, rng);
+    auto gs1 =
+      std::get<1>(
+        gs.set_convolution_function(default_host_device, MyCFArray(cf)));
+    init_visibilities(
+      10,
+      grid_size,
+      grid_scale,
+      cf,
+      rng,
+      vis,
+      grid_cubes,
+      cf_cubes,
+      weights,
+      frequencies,
+      phases,
+      coordinates);
+    auto gs2 =
+      std::get<1>(
+        std::move(gs1).grid_visibilities(
+          default_host_device,
+          decltype(vis)(vis),
+          decltype(grid_cubes)(grid_cubes),
+          decltype(cf_cubes)(cf_cubes),
+          decltype(weights)(weights),
+          decltype(frequencies)(frequencies),
+          decltype(phases)(phases),
+          decltype(coordinates)(coordinates)));
+
+    auto err_or_gs3 =
+      std::move(gs2).grid_visibilities(
+        default_host_device,
+        decltype(vis)(vis),
+        decltype(grid_cubes)(grid_cubes),
+        decltype(cf_cubes)(cf_cubes),
+        decltype(weights)(weights),
+        decltype(frequencies)(frequencies),
+        decltype(phases)(phases),
+        decltype(coordinates)(coordinates));
+    ASSERT_TRUE(hpg::is_value(err_or_gs3));
+
+    auto err_or_gs4 =
+      hpg::get_value(std::move(err_or_gs3))
+      .set_convolution_function(default_host_device, MyCFArray(cf));
+    ASSERT_TRUE(hpg::is_value(err_or_gs4));
+
+    auto err_or_gs5 =
+      hpg::get_value(std::move(err_or_gs4)).grid_visibilities(
+        default_host_device,
+        decltype(vis)(vis),
+        decltype(grid_cubes)(grid_cubes),
+        decltype(cf_cubes)(cf_cubes),
+        decltype(weights)(weights),
+        decltype(frequencies)(frequencies),
+        decltype(phases)(phases),
+        decltype(coordinates)(coordinates));
+    ASSERT_TRUE(hpg::is_value(err_or_gs5));
+
+    auto err_or_gs6 =
+      hpg::get_value(std::move(err_or_gs5)).grid_visibilities(
+        default_host_device,
+        decltype(vis)(vis),
+        decltype(grid_cubes)(grid_cubes),
+        decltype(cf_cubes)(cf_cubes),
+        decltype(weights)(weights),
+        decltype(frequencies)(frequencies),
+        decltype(phases)(phases),
+        decltype(coordinates)(coordinates));
+    ASSERT_TRUE(hpg::is_value(err_or_gs6));
+  }
+}
+
 int
 main(int argc, char **argv) {
   std::ostringstream oss;
