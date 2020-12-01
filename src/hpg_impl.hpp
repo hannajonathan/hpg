@@ -565,7 +565,6 @@ public:
 // we're wrapping each kernel in a class in order to support partial
 // specialization of the kernel functions by execution space
 
-
 /** gridding kernel
  *
  * Note that the default implementation probably is optimal only for many-core
@@ -618,46 +617,52 @@ struct HPG_EXPORT VisibilityGridder final {
         const int N_X = cf.extent_int(0);
         const int N_Y = cf.extent_int(1);
         const int N_S = cf.extent_int(2);
-        // accumulate weights in scratch memory for this visibility
-        scratch_wgts_view cfw(team_member.team_scratch(0));
-        K::parallel_for(
-          K::TeamVectorRange(team_member, cf.extent_int(2)),
-          [=](const int S) {
-            cfw(0).wgts[S] = 0;
-          });
-        team_member.team_barrier();
-        /* loop over majorX */
-        K::parallel_reduce(
-          K::TeamVectorRange(team_member, N_X),
-          [=](const int X, cf_wgt_array& cfw_l) {
-            /* loop over elements (rows) of Mueller matrix column  */
-            for (int S = 0; S < N_S; ++S){
-              /* loop over majorY */
-              for (int Y = 0; Y < N_Y; ++Y) {
-                cf_t cfv = cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
-                cfv.imag() *= vis.cf_im_factor;
-                pseudo_atomic_add<execution_space>(
-                  grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
-                  gv_t(cfv * vis.value));
-                cfw_l.wgts[S] += cfv;
+        // skip this visibility if all of the updated grid points are not within
+        // grid bounds
+        if (0 <= vis.major[0] && vis.major[0] + N_X <= grid.extent_int(0)
+            && 0 < vis.major[1] && vis.major[1] + N_Y <= grid.extent_int(1)) {
+          // accumulate weights in scratch memory for this visibility
+          scratch_wgts_view cfw(team_member.team_scratch(0));
+          K::parallel_for(
+            K::TeamVectorRange(team_member, cf.extent_int(2)),
+            [=](const int S) {
+              cfw(0).wgts[S] = 0;
+            });
+          team_member.team_barrier();
+          /* loop over majorX */
+          K::parallel_reduce(
+            K::TeamVectorRange(team_member, N_X),
+            [=](const int X, cf_wgt_array& cfw_l) {
+              /* loop over elements (rows) of Mueller matrix column  */
+              for (int S = 0; S < N_S; ++S){
+                /* loop over majorY */
+                for (int Y = 0; Y < N_Y; ++Y) {
+                  cf_t cfv =
+                    cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
+                  cfv.imag() *= vis.cf_im_factor;
+                  pseudo_atomic_add<execution_space>(
+                    grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
+                    gv_t(cfv * vis.value));
+                  cfw_l.wgts[S] += cfv;
+                }
               }
-            }
-          },
-          SumCFWgts<execution_space>(cfw(0)));
-        // by Kokkos reduction semantics the following barrier should not be
-        // needed, but recent Slack discussion indicates a possible bug, so we
-        // use it here until the issue is resolved
-        team_member.team_barrier();
-        // update weights array
-        K::parallel_for(
-          K::TeamVectorRange(team_member, N_S),
-          [=](const int S) {
-            K::atomic_add(
-              &weights(S, vis.grid_cube),
-              grid_value_fp(
-                std::hypot(cfw(0).wgts[S].real(), cfw(0).wgts[S].imag())
-                * vis.weight));
-          });
+            },
+            SumCFWgts<execution_space>(cfw(0)));
+          // by Kokkos reduction semantics the following barrier should not be
+          // needed, but recent Slack discussion indicates a possible bug, so we
+          // use it here until the issue is resolved
+          team_member.team_barrier();
+          // update weights array
+          K::parallel_for(
+            K::TeamVectorRange(team_member, N_S),
+            [=](const int S) {
+              K::atomic_add(
+                &weights(S, vis.grid_cube),
+                grid_value_fp(
+                  std::hypot(cfw(0).wgts[S].real(), cfw(0).wgts[S].imag())
+                  * vis.weight));
+            });
+        }
       });
   }
 };
@@ -724,46 +729,52 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
         const int N_X = cf.extent_int(0);
         const int N_Y = cf.extent_int(1);
         const int N_S = cf.extent_int(2);
-        // accumulate weights in scratch memory for this visibility
-        scratch_wgts_view cfw(team_member.team_scratch(0));
-        K::parallel_for(
-          K::TeamVectorRange(team_member, cf.extent_int(2)),
-          [=](const int S) {
-            cfw(0).wgts[S] = 0;
-          });
-        team_member.team_barrier();
-        /* loop over majorX */
-        K::parallel_reduce(
-          K::TeamVectorRange(team_member, N_X),
-          [=](const int X, cf_wgt_array& cfw_l) {
-            /* loop over elements (rows) of Mueller matrix column  */
-            for (int S = 0; S < N_S; ++S){
-              /* loop over majorY */
-              for (int Y = 0; Y < N_Y; ++Y) {
-                cf_t cfv = cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
-                cfv.imag() *= vis.cf_im_factor;
-                pseudo_atomic_add<execution_space>(
-                  grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
-                  gv_t(cfv * vis.value));
-                cfw_l.wgts[S] += cfv;
+        // skip this visibility if all of the updated grid points are not within
+        // grid bounds
+        if (0 <= vis.major[0] && vis.major[0] + N_X <= grid.extent_int(0)
+            && 0 < vis.major[1] && vis.major[1] + N_Y <= grid.extent_int(1)) {
+          // accumulate weights in scratch memory for this visibility
+          scratch_wgts_view cfw(team_member.team_scratch(0));
+          K::parallel_for(
+            K::TeamVectorRange(team_member, cf.extent_int(2)),
+            [=](const int S) {
+              cfw(0).wgts[S] = 0;
+            });
+          team_member.team_barrier();
+          /* loop over majorX */
+          K::parallel_reduce(
+            K::TeamVectorRange(team_member, N_X),
+            [=](const int X, cf_wgt_array& cfw_l) {
+              /* loop over elements (rows) of Mueller matrix column  */
+              for (int S = 0; S < N_S; ++S){
+                /* loop over majorY */
+                for (int Y = 0; Y < N_Y; ++Y) {
+                  cf_t cfv =
+                    cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
+                  cfv.imag() *= vis.cf_im_factor;
+                  pseudo_atomic_add<execution_space>(
+                    grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
+                    gv_t(cfv * vis.value));
+                  cfw_l.wgts[S] += cfv;
+                }
               }
-            }
-          },
-          SumCFWgts<execution_space>(cfw(0)));
-        // by Kokkos reduction semantics the following barrier should not be
-        // needed, but recent Slack discussion indicates a possible bug, so we
-        // use it here until the issue is resolved
-        team_member.team_barrier();
-        // update weights array
-        K::parallel_for(
-          K::TeamVectorRange(team_member, N_S),
-          [=](const int S) {
-            K::atomic_add(
-              &weights(S, vis.grid_cube),
-              grid_value_fp(
-                std::hypot(cfw(0).wgts[S].real(), cfw(0).wgts[S].imag())
-                * vis.weight));
-          });
+            },
+            SumCFWgts<execution_space>(cfw(0)));
+          // by Kokkos reduction semantics the following barrier should not be
+          // needed, but recent Slack discussion indicates a possible bug, so we
+          // use it here until the issue is resolved
+          team_member.team_barrier();
+          // update weights array
+          K::parallel_for(
+            K::TeamVectorRange(team_member, N_S),
+            [=](const int S) {
+              K::atomic_add(
+                &weights(S, vis.grid_cube),
+                grid_value_fp(
+                  std::hypot(cfw(0).wgts[S].real(), cfw(0).wgts[S].imag())
+                  * vis.weight));
+            });
+        }
       });
   }
 };
