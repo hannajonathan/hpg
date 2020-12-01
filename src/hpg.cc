@@ -543,9 +543,9 @@ Gridder::create(
   auto err_or_gs =
     GridderState::create(device, max_added_tasks, grid_size, grid_scale);
   if (is_value(err_or_gs))
-    return rval(Gridder(std::move(get_value(err_or_gs))));
+    return rval(Gridder(get_value(std::move(err_or_gs))));
   else
-    return rval<Gridder>(std::move(get_error(err_or_gs)));
+    return rval<Gridder>(get_error(std::move(err_or_gs)));
 }
 
 Gridder&
