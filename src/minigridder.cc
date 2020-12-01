@@ -443,6 +443,7 @@ create_input_data(
   unsigned cflen,
   int oversampling,
   int num_visibilities,
+  bool strictly_inner,
   const Generator& generator) {
 
   std::array<unsigned, 4> gsize{glen, glen, 1, 1};
@@ -476,11 +477,19 @@ create_input_data(
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
+  std::array<unsigned, 2> border;
+  if (strictly_inner) {
+    border[0] = (oversampling * cfsize[0]) / 2;
+    border[1] = (oversampling * cfsize[1]) / 2;
+  } else {
+    border[0] = 0;
+    border[1] = 0;
+  }
   float ulim =
-    ((oversampling * (gsize[0] - 2)) / 2 - (oversampling * cfsize[0]) / 2)
+    ((oversampling * (gsize[0] - 2)) / 2 - border[0])
     / (default_scale[0] * oversampling * inv_lambda);
   float vlim =
-    ((oversampling * (gsize[1] - 2)) / 2 - (oversampling * cfsize[1]) / 2)
+    ((oversampling * (gsize[1] - 2)) / 2 - border[1])
     / (default_scale[1] * oversampling * inv_lambda);
 
   K::parallel_for(
@@ -619,15 +628,16 @@ run_trials(
       for (auto& gsize : gsizes) {
         for (auto& cfsize : cfsizes) {
           for (auto& oversampling : oversamplings) {
-            const auto input_data =
-              create_input_data(
-                gsize,
-                cfsize,
-                oversampling,
-                num_visibilities,
-                rand_pool_type(348842));
-            for (auto& device : devices) {
-              for (auto& kernel : kernels) {
+            for (auto& kernel : kernels) {
+              const auto input_data =
+                create_input_data(
+                  gsize,
+                  cfsize,
+                  oversampling,
+                  num_visibilities,
+                  kernel == 2,
+                  rand_pool_type(348842));
+              for (auto& device : devices) {
                 for (auto& stream : streams) {
                   TrialSpec spec(
                     device,
