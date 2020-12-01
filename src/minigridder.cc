@@ -254,6 +254,7 @@ parse_devices(const std::string& s) {
 struct TrialSpec {
   TrialSpec(
     const hpg::Device& device_,
+    const int& streams_,
     const int& gsize_,
     const int& cfsize_,
     const int& oversampling_,
@@ -264,6 +265,7 @@ struct TrialSpec {
 #endif
     )
     : device(device_)
+    , streams(streams_)
     , gsize(gsize_)
     , cfsize(cfsize_)
     , oversampling(oversampling_)
@@ -275,6 +277,7 @@ struct TrialSpec {
  {}
 
   hpg::Device device;
+  int streams;
   int gsize;
   int cfsize;
   int oversampling;
@@ -290,6 +293,7 @@ struct TrialSpec {
   static constexpr const char* id_names[]
   {"status",
    "dev",
+   "str",
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
    "vsn",
 #endif
@@ -327,6 +331,7 @@ struct TrialSpec {
          << versions[2] << "," << versions[3];
 #endif
     oss << pad_right(device_codes.at(device))
+        << pad_right(std::to_string(streams))
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         << pad_right(vsns.str())
 #endif
@@ -524,7 +529,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
         return
           hpg::GridderState::create(
             spec.device,
-            4,
+            spec.streams - 1,
             input_data.gsize,
             default_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -603,7 +608,8 @@ run_trials(
   const std::vector<unsigned>& visibilities,
   const std::vector<unsigned>& repeats,
   const std::vector<hpg::Device>& devices,
-  const std::vector<unsigned>& kernels) {
+  const std::vector<unsigned>& kernels,
+  const std::vector<unsigned>& streams) {
 
   using rand_pool_type = typename K::Random_XorShift64_Pool<K::OpenMP>;
 
@@ -622,18 +628,21 @@ run_trials(
                 rand_pool_type(348842));
             for (auto& device : devices) {
               for (auto& kernel : kernels) {
-                TrialSpec spec(
-                  device,
-                  gsize,
-                  cfsize,
-                  oversampling,
-                  num_visibilities,
-                  num_repeats
+                for (auto& stream : streams) {
+                  TrialSpec spec(
+                    device,
+                    stream,
+                    gsize,
+                    cfsize,
+                    oversampling,
+                    num_visibilities,
+                    num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-                  , {kernel, 0, 0, 0}
+                    , {kernel, 0, 0, 0}
 #endif
-                  );
-                run_hpg_trial(spec, input_data);
+                    );
+                  run_hpg_trial(spec, input_data);
+                }
               }
             }
           }
@@ -712,6 +721,14 @@ main(int argc, char* argv[]) {
       .help("gridding kernel version ["s + std::to_string(dflt) + "]")
       .action(parse_unsigned_args);
   }
+  {
+    unsigned dflt = 4;
+    args
+      .add_argument("-s", "--streams")
+      .default_value(argwrap<std::vector<unsigned>>({dflt}))
+      .help("number of streams ["s + std::to_string(dflt) + "]")
+      .action(parse_unsigned_args);
+  }
 
   /* parse the command line arguments */
   try {
@@ -732,6 +749,7 @@ main(int argc, char* argv[]) {
   auto devices =
     args.get<argwrap<std::vector<hpg::Device>>>("--device").val;
   auto kernels = args.get<argwrap<std::vector<unsigned>>>("--kernel").val;
+  auto streams = args.get<argwrap<std::vector<unsigned>>>("--streams").val;
 
   hpg::ScopeGuard hpg;
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)
@@ -742,7 +760,8 @@ main(int argc, char* argv[]) {
       visibilities,
       repeats,
       devices,
-      kernels);
+      kernels,
+      streams);
   else
     std::cerr << "OpenMP device is not enabled: no tests will be run"
               << std::endl;
