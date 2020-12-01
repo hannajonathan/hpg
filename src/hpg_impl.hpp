@@ -1639,6 +1639,7 @@ public:
       const_cast<const StateT&>(st).grid_scale,
       const_cast<const StateT&>(st).implementation_versions) {
 
+    st.fence();
     // gotta use a pointer to st here to avoid infinite recursion
     init_exec_spaces(const_cast<const StateT*>(&st));
     new_grid(const_cast<const StateT*>(&st), true);
