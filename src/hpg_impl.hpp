@@ -158,7 +158,10 @@ template <>
 struct DeviceT<Device::Cuda> {
   using kokkos_device = K::Cuda;
 
-  static unsigned constexpr active_task_limit = 4;
+  // the maximum number of concurrent kernels for NVIDIA devices depends on
+  // compute capability; set a large value here, much larger than any capability
+  // through 8.6, and leave it to the user to limit the request
+  static unsigned constexpr active_task_limit = 1024;
 
   using stream_type = cudaStream_t;
 
@@ -188,7 +191,7 @@ struct DeviceT<Device::HPX> {
 
   using kokkos_device = K::HPX;
 
-  static unsigned constexpr active_task_limit = 1;
+  static unsigned constexpr active_task_limit = 1024;
 
   using stream_type = void;
 };
