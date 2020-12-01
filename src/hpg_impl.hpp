@@ -2071,15 +2071,17 @@ public:
 private:
   void
   swap(StateT& other) {
-    std::swap(streams, other.streams);
-    std::swap(exec_spaces, other.exec_spaces);
-    std::swap(exec_space_indexes, other.exec_space_indexes);
     std::swap(max_active_tasks, other.max_active_tasks);
     std::swap(grid_size, other.grid_size);
     std::swap(grid_scale, other.grid_scale);
+    std::swap(implementation_versions, other.implementation_versions);
+
     std::swap(grid, other.grid);
     std::swap(weights, other.weights);
-    std::swap(implementation_versions, other.implementation_versions);
+    std::swap(streams, other.streams);
+    std::swap(exec_spaces, other.exec_spaces);
+    std::swap(exec_space_indexes, other.exec_space_indexes);
+    std::swap(current, other.current);
   }
 
   void
