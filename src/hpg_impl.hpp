@@ -1855,7 +1855,7 @@ public:
     exec_copy.vis_state.push_back(coordinates);
 
     auto& exec_compute = exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
-    Core::VisibilityGridder<execution_space, 1>::kernel(
+    Core::VisibilityGridder<execution_space, 0>::kernel(
       exec_compute.space,
       exec_compute.cf_d,
       vis,
