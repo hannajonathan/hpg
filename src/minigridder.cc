@@ -635,7 +635,7 @@ run_trials(
                   cfsize,
                   oversampling,
                   num_visibilities,
-                  kernel == 2,
+                  kernel == 1,
                   rand_pool_type(348842));
               for (auto& device : devices) {
                 for (auto& stream : streams) {
