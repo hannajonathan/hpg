@@ -581,104 +581,6 @@ struct HPG_EXPORT VisibilityGridder final {
   kernel(
     execution_space exec,
     const const_cf_view<cf_layout, memory_space>& cf,
-    const const_visibility_view<memory_space>& visibilities,
-    const std::array<grid_scale_fp, 2>& grid_scale,
-    const grid_view<grid_layout, memory_space>& grid,
-    const weight_view<typename execution_space::array_layout, memory_space>&
-    weights) {
-
-    const K::Array<int, 2>
-      cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
-    const K::Array<int, 2>
-      grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
-    const K::Array<int, 2>
-      oversampling{cf.extent_int(3), cf.extent_int(4)};
-    const K::Array<grid_scale_fp, 2> fine_scale{
-      grid_scale[0] * oversampling[0],
-      grid_scale[1] * oversampling[1]};
-
-    using member_type = typename K::TeamPolicy<execution_space>::member_type;
-
-    using scratch_wgts_view =
-      K::View<cf_wgt_array[1], typename execution_space::scratch_memory_space>;
-
-    K::parallel_for(
-      "gridding",
-      K::TeamPolicy<execution_space>(
-        exec,
-        static_cast<int>(visibilities.size()),
-        K::AUTO)
-      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size())),
-      KOKKOS_LAMBDA(const member_type& team_member) {
-        GridVis<execution_space> vis(
-          visibilities(team_member.league_rank()),
-          grid_radius,
-          oversampling,
-          cf_radius,
-          fine_scale);
-        // convenience variables
-        const int N_X = cf.extent_int(0);
-        const int N_Y = cf.extent_int(1);
-        const int N_S = cf.extent_int(2);
-        // skip this visibility if all of the updated grid points are not within
-        // grid bounds
-        if (0 <= vis.major[0] && vis.major[0] + N_X <= grid.extent_int(0)
-            && 0 < vis.major[1] && vis.major[1] + N_Y <= grid.extent_int(1)) {
-          // accumulate weights in scratch memory for this visibility
-          scratch_wgts_view cfw(team_member.team_scratch(0));
-          K::parallel_for(
-            K::TeamVectorRange(team_member, cf.extent_int(2)),
-            [=](const int S) {
-              cfw(0).wgts[S] = 0;
-            });
-          team_member.team_barrier();
-          /* loop over majorX */
-          K::parallel_reduce(
-            K::TeamVectorRange(team_member, N_X),
-            [=](const int X, cf_wgt_array& cfw_l) {
-              /* loop over elements (rows) of Mueller matrix column  */
-              for (int S = 0; S < N_S; ++S){
-                /* loop over majorY */
-                for (int Y = 0; Y < N_Y; ++Y) {
-                  cf_t cfv =
-                    cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
-                  cfv.imag() *= vis.cf_im_factor;
-                  pseudo_atomic_add<execution_space>(
-                    grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
-                    gv_t(cfv * vis.value));
-                  cfw_l.wgts[S] += cfv;
-                }
-              }
-            },
-            SumCFWgts<execution_space>(cfw(0)));
-          // by Kokkos reduction semantics the following barrier should not be
-          // needed, but recent Slack discussion indicates a possible bug, so we
-          // use it here until the issue is resolved
-          team_member.team_barrier();
-          // update weights array
-          K::parallel_for(
-            K::TeamVectorRange(team_member, N_S),
-            [=](const int S) {
-              K::atomic_add(
-                &weights(S, vis.grid_cube),
-                grid_value_fp(
-                  std::hypot(cfw(0).wgts[S].real(), cfw(0).wgts[S].imag())
-                  * vis.weight));
-            });
-        }
-      });
-  }
-};
-
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-template <typename execution_space>
-struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
-
-  template <typename cf_layout, typename grid_layout, typename memory_space>
-  static void
-  kernel(
-    execution_space exec,
-    const const_cf_view<cf_layout, memory_space>& cf,
     const K::View<const vis_t*, memory_space>& visibilities,
     const K::View<const unsigned*, memory_space>& grid_cubes,
     const K::View<const unsigned*, memory_space>& cf_cubes,
@@ -782,8 +684,9 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
   }
 };
 
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 template <typename execution_space>
-struct HPG_EXPORT VisibilityGridder<execution_space, 2> final {
+struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
@@ -1874,77 +1777,6 @@ public:
 
     auto& exec_copy = exec_spaces[next_exec_space(StreamPhase::COPY)];
 
-    visibility_view<memory_space> vis(
-      K::ViewAllocateWithoutInitializing("visibilities"),
-      visibilities.size());
-
-    typename decltype(vis)::HostMirror vis_h;
-    switch (host_device) {
-#ifdef HPG_ENABLE_SERIAL
-    case Device::Serial: {
-      vis_h = K::create_mirror_view(vis);
-      init_vis<Device::Serial>(
-        vis_h,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates);
-      K::deep_copy(exec_copy.space, vis, vis_h);
-      break;
-    }
-#endif // HPG_ENABLE_SERIAL
-#ifdef HPG_ENABLE_OPENMP
-    case Device::OpenMP: {
-      vis_h = K::create_mirror_view(vis);
-      init_vis<Device::OpenMP>(
-        vis_h,
-        visibilities,
-        visibility_grid_cubes,
-        visibility_cf_cubes,
-        visibility_weights,
-        visibility_frequencies,
-        visibility_phases,
-        visibility_coordinates);
-      K::deep_copy(exec_copy.space, vis, vis_h);
-      break;
-    }
-#endif // HPG_ENABLE_OPENMP
-    default:
-      assert(false);
-      break;
-    }
-
-    exec_copy.vis_state.push_back(vis);
-    exec_copy.vis_state.push_back(vis_h);
-
-    auto& exec_compute = exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
-    const_visibility_view<memory_space> cvis = vis;
-    Core::VisibilityGridder<execution_space, 0>::kernel(
-      exec_compute.space,
-      exec_compute.cf_d,
-      cvis,
-      grid_scale,
-      grid,
-      weights);
-  }
-
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  void
-  alt1_grid_visibilities(
-    Device host_device,
-    std::vector<std::complex<visibility_fp>>&& visibilities,
-    std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<unsigned>&& visibility_cf_cubes,
-    std::vector<vis_weight_fp>&& visibility_weights,
-    std::vector<vis_frequency_fp>&& visibility_frequencies,
-    std::vector<vis_phase_fp>&& visibility_phases,
-    std::vector<vis_uvw_t>&& visibility_coordinates) {
-
-    auto& exec_copy = exec_spaces[next_exec_space(StreamPhase::COPY)];
-
     auto len = visibilities.size();
 
     exec_copy.vis_state.emplace_back(std::move(visibilities));
@@ -2038,8 +1870,9 @@ public:
       weights);
   }
 
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   void
-  alt2_grid_visibilities(
+  alt1_grid_visibilities(
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
@@ -2171,17 +2004,6 @@ public:
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     case 1:
       alt1_grid_visibilities(
-        host_device,
-        std::move(visibilities),
-        std::move(visibility_grid_cubes),
-        std::move(visibility_cf_cubes),
-        std::move(visibility_weights),
-        std::move(visibility_frequencies),
-        std::move(visibility_phases),
-        std::move(visibility_coordinates));
-      break;
-    case 2:
-      alt2_grid_visibilities(
         host_device,
         std::move(visibilities),
         std::move(visibility_grid_cubes),
