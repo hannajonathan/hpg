@@ -91,13 +91,13 @@ struct Impl::GridderState {
     std::vector<vis_phase_fp>&& visibility_phases,
     std::vector<vis_uvw_t>&& visibility_coordinates) {
 
-    auto len = visibilities.size();
-    if (visibility_grid_cubes.size() < len
-        || visibility_cf_cubes.size() < len
-        || visibility_weights.size() < len
-        || visibility_frequencies.size() < len
-        || visibility_phases.size() < len
-        || visibility_coordinates.size() < len)
+    auto len = std::move(visibilities).size();
+    if (std::move(visibility_grid_cubes).size() < len
+        || std::move(visibility_cf_cubes).size() < len
+        || std::move(visibility_weights).size() < len
+        || std::move(visibility_frequencies).size() < len
+        || std::move(visibility_phases).size() < len
+        || std::move(visibility_coordinates).size() < len)
       return IncompatibleVisVectorLengthError();
 
     if (host_devices().count(host_device) > 0) {
