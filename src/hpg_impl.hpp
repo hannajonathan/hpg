@@ -1634,7 +1634,18 @@ public:
 
   StateT(StateT&& st)
     : State(D) {
-    swap(st);
+
+    max_active_tasks = std::move(st).max_active_tasks;
+    grid_size = std::move(st).grid_size;
+    grid_scale = std::move(st).grid_scale;
+    implementation_versions = std::move(st).implementation_versions;
+
+    grid = std::move(st).grid;
+    weights = std::move(st).weights;
+    streams = std::move(st).streams;
+    exec_spaces = std::move(st).exec_spaces;
+    exec_space_indexes = std::move(st).exec_space_indexes;
+    current = std::move(st).current;
   }
 
   virtual ~StateT() {
