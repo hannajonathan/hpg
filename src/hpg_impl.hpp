@@ -1951,34 +1951,95 @@ public:
     std::vector<vis_phase_fp>&& visibility_phases,
     std::vector<vis_uvw_t>&& visibility_coordinates) override {
 
-    switch (visibility_gridder_version()) {
-    case 0:
-      default_grid_visibilities(
-        host_device,
-        std::move(visibilities),
-        std::move(visibility_grid_cubes),
-        std::move(visibility_cf_cubes),
-        std::move(visibility_weights),
-        std::move(visibility_frequencies),
-        std::move(visibility_phases),
-        std::move(visibility_coordinates));
-      break;
+    size_t num_visibilities = std::move(visibilities).size();
+    if (num_visibilities <= m_max_visibility_batch_size) {
+      switch (visibility_gridder_version()) {
+      case 0:
+        default_grid_visibilities(
+          host_device,
+          std::move(visibilities),
+          std::move(visibility_grid_cubes),
+          std::move(visibility_cf_cubes),
+          std::move(visibility_weights),
+          std::move(visibility_frequencies),
+          std::move(visibility_phases),
+          std::move(visibility_coordinates));
+        break;
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    case 1:
-      alt1_grid_visibilities(
-        host_device,
-        std::move(visibilities),
-        std::move(visibility_grid_cubes),
-        std::move(visibility_cf_cubes),
-        std::move(visibility_weights),
-        std::move(visibility_frequencies),
-        std::move(visibility_phases),
-        std::move(visibility_coordinates));
-      break;
+      case 1:
+        alt1_grid_visibilities(
+          host_device,
+          std::move(visibilities),
+          std::move(visibility_grid_cubes),
+          std::move(visibility_cf_cubes),
+          std::move(visibility_weights),
+          std::move(visibility_frequencies),
+          std::move(visibility_phases),
+          std::move(visibility_coordinates));
+        break;
 #endif
-    default:
-      assert(false);
-      break;
+      default:
+        assert(false);
+        break;
+      }
+    } else {
+      std::cout << "WARNING: number of visibilities passed to" << std::endl
+                << "grid_visibilities() exceeds configured gridder" << std::endl
+                << "batch size, which may degrade performance" << std::endl;
+      std::vector<std::complex<visibility_fp>> vis;
+      std::vector<unsigned> gc;
+      std::vector<unsigned> cf;
+      std::vector<vis_weight_fp> wt;
+      std::vector<vis_frequency_fp> fr;
+      std::vector<vis_phase_fp> ph;
+      std::vector<vis_uvw_t> uvw;
+      for (size_t i = 0; i < num_visibilities;) {
+        auto n = std::min(m_max_visibility_batch_size, num_visibilities - i);
+        vis.reserve(n);
+        std::copy_n(&visibilities[i], n, std::back_inserter(vis));
+        gc.reserve(n);
+        std::copy_n(&visibility_grid_cubes[i], n, std::back_inserter(gc));
+        cf.reserve(n);
+        std::copy_n(&visibility_cf_cubes[i], n, std::back_inserter(cf));
+        wt.reserve(n);
+        std::copy_n(&visibility_weights[i], n, std::back_inserter(wt));
+        fr.reserve(n);
+        std::copy_n(&visibility_frequencies[i], n, std::back_inserter(fr));
+        ph.reserve(n);
+        std::copy_n(&visibility_phases[i], n, std::back_inserter(ph));
+        uvw.reserve(n);
+        std::copy_n(&visibility_coordinates[i], n, std::back_inserter(uvw));
+        i += n;
+        switch (visibility_gridder_version()) {
+        case 0:
+          default_grid_visibilities(
+            host_device,
+            std::move(vis),
+            std::move(gc),
+            std::move(cf),
+            std::move(wt),
+            std::move(fr),
+            std::move(ph),
+            std::move(uvw));
+          break;
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        case 1:
+          alt1_grid_visibilities(
+            host_device,
+            std::move(vis),
+            std::move(gc),
+            std::move(cf),
+            std::move(wt),
+            std::move(fr),
+            std::move(ph),
+            std::move(uvw));
+          break;
+#endif
+        default:
+          assert(false);
+          break;
+        }
+      }
     }
   }
 
