@@ -1545,42 +1545,6 @@ init_cf_host(CFH& cf_h, const CFArray& cf) {
     });
 }
 
-/** initialize visibility array view from visibility values and metadata */
-template <Device D, typename VisH>
-static void
-init_vis(
-  VisH& vis_h,
-  const std::vector<std::complex<visibility_fp>>& visibilities,
-  const std::vector<unsigned> visibility_grid_cubes,
-  const std::vector<unsigned> visibility_cf_cubes,
-  const std::vector<vis_weight_fp>& visibility_weights,
-  const std::vector<vis_frequency_fp>& visibility_frequencies,
-  const std::vector<vis_phase_fp>& visibility_phases,
-  const std::vector<vis_uvw_t>& visibility_coordinates) {
-
-  static_assert(
-    K::SpaceAccessibility<
-    typename DeviceT<D>::kokkos_device::memory_space,
-    K::HostSpace>
-    ::accessible);
-  K::parallel_for(
-    "vis_init",
-    K::RangePolicy<typename DeviceT<D>::kokkos_device>(
-      0,
-      static_cast<int>(visibilities.size())),
-    KOKKOS_LAMBDA(int i) {
-      vis_h(i) =
-        Visibility(
-          visibilities[i],
-          visibility_grid_cubes[i],
-          visibility_cf_cubes[i],
-          visibility_weights[i],
-          visibility_frequencies[i],
-          visibility_phases[i],
-          visibility_coordinates[i]);
-    });
-}
-
 /** names for stream states */
 enum class StreamPhase {
   COPY,
