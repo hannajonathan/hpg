@@ -708,8 +708,9 @@ main(int argc, char* argv[]) {
     + "take values in a small, enumerable set also accept `*` as a value "
     + "to indicate all the values in the set.");
 
+  const unsigned default_num_vis = 1000000;
   {
-    unsigned dflt = 1000;
+    unsigned dflt = 10000;
     args
       .add_argument("-g", "--gsize")
       .default_value(argwrap<std::vector<unsigned>>({dflt}))
@@ -733,7 +734,7 @@ main(int argc, char* argv[]) {
       .action(parse_unsigned_args);
   }
   {
-    unsigned dflt = 1000000;
+    unsigned dflt = default_num_vis;
     args
       .add_argument("-v", "--visibilities")
       .default_value(argwrap<std::vector<unsigned>>({dflt}))
@@ -773,7 +774,7 @@ main(int argc, char* argv[]) {
       .action(parse_unsigned_args);
   }
   {
-    unsigned dflt = 1000000;
+    unsigned dflt = default_num_vis;
     args
       .add_argument("-b", "--batch")
       .default_value(argwrap<std::vector<unsigned>>({dflt}))
