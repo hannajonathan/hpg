@@ -53,6 +53,10 @@ struct RvalMF :
   template <typename G>
   using gv_t = typename hpg::rval_value<std::invoke_result_t<G, B>>::type;
 
+  template <typename G>
+  using giv_t =
+    typename hpg::rval_value<std::invoke_result_t<G, unsigned, B>>::type;
+
   F m_f;
 
   RvalMF(const F& f)
@@ -83,11 +87,16 @@ struct RvalMF :
   and_then_loop(unsigned n, const G& g) const {
 
     return
-      RvalM<A, gv_t<G>>::pure(
+      RvalM<A, giv_t<G>>::pure(
         [n, g, f=m_f](A&& a) {
           auto result = f(std::forward<A>(a));
           for (unsigned i = 0; i < n; ++i)
-            result = hpg::flatmap(std::move(result), g);
+            result =
+              hpg::flatmap(
+                std::move(result),
+                [i, g](auto&& r) {
+                  return g(i, std::move(r));
+                });
           return result;
         });
   }
@@ -115,6 +124,10 @@ struct RvalMF<void, B, F> :
 
   template <typename G>
   using gv_t = typename hpg::rval_value<std::invoke_result_t<G, B>>::type;
+
+  template <typename G>
+  using giv_t =
+    typename hpg::rval_value<std::invoke_result_t<G, unsigned, B>>::type;
 
   F m_f;
 
@@ -145,11 +158,16 @@ struct RvalMF<void, B, F> :
   and_then_loop(unsigned n, const G& g) const {
 
     return
-      RvalM<void, gv_t<G>>::pure(
+      RvalM<void, giv_t<G>>::pure(
         [n, g, f=m_f]() {
           auto result = f();
           for (unsigned i = 0; i < n; ++i)
-            result = hpg::flatmap(std::move(result), g);
+            result =
+              hpg::flatmap(
+                std::move(result),
+                [i, g](auto&& r) {
+                  return g(i, std::move(r));
+                });
           return result;
         });
   }
