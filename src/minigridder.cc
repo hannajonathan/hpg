@@ -549,6 +549,10 @@ create_input_data(
 void
 run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
 
+  std::vector<InputData> ids;
+  for (unsigned i = 0; i < spec.repeats; ++i)
+    ids.push_back(input_data);
+
   auto time_trial =
     RvalM<void, hpg::GridderState>::pure(
       // create the GridderState instance
@@ -586,19 +590,19 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
       // grid visibilities a number of times, copying the start time into the
       // result tuple after each iteration
       spec.repeats,
-      [&](auto&& t_gs) {
+      [&](unsigned i, auto&& t_gs) {
         return
           map(
             std::get<1>(std::move(t_gs))
             .grid_visibilities(
               hpg::Device::OpenMP,
-              decltype(input_data.visibilities)(input_data.visibilities),
-              decltype(input_data.grid_cubes)(input_data.grid_cubes),
-              decltype(input_data.cf_cubes)(input_data.cf_cubes),
-              decltype(input_data.weights)(input_data.weights),
-              decltype(input_data.frequencies)(input_data.frequencies),
-              decltype(input_data.phases)(input_data.phases),
-              decltype(input_data.coordinates)(input_data.coordinates)),
+              std::move(ids[i].visibilities),
+              std::move(ids[i].grid_cubes),
+              std::move(ids[i].cf_cubes),
+              std::move(ids[i].weights),
+              std::move(ids[i].frequencies),
+              std::move(ids[i].phases),
+              std::move(ids[i].coordinates)),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));
