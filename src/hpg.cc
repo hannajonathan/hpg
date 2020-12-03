@@ -145,6 +145,7 @@ GridderState::GridderState() {
 GridderState::GridderState(
   Device device,
   unsigned max_added_tasks,
+  size_t max_visibility_batch_size,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -164,6 +165,7 @@ GridderState::GridderState(
     impl =
       std::make_shared<Impl::StateT<Device::Serial>>(
         max_active_tasks,
+        max_visibility_batch_size,
         grid_size,
         grid_scale,
         implementation_versions);
@@ -176,6 +178,7 @@ GridderState::GridderState(
     impl =
       std::make_shared<Impl::StateT<Device::OpenMP>>(
         max_active_tasks,
+        max_visibility_batch_size,
         grid_size,
         grid_scale,
         implementation_versions);
@@ -188,6 +191,7 @@ GridderState::GridderState(
     impl =
       std::make_shared<Impl::StateT<Device::Cuda>>(
         max_active_tasks,
+        max_visibility_batch_size,
         grid_size,
         grid_scale,
         implementation_versions);
@@ -200,6 +204,7 @@ GridderState::GridderState(
     impl =
       std::make_shared<Impl::StateT<Device::HPX>>(
         max_active_tasks,
+        max_visibility_batch_size,
         grid_size,
         grid_scale,
         implementation_versions);
@@ -217,6 +222,7 @@ rval_t<GridderState>
 GridderState::create(
   Device device,
   unsigned max_added_tasks,
+  size_t max_visibility_batch_size,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -230,6 +236,7 @@ GridderState::create(
         GridderState(
           device,
           max_added_tasks,
+          max_visibility_batch_size,
           grid_size,
           grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -311,6 +318,11 @@ GridderState::device() const noexcept {
 unsigned
 GridderState::max_added_tasks() const noexcept {
   return impl->m_max_active_tasks - 1;
+}
+
+size_t
+GridderState::max_visibility_batch_size() const noexcept {
+  return impl->m_max_visibility_batch_size;
 }
 
 const std::array<unsigned, 4>&
@@ -518,9 +530,16 @@ Gridder::Gridder() {}
 Gridder::Gridder(
   Device device,
   unsigned max_added_tasks,
+  size_t max_visibility_batch_size,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale)
-  : state(GridderState(device, max_added_tasks, grid_size, grid_scale)) {}
+  : state(
+    GridderState(
+      device,
+      max_added_tasks,
+      max_visibility_batch_size,
+      grid_size,
+      grid_scale)) {}
 
 Gridder::Gridder(const volatile Gridder& other)
   : state(other.state) {}
@@ -537,6 +556,7 @@ rval_t<Gridder>
 Gridder::create(
   Device device,
   unsigned max_added_tasks,
+  size_t max_visibility_batch_size,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -548,6 +568,7 @@ Gridder::create(
     GridderState::create(
       device,
       max_added_tasks,
+      max_visibility_batch_size,
       grid_size,
       grid_scale,
       implementation_versions);
@@ -579,6 +600,11 @@ Gridder::device() const noexcept {
 unsigned
 Gridder::max_added_tasks() const noexcept {
   return state.max_added_tasks();
+}
+
+size_t
+Gridder::max_visibility_batch_size() const noexcept {
+  return state.max_visibility_batch_size();
 }
 
 const std::array<unsigned, 4>&

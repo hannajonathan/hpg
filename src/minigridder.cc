@@ -2,6 +2,7 @@
 
 #include "argparse.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 
@@ -273,6 +274,7 @@ struct TrialSpec {
   TrialSpec(
     const hpg::Device& device_,
     const int& streams_,
+    const unsigned& batch_size_,
     const int& gsize_,
     const int& cfsize_,
     const int& oversampling_,
@@ -284,6 +286,7 @@ struct TrialSpec {
     )
     : device(device_)
     , streams(streams_)
+    , batch_size(batch_size_)
     , gsize(gsize_)
     , cfsize(cfsize_)
     , oversampling(oversampling_)
@@ -296,6 +299,7 @@ struct TrialSpec {
 
   hpg::Device device;
   int streams;
+  unsigned batch_size;
   int gsize;
   int cfsize;
   int oversampling;
@@ -312,6 +316,7 @@ struct TrialSpec {
   {"status",
    "dev",
    "str",
+   "batch",
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
    "vsn",
 #endif
@@ -350,6 +355,7 @@ struct TrialSpec {
 #endif
     oss << pad_right(device_codes.at(device))
         << pad_right(std::to_string(streams))
+        << pad_right(std::to_string(batch_size))
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         << pad_right(vsns.str())
 #endif
@@ -561,6 +567,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
           hpg::GridderState::create(
             spec.device,
             spec.streams - 1,
+            spec.batch_size,
             input_data.gsize,
             default_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -640,7 +647,8 @@ run_trials(
   const std::vector<unsigned>& repeats,
   const std::vector<hpg::Device>& devices,
   const std::vector<unsigned>& kernels,
-  const std::vector<unsigned>& streams) {
+  const std::vector<unsigned>& streams,
+  const std::vector<unsigned>& batch) {
 
   using rand_pool_type = typename K::Random_XorShift64_Pool<K::OpenMP>;
 
@@ -661,19 +669,22 @@ run_trials(
                   rand_pool_type(348842));
               for (auto& device : devices) {
                 for (auto& stream : streams) {
-                  TrialSpec spec(
-                    device,
-                    stream,
-                    gsize,
-                    cfsize,
-                    oversampling,
-                    num_visibilities,
-                    num_repeats
+                  for (auto& bsz : batch){
+                    TrialSpec spec(
+                      device,
+                      std::max(stream, 1u),
+                      std::max(bsz, 1u),
+                      gsize,
+                      cfsize,
+                      oversampling,
+                      num_visibilities,
+                      num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-                    , {kernel, 0, 0, 0}
+                      , {kernel, 0, 0, 0}
 #endif
-                    );
-                  run_hpg_trial(spec, input_data);
+                      );
+                    run_hpg_trial(spec, input_data);
+                  }
                 }
               }
             }
@@ -761,6 +772,14 @@ main(int argc, char* argv[]) {
       .help("number of streams ["s + std::to_string(dflt) + "]")
       .action(parse_unsigned_args);
   }
+  {
+    unsigned dflt = 1000000;
+    args
+      .add_argument("-b", "--batch")
+      .default_value(argwrap<std::vector<unsigned>>({dflt}))
+      .help("visibility batch size ["s + std::to_string(dflt) + "]")
+      .action(parse_unsigned_args);
+  }
 
   /* parse the command line arguments */
   try {
@@ -782,6 +801,7 @@ main(int argc, char* argv[]) {
     args.get<argwrap<std::vector<hpg::Device>>>("--device").val;
   auto kernels = args.get<argwrap<std::vector<unsigned>>>("--kernel").val;
   auto streams = args.get<argwrap<std::vector<unsigned>>>("--streams").val;
+  auto batch = args.get<argwrap<std::vector<unsigned>>>("--batch").val;
 
   hpg::ScopeGuard hpg;
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)
@@ -793,7 +813,8 @@ main(int argc, char* argv[]) {
       repeats,
       devices,
       kernels,
-      streams);
+      streams,
+      batch);
   else
     std::cerr << "OpenMP device is not enabled: no tests will be run"
               << std::endl;

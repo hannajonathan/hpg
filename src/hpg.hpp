@@ -468,6 +468,8 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of additional tasks (actual number
    * may be less than requested)
+   * @param max_visibility_batch_size maximum number of visibilities to pass to
+   * the gridding kernel at once
    * @param grid_size, in logical axis order: X, Y, stokes, cube
    * @param grid_scale, in X, Y order
    *
@@ -475,11 +477,18 @@ protected:
    * to the GridderState instance. In all cases, at least one task is
    * employed, but some devices support additional, concurrent tasks.
    *
+   * The value of max_added_tasks and max_visibility_batch_size has an effect on
+   * the amount of memory allocated on the selected gridder device. The total
+   * amount of memory allocated for visibilities will be approximately equal to
+   * max_added_tasks multiplied by
+   * GridderState::visibility_batch_allocation(max_visibility_batch_size).
+   *
    * @sa Gridder::Gridder()
    */
   GridderState(
     Device device,
     unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -497,6 +506,7 @@ public:
   create(
     Device device,
     unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -515,6 +525,9 @@ public:
   GridderState(GridderState&&);
 
   virtual ~GridderState();
+
+  static size_t
+  visibility_batch_allocation(size_t batch_size);
 
   /** copy assignment
    *
@@ -538,6 +551,10 @@ public:
    * on device limitations */
   unsigned
   max_added_tasks() const noexcept;
+
+  /** maximum number of visibilities passed to gridding kernel at once */
+  size_t
+  max_visibility_batch_size() const noexcept;
 
   /** grid size */
   const std::array<unsigned, 4>&
@@ -818,16 +835,25 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of concurrent tasks (actual
    * number may be less than requested)
+   * @param max_visibility_batch_size maximum number of visibilities to pass to
+   * the gridding kernel at once
    * @param grid_size, in logical axis order: X, Y, stokes, cube
    * @param grid_scale, in X, Y order
    *
    * max_added_tasks may be used to control the level of concurrency available
    * to the GridderState instance. In all cases, at least one task is employed,
    * but some devices support additional, concurrent tasks.
+   *
+   * The value of max_added_tasks and max_visibility_batch_size has an effect on
+   * the amount of memory allocated on the selected gridder device. The total
+   * amount of memory allocated for visibilities will be approximately equal to
+   * max_added_tasks multiplied by
+   * GridderState::visibility_batch_allocation(max_visibility_batch_size).
    */
   Gridder(
     Device device,
     unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale);
 
@@ -841,6 +867,7 @@ public:
   create(
     Device device,
     unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -880,6 +907,10 @@ public:
    * on device limitations */
   unsigned
   max_added_tasks() const noexcept;
+
+  /** maximum number of visibilities passed to gridding kernel at once */
+  size_t
+  max_visibility_batch_size() const noexcept;
 
   /** grid size */
   const std::array<unsigned, 4>&

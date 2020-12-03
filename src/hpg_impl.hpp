@@ -1380,6 +1380,8 @@ struct State {
 
   Device m_device; /**< device type */
   unsigned m_max_active_tasks; /**< maximum number of active tasks */
+  size_t m_max_visibility_batch_size; /**< maximum number of visibilities to
+                                         sent to gridding kernel at once */
   std::array<unsigned, 4> m_grid_size; /**< grid size */
   std::array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
   std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
@@ -1390,11 +1392,13 @@ struct State {
   State(
     Device device,
     unsigned max_active_tasks,
+    size_t max_visibility_batch_size,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const std::array<unsigned, 4>& implementation_versions)
     : m_device(device)
     , m_max_active_tasks(max_active_tasks)
+    , m_max_visibility_batch_size(max_visibility_batch_size)
     , m_grid_size(grid_size)
     , m_grid_scale(grid_scale)
     , m_implementation_versions(implementation_versions) {}
@@ -1604,12 +1608,14 @@ public:
 
   StateT(
     unsigned max_active_tasks,
+    size_t max_visibility_batch_size,
     const std::array<unsigned, 4> grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const std::array<unsigned, 4>& implementation_versions)
     : State(
       D,
       std::min(max_active_tasks, DeviceT<D>::active_task_limit),
+      max_visibility_batch_size,
       grid_size,
       grid_scale,
       implementation_versions) {
@@ -1622,6 +1628,7 @@ public:
     : State(
       D,
       const_cast<const StateT&>(st).m_max_active_tasks,
+      const_cast<const StateT&>(st).m_max_visibility_batch_size,
       const_cast<const StateT&>(st).m_grid_size,
       const_cast<const StateT&>(st).m_grid_scale,
       const_cast<const StateT&>(st).m_implementation_versions) {
@@ -1636,6 +1643,7 @@ public:
     : State(D) {
 
     m_max_active_tasks = std::move(st).m_max_active_tasks;
+    m_max_visibility_batch_size = std::move(st).m_max_visibility_batch_size;
     m_grid_size = std::move(st).m_grid_size;
     m_grid_scale = std::move(st).m_grid_scale;
     m_implementation_versions = std::move(st).m_implementation_versions;
@@ -2104,6 +2112,7 @@ private:
   void
   swap(StateT& other) {
     std::swap(m_max_active_tasks, other.m_max_active_tasks);
+    std::swap(m_max_visibility_batch_size, other.m_max_visibility_batch_size);
     std::swap(m_grid_size, other.m_grid_size);
     std::swap(m_grid_scale, other.m_grid_scale);
     std::swap(m_implementation_versions, other.m_implementation_versions);

@@ -191,10 +191,16 @@ values_eq(const T* array0, const T* array1) {
 TEST(GridderState, ConstructorArgs) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
+  size_t batch_size = 20;
   hpg::GridderState gs0;
   auto gs1 =
     std::get<1>(
-      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
+      hpg::GridderState::create(
+        default_device,
+        0,
+        batch_size,
+        grid_size,
+        grid_scale));
 
   EXPECT_TRUE(gs0.is_null());
   EXPECT_FALSE(gs1.is_null());
@@ -202,48 +208,65 @@ TEST(GridderState, ConstructorArgs) {
   EXPECT_EQ(gs1.grid_size(), grid_size);
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
   EXPECT_EQ(gs1.max_added_tasks(), 0);
+  EXPECT_EQ(gs1.max_visibility_batch_size(), batch_size);
 }
 
 // test that GridderState copies have correct parameters
 TEST(GridderState, Copies) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
+  size_t batch_size = 20;
   auto gs0 =
     std::get<1>(
-      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
+      hpg::GridderState::create(
+        default_device,
+        0,
+        batch_size,
+        grid_size,
+        grid_scale));
   hpg::GridderState gs1 = gs0;
 
   EXPECT_FALSE(gs0.is_null());
   EXPECT_EQ(gs1.device(), default_device);
   EXPECT_EQ(gs1.grid_size(), grid_size);
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
+  EXPECT_EQ(gs1.max_visibility_batch_size(), batch_size);
 
   hpg::GridderState gs2(gs0);
   EXPECT_FALSE(gs0.is_null());
   EXPECT_EQ(gs2.device(), default_device);
   EXPECT_EQ(gs2.grid_size(), grid_size);
   EXPECT_EQ(gs2.grid_scale(), grid_scale);
+  EXPECT_EQ(gs2.max_visibility_batch_size(), batch_size);
 }
 
 // test that GridderState moves have expected outcomes
 TEST(GridderState, Moves) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
+  size_t batch_size = 30;
   auto gs0 =
     std::get<1>(
-      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
+      hpg::GridderState::create(
+        default_device,
+        0,
+        batch_size,
+        grid_size,
+        grid_scale));
   hpg::GridderState gs1 = std::move(gs0);
 
   EXPECT_TRUE(gs0.is_null());
   EXPECT_EQ(gs1.device(), default_device);
   EXPECT_EQ(gs1.grid_size(), grid_size);
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
+  EXPECT_EQ(gs1.max_visibility_batch_size(), batch_size);
 
   hpg::GridderState gs2(std::move(gs1));
   EXPECT_TRUE(gs1.is_null());
   EXPECT_EQ(gs2.device(), default_device);
   EXPECT_EQ(gs2.grid_size(), grid_size);
   EXPECT_EQ(gs2.grid_scale(), grid_scale);
+  EXPECT_EQ(gs2.max_visibility_batch_size(), batch_size);
 }
 
 // test that GridderState grid values and weights are properly initialized
@@ -252,7 +275,7 @@ TEST(GridderState, InitValues) {
   std::array<float, 2> grid_scale{0.12, -0.34};
   auto gs =
     std::get<1>(
-      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
+      hpg::GridderState::create(default_device, 0, 15, grid_size, grid_scale));
 
   auto [gs1, values] = std::move(gs).grid_values();
   for (size_t i = 0; i < 4; ++i)
@@ -269,9 +292,15 @@ TEST(GridderState, InitValues) {
 TEST(GridderState, CopyOrMove) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
+  size_t num_vis = 10;
   auto gs =
     std::get<1>(
-      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
+      hpg::GridderState::create(
+        default_device,
+        0,
+        num_vis,
+        grid_size,
+        grid_scale));
 
   std::mt19937 rng(42);
 
@@ -290,7 +319,7 @@ TEST(GridderState, CopyOrMove) {
       std::get<1>(
         gs.set_convolution_function(default_host_device, MyCFArray(cf)));
     init_visibilities(
-      10,
+      num_vis,
       grid_size,
       grid_scale,
       cf,
@@ -378,17 +407,9 @@ TEST(GridderState, CFError) {
   std::array<float, 2> grid_scale{0.1, -0.1};
   auto gs =
     std::get<1>(
-      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
+      hpg::GridderState::create(default_device, 0, 10, grid_size, grid_scale));
 
   std::mt19937 rng(42);
-
-  std::vector<std::complex<hpg::visibility_fp>> vis;
-  std::vector<unsigned> grid_cubes;
-  std::vector<unsigned> cf_cubes;
-  std::vector<hpg::vis_weight_fp> weights;
-  std::vector<hpg::vis_frequency_fp> frequencies;
-  std::vector<hpg::vis_phase_fp> phases;
-  std::vector<hpg::vis_uvw_t> coordinates;
 
   {
     // incorrect Stokes dimension size
@@ -424,9 +445,15 @@ TEST(GridderState, CFError) {
 TEST(GridderState, Reset) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
+  size_t num_vis = 10;
   auto gs =
     std::get<1>(
-      hpg::GridderState::create(default_device, 0, grid_size, grid_scale));
+      hpg::GridderState::create(
+        default_device,
+        0,
+        num_vis,
+        grid_size,
+        grid_scale));
 
   std::mt19937 rng(42);
 
@@ -445,7 +472,7 @@ TEST(GridderState, Reset) {
       std::get<1>(
         gs.set_convolution_function(default_host_device, MyCFArray(cf)));
     init_visibilities(
-      10,
+      num_vis,
       grid_size,
       grid_scale,
       cf,
@@ -492,9 +519,15 @@ TEST(GridderState, Reset) {
 TEST(GridderState, Sequences) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
+  size_t num_vis = 10;
   auto gs =
     std::get<1>(
-      hpg::GridderState::create(default_device, 1, grid_size, grid_scale));
+      hpg::GridderState::create(
+        default_device,
+        1,
+        num_vis,
+        grid_size,
+        grid_scale));
 
   std::mt19937 rng(42);
 
@@ -513,7 +546,7 @@ TEST(GridderState, Sequences) {
       std::get<1>(
         gs.set_convolution_function(default_host_device, MyCFArray(cf)));
     init_visibilities(
-      10,
+      num_vis,
       grid_size,
       grid_scale,
       cf,
