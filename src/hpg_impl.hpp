@@ -1998,12 +1998,9 @@ public:
   void
   fence() const volatile override {
     auto st = const_cast<StateT*>(this);
-    for (unsigned i = 0; i < st->exec_space_indexes.size(); ++i) {
-      auto& exec = st->exec_spaces[st->exec_space_indexes.front()];
+    for (auto& i : st->exec_space_indexes) {
+      auto& exec = st->exec_spaces[i];
       exec.space.fence();
-      exec.vis_state.clear();
-      st->exec_space_indexes.push_back(st->exec_space_indexes.front());
-      st->exec_space_indexes.pop_front();
     }
     current = StreamPhase::COPY;
   }
