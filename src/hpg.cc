@@ -254,7 +254,7 @@ GridderState&
 GridderState::operator=(const volatile GridderState& rhs) {
 
   const GridderState& crhs = const_cast<const GridderState&>(rhs);
-  switch (crhs.impl->device) {
+  switch (crhs.impl->m_device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     impl =
@@ -305,22 +305,22 @@ GridderState::~GridderState() {}
 
 Device
 GridderState::device() const noexcept {
-  return impl->device;
+  return impl->m_device;
 }
 
 unsigned
 GridderState::max_added_tasks() const noexcept {
-  return impl->max_active_tasks - 1;
+  return impl->m_max_active_tasks - 1;
 }
 
 const std::array<unsigned, 4>&
 GridderState::grid_size() const noexcept {
-  return impl->grid_size;
+  return impl->m_grid_size;
 }
 
 const std::array<grid_scale_fp, 2>&
 GridderState::grid_scale() const noexcept {
-  return impl->grid_scale;
+  return impl->m_grid_scale;
 }
 
 bool

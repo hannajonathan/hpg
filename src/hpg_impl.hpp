@@ -1378,45 +1378,45 @@ struct HPG_EXPORT GridShifter final {
 /** abstract base class for state implementations */
 struct State {
 
-  Device device; /**< device type */
-  unsigned max_active_tasks; /**< maximum number of active tasks */
-  std::array<unsigned, 4> grid_size; /**< grid size */
-  std::array<grid_scale_fp, 2> grid_scale; /**< grid scale */
-  std::array<unsigned, 4> implementation_versions; /**< impl versions*/
+  Device m_device; /**< device type */
+  unsigned m_max_active_tasks; /**< maximum number of active tasks */
+  std::array<unsigned, 4> m_grid_size; /**< grid size */
+  std::array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
+  std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
 
-  State(Device device_)
-    : device(device_) {}
+  State(Device device)
+    : m_device(device) {}
 
   State(
-    Device device_,
-    unsigned max_active_tasks_,
-    const std::array<unsigned, 4>& grid_size_,
-    const std::array<grid_scale_fp, 2>& grid_scale_,
-    const std::array<unsigned, 4>& implementation_versions_)
-    : device(device_)
-    , max_active_tasks(max_active_tasks_)
-    , grid_size(grid_size_)
-    , grid_scale(grid_scale_)
-    , implementation_versions(implementation_versions_) {}
+    Device device,
+    unsigned max_active_tasks,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const std::array<unsigned, 4>& implementation_versions)
+    : m_device(device)
+    , m_max_active_tasks(max_active_tasks)
+    , m_grid_size(grid_size)
+    , m_grid_scale(grid_scale)
+    , m_implementation_versions(implementation_versions) {}
 
   unsigned
   visibility_gridder_version() const {
-    return implementation_versions[0];
+    return m_implementation_versions[0];
   }
 
   unsigned
   grid_normalizer_version() const {
-    return implementation_versions[1];
+    return m_implementation_versions[1];
   }
 
   unsigned
   fft_version() const {
-    return implementation_versions[2];
+    return m_implementation_versions[2];
   }
 
   unsigned
   grid_shifter_version() const {
-    return implementation_versions[3];
+    return m_implementation_versions[3];
   }
 
   virtual std::optional<Error>
@@ -1591,16 +1591,16 @@ public:
   using memory_space = typename execution_space::memory_space;
   using stream_type = typename DeviceT<D>::stream_type;
 
-  grid_view<typename GridLayout<D>::layout, memory_space> grid;
-  weight_view<typename execution_space::array_layout, memory_space> weights;
+  grid_view<typename GridLayout<D>::layout, memory_space> m_grid;
+  weight_view<typename execution_space::array_layout, memory_space> m_weights;
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
-  std::vector<
-    std::conditional_t<std::is_void_v<stream_type>, int, stream_type>> streams;
-  std::vector<ExecSpace<D>> exec_spaces;
-  mutable std::deque<int> exec_space_indexes;
-  mutable StreamPhase current = StreamPhase::COPY;
+  std::vector<std::conditional_t<std::is_void_v<stream_type>, int, stream_type>>
+    m_streams;
+  std::vector<ExecSpace<D>> m_exec_spaces;
+  mutable std::deque<int> m_exec_space_indexes;
+  mutable StreamPhase m_current = StreamPhase::COPY;
 
   StateT(
     unsigned max_active_tasks,
@@ -1621,10 +1621,10 @@ public:
   StateT(const volatile StateT& st)
     : State(
       D,
-      const_cast<const StateT&>(st).max_active_tasks,
-      const_cast<const StateT&>(st).grid_size,
-      const_cast<const StateT&>(st).grid_scale,
-      const_cast<const StateT&>(st).implementation_versions) {
+      const_cast<const StateT&>(st).m_max_active_tasks,
+      const_cast<const StateT&>(st).m_grid_size,
+      const_cast<const StateT&>(st).m_grid_scale,
+      const_cast<const StateT&>(st).m_implementation_versions) {
 
     st.fence();
     // gotta use a pointer to st here to avoid infinite recursion
@@ -1635,26 +1635,26 @@ public:
   StateT(StateT&& st)
     : State(D) {
 
-    max_active_tasks = std::move(st).max_active_tasks;
-    grid_size = std::move(st).grid_size;
-    grid_scale = std::move(st).grid_scale;
-    implementation_versions = std::move(st).implementation_versions;
+    m_max_active_tasks = std::move(st).m_max_active_tasks;
+    m_grid_size = std::move(st).m_grid_size;
+    m_grid_scale = std::move(st).m_grid_scale;
+    m_implementation_versions = std::move(st).m_implementation_versions;
 
-    grid = std::move(st).grid;
-    weights = std::move(st).weights;
-    streams = std::move(st).streams;
-    exec_spaces = std::move(st).exec_spaces;
-    exec_space_indexes = std::move(st).exec_space_indexes;
-    current = std::move(st).current;
+    m_grid = std::move(st).m_grid;
+    m_weights = std::move(st).m_weights;
+    m_streams = std::move(st).m_streams;
+    m_exec_spaces = std::move(st).m_exec_spaces;
+    m_exec_space_indexes = std::move(st).m_exec_space_indexes;
+    m_current = std::move(st).m_current;
   }
 
   virtual ~StateT() {
     fence();
-    grid = decltype(grid)();
-    weights = decltype(weights)();
-    exec_spaces.clear();
+    m_grid = decltype(m_grid)();
+    m_weights = decltype(m_weights)();
+    m_exec_spaces.clear();
     if constexpr(!std::is_void_v<stream_type>) {
-      for (auto& str : streams) {
+      for (auto& str : m_streams) {
         auto rc = DeviceT<D>::destroy_stream(str);
         assert(rc);
       }
@@ -1684,10 +1684,10 @@ public:
   set_convolution_function(Device host_device, CFArray&& cf_array)
     override {
 
-    if (cf_array.extent(2) != grid_size[2])
+    if (cf_array.extent(2) != m_grid_size[2])
       return Error("Unequal size of Stokes dimension in grid and CF");
-    if (cf_array.extent(0) > grid_size[0] * cf_array.oversampling()
-        || cf_array.extent(1) > grid_size[1] * cf_array.oversampling())
+    if (cf_array.extent(0) > m_grid_size[0] * cf_array.oversampling()
+        || cf_array.extent(1) > m_grid_size[1] * cf_array.oversampling())
       return Error("CF support size exceeds grid size");
 
     cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
@@ -1710,7 +1710,7 @@ public:
               << std::endl;
 #endif // NDEBUG
 
-    auto& exec = exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
 
     typename decltype(cf_init)::HostMirror cf_h;
     switch (host_device) {
@@ -1750,7 +1750,7 @@ public:
     std::vector<vis_phase_fp>&& visibility_phases,
     std::vector<vis_uvw_t>&& visibility_coordinates) {
 
-    auto& exec_copy = exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
 
     auto len = visibilities.size();
 
@@ -1829,7 +1829,7 @@ public:
     exec_copy.vis_state.push_back(coordinates_h);
     exec_copy.vis_state.push_back(coordinates);
 
-    auto& exec_compute = exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
+    auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 0>::kernel(
       exec_compute.space,
       exec_compute.cf_d,
@@ -1840,9 +1840,9 @@ public:
       frequencies,
       phases,
       coordinates,
-      grid_scale,
-      grid,
-      weights);
+      m_grid_scale,
+      m_grid,
+      m_weights);
   }
 
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -1857,7 +1857,7 @@ public:
     std::vector<vis_phase_fp>&& visibility_phases,
     std::vector<vis_uvw_t>&& visibility_coordinates) {
 
-    auto& exec_copy = exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
 
     auto len = visibilities.size();
 
@@ -1936,7 +1936,7 @@ public:
     exec_copy.vis_state.push_back(coordinates_h);
     exec_copy.vis_state.push_back(coordinates);
 
-    auto& exec_compute = exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
+    auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 1>::kernel(
       exec_compute.space,
       exec_compute.cf_d,
@@ -1947,9 +1947,9 @@ public:
       frequencies,
       phases,
       coordinates,
-      grid_scale,
-      grid,
-      weights);
+      m_grid_scale,
+      m_grid,
+      m_weights);
   }
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 
@@ -1998,19 +1998,19 @@ public:
   void
   fence() const volatile override {
     auto st = const_cast<StateT*>(this);
-    for (auto& i : st->exec_space_indexes) {
-      auto& exec = st->exec_spaces[i];
+    for (auto& i : st->m_exec_space_indexes) {
+      auto& exec = st->m_exec_spaces[i];
       exec.space.fence();
     }
-    current = StreamPhase::COPY;
+    m_current = StreamPhase::COPY;
   }
 
   std::unique_ptr<GridWeightArray>
   grid_weights() const volatile override {
     auto st = const_cast<StateT*>(this);
-    auto& exec = st->exec_spaces[st->next_exec_space(StreamPhase::COPY)];
-    auto wgts_h = K::create_mirror(st->weights);
-    K::deep_copy(exec.space, wgts_h, st->weights);
+    auto& exec = st->m_exec_spaces[st->next_exec_space(StreamPhase::COPY)];
+    auto wgts_h = K::create_mirror(st->m_weights);
+    K::deep_copy(exec.space, wgts_h, st->m_weights);
     exec.space.fence();
     return std::make_unique<GridWeightViewArray<D>>(wgts_h);
   }
@@ -2018,9 +2018,9 @@ public:
   std::unique_ptr<GridValueArray>
   grid_values() const volatile override {
     auto st = const_cast<StateT*>(this);
-    auto& exec = st->exec_spaces[st->next_exec_space(StreamPhase::COPY)];
-    auto grid_h = K::create_mirror(st->grid);
-    K::deep_copy(exec.space, grid_h, st->grid);
+    auto& exec = st->m_exec_spaces[st->next_exec_space(StreamPhase::COPY)];
+    auto grid_h = K::create_mirror(st->m_grid);
+    K::deep_copy(exec.space, grid_h, st->m_grid);
     exec.space.fence();
     return std::make_unique<GridValueViewArray<D>>(grid_h);
   }
@@ -2033,12 +2033,12 @@ public:
   void
   normalize(grid_value_fp wfactor) override {
     const_weight_view<typename execution_space::array_layout, memory_space>
-      cweights = weights;
+      cweights = m_weights;
     switch (grid_normalizer_version()) {
     case 0:
       Core::GridNormalizer<execution_space, 0>::kernel(
-        exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
-        grid,
+        m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+        m_grid,
         cweights,
         wfactor);
       break;
@@ -2057,9 +2057,9 @@ public:
         err =
           Core::FFT<execution_space, 0>
           ::in_place_kernel(
-            exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+            m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
             sign,
-            grid);
+            m_grid);
         break;
       default:
         assert(false);
@@ -2067,16 +2067,16 @@ public:
       }
     } else {
       const_grid_view<typename GridLayout<D>::layout, memory_space> pre_grid
-        = grid;
+        = m_grid;
       new_grid(false, false);
       switch (fft_version()) {
       case 0:
         err =
           Core::FFT<execution_space, 0>::out_of_place_kernel(
-            exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+            m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
             sign,
             pre_grid,
-            grid);
+            m_grid);
         break;
       default:
         assert(false);
@@ -2091,8 +2091,8 @@ public:
     switch (grid_shifter_version()) {
     case 0:
       Core::GridShifter<execution_space, 0>::kernel(
-        exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
-        grid);
+        m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+        m_grid);
       break;
     default:
       assert(false);
@@ -2103,71 +2103,72 @@ public:
 private:
   void
   swap(StateT& other) {
-    std::swap(max_active_tasks, other.max_active_tasks);
-    std::swap(grid_size, other.grid_size);
-    std::swap(grid_scale, other.grid_scale);
-    std::swap(implementation_versions, other.implementation_versions);
+    std::swap(m_max_active_tasks, other.m_max_active_tasks);
+    std::swap(m_grid_size, other.m_grid_size);
+    std::swap(m_grid_scale, other.m_grid_scale);
+    std::swap(m_implementation_versions, other.m_implementation_versions);
 
-    std::swap(grid, other.grid);
-    std::swap(weights, other.weights);
-    std::swap(streams, other.streams);
-    std::swap(exec_spaces, other.exec_spaces);
-    std::swap(exec_space_indexes, other.exec_space_indexes);
-    std::swap(current, other.current);
+    std::swap(m_grid, other.m_grid);
+    std::swap(m_weights, other.m_weights);
+    std::swap(m_streams, other.m_streams);
+    std::swap(m_exec_spaces, other.m_exec_spaces);
+    std::swap(m_exec_space_indexes, other.m_exec_space_indexes);
+    std::swap(m_current, other.m_current);
   }
 
   void
   init_exec_spaces(const StateT* ost = nullptr) {
-    streams.resize(max_active_tasks);
-    exec_spaces.reserve(max_active_tasks);
-    for (unsigned i = 0; i < max_active_tasks; ++i) {
+    m_streams.resize(m_max_active_tasks);
+    m_exec_spaces.reserve(m_max_active_tasks);
+    for (unsigned i = 0; i < m_max_active_tasks; ++i) {
       if constexpr (!std::is_void_v<stream_type>) {
-        auto rc = DeviceT<D>::create_stream(streams[i]);
+        auto rc = DeviceT<D>::create_stream(m_streams[i]);
         assert(rc);
-        exec_spaces.emplace_back(execution_space(streams[i]));
-        exec_space_indexes.push_back(i);
+        m_exec_spaces.emplace_back(execution_space(m_streams[i]));
+        m_exec_space_indexes.push_back(i);
       } else {
-        exec_spaces.emplace_back(execution_space());
-        exec_space_indexes.push_back(i);
+        m_exec_spaces.emplace_back(execution_space());
+        m_exec_space_indexes.push_back(i);
       }
     }
     if (ost) {
-      auto& st_esp = ost->exec_spaces;
-      for (unsigned i = 0; i < max_active_tasks; ++i) {
-        exec_spaces[i].cf_d = st_esp[i].cf_d;
-        exec_spaces[i].cf_h = st_esp[i].cf_h;
-        exec_spaces[i].vis_state = st_esp[i].vis_state;
+      auto& st_esp = ost->m_exec_spaces;
+      for (unsigned i = 0; i < m_max_active_tasks; ++i) {
+        m_exec_spaces[i].cf_d = st_esp[i].cf_d;
+        m_exec_spaces[i].cf_h = st_esp[i].cf_h;
+        m_exec_spaces[i].vis_state = st_esp[i].vis_state;
       }
     }
-    current = StreamPhase::COPY;
+    m_current = StreamPhase::COPY;
   }
 
   int
   next_exec_space(StreamPhase next) {
-    int old_idx = exec_space_indexes.front();
+    int old_idx = m_exec_space_indexes.front();
     int new_idx = old_idx;
-    if (max_active_tasks > 1) {
-      if (current == StreamPhase::COMPUTE && next == StreamPhase::COPY) {
-        auto& old_esp = exec_spaces[old_idx];
-        exec_space_indexes.push_back(old_idx);
-        exec_space_indexes.pop_front();
-        new_idx = exec_space_indexes.front();
-        auto& new_esp = exec_spaces[new_idx];
+    if (m_max_active_tasks > 1) {
+      if (m_current == StreamPhase::COMPUTE && next == StreamPhase::COPY) {
+        auto& old_esp = m_exec_spaces[old_idx];
+        m_exec_space_indexes.push_back(old_idx);
+        m_exec_space_indexes.pop_front();
+        new_idx = m_exec_space_indexes.front();
+        auto& new_esp = m_exec_spaces[new_idx];
         new_esp.space.fence();
         new_esp.cf_d = old_esp.cf_d;
         new_esp.cf_h = old_esp.cf_h;
-      } else if (current == StreamPhase::COPY && next == StreamPhase::COMPUTE) {
-        exec_spaces[exec_space_indexes[1]].space.fence();
+      } else if (m_current == StreamPhase::COPY
+                 && next == StreamPhase::COMPUTE) {
+        m_exec_spaces[m_exec_space_indexes[1]].space.fence();
       }
     }
-    if (current == StreamPhase::COMPUTE && next == StreamPhase::COPY)
-      exec_spaces[new_idx].vis_state.clear();
+    if (m_current == StreamPhase::COMPUTE && next == StreamPhase::COPY)
+      m_exec_spaces[new_idx].vis_state.clear();
 #ifndef NDEBUG
-    std::cout << current << "(" << old_idx << ")->"
+    std::cout << m_current << "(" << old_idx << ")->"
               << next << "(" << new_idx << ")"
               << std::endl;
 #endif // NDEBUG
-    current = next;
+    m_current = next;
     return new_idx;
   }
 
@@ -2181,57 +2182,57 @@ private:
     // required, as there are code paths that never use a stream, and thus we
     // can avoid unnecessary stream switches
     std::array<int, 4> ig{
-      static_cast<int>(grid_size[0]),
-      static_cast<int>(grid_size[1]),
-      static_cast<int>(grid_size[2]),
-      static_cast<int>(grid_size[3])};
+      static_cast<int>(m_grid_size[0]),
+      static_cast<int>(m_grid_size[1]),
+      static_cast<int>(m_grid_size[2]),
+      static_cast<int>(m_grid_size[3])};
     if (create_without_init)
-      grid =
-        decltype(grid)(
+      m_grid =
+        decltype(m_grid)(
           K::ViewAllocateWithoutInitializing("grid"),
           GridLayout<D>::dimensions(ig));
     else
-      grid =
-        decltype(grid)(
+      m_grid =
+        decltype(m_grid)(
           K::view_alloc(
             "grid",
-            exec_spaces[next_exec_space(StreamPhase::COPY)].space),
+            m_exec_spaces[next_exec_space(StreamPhase::COPY)].space),
           GridLayout<D>::dimensions(ig));
 #ifndef NDEBUG
-    std::cout << "alloc grid sz " << grid.extent(0)
-              << " " << grid.extent(1)
-              << " " << grid.extent(2)
-              << " " << grid.extent(3)
+    std::cout << "alloc grid sz " << m_grid.extent(0)
+              << " " << m_grid.extent(1)
+              << " " << m_grid.extent(2)
+              << " " << m_grid.extent(3)
               << std::endl;
-    std::cout << "alloc grid str " << grid.stride(0)
-              << " " << grid.stride(1)
-              << " " << grid.stride(2)
-              << " " << grid.stride(3)
+    std::cout << "alloc grid str " << m_grid.stride(0)
+              << " " << m_grid.stride(1)
+              << " " << m_grid.stride(2)
+              << " " << m_grid.stride(3)
               << std::endl;
 #endif // NDEBUG
 
     if (also_weights) {
       if (create_without_init)
-        weights =
-          decltype(weights)(
+        m_weights =
+          decltype(m_weights)(
             K::ViewAllocateWithoutInitializing("weights"),
-            static_cast<int>(grid_size[2]),
-            static_cast<int>(grid_size[3]));
+            static_cast<int>(m_grid_size[2]),
+            static_cast<int>(m_grid_size[3]));
       else
-        weights =
-          decltype(weights)(
+        m_weights =
+          decltype(m_weights)(
             K::view_alloc(
               "weights",
-              exec_spaces[next_exec_space(StreamPhase::COPY)].space),
-            static_cast<int>(grid_size[2]),
-            static_cast<int>(grid_size[3]));
+              m_exec_spaces[next_exec_space(StreamPhase::COPY)].space),
+            static_cast<int>(m_grid_size[2]),
+            static_cast<int>(m_grid_size[3]));
     }
     if (std::holds_alternative<const StateT*>(source)) {
-      auto& exec = exec_spaces[next_exec_space(StreamPhase::COPY)];
+      auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
       auto st = std::get<const StateT*>(source);
-      K::deep_copy(exec.space, grid, st->grid);
+      K::deep_copy(exec.space, m_grid, st->m_grid);
       if (also_weights)
-        K::deep_copy(exec.space, weights, st->weights);
+        K::deep_copy(exec.space, m_weights, st->m_weights);
     }
   }
 
