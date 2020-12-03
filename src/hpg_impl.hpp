@@ -1741,7 +1741,7 @@ public:
 
   void
   default_grid_visibilities(
-    Device host_device,
+    Device /*host_device*/,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
     std::vector<unsigned>&& visibility_cf_cubes,
@@ -1848,7 +1848,7 @@ public:
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   void
   alt1_grid_visibilities(
-    Device host_device,
+    Device /*host_device*/,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
     std::vector<unsigned>&& visibility_cf_cubes,
