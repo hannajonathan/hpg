@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <queue>
 
 #include <Kokkos_Core.hpp>
 #include <Kokkos_Random.hpp>
@@ -557,9 +558,9 @@ create_input_data(
 void
 run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
 
-  std::vector<InputData> ids;
-  for (unsigned i = 0; i < spec.repeats; ++i)
-    ids.push_back(input_data);
+  std::queue<InputData> ids;
+  for (unsigned i = 0; i <= spec.streams; ++i)
+    ids.push(input_data);
 
   auto time_trial =
     RvalM<void, hpg::GridderState>::pure(
@@ -598,18 +599,25 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
       // result tuple after each iteration
       spec.repeats,
       [&](unsigned i, auto&& t_gs) {
+        InputData id;
+        if (!ids.empty()) {
+          id = std::move(ids.front());
+          ids.pop();
+        } else {
+          id = input_data;
+        }
         return
           map(
             std::get<1>(std::move(t_gs))
             .grid_visibilities(
               hpg::Device::OpenMP,
-              std::move(ids[i].visibilities),
-              std::move(ids[i].grid_cubes),
-              std::move(ids[i].cf_cubes),
-              std::move(ids[i].weights),
-              std::move(ids[i].frequencies),
-              std::move(ids[i].phases),
-              std::move(ids[i].coordinates)),
+              std::move(id.visibilities),
+              std::move(id.grid_cubes),
+              std::move(id.cf_cubes),
+              std::move(id.weights),
+              std::move(id.frequencies),
+              std::move(id.phases),
+              std::move(id.coordinates)),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));
