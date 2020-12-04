@@ -2328,18 +2328,18 @@ private:
   }
 
   template <typename DT, typename ST>
-  static std::tuple<
-    vector_view<const DT>,
-    K::View<const DT*, memory_space>>
+  std::tuple<vector_view<const DT>, K::View<const DT*, memory_space>>
   copy_to_device_view(
     const K::View<DT*, memory_space>& dview,
     const std::vector<ST>* vect,
     execution_space& exec) {
 
-    vector_view<const DT>
-      hview(reinterpret_cast<const DT*>(vect->data()), vect->size());
+    auto len =
+      static_cast<int>(std::min(vect->size(), m_max_visibility_batch_size));
+    vector_view<const DT> hview(reinterpret_cast<const DT*>(vect->data()), len);
     if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
-      K::deep_copy(exec, dview, hview);
+      auto dv = K::subview(dview, std::pair(0, len));
+      K::deep_copy(exec, dv, hview);
       return {hview, dview};
     } else {
       return {hview, hview};
