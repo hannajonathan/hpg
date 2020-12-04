@@ -346,8 +346,10 @@ struct TrialSpec {
   std::string
   id() const {
     std::ostringstream oss;
-    std::array<char, id_col_width - 1> buff;
-    std::snprintf(buff.data(), buff.size(), "%g", double(visibilities));
+    std::array<char, id_col_width - 1> nvis;
+    std::snprintf(nvis.data(), nvis.size(), "%g", double(visibilities));
+    std::array<char, id_col_width - 1> nbatch;
+    std::snprintf(nbatch.data(), nbatch.size(), "%g", double(batch_size));
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     std::ostringstream vsns;
     vsns << versions[0] << "," << versions[1] << ","
@@ -355,14 +357,14 @@ struct TrialSpec {
 #endif
     oss << pad_right(device_codes.at(device))
         << pad_right(std::to_string(streams))
-        << pad_right(std::to_string(batch_size))
+        << pad_right(nbatch.data())
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         << pad_right(vsns.str())
 #endif
         << pad_right(std::to_string(gsize))
         << pad_right(std::to_string(cfsize))
         << pad_right(std::to_string(oversampling))
-        << pad_right(buff.data())
+        << pad_right(nvis.data())
         << pad_right(std::to_string(repeats));
     return oss.str();
   }
@@ -589,9 +591,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
       [&](hpg::GridderState&& gs) {
         auto result = std::move(gs).fence();
         return
-          std::make_tuple(
-            std::chrono::steady_clock::now(),
-            std::move(result));
+          std::make_tuple(std::chrono::steady_clock::now(), std::move(result));
       })
     .and_then_loop(
       // grid visibilities a number of times, copying the start time into the
