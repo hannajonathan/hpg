@@ -310,6 +310,19 @@ GridderState::operator=(GridderState&& rhs) {
 
 GridderState::~GridderState() {}
 
+size_t
+GridderState::visibility_batch_allocation(size_t batch_size) {
+  return
+    batch_size
+    * (sizeof(Kokkos::complex<visibility_fp>) // visibilities
+       + sizeof(unsigned)                     // visibility_grid_cubes
+       + sizeof(unsigned)                     // visibility_cf_cubes
+       + sizeof(vis_weight_fp)                // visibility_weights
+       + sizeof(vis_frequency_fp)             // visibility_frequencies
+       + sizeof(vis_phase_fp)                 // visibility_phases
+       + sizeof(vis_uvw_t));                  // visibility_coordinates
+}
+
 Device
 GridderState::device() const noexcept {
   return impl->m_device;
