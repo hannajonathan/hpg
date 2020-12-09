@@ -18,11 +18,12 @@ if(VALID_HPG_API LESS 0)
   message(FATAL_ERROR "Invalid Hpg_API; supported options are ${HPG_API_OPTIONS}")
 endif()
 
-# find Kokkos
-#
 set(HAVE_SERIAL -1)
 set(HAVE_OPENMP -1)
 set(HAVE_CUDA -1)
+
+# find Kokkos
+#
 find_package(Kokkos
   REQUIRED COMPONENTS kokkos kokkoscore
   OPTIONAL_COMPONENTS CUDA)
@@ -110,12 +111,14 @@ target_link_libraries(hpg PRIVATE Kokkos::kokkoscore)
 target_include_directories(hpg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/hpg>)
 
 include(GenerateExportHeader)
 generate_export_header(hpg)
 
-install(TARGETS hpg EXPORT HPGConfig)
+install(TARGETS hpg
+  EXPORT HPGConfig
+  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/hpg)
 install(EXPORT HPGConfig DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/hpg)
 export(TARGETS hpg FILE HPGConfig.cmake)
 
