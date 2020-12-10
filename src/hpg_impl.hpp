@@ -1589,11 +1589,12 @@ struct ExecSpace {
   using kokkos_device = typename DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
+  using cfd_view = const_cf_view<typename CFLayout<D>::layout, memory_space>;
+  using cfh_view = typename cfd_view::HostMirror;
 
   execution_space space;
-  const_cf_view<typename CFLayout<D>::layout, memory_space> cf_d;
-  typename const_cf_view<typename CFLayout<D>::layout, memory_space>::HostMirror
-    cf_h;
+  K::Array<cfd_view, HPG_MAX_NUM_CF_SUPPORTS> cf_d;
+  K::Array<cfh_view, HPG_MAX_NUM_CF_SUPPORTS> cf_h;
   K::View<vis_t*, memory_space> visibilities;
   K::View<unsigned*, memory_space> grid_cubes;
   K::View<unsigned*, memory_space> cf_cubes;
@@ -1765,8 +1766,8 @@ public:
       assert(false);
       break;
     }
-    exec.cf_d = cf_init;
-    exec.cf_h = cf_h;
+    exec.cf_d[0] = cf_init;
+    exec.cf_h[0] = cf_h;
     return std::nullopt;
   }
 
@@ -1860,7 +1861,7 @@ public:
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 0>::kernel(
       exec_compute.space,
-      exec_compute.cf_d,
+      exec_compute.cf_d[0],
       len,
       vis,
       grid_cubes,
@@ -1965,7 +1966,7 @@ public:
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 1>::kernel(
       exec_compute.space,
-      exec_compute.cf_d,
+      exec_compute.cf_d[0],
       len,
       vis,
       grid_cubes,
