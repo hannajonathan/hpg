@@ -52,17 +52,21 @@ struct MyCFArray final
   }
 
   unsigned
-  extent(unsigned dim) const override {
-    return m_extent[dim];
+  num_supports() const override {
+    return 1;
+  }
+
+  std::array<unsigned, 4>
+  extents(unsigned) const override {
+    return m_extent;
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned stokes, unsigned cube)
+  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned)
     const override {
     return
       m_values[
-        ((x * m_extent[1] + y) * m_extent[2] + stokes) * m_extent[3]
-        + cube];
+        ((x * m_extent[1] + y) * m_extent[2] + sto) * m_extent[3] + cube];
   }
 };
 
@@ -118,14 +122,15 @@ init_visibilities(
   const double freq = 299792458.0 * inv_lambda;
   std::uniform_int_distribution<unsigned> dist_gcube(0, grid_size[3] - 1);
   std::uniform_int_distribution<unsigned> dist_gsto(0, grid_size[2] - 1);
-  std::uniform_int_distribution<unsigned> dist_cfcube(0, cf.extent(3) - 1);
+  auto cfextents = cf.extents(0);
+  std::uniform_int_distribution<unsigned> dist_cfcube(0, cfextents[3] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
   double ulim =
-    ((cf.oversampling() * (grid_size[0] - 2)) / 2 - (cf.extent(0)) / 2)
+    ((cf.oversampling() * (grid_size[0] - 2)) / 2 - (cfextents[0]) / 2)
     / (grid_scale[0] * cf.oversampling() * inv_lambda);
   double vlim =
-    ((cf.oversampling() * (grid_size[1] - 2)) / 2 - (cf.extent(1)) / 2)
+    ((cf.oversampling() * (grid_size[1] - 2)) / 2 - (cfextents[1]) / 2)
     / (grid_scale[1] * cf.oversampling() * inv_lambda);
   std::uniform_real_distribution<hpg::vis_uvw_fp> dist_u(-ulim, ulim);
   std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
@@ -146,14 +151,14 @@ has_non_zero(const T* array) {
   if constexpr (T::rank == 2) {
     for (unsigned i = 0; i < array->extent(0); ++i)
       for (unsigned j = 0; j < array->extent(1); ++j)
-        if (array->operator()(i, j) != typename T::scalar_type(0))
+        if ((*array)(i, j) != typename T::scalar_type(0))
           return true;
   } else {
     for (unsigned i = 0; i < array->extent(0); ++i)
       for (unsigned j = 0; j < array->extent(1); ++j)
         for (unsigned k = 0; k < array->extent(2); ++k)
           for (unsigned m = 0; m < array->extent(3); ++m)
-            if (array->operator()(i, j, k, m) != typename T::scalar_type(0))
+            if ((*array)(i, j, k, m) != typename T::scalar_type(0))
               return true;
   }
   return false;
@@ -168,7 +173,7 @@ values_eq(const T* array0, const T* array1) {
       return false;
     for (unsigned i = 0; i < array0->extent(0); ++i)
       for (unsigned j = 0; j < array0->extent(1); ++j)
-        if (array0->operator()(i, j) != array1->operator()(i, j))
+        if ((*array0)(i, j) != (*array1)(i, j))
           return false;
   } else {
     if (array0->extent(0) != array1->extent(0)

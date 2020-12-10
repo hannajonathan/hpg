@@ -33,17 +33,21 @@ struct MyCFArray final
   }
 
   unsigned
-  extent(unsigned dim) const override {
-    return m_extent[dim];
+  num_supports() const override {
+    return 1;
+  }
+
+  std::array<unsigned, 4>
+  extents(unsigned) const override {
+    return m_extent;
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned stokes, unsigned cube)
+  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned)
     const override {
     return
       m_values[
-        ((x * m_extent[1] + y) * m_extent[2] + stokes) * m_extent[3]
-        + cube];
+        ((x * m_extent[1] + y) * m_extent[2] + sto) * m_extent[3] + cube];
   }
 };
 
@@ -128,7 +132,7 @@ sum_grid(const hpg::GridValueArray* array) {
     for (auto j = 0; j < array->extent(1); ++j)
       for (auto k = 0; k < array->extent(2); ++k)
         for (auto m = 0; m < array->extent(3); ++m)
-          result += array->operator()(i, j, k, m);
+          result += (*array)(i, j, k, m);
   return result;
 }
 

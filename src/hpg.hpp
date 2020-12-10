@@ -341,7 +341,7 @@ struct HPG_EXPORT GridderState;
 class HPG_EXPORT CFArray {
 public:
 
-  static constexpr unsigned rank = 4;
+  static constexpr unsigned rank = 5;
 
   using scalar_type = std::complex<cf_fp>;
 
@@ -349,10 +349,13 @@ public:
   oversampling() const = 0;
 
   virtual unsigned
-  extent(unsigned dim) const = 0;
+  num_supports() const = 0;
+
+  virtual std::array<unsigned, 4>
+  extents(unsigned supp) const = 0;
 
   virtual std::complex<cf_fp>
-  operator()(unsigned x, unsigned y, unsigned cf_sto, unsigned cube)
+  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned supp)
     const = 0;
 
   virtual ~CFArray() {}

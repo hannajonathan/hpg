@@ -270,7 +270,7 @@ struct GridLayout {
   }
 };
 
-/** device-specific CF array layout */
+/** device-specific constant-support CF array layout */
 template <Device D>
 struct CFLayout {
 
@@ -284,19 +284,20 @@ struct CFLayout {
     K::LayoutStride>;
 
   /**
-   * create Kokkos layout using given CFArray
+   * create Kokkos layout using given CFArray slice
    *
    * logical index order: X, Y, stokes, x, y, cube
    */
   static layout
   dimensions(const CFArray& cf) {
+    auto extents = cf.extents(0);
     std::array<int, 6> dims{
-      static_cast<int>(cf.extent(0) / cf.oversampling()),
-      static_cast<int>(cf.extent(1) / cf.oversampling()),
-      static_cast<int>(cf.extent(2)),
+      static_cast<int>(extents[0] / cf.oversampling()),
+      static_cast<int>(extents[1] / cf.oversampling()),
+      static_cast<int>(extents[2]),
       static_cast<int>(cf.oversampling()),
       static_cast<int>(cf.oversampling()),
-      static_cast<int>(cf.extent(3))
+      static_cast<int>(extents[3])
     };
     if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
       return
@@ -1538,27 +1539,29 @@ class HPG_EXPORT GridWeightViewArray final
 /** initialize CF array view from CFArray instance */
 template <Device D, typename CFH>
 static void
-init_cf_host(CFH& cf_h, const CFArray& cf) {
+init_cf_host(CFH& cf_h, const CFArray& cf, unsigned sp) {
   static_assert(
     K::SpaceAccessibility<
       typename DeviceT<D>::kokkos_device::memory_space,
       K::HostSpace>
     ::accessible);
 
+  auto extents = cf.extents(sp);
+  auto oversampling = cf.oversampling();
   K::parallel_for(
     "cf_init",
     K::MDRangePolicy<K::Rank<4>, typename DeviceT<D>::kokkos_device>(
       {0, 0, 0, 0},
-      {static_cast<int>(cf.extent(0)),
-       static_cast<int>(cf.extent(1)),
-       static_cast<int>(cf.extent(2)),
-       static_cast<int>(cf.extent(3))}),
+      {static_cast<int>(extents[0]),
+       static_cast<int>(extents[1]),
+       static_cast<int>(extents[2]),
+       static_cast<int>(extents[3])}),
     [&](int i, int j, int poln, int cube) {
-      auto X = i / cf.oversampling();
-      auto x = i % cf.oversampling();
-      auto Y = j / cf.oversampling();
-      auto y = j % cf.oversampling();
-      cf_h(X, Y, poln, x, y, cube) = cf(i, j, poln, cube);
+      auto X = i / oversampling;
+      auto x = i % oversampling;
+      auto Y = j / oversampling;
+      auto y = j % oversampling;
+      cf_h(X, Y, poln, x, y, cube) = cf(i, j, poln, cube, sp);
     });
 }
 
@@ -1709,13 +1712,13 @@ public:
   }
 
   std::optional<Error>
-  set_convolution_function(Device host_device, CFArray&& cf_array)
-    override {
+  set_convolution_function(Device host_device, CFArray&& cf_array) override {
 
-    if (cf_array.extent(2) != m_grid_size[2])
+    auto extents = cf_array.extents(0);
+    if (extents[2] != m_grid_size[2])
       return Error("Unequal size of Stokes dimension in grid and CF");
-    if (cf_array.extent(0) > m_grid_size[0] * cf_array.oversampling()
-        || cf_array.extent(1) > m_grid_size[1] * cf_array.oversampling())
+    if (extents[0] > m_grid_size[0] * cf_array.oversampling()
+        || extents[1] > m_grid_size[1] * cf_array.oversampling())
       return Error("CF support size exceeds grid size");
 
     cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
@@ -1745,7 +1748,7 @@ public:
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial: {
       cf_h = K::create_mirror_view(cf_init);
-      init_cf_host<Device::Serial>(cf_h, cf_array);
+      init_cf_host<Device::Serial>(cf_h, cf_array, 0);
       K::deep_copy(exec.space, cf_init, cf_h);
       break;
     }
@@ -1753,7 +1756,7 @@ public:
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP: {
       cf_h = K::create_mirror_view(cf_init);
-      init_cf_host<Device::OpenMP>(cf_h, cf_array);
+      init_cf_host<Device::OpenMP>(cf_h, cf_array, 0);
       K::deep_copy(exec.space, cf_init, cf_h);
       break;
     }
