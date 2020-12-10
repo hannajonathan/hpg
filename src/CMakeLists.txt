@@ -8,6 +8,8 @@ set(Hpg_API 11 CACHE STRING "HPG API C++ standard")
 option(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   "Enable experimental kernel versions" OFF)
 mark_as_advanced(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
+set(Hpg_MAX_NUM_CF_SUPPORTS
+  100 CACHE STRING "Maximum number of CF support sizes")
 
 # validate value of Hpg_API
 #
@@ -15,7 +17,8 @@ set(HPG_API_OPTIONS 11 17)
 set_property(CACHE Hpg_API PROPERTY STRINGS HPG_API_OPTIONS)
 list(FIND HPG_API_OPTIONS ${Hpg_API} VALID_HPG_API)
 if(VALID_HPG_API LESS 0)
-  message(FATAL_ERROR "Invalid Hpg_API; supported options are ${HPG_API_OPTIONS}")
+  message(FATAL_ERROR
+    "Invalid Hpg_API; supported options are ${HPG_API_OPTIONS}")
 endif()
 
 set(HAVE_SERIAL -1)
@@ -106,7 +109,8 @@ set(hpg_PUBLIC_HEADERS
 set_target_properties(hpg PROPERTIES
   VERSION 0.0.1
   SOVERSION 0
-  PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}")
+  PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}"
+  COMPILE_DEFINITIONS HPG_MAX_NUM_CF_SUPPORTS=${Hpg_MAX_NUM_CF_SUPPORTS})
 target_link_libraries(hpg PRIVATE Kokkos::kokkoscore)
 target_include_directories(hpg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
