@@ -76,7 +76,7 @@ init_visibilities(
   Generator& gen,
   std::vector<std::complex<hpg::visibility_fp>>& vis,
   std::vector<unsigned>& grid_cubes,
-  std::vector<unsigned>& cf_cubes,
+  std::vector<hpg::vis_cf_cube_t>& cf_cubes,
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
   std::vector<hpg::vis_phase_fp>& phases,
@@ -117,7 +117,7 @@ init_visibilities(
   for (auto i = 0; i < num_vis; ++i) {
     vis.emplace_back(dist_vis(gen), dist_vis(gen));
     grid_cubes.push_back(dist_gcube(gen));
-    cf_cubes.push_back(dist_cfcube(gen));
+    cf_cubes.push_back({0, dist_cfcube(gen)});
     weights.push_back(dist_weight(gen));
     frequencies.push_back(freq);
     phases.emplace_back(0.0);
@@ -146,7 +146,7 @@ run_tests(
   const MyCFArray& cf,
   std::vector<std::complex<hpg::visibility_fp>>& vis,
   std::vector<unsigned>& grid_cubes,
-  std::vector<unsigned>& cf_cubes,
+  std::vector<hpg::vis_cf_cube_t>& cf_cubes,
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
   std::vector<hpg::vis_phase_fp>& phases,
@@ -230,7 +230,7 @@ dump_grids(
   const MyCFArray& cf,
   std::vector<std::complex<hpg::visibility_fp>>& vis,
   std::vector<unsigned>& grid_cubes,
-  std::vector<unsigned>& cf_cubes,
+  std::vector<hpg::vis_cf_cube_t>& cf_cubes,
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
   std::vector<hpg::vis_phase_fp>& phases,
@@ -291,7 +291,7 @@ main(int argc, char* argv[]) {
 
   std::vector<std::complex<hpg::visibility_fp>> vis;
   std::vector<unsigned> grid_cubes;
-  std::vector<unsigned> cf_cubes;
+  std::vector<hpg::vis_cf_cube_t> cf_cubes;
   std::vector<hpg::vis_weight_fp> weights;
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;

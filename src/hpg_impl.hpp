@@ -42,6 +42,9 @@ using cf_t = K::complex<cf_fp>;
 /** gridded value type */
 using gv_t = K::complex<grid_value_fp>;
 
+/** portable CF index type */
+using cf_index_t = K::pair<unsigned, unsigned>;
+
 /** visibility data plus metadata for gridding */
 struct Visibility {
 
@@ -50,14 +53,12 @@ struct Visibility {
   Visibility(
     const vis_t& value_, /**< visibility value */
     unsigned grid_cube_, /**< grid cube index */
-    unsigned cf_cube_, /**< cf cube index */
     vis_weight_fp weight_, /**< visibility weight */
     vis_frequency_fp freq_, /**< frequency */
     vis_phase_fp d_phase_, /**< phase angle */
     const vis_uvw_t& uvw_ /** < uvw coordinates */)
     : value(value_)
     , grid_cube(grid_cube_)
-    , cf_cube(cf_cube_)
     , weight(weight_)
     , freq(freq_)
     , d_phase(d_phase_) {
@@ -78,7 +79,6 @@ struct Visibility {
 
   vis_t value;
   int grid_cube;
-  int cf_cube;
   vis_weight_fp weight;
   vis_frequency_fp freq;
   vis_phase_fp d_phase;
@@ -367,7 +367,6 @@ struct GridVis final {
   int minor[2]; /**< minor grid coordinate */
   vis_t value; /**< visibility value */
   int grid_cube; /**< grid cube index */
-  int cf_cube; /**< cf cube index */
   vis_weight_fp weight; /**< visibility weight */
   cf_fp cf_im_factor; /**< weight conjugation factor */
 
@@ -380,7 +379,6 @@ struct GridVis final {
     const K::Array<int, 2>& cf_radius,
     const K::Array<grid_scale_fp, 2>& fine_scale)
     : grid_cube(vis.grid_cube)
-    , cf_cube(vis.cf_cube)
     , weight(vis.weight) {
 
     static const vis_frequency_fp c = 299792458.0;
@@ -585,11 +583,13 @@ struct HPG_EXPORT VisibilityGridder final {
   static void
   kernel(
     execution_space exec,
-    const const_cf_view<cf_layout, memory_space>& cf,
+    const K::Array<
+      const_cf_view<cf_layout, memory_space>,
+      HPG_MAX_NUM_CF_SUPPORTS>& cfs,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
     const K::View<const unsigned*, memory_space>& grid_cubes,
-    const K::View<const unsigned*, memory_space>& cf_cubes,
+    const K::View<const cf_index_t*, memory_space>& cf_indexes,
     const K::View<const vis_weight_fp*, memory_space>& vis_weights,
     const K::View<const vis_frequency_fp*, memory_space>& frequencies,
     const K::View<const vis_phase_fp*, memory_space>& phases,
@@ -597,14 +597,12 @@ struct HPG_EXPORT VisibilityGridder final {
     const std::array<grid_scale_fp, 2>& grid_scale,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
-    weights) {
+      weights) {
 
-    const K::Array<int, 2>
-      cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
     const K::Array<int, 2>
       grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
     const K::Array<int, 2>
-      oversampling{cf.extent_int(3), cf.extent_int(4)};
+      oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
     const K::Array<grid_scale_fp, 2> fine_scale{
       grid_scale[0] * oversampling[0],
       grid_scale[1] * oversampling[1]};
@@ -620,11 +618,18 @@ struct HPG_EXPORT VisibilityGridder final {
       .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size())),
       KOKKOS_LAMBDA(const member_type& team_member) {
         auto i = team_member.league_rank();
+
+        const unsigned& cf_supp = cf_indexes(i).first;
+        const unsigned& cf_cube = cf_indexes(i).second;
+        const auto& cf = cfs[cf_supp];
+
+        const K::Array<int, 2>
+          cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
+
         GridVis<execution_space> vis(
           Visibility(
             visibilities(i),
             grid_cubes(i),
-            cf_cubes(i),
             vis_weights(i),
             frequencies(i),
             phases(i),
@@ -644,7 +649,7 @@ struct HPG_EXPORT VisibilityGridder final {
           // accumulate weights in scratch memory for this visibility
           scratch_wgts_view cfw(team_member.team_scratch(0));
           K::parallel_for(
-            K::TeamVectorRange(team_member, cf.extent_int(2)),
+            K::TeamVectorRange(team_member, N_S),
             [=](const int S) {
               cfw(0).wgts[S] = 0;
             });
@@ -657,8 +662,7 @@ struct HPG_EXPORT VisibilityGridder final {
               for (int S = 0; S < N_S; ++S){
                 /* loop over majorY */
                 for (int Y = 0; Y < N_Y; ++Y) {
-                  cf_t cfv =
-                    cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
+                  cf_t cfv = cf(X, Y, S, vis.minor[0], vis.minor[1], cf_cube);
                   cfv.imag() *= vis.cf_im_factor;
                   pseudo_atomic_add<execution_space>(
                     grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
@@ -695,11 +699,13 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
   static void
   kernel(
     execution_space exec,
-    const const_cf_view<cf_layout, memory_space>& cf,
+    const K::Array<
+      const_cf_view<cf_layout, memory_space>,
+      HPG_MAX_NUM_CF_SUPPORTS>& cfs,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
     const K::View<const unsigned*, memory_space>& grid_cubes,
-    const K::View<const unsigned*, memory_space>& cf_cubes,
+    const K::View<const cf_index_t*, memory_space>& cf_indexes,
     const K::View<const vis_weight_fp*, memory_space>& vis_weights,
     const K::View<const vis_frequency_fp*, memory_space>& frequencies,
     const K::View<const vis_phase_fp*, memory_space>& phases,
@@ -707,14 +713,12 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
     const std::array<grid_scale_fp, 2>& grid_scale,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
-    weights) {
+      weights) {
 
-    const K::Array<int, 2>
-      cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
     const K::Array<int, 2>
       grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
     const K::Array<int, 2>
-      oversampling{cf.extent_int(3), cf.extent_int(4)};
+      oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
     const K::Array<grid_scale_fp, 2> fine_scale{
       grid_scale[0] * oversampling[0],
       grid_scale[1] * oversampling[1]};
@@ -730,11 +734,18 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
       .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size())),
       KOKKOS_LAMBDA(const member_type& team_member) {
         auto i = team_member.league_rank();
+
+        const unsigned& cf_supp = cf_indexes(i).first;
+        const unsigned& cf_cube = cf_indexes(i).second;
+        const auto& cf = cfs[cf_supp];
+
+        const K::Array<int, 2>
+          cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
+
         GridVis<execution_space> vis(
           Visibility(
             visibilities(i),
             grid_cubes(i),
-            cf_cubes(i),
             vis_weights(i),
             frequencies(i),
             phases(i),
@@ -750,7 +761,7 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
         // accumulate weights in scratch memory for this visibility
         scratch_wgts_view cfw(team_member.team_scratch(0));
         K::parallel_for(
-          K::TeamVectorRange(team_member, cf.extent_int(2)),
+          K::TeamVectorRange(team_member, N_S),
           [=](const int S) {
             cfw(0).wgts[S] = 0;
           });
@@ -763,8 +774,7 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
             for (int S = 0; S < N_S; ++S){
               /* loop over majorY */
               for (int Y = 0; Y < N_Y; ++Y) {
-                cf_t cfv =
-                  cf(X, Y, S, vis.minor[0], vis.minor[1], vis.cf_cube);
+                cf_t cfv = cf(X, Y, S, vis.minor[0], vis.minor[1], cf_cube);
                 cfv.imag() *= vis.cf_im_factor;
                 pseudo_atomic_add<execution_space>(
                   grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
@@ -1410,7 +1420,7 @@ struct State {
       batch_size
       * (sizeof(Kokkos::complex<visibility_fp>) // visibilities
          + sizeof(unsigned)                     // visibility_grid_cubes
-         + sizeof(unsigned)                     // visibility_cf_cubes
+         + sizeof(vis_cf_cube_t)                // visibility_cf_cubes
          + sizeof(vis_weight_fp)                // visibility_weights
          + sizeof(vis_frequency_fp)             // visibility_frequencies
          + sizeof(vis_phase_fp)                 // visibility_phases
@@ -1445,7 +1455,7 @@ struct State {
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
     std::vector<vis_weight_fp>&& visibility_weights,
     std::vector<vis_frequency_fp>&& visibility_frequencies,
     std::vector<vis_phase_fp>&& visibility_phases,
@@ -1597,7 +1607,7 @@ struct ExecSpace {
   K::Array<cfh_view, HPG_MAX_NUM_CF_SUPPORTS> cf_h;
   K::View<vis_t*, memory_space> visibilities;
   K::View<unsigned*, memory_space> grid_cubes;
-  K::View<unsigned*, memory_space> cf_cubes;
+  K::View<cf_index_t*, memory_space> cf_cubes;
   K::View<vis_weight_fp*, memory_space> weights;
   K::View<vis_frequency_fp*, memory_space> frequencies;
   K::View<vis_phase_fp*, memory_space> phases;
@@ -1715,18 +1725,18 @@ public:
   std::optional<Error>
   set_convolution_function(Device host_device, CFArray&& cf_array) override {
 
-    std::optional<Error> result;
-
-    for (unsigned supp = 0; !result && supp < cf_array.num_supports(); ++supp) {
+    for (unsigned supp = 0; supp < cf_array.num_supports(); ++supp) {
       auto extents = cf_array.extents(supp);
       if (extents[2] != m_grid_size[2])
-        result = Error("Unequal size of Stokes dimension in grid and CF");
+        return Error("Unequal size of Stokes dimension in grid and CF");
       if (extents[0] > m_grid_size[0] * cf_array.oversampling()
           || extents[1] > m_grid_size[1] * cf_array.oversampling())
-        result = Error("CF support size exceeds grid size");
-      if (result)
-        continue;
+        return Error("CF support size exceeds grid size");
+    }
 
+    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+
+    for (unsigned supp = 0; supp < cf_array.num_supports(); ++supp) {
       cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
         K::ViewAllocateWithoutInitializing("cf"),
         CFLayout<D>::dimensions(cf_array, supp));
@@ -1746,8 +1756,6 @@ public:
                 << " " << cf_init.stride(5)
                 << std::endl;
 #endif // NDEBUG
-
-      auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
 
       typename decltype(cf_init)::HostMirror cf_h;
       switch (host_device) {
@@ -1774,7 +1782,17 @@ public:
       exec.cf_d[supp] = cf_init;
       exec.cf_h[supp] = cf_h;
     }
-    return result;
+    {
+      cf_view<typename CFLayout<D>::layout, memory_space> cf0;
+      typename decltype(cf0)::HostMirror cf0h;
+      for (unsigned supp = cf_array.num_supports();
+           supp < HPG_MAX_NUM_CF_SUPPORTS;
+           ++supp) {
+        exec.cf_d[supp] = cf0;
+        exec.cf_h[supp] = cf0h;
+      }
+    }
+    return std::nullopt;
   }
 
   void
@@ -1783,7 +1801,7 @@ public:
     size_t offset,
     const vector_data<std::complex<visibility_fp>>& visibilities,
     const vector_data<unsigned>& visibility_grid_cubes,
-    const vector_data<unsigned>& visibility_cf_cubes,
+    const vector_data<vis_cf_cube_t>& visibility_cf_cubes,
     const vector_data<vis_weight_fp>& visibility_weights,
     const vector_data<vis_frequency_fp>& visibility_frequencies,
     const vector_data<vis_phase_fp>& visibility_phases,
@@ -1816,7 +1834,7 @@ public:
 
     exec_copy.vis_state.emplace_back(visibility_cf_cubes);
     auto [cf_cubes_h, cf_cubes] =
-      StateT<D>::copy_to_device_view<unsigned>(
+      StateT<D>::copy_to_device_view<cf_index_t>(
         exec_copy.cf_cubes,
         visibility_cf_cubes,
         offset,
@@ -1867,7 +1885,7 @@ public:
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 0>::kernel(
       exec_compute.space,
-      exec_compute.cf_d[0],
+      exec_compute.cf_d,
       len,
       vis,
       grid_cubes,
@@ -1888,7 +1906,7 @@ public:
     size_t offset,
     const vector_data<std::complex<visibility_fp>>& visibilities,
     const vector_data<unsigned>& visibility_grid_cubes,
-    const vector_data<unsigned>& visibility_cf_cubes,
+    const vector_data<vis_cf_cube_t>& visibility_cf_cubes,
     const vector_data<vis_weight_fp>& visibility_weights,
     const vector_data<vis_frequency_fp>& visibility_frequencies,
     const vector_data<vis_phase_fp>& visibility_phases,
@@ -1921,7 +1939,7 @@ public:
 
     exec_copy.vis_state.emplace_back(visibility_cf_cubes);
     auto [cf_cubes_h, cf_cubes] =
-      StateT<D>::copy_to_device_view<unsigned>(
+      StateT<D>::copy_to_device_view<cf_index_t>(
         exec_copy.cf_cubes,
         visibility_cf_cubes,
         offset,
@@ -1972,7 +1990,7 @@ public:
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 1>::kernel(
       exec_compute.space,
-      exec_compute.cf_d[0],
+      exec_compute.cf_d,
       len,
       vis,
       grid_cubes,
@@ -1992,7 +2010,7 @@ public:
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<unsigned>&& visibility_cf_cubes,
+    std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
     std::vector<vis_weight_fp>&& visibility_weights,
     std::vector<vis_frequency_fp>&& visibility_frequencies,
     std::vector<vis_phase_fp>&& visibility_phases,
@@ -2005,7 +2023,7 @@ public:
       std::make_shared<std::vector<unsigned>>(
         std::move(visibility_grid_cubes));
     const auto cf_cubes =
-      std::make_shared<std::vector<unsigned>>(
+      std::make_shared<std::vector<vis_cf_cube_t>>(
         std::move(visibility_cf_cubes));
     const auto weights =
       std::make_shared<std::vector<vis_weight_fp>>(

@@ -458,7 +458,7 @@ struct InputData {
 
   std::vector<std::complex<hpg::visibility_fp>> visibilities;
   std::vector<unsigned> grid_cubes;
-  std::vector<unsigned> cf_cubes;
+  std::vector<hpg::vis_cf_cube_t> cf_cubes;
   std::vector<hpg::vis_weight_fp> weights;
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
@@ -534,7 +534,7 @@ create_input_data(
           rstate.frand(-1, 1),
           rstate.frand(-1, 1));
       *(grid_cubes_p +i) = rstate.urand(0, gsize[3]);
-      *(cf_cubes_p + i) = rstate.urand(0, cfsize[3]);
+      *(cf_cubes_p + i) = {0, rstate.urand(0, cfsize[3])};
       *(weights_p + i) = rstate.frand(0, 1);
       *(frequencies_p + i) = freq;
       *(phases_p + i) = rstate.frand(-3.14, 3.14);
