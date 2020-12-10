@@ -289,8 +289,8 @@ struct CFLayout {
    * logical index order: X, Y, stokes, x, y, cube
    */
   static layout
-  dimensions(const CFArray& cf) {
-    auto extents = cf.extents(0);
+  dimensions(const CFArray& cf, unsigned supp) {
+    auto extents = cf.extents(supp);
     std::array<int, 6> dims{
       static_cast<int>(extents[0] / cf.oversampling()),
       static_cast<int>(extents[1] / cf.oversampling()),
@@ -1715,60 +1715,66 @@ public:
   std::optional<Error>
   set_convolution_function(Device host_device, CFArray&& cf_array) override {
 
-    auto extents = cf_array.extents(0);
-    if (extents[2] != m_grid_size[2])
-      return Error("Unequal size of Stokes dimension in grid and CF");
-    if (extents[0] > m_grid_size[0] * cf_array.oversampling()
-        || extents[1] > m_grid_size[1] * cf_array.oversampling())
-      return Error("CF support size exceeds grid size");
+    std::optional<Error> result;
 
-    cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
-      K::ViewAllocateWithoutInitializing("cf"),
-      CFLayout<D>::dimensions(cf_array));
+    for (unsigned supp = 0; !result && supp < cf_array.num_supports(); ++supp) {
+      auto extents = cf_array.extents(supp);
+      if (extents[2] != m_grid_size[2])
+        result = Error("Unequal size of Stokes dimension in grid and CF");
+      if (extents[0] > m_grid_size[0] * cf_array.oversampling()
+          || extents[1] > m_grid_size[1] * cf_array.oversampling())
+        result = Error("CF support size exceeds grid size");
+      if (result)
+        continue;
+
+      cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
+        K::ViewAllocateWithoutInitializing("cf"),
+        CFLayout<D>::dimensions(cf_array, supp));
 #ifndef NDEBUG
-    std::cout << "alloc cf sz " << cf_init.extent(0)
-              << " " << cf_init.extent(1)
-              << " " << cf_init.extent(2)
-              << " " << cf_init.extent(3)
-              << " " << cf_init.extent(4)
-              << " " << cf_init.extent(5)
-              << std::endl;
-    std::cout << "alloc cf str " << cf_init.stride(0)
-              << " " << cf_init.stride(1)
-              << " " << cf_init.stride(2)
-              << " " << cf_init.stride(3)
-              << " " << cf_init.stride(4)
-              << " " << cf_init.stride(5)
-              << std::endl;
+      std::cout << "alloc cf sz " << cf_init.extent(0)
+                << " " << cf_init.extent(1)
+                << " " << cf_init.extent(2)
+                << " " << cf_init.extent(3)
+                << " " << cf_init.extent(4)
+                << " " << cf_init.extent(5)
+                << std::endl;
+      std::cout << "alloc cf str " << cf_init.stride(0)
+                << " " << cf_init.stride(1)
+                << " " << cf_init.stride(2)
+                << " " << cf_init.stride(3)
+                << " " << cf_init.stride(4)
+                << " " << cf_init.stride(5)
+                << std::endl;
 #endif // NDEBUG
 
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+      auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
 
-    typename decltype(cf_init)::HostMirror cf_h;
-    switch (host_device) {
+      typename decltype(cf_init)::HostMirror cf_h;
+      switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
-    case Device::Serial: {
-      cf_h = K::create_mirror_view(cf_init);
-      init_cf_host<Device::Serial>(cf_h, cf_array, 0);
-      K::deep_copy(exec.space, cf_init, cf_h);
-      break;
-    }
+      case Device::Serial: {
+        cf_h = K::create_mirror_view(cf_init);
+        init_cf_host<Device::Serial>(cf_h, cf_array, supp);
+        K::deep_copy(exec.space, cf_init, cf_h);
+        break;
+      }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
-    case Device::OpenMP: {
-      cf_h = K::create_mirror_view(cf_init);
-      init_cf_host<Device::OpenMP>(cf_h, cf_array, 0);
-      K::deep_copy(exec.space, cf_init, cf_h);
-      break;
-    }
+      case Device::OpenMP: {
+        cf_h = K::create_mirror_view(cf_init);
+        init_cf_host<Device::OpenMP>(cf_h, cf_array, supp);
+        K::deep_copy(exec.space, cf_init, cf_h);
+        break;
+      }
 #endif // HPG_ENABLE_SERIAL
-    default:
-      assert(false);
-      break;
+      default:
+        assert(false);
+        break;
+      }
+      exec.cf_d[supp] = cf_init;
+      exec.cf_h[supp] = cf_h;
     }
-    exec.cf_d[0] = cf_init;
-    exec.cf_h[0] = cf_h;
-    return std::nullopt;
+    return result;
   }
 
   void
