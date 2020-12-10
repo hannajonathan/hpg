@@ -216,10 +216,12 @@ using const_weight_view = K::View<const grid_value_fp**, Layout, memory_space>;
 
 /** View type for CF values */
 template <typename Layout, typename memory_space>
-using cf_view = K::View<cf_t******, Layout, memory_space>;
+using cf_view =
+  K::View<cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
 
 template <typename Layout, typename memory_space>
-using const_cf_view = K::View<const cf_t******, Layout, memory_space>;
+using const_cf_view =
+  K::View<const cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
 
 /** View type for Visibility values */
 template <typename memory_space>
@@ -584,7 +586,7 @@ struct HPG_EXPORT VisibilityGridder final {
   kernel(
     execution_space exec,
     const K::Array<
-      const_cf_view<cf_layout, memory_space>,
+      cf_view<cf_layout, memory_space>,
       HPG_MAX_NUM_CF_SUPPORTS>& cfs,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
@@ -700,7 +702,7 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
   kernel(
     execution_space exec,
     const K::Array<
-      const_cf_view<cf_layout, memory_space>,
+      cf_view<cf_layout, memory_space>,
       HPG_MAX_NUM_CF_SUPPORTS>& cfs,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
@@ -1595,14 +1597,15 @@ operator<<(std::ostream& str, const StreamPhase& ph) {
 }
 
 template <Device D>
-struct ExecSpace {
+struct ExecSpace final {
   using kokkos_device = typename DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
-  using cfd_view = const_cf_view<typename CFLayout<D>::layout, memory_space>;
+  using cfd_view = cf_view<typename CFLayout<D>::layout, memory_space>;
   using cfh_view = typename cfd_view::HostMirror;
 
   execution_space space;
+  K::View<cf_t*, memory_space> cf_pool;
   K::Array<cfd_view, HPG_MAX_NUM_CF_SUPPORTS> cf_d;
   K::Array<cfh_view, HPG_MAX_NUM_CF_SUPPORTS> cf_h;
   K::View<vis_t*, memory_space> visibilities;
@@ -1616,6 +1619,46 @@ struct ExecSpace {
 
   ExecSpace(execution_space sp)
     : space(sp) {}
+
+  static size_t
+  cf_size(const CFArray& cf, unsigned supp) {
+    auto layout = CFLayout<D>::dimensions(cf, supp);
+    // TODO: it would be best to use the following to compute
+    // allocation size, but it is not implemented in Kokkos
+    // 'auto alloc_sz = cfd_view::required_allocation_size(layout)'
+    auto alloc_sz =
+      cf_view<typename DeviceT<D>::kokkos_device::array_layout, memory_space>
+      ::required_allocation_size(
+        layout.dimension[0],
+        layout.dimension[1],
+        layout.dimension[2],
+        layout.dimension[3],
+        layout.dimension[4],
+        layout.dimension[5]);
+    return ((alloc_sz + (sizeof(cf_t) - 1)) / sizeof(cf_t));
+  }
+
+  static size_t
+  cf_pool_size(const CFArray& cf) {
+    size_t result = 0;
+    for (unsigned supp = 0; supp < cf.num_supports(); ++supp)
+      result += cf_size(cf, supp);
+    return result;
+  }
+
+  void
+  prepare_cf_pool(const CFArray& cf) {
+    for (size_t i = 0; i < cf_h.size(); ++i) {
+      cf_h[i] = cfh_view();
+      cf_d[i] = cfd_view();
+    }
+    auto min_pool = cf_pool_size(cf);
+    if (cf_pool.extent(0) < min_pool)
+      // don't resize, since the pool may be shared by different streams,
+      // instead allocate a new pool
+      cf_pool =
+        decltype(cf_pool)(K::ViewAllocateWithoutInitializing("cf"), min_pool);
+  }
 };
 
 /** Kokkos state implementation for a device type */
@@ -1735,11 +1778,14 @@ public:
     }
 
     auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+    exec.prepare_cf_pool(cf_array);
 
+    size_t offset = 0;
     for (unsigned supp = 0; supp < cf_array.num_supports(); ++supp) {
-      cf_view<typename CFLayout<D>::layout, memory_space> cf_init(
-        K::ViewAllocateWithoutInitializing("cf"),
-        CFLayout<D>::dimensions(cf_array, supp));
+      cf_view<typename CFLayout<D>::layout, memory_space>
+        cf_init(
+          exec.cf_pool.data() + offset,
+          CFLayout<D>::dimensions(cf_array, supp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
                 << " " << cf_init.extent(1)
@@ -1781,16 +1827,7 @@ public:
       }
       exec.cf_d[supp] = cf_init;
       exec.cf_h[supp] = cf_h;
-    }
-    {
-      cf_view<typename CFLayout<D>::layout, memory_space> cf0;
-      typename decltype(cf0)::HostMirror cf0h;
-      for (unsigned supp = cf_array.num_supports();
-           supp < HPG_MAX_NUM_CF_SUPPORTS;
-           ++supp) {
-        exec.cf_d[supp] = cf0;
-        exec.cf_h[supp] = cf0h;
-      }
+      offset += exec.cf_size(cf_array, supp);
     }
     return std::nullopt;
   }
