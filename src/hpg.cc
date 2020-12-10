@@ -85,7 +85,7 @@ struct Impl::GridderState {
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+    std::vector<vis_cf_index_t>&& visibility_cf_indexes,
     std::vector<vis_weight_fp>&& visibility_weights,
     std::vector<vis_frequency_fp>&& visibility_frequencies,
     std::vector<vis_phase_fp>&& visibility_phases,
@@ -93,7 +93,7 @@ struct Impl::GridderState {
 
     auto len = std::move(visibilities).size();
     if (std::move(visibility_grid_cubes).size() < len
-        || std::move(visibility_cf_cubes).size() < len
+        || std::move(visibility_cf_indexes).size() < len
         || std::move(visibility_weights).size() < len
         || std::move(visibility_frequencies).size() < len
         || std::move(visibility_phases).size() < len
@@ -106,7 +106,7 @@ struct Impl::GridderState {
         host_device,
         std::move(visibilities),
         std::move(visibility_grid_cubes),
-        std::move(visibility_cf_cubes),
+        std::move(visibility_cf_indexes),
         std::move(visibility_weights),
         std::move(visibility_frequencies),
         std::move(visibility_phases),
@@ -374,7 +374,7 @@ GridderState::grid_visibilities(
   Device host_device,
   std::vector<std::complex<visibility_fp>>&& visibilities,
   std::vector<unsigned>&& visibility_grid_cubes,
-  std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+  std::vector<vis_cf_index_t>&& visibility_cf_indexes,
   std::vector<vis_weight_fp>&& visibility_weights,
   std::vector<vis_frequency_fp>&& visibility_frequencies,
   std::vector<vis_phase_fp>&& visibility_phases,
@@ -387,7 +387,7 @@ GridderState::grid_visibilities(
         host_device,
         std::move(visibilities),
         std::move(visibility_grid_cubes),
-        std::move(visibility_cf_cubes),
+        std::move(visibility_cf_indexes),
         std::move(visibility_weights),
         std::move(visibility_frequencies),
         std::move(visibility_phases),
@@ -399,7 +399,7 @@ GridderState::grid_visibilities(
   Device host_device,
   std::vector<std::complex<visibility_fp>>&& visibilities,
   std::vector<unsigned>&& visibility_grid_cubes,
-  std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+  std::vector<vis_cf_index_t>&& visibility_cf_indexes,
   std::vector<vis_weight_fp>&& visibility_weights,
   std::vector<vis_frequency_fp>&& visibility_frequencies,
   std::vector<vis_phase_fp>&& visibility_phases,
@@ -412,7 +412,7 @@ GridderState::grid_visibilities(
         std::move(host_device),
         std::move(visibilities),
         std::move(visibility_grid_cubes),
-        std::move(visibility_cf_cubes),
+        std::move(visibility_cf_indexes),
         std::move(visibility_weights),
         std::move(visibility_frequencies),
         std::move(visibility_phases),
@@ -657,7 +657,7 @@ Gridder::grid_visibilities(
   Device host_device,
   std::vector<std::complex<visibility_fp>>&& visibilities,
   std::vector<unsigned>&& visibility_grid_cubes,
-  std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+  std::vector<vis_cf_index_t>&& visibility_cf_indexes,
   std::vector<vis_weight_fp>&& visibility_weights,
   std::vector<vis_frequency_fp>&& visibility_frequencies,
   std::vector<vis_phase_fp>&& visibility_phases,
@@ -670,7 +670,7 @@ Gridder::grid_visibilities(
       host_device,
       std::move(visibilities),
       std::move(visibility_grid_cubes),
-      std::move(visibility_cf_cubes),
+      std::move(visibility_cf_indexes),
       std::move(visibility_weights),
       std::move(visibility_frequencies),
       std::move(visibility_phases),
@@ -687,7 +687,7 @@ Gridder::grid_visibilities(
   Device host_device,
   std::vector<std::complex<visibility_fp>>&& visibilities,
   std::vector<unsigned>&& visibility_grid_cubes,
-  std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+  std::vector<vis_cf_index_t>&& visibility_cf_indexes,
   std::vector<vis_weight_fp>&& visibility_weights,
   std::vector<vis_frequency_fp>&& visibility_frequencies,
   std::vector<vis_phase_fp>&& visibility_phases,
@@ -700,7 +700,7 @@ Gridder::grid_visibilities(
       host_device,
       std::move(visibilities),
       std::move(visibility_grid_cubes),
-      std::move(visibility_cf_cubes),
+      std::move(visibility_cf_indexes),
       std::move(visibility_weights),
       std::move(visibility_frequencies),
       std::move(visibility_phases),

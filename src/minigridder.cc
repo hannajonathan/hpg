@@ -458,7 +458,7 @@ struct InputData {
 
   std::vector<std::complex<hpg::visibility_fp>> visibilities;
   std::vector<unsigned> grid_cubes;
-  std::vector<hpg::vis_cf_cube_t> cf_cubes;
+  std::vector<hpg::vis_cf_index_t> cf_indexes;
   std::vector<hpg::vis_weight_fp> weights;
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
@@ -492,7 +492,7 @@ create_input_data(
 
   result.visibilities.resize(num_visibilities);
   result.grid_cubes.resize(num_visibilities);
-  result.cf_cubes.resize(num_visibilities);
+  result.cf_indexes.resize(num_visibilities);
   result.weights.resize(num_visibilities);
   result.frequencies.resize(num_visibilities);
   result.phases.resize(num_visibilities);
@@ -500,7 +500,7 @@ create_input_data(
 
   auto visibilities_p = result.visibilities.data();
   auto grid_cubes_p = result.grid_cubes.data();
-  auto cf_cubes_p = result.cf_cubes.data();
+  auto cf_indexes_p = result.cf_indexes.data();
   auto weights_p = result.weights.data();
   auto frequencies_p = result.frequencies.data();
   auto phases_p = result.phases.data();
@@ -534,7 +534,7 @@ create_input_data(
           rstate.frand(-1, 1),
           rstate.frand(-1, 1));
       *(grid_cubes_p +i) = rstate.urand(0, gsize[3]);
-      *(cf_cubes_p + i) = {0, rstate.urand(0, cfsize[3])};
+      *(cf_indexes_p + i) = {0, rstate.urand(0, cfsize[3])};
       *(weights_p + i) = rstate.frand(0, 1);
       *(frequencies_p + i) = freq;
       *(phases_p + i) = rstate.frand(-3.14, 3.14);
@@ -618,7 +618,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
               hpg::Device::OpenMP,
               std::move(id.visibilities),
               std::move(id.grid_cubes),
-              std::move(id.cf_cubes),
+              std::move(id.cf_indexes),
               std::move(id.weights),
               std::move(id.frequencies),
               std::move(id.phases),

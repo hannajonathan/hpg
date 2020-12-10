@@ -332,11 +332,11 @@ using vis_phase_fp = double;
 // vis_uvw_t can be any type that supports std::get<N>() for element access
 using vis_uvw_t = std::array<vis_uvw_fp, 3>;
 
-/** visibility CF cube index type
+/** visibility CF index type
  *
- * in terms of CFArray indexes, order is supp, cube
+ * in terms of full CFArray indexes, order is supp, cube
  */
-using vis_cf_cube_t = std::pair<unsigned, unsigned>;
+using vis_cf_index_t = std::pair<unsigned, unsigned>;
 
 namespace Impl {
 struct HPG_EXPORT State;
@@ -624,7 +624,7 @@ public:
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
    * @param visibility_grid_cubes visibility grid cube indexes
-   * @param visibility_cf_cubes visibility convolution function cube indexes
+   * @param visibility_cf_indexes visibility convolution function indexes
    * @param visibility_weights visibility weights
    * @param visibility_frequencies visibility frequencies
    * @param visibility_phases visibility phase differences
@@ -637,7 +637,7 @@ public:
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+    std::vector<vis_cf_index_t>&& visibility_cf_indexes,
     std::vector<vis_weight_fp>&& visibility_weights,
     std::vector<vis_frequency_fp>&& visibility_frequencies,
     std::vector<vis_phase_fp>&& visibility_phases,
@@ -657,7 +657,7 @@ public:
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
    * @param visibility_grid_cubes visibility grid cube indexes
-   * @param visibility_cf_cubes visibility convolution function cube indexes
+   * @param visibility_cf_indexes visibility convolution function indexes
    * @param visibility_weights visibility weights
    * @param visibility_frequencies visibility frequencies
    * @param visibility_phases visibility phase differences
@@ -670,7 +670,7 @@ public:
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+    std::vector<vis_cf_index_t>&& visibility_cf_indexes,
     std::vector<vis_weight_fp>&& visibility_weights,
     std::vector<vis_frequency_fp>&& visibility_frequencies,
     std::vector<vis_phase_fp>&& visibility_phases,
@@ -961,7 +961,7 @@ public:
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
    * @param visibility_grid_cubes visibility grid cube indexes
-   * @param visibility_cf_cubes visibility convolution function cube indexes
+   * @param visibility_cf_indexes visibility convolution function indexes
    * @param visibility_weights visibility weights
    * @param visibility_frequencies visibility frequencies
    * @param visibility_phases visibility phase differences
@@ -976,7 +976,7 @@ public:
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+    std::vector<vis_cf_index_t>&& visibility_cf_indexes,
     std::vector<vis_weight_fp>&& visibility_weights,
     std::vector<vis_frequency_fp>&& visibility_frequencies,
     std::vector<vis_phase_fp>&& visibility_phases,

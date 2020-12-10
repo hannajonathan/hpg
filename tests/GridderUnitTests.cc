@@ -97,7 +97,7 @@ init_visibilities(
   Generator& gen,
   std::vector<std::complex<hpg::visibility_fp>>& vis,
   std::vector<unsigned>& grid_cubes,
-  std::vector<hpg::vis_cf_cube_t>& cf_cubes,
+  std::vector<hpg::vis_cf_index_t>& cf_indexes,
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
   std::vector<hpg::vis_phase_fp>& phases,
@@ -107,8 +107,8 @@ init_visibilities(
   vis.reserve(num_vis);
   grid_cubes.clear();
   grid_cubes.reserve(num_vis);
-  cf_cubes.clear();
-  cf_cubes.reserve(num_vis);
+  cf_indexes.clear();
+  cf_indexes.reserve(num_vis);
   weights.clear();
   weights.reserve(num_vis);
   frequencies.clear();
@@ -137,7 +137,7 @@ init_visibilities(
   for (auto i = 0; i < num_vis; ++i) {
     vis.emplace_back(dist_vis(gen), dist_vis(gen));
     grid_cubes.push_back(dist_gcube(gen));
-    cf_cubes.push_back({0, dist_cfcube(gen)});
+    cf_indexes.push_back({0, dist_cfcube(gen)});
     weights.push_back(dist_weight(gen));
     frequencies.push_back(freq);
     phases.emplace_back(0.0);
@@ -353,7 +353,7 @@ TEST(Gridder, Reset) {
 
   std::vector<std::complex<hpg::visibility_fp>> vis;
   std::vector<unsigned> grid_cubes;
-  std::vector<hpg::vis_cf_cube_t> cf_cubes;
+  std::vector<hpg::vis_cf_index_t> cf_indexes;
   std::vector<hpg::vis_weight_fp> weights;
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
@@ -371,7 +371,7 @@ TEST(Gridder, Reset) {
       rng,
       vis,
       grid_cubes,
-      cf_cubes,
+      cf_indexes,
       weights,
       frequencies,
       phases,
@@ -380,7 +380,7 @@ TEST(Gridder, Reset) {
       default_host_device,
       std::move(vis),
       std::move(grid_cubes),
-      std::move(cf_cubes),
+      std::move(cf_indexes),
       std::move(weights),
       std::move(frequencies),
       std::move(phases),

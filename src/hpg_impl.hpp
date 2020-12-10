@@ -1420,7 +1420,7 @@ struct State {
       batch_size
       * (sizeof(Kokkos::complex<visibility_fp>) // visibilities
          + sizeof(unsigned)                     // visibility_grid_cubes
-         + sizeof(vis_cf_cube_t)                // visibility_cf_cubes
+         + sizeof(vis_cf_index_t)               // visibility_cf_indexes
          + sizeof(vis_weight_fp)                // visibility_weights
          + sizeof(vis_frequency_fp)             // visibility_frequencies
          + sizeof(vis_phase_fp)                 // visibility_phases
@@ -1455,7 +1455,7 @@ struct State {
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+    std::vector<vis_cf_index_t>&& visibility_cf_indexes,
     std::vector<vis_weight_fp>&& visibility_weights,
     std::vector<vis_frequency_fp>&& visibility_frequencies,
     std::vector<vis_phase_fp>&& visibility_phases,
@@ -1607,7 +1607,7 @@ struct ExecSpace {
   K::Array<cfh_view, HPG_MAX_NUM_CF_SUPPORTS> cf_h;
   K::View<vis_t*, memory_space> visibilities;
   K::View<unsigned*, memory_space> grid_cubes;
-  K::View<cf_index_t*, memory_space> cf_cubes;
+  K::View<cf_index_t*, memory_space> cf_indexes;
   K::View<vis_weight_fp*, memory_space> weights;
   K::View<vis_frequency_fp*, memory_space> frequencies;
   K::View<vis_phase_fp*, memory_space> phases;
@@ -1801,7 +1801,7 @@ public:
     size_t offset,
     const vector_data<std::complex<visibility_fp>>& visibilities,
     const vector_data<unsigned>& visibility_grid_cubes,
-    const vector_data<vis_cf_cube_t>& visibility_cf_cubes,
+    const vector_data<vis_cf_index_t>& visibility_cf_indexes,
     const vector_data<vis_weight_fp>& visibility_weights,
     const vector_data<vis_frequency_fp>& visibility_frequencies,
     const vector_data<vis_phase_fp>& visibility_phases,
@@ -1832,15 +1832,15 @@ public:
         exec_copy.space);
     exec_copy.vis_state.push_back(grid_cubes_h);
 
-    exec_copy.vis_state.emplace_back(visibility_cf_cubes);
-    auto [cf_cubes_h, cf_cubes] =
+    exec_copy.vis_state.emplace_back(visibility_cf_indexes);
+    auto [cf_indexes_h, cf_indexes] =
       StateT<D>::copy_to_device_view<cf_index_t>(
-        exec_copy.cf_cubes,
-        visibility_cf_cubes,
+        exec_copy.cf_indexes,
+        visibility_cf_indexes,
         offset,
         len,
         exec_copy.space);
-    exec_copy.vis_state.push_back(cf_cubes_h);
+    exec_copy.vis_state.push_back(cf_indexes_h);
 
     exec_copy.vis_state.emplace_back(visibility_weights);
     auto [weights_h, weights] =
@@ -1889,7 +1889,7 @@ public:
       len,
       vis,
       grid_cubes,
-      cf_cubes,
+      cf_indexes,
       weights,
       frequencies,
       phases,
@@ -1906,7 +1906,7 @@ public:
     size_t offset,
     const vector_data<std::complex<visibility_fp>>& visibilities,
     const vector_data<unsigned>& visibility_grid_cubes,
-    const vector_data<vis_cf_cube_t>& visibility_cf_cubes,
+    const vector_data<vis_cf_index_t>& visibility_cf_indexes,
     const vector_data<vis_weight_fp>& visibility_weights,
     const vector_data<vis_frequency_fp>& visibility_frequencies,
     const vector_data<vis_phase_fp>& visibility_phases,
@@ -1937,15 +1937,15 @@ public:
         exec_copy.space);
     exec_copy.vis_state.push_back(grid_cubes_h);
 
-    exec_copy.vis_state.emplace_back(visibility_cf_cubes);
-    auto [cf_cubes_h, cf_cubes] =
+    exec_copy.vis_state.emplace_back(visibility_cf_indexes);
+    auto [cf_indexes_h, cf_indexes] =
       StateT<D>::copy_to_device_view<cf_index_t>(
-        exec_copy.cf_cubes,
-        visibility_cf_cubes,
+        exec_copy.cf_indexes,
+        visibility_cf_indexes,
         offset,
         len,
         exec_copy.space);
-    exec_copy.vis_state.push_back(cf_cubes_h);
+    exec_copy.vis_state.push_back(cf_indexes_h);
 
     exec_copy.vis_state.emplace_back(visibility_weights);
     auto [weights_h, weights] =
@@ -1994,7 +1994,7 @@ public:
       len,
       vis,
       grid_cubes,
-      cf_cubes,
+      cf_indexes,
       weights,
       frequencies,
       phases,
@@ -2010,7 +2010,7 @@ public:
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
     std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<vis_cf_cube_t>&& visibility_cf_cubes,
+    std::vector<vis_cf_index_t>&& visibility_cf_indexes,
     std::vector<vis_weight_fp>&& visibility_weights,
     std::vector<vis_frequency_fp>&& visibility_frequencies,
     std::vector<vis_phase_fp>&& visibility_phases,
@@ -2022,9 +2022,9 @@ public:
     const auto grid_cubes =
       std::make_shared<std::vector<unsigned>>(
         std::move(visibility_grid_cubes));
-    const auto cf_cubes =
-      std::make_shared<std::vector<vis_cf_cube_t>>(
-        std::move(visibility_cf_cubes));
+    const auto cf_indexes =
+      std::make_shared<std::vector<vis_cf_index_t>>(
+        std::move(visibility_cf_indexes));
     const auto weights =
       std::make_shared<std::vector<vis_weight_fp>>(
         std::move(visibility_weights));
@@ -2047,7 +2047,7 @@ public:
           i,
           vis,
           grid_cubes,
-          cf_cubes,
+          cf_indexes,
           weights,
           frequencies,
           phases,
@@ -2061,7 +2061,7 @@ public:
           i,
           vis,
           grid_cubes,
-          cf_cubes,
+          cf_indexes,
           weights,
           frequencies,
           phases,
@@ -2219,9 +2219,9 @@ private:
           decltype(esp.grid_cubes)(
             K::ViewAllocateWithoutInitializing("grid_cubes"),
             m_max_visibility_batch_size);
-        esp.cf_cubes =
-          decltype(esp.cf_cubes)(
-            K::ViewAllocateWithoutInitializing("cf_cubes"),
+        esp.cf_indexes =
+          decltype(esp.cf_indexes)(
+            K::ViewAllocateWithoutInitializing("cf_indexes"),
             m_max_visibility_batch_size);
         esp.weights =
           decltype(esp.weights)(
@@ -2248,7 +2248,7 @@ private:
         auto& st_esp = ost->m_exec_spaces[i];
         K::deep_copy(esp.space, esp.visibilities, st_esp.visibilities);
         K::deep_copy(esp.space, esp.grid_cubes, st_esp.grid_cubes);
-        K::deep_copy(esp.space, esp.cf_cubes, st_esp.cf_cubes);
+        K::deep_copy(esp.space, esp.cf_indexes, st_esp.cf_indexes);
         K::deep_copy(esp.space, esp.weights, st_esp.weights);
         K::deep_copy(esp.space, esp.frequencies, st_esp.frequencies);
         K::deep_copy(esp.space, esp.phases, st_esp.phases);
