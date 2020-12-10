@@ -117,7 +117,7 @@ init_visibilities(
   for (auto i = 0; i < num_vis; ++i) {
     vis.emplace_back(dist_vis(gen), dist_vis(gen));
     grid_cubes.push_back(dist_gcube(gen));
-    cf_indexes.push_back({0, dist_cfcube(gen)});
+    cf_indexes.push_back({dist_cfcube(gen), 0});
     weights.push_back(dist_weight(gen));
     frequencies.push_back(freq);
     phases.emplace_back(0.0);

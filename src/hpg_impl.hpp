@@ -621,8 +621,8 @@ struct HPG_EXPORT VisibilityGridder final {
       KOKKOS_LAMBDA(const member_type& team_member) {
         auto i = team_member.league_rank();
 
-        const unsigned& cf_supp = cf_indexes(i).first;
-        const unsigned& cf_cube = cf_indexes(i).second;
+        const unsigned& cf_cube = cf_indexes(i).first;
+        const unsigned& cf_supp = cf_indexes(i).second;
         const auto& cf = cfs[cf_supp];
 
         const K::Array<int, 2>
@@ -737,8 +737,8 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
       KOKKOS_LAMBDA(const member_type& team_member) {
         auto i = team_member.league_rank();
 
-        const unsigned& cf_supp = cf_indexes(i).first;
-        const unsigned& cf_cube = cf_indexes(i).second;
+        const unsigned& cf_cube = cf_indexes(i).first;
+        const unsigned& cf_supp = cf_indexes(i).second;
         const auto& cf = cfs[cf_supp];
 
         const K::Array<int, 2>

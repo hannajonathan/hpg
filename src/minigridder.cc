@@ -570,7 +570,7 @@ create_input_data(
 
       auto supp = rstate.urand(0, nsupp);
       auto& cfsz = cf_sizes[supp];
-      *(cf_indexes_p + i) = {supp, rstate.urand(0, cfsz[3])};
+      *(cf_indexes_p + i) = {rstate.urand(0, cfsz[3]), supp};
 
       std::array<unsigned, 2> border;
       if (strictly_inner) {

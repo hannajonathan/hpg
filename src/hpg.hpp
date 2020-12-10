@@ -334,7 +334,7 @@ using vis_uvw_t = std::array<vis_uvw_fp, 3>;
 
 /** visibility CF index type
  *
- * in terms of full CFArray indexes, order is supp, cube
+ * in terms of full CFArray indexes, order is cube, supp
  */
 using vis_cf_index_t = std::pair<unsigned, unsigned>;
 

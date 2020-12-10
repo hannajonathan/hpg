@@ -142,7 +142,7 @@ init_visibilities(
     std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
     vis.emplace_back(dist_vis(gen), dist_vis(gen));
     grid_cubes.push_back(dist_gcube(gen));
-    cf_indexes.push_back({supp, dist_cfcube(gen)});
+    cf_indexes.push_back({dist_cfcube(gen), supp});
     weights.push_back(dist_weight(gen));
     frequencies.push_back(freq);
     phases.emplace_back(0.0);
