@@ -41,11 +41,8 @@ struct MyCFArray final
     , m_values(values) {
 
     for (auto& sz : sizes)
-      m_extents.push_back({
-        sz[0] * oversampling,
-        sz[1] * oversampling,
-        sz[2],
-        sz[3]});
+      m_extents.push_back(
+        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
   }
 
   unsigned

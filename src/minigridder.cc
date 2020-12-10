@@ -191,6 +191,8 @@ template <typename T>
 struct argwrap {
   argwrap(const T& t)
     : val(t) {}
+  argwrap(T&& t)
+    : val(std::move(t)) {}
   T val;
 };
 
@@ -266,6 +268,22 @@ parse_devices(const std::string& s) {
   return parse_enumerated(s, "device", device_codes, all);
 }
 
+/** parse a list unsigned-value vectors
+ *
+ * ex: a-b,c-d-e,f is three vectors [a, b], [c, d, e], [f]
+ */
+argwrap<std::vector<std::vector<unsigned>>>
+parse_cfsizes(const std::string& s) {
+  std::vector<std::vector<unsigned>> result;
+  for (auto& g : split_arg(s)) {
+    std::vector<unsigned> sizes;
+    for (auto& sz : split_arg(g, '-'))
+      sizes.push_back(std::stoul(sz));
+    result.push_back(std::move(sizes));
+  }
+  return argwrap(result);
+}
+
 /** trial specification
  *
  * container for performance trial arguments, with some methods for derived
@@ -277,7 +295,7 @@ struct TrialSpec {
     const int& streams_,
     const unsigned& batch_size_,
     const int& gsize_,
-    const int& cfsize_,
+    const std::vector<unsigned>& cfsize_,
     const int& oversampling_,
     const int& visibilities_,
     const int& repeats_
@@ -289,20 +307,22 @@ struct TrialSpec {
     , streams(streams_)
     , batch_size(batch_size_)
     , gsize(gsize_)
-    , cfsize(cfsize_)
     , oversampling(oversampling_)
     , visibilities(visibilities_)
     , repeats(repeats_)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , versions(versions_)
 #endif
- {}
+ {
+   for (auto& s : cfsize_)
+     cfsize.push_back(static_cast<int>(s));
+ }
 
   hpg::Device device;
   int streams;
   unsigned batch_size;
   int gsize;
-  int cfsize;
+  std::vector<int> cfsize;
   int oversampling;
   int visibilities;
   int repeats;
@@ -351,6 +371,13 @@ struct TrialSpec {
     std::snprintf(nvis.data(), nvis.size(), "%g", double(visibilities));
     std::array<char, id_col_width - 1> nbatch;
     std::snprintf(nbatch.data(), nbatch.size(), "%g", double(batch_size));
+    std::ostringstream cfsz;
+    const char* sep = "";
+    for (auto& s : cfsize) {
+      cfsz << sep << s;
+      sep = "-";
+    }
+    std::snprintf(nbatch.data(), nbatch.size(), "%g", double(batch_size));
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     std::ostringstream vsns;
     vsns << versions[0] << "," << versions[1] << ","
@@ -363,7 +390,7 @@ struct TrialSpec {
         << pad_right(vsns.str())
 #endif
         << pad_right(std::to_string(gsize))
-        << pad_right(std::to_string(cfsize))
+        << pad_right(cfsz.str())
         << pad_right(std::to_string(oversampling))
         << pad_right(nvis.data())
         << pad_right(std::to_string(repeats));
@@ -405,24 +432,23 @@ struct CFArray final
   : public hpg::CFArray {
 
   unsigned m_oversampling;
-  std::vector<std::complex<hpg::cf_fp>> m_values;
-  std::array<unsigned, 4> m_extent;
+  std::vector<std::array<unsigned, 4>> m_extents;
+  std::vector<std::vector<std::complex<hpg::cf_fp>>> m_values;
 
   CFArray() {}
 
   CFArray(
-    const std::array<unsigned, 4>& size,
+    const std::vector<std::array<unsigned, 4>>& sizes,
     unsigned oversampling,
-    const std::vector<std::complex<hpg::cf_fp>>& values)
+    const std::vector<std::vector<std::complex<hpg::cf_fp>>>& values)
     : m_oversampling(oversampling)
     , m_values(values) {
 
-    m_extent[0] = size[0] * m_oversampling;
-    m_extent[1] = size[1] * m_oversampling;
-    m_extent[2] = size[2];
-    m_extent[3] = size[3];
-    assert(
-      values.size() == m_extent[0] * m_extent[1] * m_extent[2] * m_extent[3]);
+    assert(sizes.size() == values.size());
+
+    for (auto& sz : sizes)
+      m_extents.push_back(
+        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
   }
 
   unsigned
@@ -432,20 +458,20 @@ struct CFArray final
 
   unsigned
   num_supports() const override {
-    return 1;
+    return static_cast<unsigned>(m_extents.size());
   }
 
   std::array<unsigned, 4>
-  extents(unsigned) const override {
-    return m_extent;
+  extents(unsigned supp) const override {
+    return m_extents[supp];
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned)
+  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned supp)
     const override {
-    return
-      m_values[
-        ((x * m_extent[1] + y) * m_extent[2] + sto) * m_extent[3] + cube];
+    auto& vals = m_values[supp];
+    auto& ext = m_extents[supp];
+    return vals[((x * ext[1] + y) * ext[2] + sto) * ext[3] + cube];
   }
 };
 
@@ -472,23 +498,39 @@ template <typename Generator>
 InputData
 create_input_data(
   unsigned glen,
-  unsigned cflen,
+  const std::vector<unsigned>& cflen,
   int oversampling,
   int num_visibilities,
   bool strictly_inner,
   const Generator& generator) {
 
   std::array<unsigned, 4> gsize{glen, glen, 1, 1};
-  std::array<unsigned, 4> cfsize{cflen, cflen, 1, 1};
 
   InputData result;
   result.gsize = gsize;
   result.oversampling = oversampling;
 
-  std::vector<std::complex<hpg::cf_fp>> cf_values;
-  cf_values.resize(
-    cfsize[0] * oversampling * cfsize[1] * oversampling
-    * cfsize[2] * cfsize[3]);
+  std::vector<std::array<unsigned, 4>> cf_sizes;
+  std::vector<std::vector<std::complex<hpg::cf_fp>>> cf_values;
+  for (auto& cfl : cflen) {
+    cf_sizes.push_back({cfl, cfl, 1, 1});
+    cf_values.emplace_back(cfl * oversampling * cfl * oversampling);
+  }
+
+  auto const nsupp = cf_sizes.size();
+  for (size_t supp = 0; supp < nsupp; ++supp) {
+    auto cfs_p = cf_values[supp].data();
+    K::parallel_for(
+      "init_cf",
+      K::RangePolicy<K::OpenMP>(0, cf_values[supp].size()),
+      KOKKOS_LAMBDA(int i) {
+        auto rstate = generator.get_state();
+        *(cfs_p + i) =
+          std::complex<hpg::cf_fp>(rstate.frand(-1, 1), rstate.frand(-1, 1));
+        generator.free_state(rstate);
+      });
+  }
+  result.cf = CFArray(cf_sizes, oversampling, cf_values);
 
   result.visibilities.resize(num_visibilities);
   result.grid_cubes.resize(num_visibilities);
@@ -505,25 +547,13 @@ create_input_data(
   auto frequencies_p = result.frequencies.data();
   auto phases_p = result.phases.data();
   auto coordinates_p = result.coordinates.data();
-  auto cfs_p = cf_values.data();
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
-  std::array<unsigned, 2> border;
-  if (strictly_inner) {
-    border[0] = (oversampling * cfsize[0]) / 2;
-    border[1] = (oversampling * cfsize[1]) / 2;
-  } else {
-    border[0] = 0;
-    border[1] = 0;
-  }
-  float ulim =
-    ((oversampling * (gsize[0] - 2)) / 2 - border[0])
-    / (default_scale[0] * oversampling * inv_lambda);
-  float vlim =
-    ((oversampling * (gsize[1] - 2)) / 2 - border[1])
-    / (default_scale[1] * oversampling * inv_lambda);
-
+  const double uscale = default_scale[0] * oversampling * inv_lambda;
+  const double vscale = default_scale[1] * oversampling * inv_lambda;
+  const auto x0 = (oversampling * (gsize[0] - 2)) / 2;
+  const auto y0 = (oversampling * (gsize[1] - 2)) / 2;
   K::parallel_for(
     "init_vis",
     K::RangePolicy<K::OpenMP>(0, num_visibilities),
@@ -534,27 +564,31 @@ create_input_data(
           rstate.frand(-1, 1),
           rstate.frand(-1, 1));
       *(grid_cubes_p +i) = rstate.urand(0, gsize[3]);
-      *(cf_indexes_p + i) = {0, rstate.urand(0, cfsize[3])};
       *(weights_p + i) = rstate.frand(0, 1);
       *(frequencies_p + i) = freq;
       *(phases_p + i) = rstate.frand(-3.14, 3.14);
+
+      auto supp = rstate.urand(0, nsupp);
+      auto& cfsz = cf_sizes[supp];
+      *(cf_indexes_p + i) = {supp, rstate.urand(0, cfsz[3])};
+
+      std::array<unsigned, 2> border;
+      if (strictly_inner) {
+        border[0] = (oversampling * cfsz[0]) / 2;
+        border[1] = (oversampling * cfsz[1]) / 2;
+      } else {
+        border[0] = 0;
+        border[1] = 0;
+      }
+      float ulim = (x0 - border[0]) / uscale;
+      float vlim = (y0 - border[1]) / vscale;
+
       *(coordinates_p + i) = {
         rstate.frand(-ulim, ulim),
         rstate.frand(-vlim, vlim),
         0.0};
       generator.free_state(rstate);
     });
-
-  K::parallel_for(
-    "init_cf",
-    K::RangePolicy<K::OpenMP>(0, cf_values.size()),
-    KOKKOS_LAMBDA(int i) {
-      auto rstate = generator.get_state();
-      *(cfs_p + i) =
-        std::complex<hpg::cf_fp>(rstate.frand(-1, 1), rstate.frand(-1, 1));
-      generator.free_state(rstate);
-    });
-  result.cf = CFArray(cfsize, oversampling, cf_values);
   return result;
 }
 
@@ -654,7 +688,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
 void
 run_trials(
   const std::vector<unsigned>& gsizes,
-  const std::vector<unsigned>& cfsizes,
+  const std::vector<std::vector<unsigned>>& cfsizes,
   const std::vector<unsigned>& oversamplings,
   const std::vector<unsigned>& visibilities,
   const std::vector<unsigned>& repeats,
@@ -733,10 +767,12 @@ main(int argc, char* argv[]) {
   {
     unsigned dflt = 31;
     args
-      .add_argument("-c", "--cfsize")
-      .default_value(argwrap<std::vector<unsigned>>({dflt}))
+      .add_argument("-c", "--cfsizes")
+      .default_value(
+        argwrap<std::vector<std::vector<unsigned>>>(
+          std::vector<std::vector<unsigned>>{{dflt}}))
       .help("cf size ["s + std::to_string(dflt) + "]")
-      .action(parse_unsigned_args);
+      .action(parse_cfsizes);
   }
   {
     unsigned dflt = 20;
@@ -805,7 +841,8 @@ main(int argc, char* argv[]) {
 
   /* get the command line arguments */
   auto gsize = args.get<argwrap<std::vector<unsigned>>>("--gsize").val;
-  auto cfsize = args.get<argwrap<std::vector<unsigned>>>("--cfsize").val;
+  auto cfsizes =
+    args.get<argwrap<std::vector<std::vector<unsigned>>>>("--cfsizes").val;
   auto oversampling =
     args.get<argwrap<std::vector<unsigned>>>("--oversampling").val;
   auto visibilities =
@@ -821,7 +858,7 @@ main(int argc, char* argv[]) {
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)
     run_trials(
       gsize,
-      cfsize,
+      cfsizes,
       oversampling,
       visibilities,
       repeats,
