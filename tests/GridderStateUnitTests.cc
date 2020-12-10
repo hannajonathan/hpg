@@ -28,22 +28,24 @@ struct MyCFArray final
   : public hpg::CFArray {
 
   unsigned m_oversampling;
-  std::array<unsigned, 4> m_extent;
-  std::vector<std::complex<hpg::cf_fp>> m_values;
+  std::vector<std::array<unsigned, 4>> m_extents;
+  std::vector<std::vector<std::complex<hpg::cf_fp>>> m_values;
 
   MyCFArray() {}
 
   MyCFArray(
     unsigned oversampling,
-    const std::array<unsigned, 4>& size,
-    const std::vector<std::complex<hpg::cf_fp>>& values)
+    const std::vector<std::array<unsigned, 4>>& sizes,
+    const std::vector<std::vector<std::complex<hpg::cf_fp>>>& values)
     : m_oversampling(oversampling)
     , m_values(values) {
 
-    m_extent[0] = size[0] * oversampling;
-    m_extent[1] = size[1] * oversampling;
-    m_extent[2] = size[2];
-    m_extent[3] = size[3];
+    for (auto& sz : sizes)
+      m_extents.push_back({
+        sz[0] * oversampling,
+        sz[1] * oversampling,
+        sz[2],
+        sz[3]});
   }
 
   unsigned
@@ -53,20 +55,20 @@ struct MyCFArray final
 
   unsigned
   num_supports() const override {
-    return 1;
+    return static_cast<unsigned>(m_extents.size());
   }
 
   std::array<unsigned, 4>
-  extents(unsigned) const override {
-    return m_extent;
+  extents(unsigned supp) const override {
+    return m_extents[supp];
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned)
+  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned supp)
     const override {
-    return
-      m_values[
-        ((x * m_extent[1] + y) * m_extent[2] + sto) * m_extent[3] + cube];
+    auto& vals = m_values[supp];
+    auto& ext = m_extents[supp];
+    return vals[((x * ext[1] + y) * ext[2] + sto) * ext[3] + cube];
   }
 };
 
@@ -74,17 +76,21 @@ template <typename Generator>
 MyCFArray
 create_cf(
   unsigned oversampling,
-  const std::array<unsigned, 4>& size,
+  const std::vector<std::array<unsigned, 4>>& sizes,
   Generator& gen) {
 
-  const unsigned num_values =
-    oversampling * size[0] * oversampling * size[1] * size[2] * size[3];
-  std::vector<std::complex<hpg::cf_fp>> values;
-  values.reserve(num_values);
-  std::uniform_real_distribution<hpg::cf_fp> dist(-1.0, 1.0);
-  for (auto i = 0; i < num_values; ++i)
-    values.emplace_back(dist(gen), dist(gen));
-  return MyCFArray(oversampling, size, values);
+  std::vector<std::vector<std::complex<hpg::cf_fp>>> values;
+  for (auto& sz : sizes) {
+    decltype(values)::value_type vs;
+    const unsigned num_values =
+      oversampling * sz[0] * oversampling * sz[1] * sz[2] * sz[3];
+    vs.reserve(num_values);
+    std::uniform_real_distribution<hpg::cf_fp> dist(-1.0, 1.0);
+    for (auto i = 0; i < num_values; ++i)
+      vs.emplace_back(dist(gen), dist(gen));
+    values.push_back(std::move(vs));
+  }
+  return MyCFArray(oversampling, sizes, values);
 }
 
 template <typename Generator>
@@ -122,22 +128,24 @@ init_visibilities(
   const double freq = 299792458.0 * inv_lambda;
   std::uniform_int_distribution<unsigned> dist_gcube(0, grid_size[3] - 1);
   std::uniform_int_distribution<unsigned> dist_gsto(0, grid_size[2] - 1);
-  auto cfextents = cf.extents(0);
-  std::uniform_int_distribution<unsigned> dist_cfcube(0, cfextents[3] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
-  double ulim =
-    ((cf.oversampling() * (grid_size[0] - 2)) / 2 - (cfextents[0]) / 2)
-    / (grid_scale[0] * cf.oversampling() * inv_lambda);
-  double vlim =
-    ((cf.oversampling() * (grid_size[1] - 2)) / 2 - (cfextents[1]) / 2)
-    / (grid_scale[1] * cf.oversampling() * inv_lambda);
-  std::uniform_real_distribution<hpg::vis_uvw_fp> dist_u(-ulim, ulim);
-  std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
+  std::uniform_int_distribution<unsigned> dist_cfsupp(0, cf.num_supports() - 1);
+  auto x0 = (cf.oversampling() * (grid_size[0] - 2)) / 2;
+  auto y0 = (cf.oversampling() * (grid_size[1] - 2)) / 2;
+  double uscale = grid_scale[0] * cf.oversampling() * inv_lambda;
+  double vscale = grid_scale[1] * cf.oversampling() * inv_lambda;
   for (auto i = 0; i < num_vis; ++i) {
+    auto supp = dist_cfsupp(gen);
+    auto cfextents = cf.extents(supp);
+    std::uniform_int_distribution<unsigned> dist_cfcube(0, cfextents[3] - 1);
+    double ulim = (x0 - (cfextents[0]) / 2) / uscale;
+    double vlim = (y0 - (cfextents[1]) / 2) / vscale;
+    std::uniform_real_distribution<hpg::vis_uvw_fp> dist_u(-ulim, ulim);
+    std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
     vis.emplace_back(dist_vis(gen), dist_vis(gen));
     grid_cubes.push_back(dist_gcube(gen));
-    cf_indexes.push_back({0, dist_cfcube(gen)});
+    cf_indexes.push_back({supp, dist_cfcube(gen)});
     weights.push_back(dist_weight(gen));
     frequencies.push_back(freq);
     phases.emplace_back(0.0);
@@ -317,8 +325,9 @@ TEST(GridderState, CopyOrMove) {
   std::vector<hpg::vis_uvw_t> coordinates;
 
   {
-    const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
-    MyCFArray cf = create_cf(10, cf_size, rng);
+    const std::vector<std::array<unsigned, 4>>
+      cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+    MyCFArray cf = create_cf(10, cf_sizes, rng);
     auto gs1 =
       hpg::get_value(
         gs.set_convolution_function(default_host_device, MyCFArray(cf)));
@@ -421,7 +430,7 @@ TEST(GridderState, CFError) {
     auto error_or_gs =
       gs.set_convolution_function(
         default_host_device,
-        create_cf(10, cf_size, rng));
+        create_cf(10, {cf_size}, rng));
     EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
   {
@@ -430,7 +439,7 @@ TEST(GridderState, CFError) {
     auto error_or_gs =
       gs.set_convolution_function(
         default_host_device,
-        create_cf(10, cf_size, rng));
+        create_cf(10, {cf_size}, rng));
     EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
   {
@@ -439,7 +448,17 @@ TEST(GridderState, CFError) {
     auto error_or_gs =
       gs.set_convolution_function(
         default_host_device,
-        create_cf(10, cf_size, rng));
+        create_cf(10, {cf_size}, rng));
+    EXPECT_TRUE(hpg::is_error(error_or_gs));
+  }
+  {
+    // error in one of a list of CFs
+    const std::vector<std::array<unsigned, 4>>
+      cf_sizes{{3, 3, 4, 3}, {3, 3, 1, 3}, {2, 2, 4, 2}};
+    auto error_or_gs =
+      gs.set_convolution_function(
+        default_host_device,
+        create_cf(10, cf_sizes, rng));
     EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
 }
@@ -471,7 +490,7 @@ TEST(GridderState, Reset) {
 
   {
     const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
-    MyCFArray cf = create_cf(10, cf_size, rng);
+    MyCFArray cf = create_cf(10, {cf_size}, rng);
     auto gs1 =
       hpg::get_value(
         gs.set_convolution_function(default_host_device, MyCFArray(cf)));
@@ -544,8 +563,9 @@ TEST(GridderState, Sequences) {
   std::vector<hpg::vis_uvw_t> coordinates;
 
   {
-    const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
-    MyCFArray cf = create_cf(10, cf_size, rng);
+    const std::vector<std::array<unsigned, 4>>
+      cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+    MyCFArray cf = create_cf(10, cf_sizes, rng);
     auto gs1 =
       hpg::get_value(
         gs.set_convolution_function(default_host_device, MyCFArray(cf)));
@@ -622,9 +642,10 @@ TEST(GridderState, Sequences) {
 TEST(GridderState, Batching) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
-  const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
   std::mt19937 rng(42);
-  MyCFArray cf = create_cf(10, cf_size, rng);
+  MyCFArray cf = create_cf(10, cf_sizes, rng);
   size_t num_vis = 100;
   auto gs_small =
     hpg::get_value(
