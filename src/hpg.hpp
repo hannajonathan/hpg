@@ -321,11 +321,11 @@ using grid_value_fp = double;
 /** grid scale floating point type */
 using grid_scale_fp = float;
 /** visibility (U, V, W) coordinate floating point type */
-using vis_uvw_fp = double;
+using vis_uvw_fp = float;
 /** visibility weight floating point type */
 using vis_weight_fp = float;
 /** visibility frequency floating point type */
-using vis_frequency_fp = double;
+using vis_frequency_fp = float;
 /** visibility phase floating point type */
 using vis_phase_fp = double;
 
