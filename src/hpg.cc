@@ -63,6 +63,18 @@ struct Impl::GridderState {
 
   template <typename GS>
   static std::variant<Error, ::hpg::GridderState>
+  allocate_convolution_function_buffer(GS&& st, const CFArrayShape* shape) {
+
+    ::hpg::GridderState result(std::forward<GS>(st));
+    auto error = result.impl->allocate_convolution_function_buffer(shape);
+    if (error)
+      return std::move(error.value());
+    else
+      return std::move(result);
+  }
+
+  template <typename GS>
+  static std::variant<Error, ::hpg::GridderState>
   set_convolution_function(GS&& st, Device host_device, CFArray&& cf) {
 
     if (host_devices().count(host_device) > 0) {
@@ -346,27 +358,46 @@ GridderState::is_null() const noexcept {
 }
 
 rval_t<GridderState>
-GridderState::set_convolution_function(Device host_device, CFArray&& cf)
+GridderState::allocate_convolution_function_buffer(const CFArrayShape* shape)
   const volatile & {
 
   return
     to_rval(
-      Impl::GridderState::set_convolution_function(
-        *this,
-        host_device,
-        std::move(cf)));
+      Impl::GridderState::allocate_convolution_function_buffer(*this, shape));
+}
+
+rval_t<GridderState>
+GridderState::allocate_convolution_function_buffer(const CFArrayShape* shape)
+  && {
+
+  return
+    to_rval(
+      Impl::GridderState
+      ::allocate_convolution_function_buffer(std::move(*this), shape));
+}
+
+rval_t<GridderState>
+GridderState::set_convolution_function(Device host_device, CFArray&& cf)
+  const volatile & {
+
+  return
+  to_rval(
+    Impl::GridderState::set_convolution_function(
+      *this,
+      host_device,
+      std::move(cf)));
 }
 
 rval_t<GridderState>
 GridderState::set_convolution_function(Device host_device, CFArray&& cf) && {
 
   return
-    to_rval(
-      Impl::GridderState
-      ::set_convolution_function(
-        std::move(*this),
-        host_device,
-        std::move(cf)));
+  to_rval(
+    Impl::GridderState
+    ::set_convolution_function(
+      std::move(*this),
+      host_device,
+      std::move(cf)));
 }
 
 rval_t<GridderState>
@@ -626,6 +657,32 @@ bool
 Gridder::is_null() const noexcept {
   return state.is_null();
 }
+
+#if HPG_API >= 17
+std::optional<Error>
+Gridder::allocate_convolution_function_buffer(const CFArrayShape* shape) {
+
+  std::optional<Error> result;
+  return
+    fold(
+      std::move(state).allocate_convolution_function_buffer(shape),
+      [this](auto&& gs) {
+        this->state = std::move(gs);
+      },
+      [&result](auto&& err) {
+        result = std::move(err);
+      });
+  return result;
+}
+#else // HPG_API < 17
+std::unique_ptr<Error>
+Gridder::allocate_convolution_function_buffer(const CFArrayShape* shape) {
+  std::unique_ptr<Error> result;
+  std::tie(result, state) =
+    std::move(state).allocate_convolution_function_buffer(shape);
+  return result;
+}
+#endif //HPG_API >= 17
 
 #if HPG_API >= 17
 std::optional<Error>

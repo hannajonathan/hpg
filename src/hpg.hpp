@@ -343,13 +343,17 @@ struct HPG_EXPORT State;
 struct HPG_EXPORT GridderState;
 } // end namespace Impl
 
-/** base class for convolution functions */
-class HPG_EXPORT CFArray {
+/** shape of a convolution function
+ *
+ * This class is primarily of use as an argument to
+ * GridderState::allocate_convolution_function_buffer() or
+ * Gridder::allocate_convolution_function_buffer(). If those methods are not
+ * being used, users should prefer defining a subclass of CFArray instead.
+ */
+class HPG_EXPORT CFArrayShape {
 public:
 
   static constexpr unsigned rank = 5;
-
-  using scalar_type = std::complex<cf_fp>;
 
   virtual unsigned
   oversampling() const = 0;
@@ -359,6 +363,16 @@ public:
 
   virtual std::array<unsigned, 4>
   extents(unsigned supp) const = 0;
+
+  virtual ~CFArrayShape() {}
+};
+
+/** base class for convolution functions */
+class HPG_EXPORT CFArray
+  : public CFArrayShape {
+public:
+
+  using scalar_type = std::complex<cf_fp>;
 
   virtual std::complex<cf_fp>
   operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned supp)
@@ -577,7 +591,24 @@ public:
   bool
   is_null() const noexcept;
 
-  /** set convolution function
+  /** allocate memory for convolution function
+   *
+   * Increasing memory allocations for convolution functions are handled
+   * automatically by set_convolution_function(), but in a sequence of calls to
+   * set_convolution_function() in which later calls require a larger allocation
+   * than earlier calls, it may be advantageous to use this method in order to
+   * allocate the maximum memory that will be required by the sequence before
+   * starting the sequence, which will then permit the sequence to proceed
+   * without any reallocations.
+   */
+  rval_t<GridderState>
+  allocate_convolution_function_buffer(const CFArrayShape* shape)
+    const volatile &;
+
+  rval_t<GridderState>
+  allocate_convolution_function_buffer(const CFArrayShape* shape) &&;
+
+/** set convolution function
    *
    * May invoke fence() on target.
    *
@@ -588,8 +619,6 @@ public:
    * @param cf convolution function array
    *
    * @sa Gridder::set_convolution_function()
-   *
-   * @todo const?
    */
   rval_t<GridderState>
   set_convolution_function(Device host_device, CFArray&& cf)
@@ -932,6 +961,23 @@ public:
   /** null state query */
   bool
   is_null() const noexcept;
+
+  /** allocate memory for convolution function
+   *
+   * Increasing memory allocations for convolution functions are handled
+   * automatically by set_convolution_function(), but in a sequence of calls to
+   * set_convolution_function() in which later calls require a larger allocation
+   * than earlier calls, it may be advantageous to use this method in order to
+   * allocate the maximum memory that will be required by the sequence before
+   * starting the sequence, which will then permit the sequence to proceed
+   * without any reallocations.
+   */
+#if HPG_API >= 17
+  std::optional<Error>
+#else // HPG_API < 17
+  std::unique_ptr<Error>
+#endif //HPG_API >= 17
+  allocate_convolution_function_buffer(const CFArrayShape* shape);
 
   /** set convolution function
    *
