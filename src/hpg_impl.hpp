@@ -30,6 +30,11 @@
 namespace K = Kokkos;
 namespace KExp = Kokkos::Experimental;
 
+/** @file hpg_impl.hpp
+ *
+ * HPG implementation header file
+ */
+
 namespace hpg {
 namespace Impl {
 

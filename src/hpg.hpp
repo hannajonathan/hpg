@@ -15,6 +15,13 @@
 
 #include "hpg_export.h"
 
+/** @file hpg.hpp
+ *
+ * Main header file for top-level HPG API
+ */
+
+/** top-level HPG API namespace
+ */
 namespace hpg {
 
 /** global initialization of hpg
@@ -62,11 +69,11 @@ enum class HPG_EXPORT Device {
   HPX, /**< HIP device */
 };
 
-/** query supported devices */
+/** supported devices */
 const std::set<Device>&
 devices() noexcept;
 
-/** query support host devices */
+/** supported host devices */
 const std::set<Device>&
 host_devices() noexcept;
 
@@ -79,6 +86,8 @@ enum class HPG_EXPORT ErrorType {
   Other
 };
 
+/** error class
+ */
 class HPG_EXPORT Error {
 private:
 
@@ -112,7 +121,8 @@ template <typename T>
 using rval_t = std::tuple<std::unique_ptr<Error>, T>;
 #endif // HPG_API >= 17
 
-/** query whether rval_t value contains an error */
+/** query whether rval_t value contains an error
+ */
 template <typename T>
 HPG_EXPORT inline bool
 is_error(const rval_t<T>& rv) {
@@ -123,7 +133,8 @@ is_error(const rval_t<T>& rv) {
 #endif // HPG_API >= 17
 }
 
-/** type trait to get value type from rval_t type */
+/** type trait to get value type from rval_t type
+ */
 template <typename T>
 struct HPG_EXPORT rval_value {
   using type = void;
@@ -133,7 +144,8 @@ struct rval_value<rval_t<T>> {
   using type = T;
 };
 
-/** query whether rval_t value contains a (non-error) value */
+/** query whether rval_t value contains a (non-error) value
+ */
 template <typename T>
 HPG_EXPORT inline bool
 is_value(const rval_t<T>& rv) {
@@ -144,7 +156,8 @@ is_value(const rval_t<T>& rv) {
 #endif // HPG_API >= 17
 }
 
-/** get value from an rval_t value */
+/** get value from an rval_t value
+ */
 #if __cplusplus >= 201402L
 template <typename RV>
 HPG_EXPORT inline auto
@@ -164,7 +177,8 @@ get_value(RV&& rv) {
 }
 #endif // __cplusplus >= 201402L
 
-/** get error from an rval_t value */
+/** get error from an rval_t value
+ */
 #if __cplusplus >= 201402L
 template <typename RV>
 HPG_EXPORT inline auto
@@ -192,7 +206,8 @@ get_error(RV&& rv) {
 }
 #endif // __cplusplus >= 201402L
 
-/** create an rval_t value from a (non-error) value */
+/** create an rval_t value from a (non-error) value
+ */
 template <typename T>
 HPG_EXPORT inline rval_t<T>
 rval(T&& t) {
@@ -215,8 +230,9 @@ rval(const Error& err) {
 #endif // HPG_API >= 17
 }
 
+/** apply function that returns a plain value to an rval_t
+ */
 #if __cplusplus >= 201402L
-/** apply function that returns a plain value to an rval_t */
 template <typename RV, typename F>
 HPG_EXPORT auto
 map(RV&& rv, F f) {
@@ -231,7 +247,8 @@ map(RV&& rv, F f) {
     return rval<T>(get_error(std::forward<RV>(rv)));
 }
 
-/** apply function that returns an rval_t value to an rval_t */
+/** apply function that returns an rval_t value to an rval_t
+ */
 template <typename RV, typename F>
 HPG_EXPORT auto
 flatmap(RV&& rv, F f) {
@@ -251,7 +268,8 @@ flatmap(RV&& rv, F f) {
     return rval<T>(get_error(std::forward<RV>(rv)));
 }
 
-/** apply function depending on contained value type with common result type */
+/** apply function depending on contained value type with common result type
+ */
 template <typename RV, typename ValF, typename ErrF>
 HPG_EXPORT auto
 fold(RV&& rv, ValF vf, ErrF ef) {
