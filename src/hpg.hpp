@@ -347,8 +347,9 @@ struct HPG_EXPORT GridderState;
  *
  * This class is primarily of use as an argument to
  * GridderState::allocate_convolution_function_buffer() or
- * Gridder::allocate_convolution_function_buffer(). If those methods are not
- * being used, users should prefer defining a subclass of CFArray instead.
+ * Gridder::allocate_convolution_function_buffer(). Only in cases where it is
+ * desired to describe the shape of a CFArray only, without providing any array
+ * values, would a standalone subclass of CFArrayShape be required.
  */
 class HPG_EXPORT CFArrayShape {
 public:
@@ -599,16 +600,40 @@ public:
    * than earlier calls, it may be advantageous to use this method in order to
    * allocate the maximum memory that will be required by the sequence before
    * starting the sequence, which will then permit the sequence to proceed
-   * without any reallocations.
+   * without any reallocations. To release all memory allocated for the
+   * convolution function, the caller may pass a null pointer for the method
+   * argument.
+   *
+   * @param shape shape of CFArray
+   *
+   * @return new GridderState that is a copy of the target, but with memory
+   * allocated for convolution function, or error
    */
   rval_t<GridderState>
   allocate_convolution_function_buffer(const CFArrayShape* shape)
     const volatile &;
 
+  /** allocate memory for convolution function
+   *
+   * Increasing memory allocations for convolution functions are handled
+   * automatically by set_convolution_function(), but in a sequence of calls to
+   * set_convolution_function() in which later calls require a larger allocation
+   * than earlier calls, it may be advantageous to use this method in order to
+   * allocate the maximum memory that will be required by the sequence before
+   * starting the sequence, which will then permit the sequence to proceed
+   * without any reallocations. To release all memory allocated for the
+   * convolution function, the caller may pass a null pointer for the method
+   * argument.
+   *
+   * @param shape shape of CFArray
+   *
+   * @return new GridderState that has overwritten the target, but with memory
+   * allocated for convolution function, or error
+   */
   rval_t<GridderState>
   allocate_convolution_function_buffer(const CFArrayShape* shape) &&;
 
-/** set convolution function
+  /** set convolution function
    *
    * May invoke fence() on target.
    *
@@ -970,7 +995,14 @@ public:
    * than earlier calls, it may be advantageous to use this method in order to
    * allocate the maximum memory that will be required by the sequence before
    * starting the sequence, which will then permit the sequence to proceed
-   * without any reallocations.
+   * without any reallocations. To release all memory allocated for the
+   * convolution function, the caller may pass a null pointer for the method
+   * argument.
+   *
+   * @param shape shape of CFArray
+   *
+   * @return new GridderState that is a copy of the target, but with memory
+   * allocated for convolution function, or error
    */
 #if HPG_API >= 17
   std::optional<Error>
