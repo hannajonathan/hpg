@@ -662,17 +662,16 @@ Gridder::is_null() const noexcept {
 std::optional<Error>
 Gridder::allocate_convolution_function_buffer(const CFArrayShape* shape) {
 
-  std::optional<Error> result;
   return
     fold(
       std::move(state).allocate_convolution_function_buffer(shape),
-      [this](auto&& gs) {
+      [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
+        return std::nullopt
       },
-      [&result](auto&& err) {
-        result = std::move(err);
+      [](auto&& err) -> std::optional<Error> {
+        return std::move(err);
       });
-  return result;
 }
 #else // HPG_API < 17
 std::unique_ptr<Error>
@@ -688,14 +687,16 @@ Gridder::allocate_convolution_function_buffer(const CFArrayShape* shape) {
 std::optional<Error>
 Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
 
-  std::optional<Error> result;
-  auto err_or_gs =
-    std::move(state).set_convolution_function(host_device, std::move(cf));
-  if (std::holds_alternative<GridderState>(err_or_gs))
-    state = std::move(std::get<GridderState>(err_or_gs));
-  else
-    result = std::move(std::get<Error>(err_or_gs));
-  return result;
+  return
+    fold(
+      std::move(state).set_convolution_function(host_device, std::move(cf)),
+      [this](auto&& gs) -> std::optional<Error> {
+        this->state = std::move(gs);
+        return std::nullopt;
+      },
+      [&result](auto&& err) -> std::optional<Error> {
+        return std::move(err);
+      });
 }
 #else // HPG_API < 17
 std::unique_ptr<Error>
@@ -720,23 +721,25 @@ Gridder::grid_visibilities(
   std::vector<vis_phase_fp>&& visibility_phases,
   std::vector<vis_uvw_t>&& visibility_coordinates) {
 
-  std::optional<Error> result;
-  auto err_or_gs =
-    std::move(state)
-    .grid_visibilities(
-      host_device,
-      std::move(visibilities),
-      std::move(visibility_grid_cubes),
-      std::move(visibility_cf_indexes),
-      std::move(visibility_weights),
-      std::move(visibility_frequencies),
-      std::move(visibility_phases),
-      std::move(visibility_coordinates));
-  if (std::holds_alternative<GridderState>(err_or_gs))
-    state = std::move(std::get<GridderState>(err_or_gs));
-  else
-    result = std::move(std::get<Error>(err_or_gs));
-  return result;
+  return
+    fold(
+      std::move(state)
+      .grid_visibilities(
+        host_device,
+        std::move(visibilities),
+        std::move(visibility_grid_cubes),
+        std::move(visibility_cf_indexes),
+        std::move(visibility_weights),
+        std::move(visibility_frequencies),
+        std::move(visibility_phases),
+        std::move(visibility_coordinates)),
+      [this](auto&& gs) -> std::optional<Error> {
+        this->state = std::move(gs);
+        return std::nullopt;
+      },
+      [](auto&& err) -> std::optional<Error> {
+        return std::move(err);
+      });
 }
 #else // HPG_API < 17
 std::unique_ptr<Error>
@@ -801,13 +804,16 @@ Gridder::normalize(grid_value_fp wgt_factor) {
 #if HPG_API >= 17
 std::optional<Error>
 Gridder::apply_fft(FFTSign sign, bool in_place) {
-  std::optional<Error> result;
-  auto err_or_gs = std::move(state).apply_fft(sign, in_place);
-  if (std::holds_alternative<GridderState>(err_or_gs))
-    state = std::move(std::get<GridderState>(err_or_gs));
-  else
-    result = std::move(std::get<Error>(err_or_gs));
-  return result;
+  return
+    fold(
+      std::move(state).apply_fft(sign, in_place),
+      [this](auto&& gs) -> std::optional<Error> {
+        this->state = std::move(gs);
+        return std::nullopt;
+      },
+      [](auto&& err) -> std::optional<Error> {
+        return std::move(err);
+      });
 }
 #else // HPG_API < 17
 std::unique_ptr<Error>
