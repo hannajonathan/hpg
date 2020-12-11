@@ -667,7 +667,7 @@ Gridder::allocate_convolution_function_buffer(const CFArrayShape* shape) {
       std::move(state).allocate_convolution_function_buffer(shape),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
-        return std::nullopt
+        return std::nullopt;
       },
       [](auto&& err) -> std::optional<Error> {
         return std::move(err);
@@ -694,7 +694,7 @@ Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
         this->state = std::move(gs);
         return std::nullopt;
       },
-      [&result](auto&& err) -> std::optional<Error> {
+      [](auto&& err) -> std::optional<Error> {
         return std::move(err);
       });
 }
