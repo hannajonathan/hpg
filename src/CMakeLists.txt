@@ -104,6 +104,7 @@ configure_file(hpg_config.hpp.in hpg_config.hpp)
 set(hpg_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_impl.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/hpg_indexing.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_config.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_export.h)
 set_target_properties(hpg PROPERTIES
