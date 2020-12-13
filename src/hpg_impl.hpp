@@ -1617,28 +1617,94 @@ operator<<(std::ostream& str, const StreamPhase& ph) {
 }
 
 template <Device D>
-struct ExecSpace final {
+struct StateT;
+
+template <Device D>
+struct CFPool final {
   using kokkos_device = typename DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
   using cfd_view = cf_view<typename CFLayout<D>::layout, memory_space>;
   using cfh_view = typename cfd_view::HostMirror;
 
-  execution_space space;
-  K::View<cf_t*, memory_space> cf_pool;
-  K::Array<cfd_view, HPG_MAX_NUM_CF_SUPPORTS> cf_d;
-  K::Array<cfh_view, HPG_MAX_NUM_CF_SUPPORTS> cf_h;
-  K::View<vis_t*, memory_space> visibilities;
-  K::View<unsigned*, memory_space> grid_cubes;
-  K::View<cf_index_t*, memory_space> cf_indexes;
-  K::View<vis_weight_fp*, memory_space> weights;
-  K::View<vis_frequency_fp*, memory_space> frequencies;
-  K::View<vis_phase_fp*, memory_space> phases;
-  K::View<vis_uvw_t*, memory_space> coordinates;
-  std::vector<std::any> vis_state;
+  StateT<D> *state;
+  K::View<cf_t*, memory_space> pool;
+  unsigned num_cf_groups;
+  K::Array<cfd_view, HPG_MAX_NUM_CF_SUPPORTS> cf_d; // unmanaged (in pool)
+  K::Array<cfh_view, HPG_MAX_NUM_CF_SUPPORTS> cf_h; // managed
 
-  ExecSpace(execution_space sp)
-    : space(sp) {}
+  CFPool()
+    : state(nullptr)
+    , num_cf_groups(0) {
+
+    for (size_t i = 0; i < HPG_MAX_NUM_CF_SUPPORTS; ++i) {
+      cf_d[i] = cfd_view();
+      cf_h[i] = cfh_view();
+    }
+  }
+
+  CFPool(StateT<D>* st)
+    : state(st)
+    , num_cf_groups(0) {
+
+    for (size_t i = 0; i < HPG_MAX_NUM_CF_SUPPORTS; ++i) {
+      cf_d[i] = cfd_view();
+      cf_h[i] = cfh_view();
+    }
+  }
+
+  // CFPool is part of a StateT, so it makes no sense to have a copy or move
+  // constructor
+
+  CFPool(const CFPool&) = delete;
+
+  CFPool(CFPool&&) = delete;
+
+  // copy and move assignment is OK, as long as the state pointer for both the
+  // target instance and argument do not change, unless target state pointer is
+  // null (exception is needed for new StateT instances)
+
+  CFPool&
+  operator=(const CFPool& rhs) {
+    // TODO: make this exception-safe?
+    if (!state)
+      state = rhs.state;
+    num_cf_groups = rhs.num_cf_groups;
+    pool =
+      decltype(pool)(
+        K::ViewAllocateWithoutInitializing("cf"),
+        rhs.pool.extent(0));
+    state->fence();
+    rhs.state->fence();
+    K::deep_copy(
+      state->m_exec_spaces[state->next_exec_space(StreamPhase::COPY)].space,
+      pool,
+      rhs.pool);
+    for (size_t i = 0; i < num_cf_groups; ++i) {
+      // don't need cf_h, since the previous fence ensures that the copy from
+      // host has completed
+      cf_d[i] =
+        cfd_view(
+          pool.data() + (rhs.cf_d[i].data() - rhs.pool.data()),
+          rhs.cf_d[i].layout());
+    }
+    return *this;
+  }
+
+  CFPool&
+  operator=(CFPool&& rhs) {
+    if (!state)
+      std::swap(state, rhs.state);
+    std::swap(pool, rhs.pool);
+    std::swap(num_cf_groups, rhs.num_cf_groups);
+    std::swap(cf_d, rhs.cf_d);
+    std::swap(cf_h, rhs.cf_h);
+    return *this;
+  }
+
+  virtual ~CFPool() {
+    reset();
+  }
 
   static size_t
   cf_size(const CFArrayShape* cf, unsigned supp) {
@@ -1659,7 +1725,7 @@ struct ExecSpace final {
   }
 
   static size_t
-  cf_pool_size(const CFArrayShape* cf) {
+  pool_size(const CFArrayShape* cf) {
     size_t result = 0;
     if (cf)
       for (unsigned supp = 0; supp < cf->num_supports(); ++supp)
@@ -1668,21 +1734,55 @@ struct ExecSpace final {
   }
 
   void
-  prepare_cf_pool(const CFArrayShape* cf, bool force = false) {
-    for (size_t i = 0; i < cf_h.size(); ++i) {
-      cf_h[i] = cfh_view();
-      cf_d[i] = cfd_view();
+  prepare_pool(const CFArrayShape* cf, bool force = false) {
+    auto current_pool_size = pool.extent(0);
+    auto min_pool = pool_size(cf);
+    reset((min_pool > current_pool_size) || force);
+    if ((min_pool > current_pool_size) || (force && min_pool > 0))
+      pool = decltype(pool)(K::ViewAllocateWithoutInitializing("cf"), min_pool);
+  }
+
+  void
+  add_cf_group(cfd_view cfd, cfh_view cfh) {
+    assert(num_cf_groups < HPG_MAX_NUM_CF_SUPPORTS);
+    cf_d[num_cf_groups] = cfd;
+    cf_h[num_cf_groups] = cfh;
+    ++num_cf_groups;
+  }
+
+  void
+  reset(bool free_pool = true) {
+    if (state && pool.is_allocated()) {
+      state->fence();
+      for (size_t i = 0; i < num_cf_groups; ++i) {
+        cf_h[i] = cfh_view();
+        cf_d[i] = cfd_view();
+      }
+      num_cf_groups = 0;
+      if (free_pool)
+        pool = decltype(pool)();
     }
-    auto min_pool = cf_pool_size(cf);
-    if (force || cf_pool.extent(0) < min_pool) {
-      // don't resize, since the pool may be shared by different streams,
-      // instead allocate a new pool
-      if (min_pool > 0)
-        cf_pool =
-          decltype(cf_pool)(K::ViewAllocateWithoutInitializing("cf"), min_pool);
-      else
-        cf_pool = decltype(cf_pool)();
-    }
+  }
+};
+
+template <Device D>
+struct ExecSpace final {
+  using kokkos_device = typename DeviceT<D>::kokkos_device;
+  using execution_space = typename kokkos_device::execution_space;
+  using memory_space = typename execution_space::memory_space;
+
+  execution_space space;
+  K::View<vis_t*, memory_space> visibilities;
+  K::View<unsigned*, memory_space> grid_cubes;
+  K::View<cf_index_t*, memory_space> cf_indexes;
+  K::View<vis_weight_fp*, memory_space> weights;
+  K::View<vis_frequency_fp*, memory_space> frequencies;
+  K::View<vis_phase_fp*, memory_space> phases;
+  K::View<vis_uvw_t*, memory_space> coordinates;
+  std::vector<std::any> vis_state;
+
+  ExecSpace(execution_space sp)
+    : space(sp) {
   }
 };
 
@@ -1699,6 +1799,7 @@ public:
 
   grid_view<typename GridLayout<D>::layout, memory_space> m_grid;
   weight_view<typename execution_space::array_layout, memory_space> m_weights;
+  CFPool<D> m_cf;
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
@@ -1724,6 +1825,7 @@ public:
 
     init_exec_spaces();
     new_grid(true, true);
+    m_cf = CFPool<D>(this);
   }
 
   StateT(const volatile StateT& st)
@@ -1739,6 +1841,8 @@ public:
     // gotta use a pointer to st here to avoid infinite recursion
     init_exec_spaces(const_cast<const StateT*>(&st));
     new_grid(const_cast<const StateT*>(&st), true);
+
+    m_cf = const_cast<const StateT&>(st).m_cf;
   }
 
   StateT(StateT&& st)
@@ -1756,12 +1860,15 @@ public:
     m_exec_spaces = std::move(st).m_exec_spaces;
     m_exec_space_indexes = std::move(st).m_exec_space_indexes;
     m_current = std::move(st).m_current;
+
+    m_cf = std::move(st).m_cf;
   }
 
   virtual ~StateT() {
     fence();
     m_grid = decltype(m_grid)();
     m_weights = decltype(m_weights)();
+    m_cf.reset();
     m_exec_spaces.clear();
     if constexpr(!std::is_void_v<stream_type>) {
       for (auto& str : m_streams) {
@@ -1792,7 +1899,7 @@ public:
 
   std::optional<Error>
   allocate_convolution_function_buffer(const CFArrayShape* cf) override {
-    m_exec_spaces[0].prepare_cf_pool(cf, true);
+    m_cf.prepare_pool(cf, true);
     return std::nullopt;
   }
 
@@ -1809,13 +1916,13 @@ public:
     }
 
     auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
-    exec.prepare_cf_pool(&cf_array);
+    m_cf.prepare_pool(&cf_array);
 
     size_t offset = 0;
     for (unsigned supp = 0; supp < cf_array.num_supports(); ++supp) {
       cf_view<typename CFLayout<D>::layout, memory_space>
         cf_init(
-          exec.cf_pool.data() + offset,
+          m_cf.pool.data() + offset,
           CFLayout<D>::dimensions(&cf_array, supp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
@@ -1856,9 +1963,8 @@ public:
         assert(false);
         break;
       }
-      exec.cf_d[supp] = cf_init;
-      exec.cf_h[supp] = cf_h;
-      offset += exec.cf_size(&cf_array, supp);
+      offset += m_cf.cf_size(&cf_array, supp);
+      m_cf.add_cf_group(cf_init, cf_h);
     }
     return std::nullopt;
   }
@@ -1953,7 +2059,7 @@ public:
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 0>::kernel(
       exec_compute.space,
-      exec_compute.cf_d,
+      m_cf.cf_d,
       len,
       vis,
       grid_cubes,
@@ -2058,7 +2164,7 @@ public:
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 1>::kernel(
       exec_compute.space,
-      exec_compute.cf_d,
+      m_cf.cf_d,
       len,
       vis,
       grid_cubes,
@@ -2267,6 +2373,11 @@ private:
     std::swap(m_exec_spaces, other.m_exec_spaces);
     std::swap(m_exec_space_indexes, other.m_exec_space_indexes);
     std::swap(m_current, other.m_current);
+
+    CFPool tmp_cf(this);
+    tmp_cf = std::move(m_cf);
+    m_cf = std::move(other.m_cf);
+    other.m_cf = std::move(tmp_cf);
   }
 
   void
@@ -2329,13 +2440,15 @@ private:
         K::deep_copy(esp.space, esp.frequencies, st_esp.frequencies);
         K::deep_copy(esp.space, esp.phases, st_esp.phases);
         K::deep_copy(esp.space, esp.coordinates, st_esp.coordinates);
-        esp.cf_d = st_esp.cf_d;
-        esp.cf_h = st_esp.cf_h;
         esp.vis_state = st_esp.vis_state;
       }
     }
     m_current = StreamPhase::COPY;
   }
+
+protected:
+
+  friend class CFPool<D>;
 
   int
   next_exec_space(StreamPhase next) {
@@ -2343,14 +2456,11 @@ private:
     int new_idx = old_idx;
     if (m_max_active_tasks > 1) {
       if (m_current == StreamPhase::COMPUTE && next == StreamPhase::COPY) {
-        auto& old_esp = m_exec_spaces[old_idx];
         m_exec_space_indexes.push_back(old_idx);
         m_exec_space_indexes.pop_front();
         new_idx = m_exec_space_indexes.front();
         auto& new_esp = m_exec_spaces[new_idx];
         new_esp.space.fence();
-        new_esp.cf_d = old_esp.cf_d;
-        new_esp.cf_h = old_esp.cf_h;
       } else if (m_current == StreamPhase::COPY
                  && next == StreamPhase::COMPUTE) {
         m_exec_spaces[m_exec_space_indexes[1]].space.fence();
@@ -2366,6 +2476,8 @@ private:
     m_current = next;
     return new_idx;
   }
+
+private:
 
   void
   new_grid(std::variant<const StateT*, bool> source, bool also_weights) {
