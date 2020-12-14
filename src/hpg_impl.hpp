@@ -1660,21 +1660,17 @@ struct CFPool final {
 
   CFPool(CFPool&&) = delete;
 
-  // copy and move assignment is OK, as long as the state pointer for both the
-  // target instance and argument do not change, unless target state pointer is
-  // null (exception is needed for new StateT instances)
+  // copy and move assignment is OK
 
   CFPool&
   operator=(const CFPool& rhs) {
     // TODO: make this exception-safe?
-    if (!state)
-      state = rhs.state;
+    reset();
     num_cf_groups = rhs.num_cf_groups;
     pool =
       decltype(pool)(
         K::ViewAllocateWithoutInitializing("cf"),
         rhs.pool.extent(0));
-    state->fence();
     rhs.state->fence();
     K::deep_copy(
       state->m_exec_spaces[state->next_exec_space(StreamPhase::COPY)].space,
@@ -1693,8 +1689,9 @@ struct CFPool final {
 
   CFPool&
   operator=(CFPool&& rhs) {
-    if (!state)
-      std::swap(state, rhs.state);
+    if (state)
+      state->fence();
+    rhs.state->fence();
     std::swap(pool, rhs.pool);
     std::swap(num_cf_groups, rhs.num_cf_groups);
     std::swap(cf_d, rhs.cf_d);
@@ -1825,7 +1822,7 @@ public:
 
     init_exec_spaces();
     new_grid(true, true);
-    m_cf = CFPool<D>(this);
+    m_cf.state = this;
   }
 
   StateT(const volatile StateT& st)
@@ -1842,6 +1839,7 @@ public:
     init_exec_spaces(const_cast<const StateT*>(&st));
     new_grid(const_cast<const StateT*>(&st), true);
 
+    m_cf.state = this;
     m_cf = const_cast<const StateT&>(st).m_cf;
   }
 
@@ -1861,6 +1859,7 @@ public:
     m_exec_space_indexes = std::move(st).m_exec_space_indexes;
     m_current = std::move(st).m_current;
 
+    m_cf.state = this;
     m_cf = std::move(st).m_cf;
   }
 
@@ -2359,6 +2358,7 @@ public:
   }
 
 private:
+
   void
   swap(StateT& other) {
     std::swap(m_max_active_tasks, other.m_max_active_tasks);
@@ -2374,7 +2374,7 @@ private:
     std::swap(m_exec_space_indexes, other.m_exec_space_indexes);
     std::swap(m_current, other.m_current);
 
-    CFPool tmp_cf(this);
+    CFPool<D> tmp_cf;
     tmp_cf = std::move(m_cf);
     m_cf = std::move(other.m_cf);
     other.m_cf = std::move(tmp_cf);
