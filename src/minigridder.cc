@@ -457,21 +457,21 @@ struct CFArray final
   }
 
   unsigned
-  num_supports() const override {
+  num_groups() const override {
     return static_cast<unsigned>(m_extents.size());
   }
 
   std::array<unsigned, 4>
-  extents(unsigned supp) const override {
-    return m_extents[supp];
+  extents(unsigned grp) const override {
+    return m_extents[grp];
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned supp)
+  operator()(unsigned x, unsigned y, unsigned copol, unsigned cube, unsigned grp)
     const override {
-    auto& vals = m_values[supp];
-    auto& ext = m_extents[supp];
-    return vals[((x * ext[1] + y) * ext[2] + sto) * ext[3] + cube];
+    auto& vals = m_values[grp];
+    auto& ext = m_extents[grp];
+    return vals[((x * ext[1] + y) * ext[2] + copol) * ext[3] + cube];
   }
 };
 
@@ -517,12 +517,12 @@ create_input_data(
     cf_values.emplace_back(cfl * oversampling * cfl * oversampling);
   }
 
-  auto const nsupp = cf_sizes.size();
-  for (size_t supp = 0; supp < nsupp; ++supp) {
-    auto cfs_p = cf_values[supp].data();
+  auto const ngrp = cf_sizes.size();
+  for (size_t grp = 0; grp < ngrp; ++grp) {
+    auto cfs_p = cf_values[grp].data();
     K::parallel_for(
       "init_cf",
-      K::RangePolicy<K::OpenMP>(0, cf_values[supp].size()),
+      K::RangePolicy<K::OpenMP>(0, cf_values[grp].size()),
       KOKKOS_LAMBDA(int i) {
         auto rstate = generator.get_state();
         *(cfs_p + i) =
@@ -568,9 +568,9 @@ create_input_data(
       *(frequencies_p + i) = freq;
       *(phases_p + i) = rstate.frand(-3.14, 3.14);
 
-      auto supp = rstate.urand(0, nsupp);
-      auto& cfsz = cf_sizes[supp];
-      *(cf_indexes_p + i) = {rstate.urand(0, cfsz[3]), supp};
+      auto grp = rstate.urand(0, ngrp);
+      auto& cfsz = cf_sizes[grp];
+      *(cf_indexes_p + i) = {rstate.urand(0, cfsz[3]), grp};
 
       std::array<unsigned, 2> border;
       if (strictly_inner) {

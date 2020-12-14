@@ -353,7 +353,7 @@ using vis_uvw_t = std::array<vis_uvw_fp, 3>;
 
 /** visibility CF index type
  *
- * in terms of full CFArray indexes, order is cube, supp
+ * in terms of full CFArray indexes, order is cube, grp
  */
 using vis_cf_index_t = std::pair<unsigned, unsigned>;
 
@@ -379,10 +379,10 @@ public:
   oversampling() const = 0;
 
   virtual unsigned
-  num_supports() const = 0;
+  num_groups() const = 0;
 
   virtual std::array<unsigned, 4>
-  extents(unsigned supp) const = 0;
+  extents(unsigned grp) const = 0;
 
   virtual ~CFArrayShape() {}
 };
@@ -395,7 +395,12 @@ public:
   using scalar_type = std::complex<cf_fp>;
 
   virtual std::complex<cf_fp>
-  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned supp)
+  operator()(
+    unsigned x,
+    unsigned y,
+    unsigned mrow,
+    unsigned cube,
+    unsigned grp)
     const = 0;
 
   virtual ~CFArray() {}
@@ -416,7 +421,7 @@ public:
   extent(unsigned dim) const = 0;
 
   virtual std::complex<grid_value_fp>
-  operator()(unsigned x, unsigned y, unsigned stokes, unsigned cube) const = 0;
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) const = 0;
 
   virtual ~GridValueArray() {}
 };
@@ -436,7 +441,7 @@ public:
   extent(unsigned dim) const = 0;
 
   virtual grid_value_fp
-  operator()(unsigned stokes, unsigned cube) const = 0;
+  operator()(unsigned mrow, unsigned cube) const = 0;
 
   virtual ~GridWeightArray() {}
 };
@@ -513,7 +518,7 @@ protected:
    * may be less than requested)
    * @param max_visibility_batch_size maximum number of visibilities to pass to
    * the gridding kernel at once
-   * @param grid_size, in logical axis order: X, Y, stokes, cube
+   * @param grid_size, in logical axis order: X, Y, mrow, cube
    * @param grid_scale, in X, Y order
    *
    * max_added_tasks may be used to control the level of concurrency available
@@ -919,7 +924,7 @@ protected:
    * number may be less than requested)
    * @param max_visibility_batch_size maximum number of visibilities to pass to
    * the gridding kernel at once
-   * @param grid_size, in logical axis order: X, Y, stokes, cube
+   * @param grid_size, in logical axis order: X, Y, mrow, cube
    * @param grid_scale, in X, Y order
    *
    * max_added_tasks may be used to control the level of concurrency available

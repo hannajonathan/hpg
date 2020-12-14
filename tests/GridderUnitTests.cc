@@ -51,21 +51,21 @@ struct MyCFArray final
   }
 
   unsigned
-  num_supports() const override {
+  num_groups() const override {
     return static_cast<unsigned>(m_extents.size());
   }
 
   std::array<unsigned, 4>
-  extents(unsigned supp) const override {
-    return m_extents[supp];
+  extents(unsigned grp) const override {
+    return m_extents[grp];
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned supp)
+  operator()(unsigned x, unsigned y, unsigned copol, unsigned cube, unsigned grp)
     const override {
-    auto& vals = m_values[supp];
-    auto& ext = m_extents[supp];
-    return vals[((x * ext[1] + y) * ext[2] + sto) * ext[3] + cube];
+    auto& vals = m_values[grp];
+    auto& ext = m_extents[grp];
+    return vals[((x * ext[1] + y) * ext[2] + copol) * ext[3] + cube];
   }
 };
 
@@ -124,17 +124,17 @@ init_visibilities(
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
   std::uniform_int_distribution<unsigned> dist_gcube(0, grid_size[3] - 1);
-  std::uniform_int_distribution<unsigned> dist_gsto(0, grid_size[2] - 1);
+  std::uniform_int_distribution<unsigned> dist_gcopol(0, grid_size[2] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
-  std::uniform_int_distribution<unsigned> dist_cfsupp(0, cf.num_supports() - 1);
+  std::uniform_int_distribution<unsigned> dist_cfgrp(0, cf.num_groups() - 1);
   auto x0 = (cf.oversampling() * (grid_size[0] - 2)) / 2;
   auto y0 = (cf.oversampling() * (grid_size[1] - 2)) / 2;
   double uscale = grid_scale[0] * cf.oversampling() * inv_lambda;
   double vscale = grid_scale[1] * cf.oversampling() * inv_lambda;
   for (auto i = 0; i < num_vis; ++i) {
-    auto supp = dist_cfsupp(gen);
-    auto cfextents = cf.extents(supp);
+    auto grp = dist_cfgrp(gen);
+    auto cfextents = cf.extents(grp);
     std::uniform_int_distribution<unsigned> dist_cfcube(0, cfextents[3] - 1);
     double ulim = (x0 - (cfextents[0]) / 2) / uscale;
     double vlim = (y0 - (cfextents[1]) / 2) / vscale;
@@ -142,7 +142,7 @@ init_visibilities(
     std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
     vis.emplace_back(dist_vis(gen), dist_vis(gen));
     grid_cubes.push_back(dist_gcube(gen));
-    cf_indexes.push_back({dist_cfcube(gen), supp});
+    cf_indexes.push_back({dist_cfcube(gen), grp});
     weights.push_back(dist_weight(gen));
     frequencies.push_back(freq);
     phases.emplace_back(0.0);
@@ -318,7 +318,7 @@ TEST(Gridder, CF) {
     EXPECT_FALSE(bool(oerr1));
   }
   {
-    // incorrect Stokes dimension size
+    // incorrect copolarization dimension size
     const std::array<unsigned, 4> cf_size{3, 3, 1, 3};
     auto oerr =
       hpg::Gridder(g).set_convolution_function(

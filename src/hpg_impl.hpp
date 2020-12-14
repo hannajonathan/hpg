@@ -223,7 +223,7 @@ using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
 
 /** View type for weight values
  *
- * logical axis order: stokes, cube
+ * logical axis order: mrow, cube
  */
 template <typename Layout, typename memory_space>
 using weight_view = K::View<grid_value_fp**, Layout, memory_space>;
@@ -273,7 +273,7 @@ struct GridLayout {
 
   /** create Kokkos layout using given grid dimensions
    *
-   * logical index order: X, Y, stokes, cube
+   * logical index order: X, Y, mrow, cube
    */
   static layout
   dimensions(const std::array<int, 4>& dims) {
@@ -305,11 +305,11 @@ struct CFLayout {
   /**
    * create Kokkos layout using given CFArray slice
    *
-   * logical index order: X, Y, stokes, x, y, cube
+   * logical index order: X, Y, mrow, x, y, cube
    */
   static layout
-  dimensions(const CFArrayShape* cf, unsigned supp) {
-    auto extents = cf->extents(supp);
+  dimensions(const CFArrayShape* cf, unsigned grp) {
+    auto extents = cf->extents(grp);
     std::array<int, 6> dims{
       static_cast<int>(extents[0] / cf->oversampling()),
       static_cast<int>(extents[1] / cf->oversampling()),
@@ -501,36 +501,36 @@ namespace Core {
 
 /** cf weight array type for reduction by gridding kernel */
 struct HPG_EXPORT cf_wgt_array final {
-  static constexpr int n_sto = 4;
+  static constexpr int n_mrow = 4;
 
-  cf_t wgts[n_sto];
+  cf_t wgts[n_mrow];
 
   KOKKOS_INLINE_FUNCTION cf_wgt_array() {
      init();
   }
 
   KOKKOS_INLINE_FUNCTION cf_wgt_array(const cf_wgt_array& rhs) {
-    for (int i = 0; i < n_sto; ++i)
+    for (int i = 0; i < n_mrow; ++i)
       wgts[i] = rhs.wgts[i];
   }
 
 
   KOKKOS_INLINE_FUNCTION void
   init() {
-    for (int i = 0; i < n_sto; ++i)
+    for (int i = 0; i < n_mrow; ++i)
       wgts[i] = 0;
   }
 
   KOKKOS_INLINE_FUNCTION cf_wgt_array&
   operator +=(const cf_wgt_array& src) {
-    for (int i = 0; i < n_sto; ++i)
+    for (int i = 0; i < n_mrow; ++i)
       wgts[i] += src.wgts[i];
     return *this;
   }
 
   KOKKOS_INLINE_FUNCTION void
   operator +=(const volatile cf_wgt_array& src) volatile {
-    for (int i = 0; i < n_sto; ++i)
+    for (int i = 0; i < n_mrow; ++i)
       wgts[i] += src.wgts[i];
   }
 };
@@ -639,8 +639,8 @@ struct HPG_EXPORT VisibilityGridder final {
         auto i = team_member.league_rank();
 
         const unsigned& cf_cube = cf_indexes(i).first;
-        const unsigned& cf_supp = cf_indexes(i).second;
-        const auto& cf = cfs[cf_supp];
+        const unsigned& cf_grp = cf_indexes(i).second;
+        const auto& cf = cfs[cf_grp];
 
         const K::Array<int, 2>
           cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
@@ -660,7 +660,7 @@ struct HPG_EXPORT VisibilityGridder final {
         // convenience variables
         const int N_X = cf.extent_int(0);
         const int N_Y = cf.extent_int(1);
-        const int N_S = cf.extent_int(2);
+        const int N_C = cf.extent_int(2);
         // skip this visibility if all of the updated grid points are not within
         // grid bounds
         if (0 <= vis.major[0] && vis.major[0] + N_X <= grid.extent_int(0)
@@ -668,9 +668,9 @@ struct HPG_EXPORT VisibilityGridder final {
           // accumulate weights in scratch memory for this visibility
           scratch_wgts_view cfw(team_member.team_scratch(0));
           K::parallel_for(
-            K::TeamVectorRange(team_member, N_S),
-            [=](const int S) {
-              cfw(0).wgts[S] = 0;
+            K::TeamVectorRange(team_member, N_C),
+            [=](const int C) {
+              cfw(0).wgts[C] = 0;
             });
           team_member.team_barrier();
           /* loop over majorX */
@@ -678,15 +678,15 @@ struct HPG_EXPORT VisibilityGridder final {
             K::TeamVectorRange(team_member, N_X),
             [=](const int X, cf_wgt_array& cfw_l) {
               /* loop over elements (rows) of Mueller matrix column  */
-              for (int S = 0; S < N_S; ++S){
+              for (int C = 0; C < N_C; ++C){
                 /* loop over majorY */
                 for (int Y = 0; Y < N_Y; ++Y) {
-                  cf_t cfv = cf(X, Y, S, vis.minor[0], vis.minor[1], cf_cube);
+                  cf_t cfv = cf(X, Y, C, vis.minor[0], vis.minor[1], cf_cube);
                   cfv.imag() *= vis.cf_im_factor;
                   pseudo_atomic_add<execution_space>(
-                    grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
+                    grid(vis.major[0] + X, vis.major[1] + Y, C, vis.grid_cube),
                     gv_t(cfv * vis.value));
-                  cfw_l.wgts[S] += cfv;
+                  cfw_l.wgts[C] += cfv;
                 }
               }
             },
@@ -697,12 +697,12 @@ struct HPG_EXPORT VisibilityGridder final {
           team_member.team_barrier();
           // update weights array
           K::parallel_for(
-            K::TeamVectorRange(team_member, N_S),
-            [=](const int S) {
+            K::TeamVectorRange(team_member, N_C),
+            [=](const int C) {
               K::atomic_add(
-                &weights(S, vis.grid_cube),
+                &weights(C, vis.grid_cube),
                 grid_value_fp(
-                  std::hypot(cfw(0).wgts[S].real(), cfw(0).wgts[S].imag())
+                  std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
                   * vis.weight));
             });
         }
@@ -755,8 +755,8 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
         auto i = team_member.league_rank();
 
         const unsigned& cf_cube = cf_indexes(i).first;
-        const unsigned& cf_supp = cf_indexes(i).second;
-        const auto& cf = cfs[cf_supp];
+        const unsigned& cf_grp = cf_indexes(i).second;
+        const auto& cf = cfs[cf_grp];
 
         const K::Array<int, 2>
           cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
@@ -776,13 +776,13 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
         // convenience variables
         const int N_X = cf.extent_int(0);
         const int N_Y = cf.extent_int(1);
-        const int N_S = cf.extent_int(2);
+        const int N_C = cf.extent_int(2);
         // accumulate weights in scratch memory for this visibility
         scratch_wgts_view cfw(team_member.team_scratch(0));
         K::parallel_for(
-          K::TeamVectorRange(team_member, N_S),
-          [=](const int S) {
-            cfw(0).wgts[S] = 0;
+          K::TeamVectorRange(team_member, N_C),
+          [=](const int C) {
+            cfw(0).wgts[C] = 0;
           });
         team_member.team_barrier();
         /* loop over majorX */
@@ -790,15 +790,15 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
           K::TeamVectorRange(team_member, N_X),
           [=](const int X, cf_wgt_array& cfw_l) {
             /* loop over elements (rows) of Mueller matrix column  */
-            for (int S = 0; S < N_S; ++S){
+            for (int C = 0; C < N_C; ++C){
               /* loop over majorY */
               for (int Y = 0; Y < N_Y; ++Y) {
-                cf_t cfv = cf(X, Y, S, vis.minor[0], vis.minor[1], cf_cube);
+                cf_t cfv = cf(X, Y, C, vis.minor[0], vis.minor[1], cf_cube);
                 cfv.imag() *= vis.cf_im_factor;
                 pseudo_atomic_add<execution_space>(
-                  grid(vis.major[0] + X, vis.major[1] + Y, S, vis.grid_cube),
+                  grid(vis.major[0] + X, vis.major[1] + Y, C, vis.grid_cube),
                   gv_t(cfv * vis.value));
-                cfw_l.wgts[S] += cfv;
+                cfw_l.wgts[C] += cfv;
               }
             }
           },
@@ -809,12 +809,12 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
         team_member.team_barrier();
         // update weights array
         K::parallel_for(
-          K::TeamVectorRange(team_member, N_S),
-          [=](const int S) {
+          K::TeamVectorRange(team_member, N_C),
+          [=](const int C) {
             K::atomic_add(
-              &weights(S, vis.grid_cube),
+              &weights(C, vis.grid_cube),
               grid_value_fp(
-                std::hypot(cfw(0).wgts[S].real(), cfw(0).wgts[S].imag())
+                std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
                 * vis.weight));
           });
       });
@@ -845,8 +845,8 @@ struct HPG_EXPORT GridNormalizer final {
          grid.extent_int(1),
          grid.extent_int(2),
          grid.extent_int(3)}),
-      KOKKOS_LAMBDA(int x, int y, int stokes, int cube) {
-        grid(x, y, stokes, cube) /= (wfactor * weights(stokes, cube));
+      KOKKOS_LAMBDA(int x, int y, int mrow, int cube) {
+        grid(x, y, mrow, cube) /= (wfactor * weights(mrow, cube));
       });
   }
 };
@@ -1052,8 +1052,8 @@ struct HPG_EXPORT FFT final {
     if (h0 == nullptr || h1 == nullptr)
       result = Error("fftw in_place_kernel() failed");
     if (!result) {
-      for (int sto = 0; sto < grid.extent_int(2); ++sto) {
-        FFTW<scalar_t>::exec(h0, &grid(0, 0, sto, 0), &grid(0, 0, sto, 0));
+      for (int mrow = 0; mrow < grid.extent_int(2); ++mrow) {
+        FFTW<scalar_t>::exec(h0, &grid(0, 0, mrow, 0), &grid(0, 0, mrow, 0));
         std::swap(h0, h1);
       }
       FFTW<scalar_t>::destroy_plan(handles);
@@ -1080,11 +1080,11 @@ struct HPG_EXPORT FFT final {
     if (h0 == nullptr || h1 == nullptr)
       result = Error("fftw in_place_kernel() failed");
     if (!result) {
-      for (int sto = 0; sto < pre_grid.extent_int(2); ++sto) {
+      for (int mrow = 0; mrow < pre_grid.extent_int(2); ++mrow) {
         FFTW<scalar_t>::exec(
           h0,
-          const_cast<K::complex<scalar_t>*>(&pre_grid(0, 0, sto, 0)),
-          &post_grid(0, 0, sto, 0));
+          const_cast<K::complex<scalar_t>*>(&pre_grid(0, 0, mrow, 0)),
+          &post_grid(0, 0, mrow, 0));
         std::swap(h0, h1);
       }
       FFTW<scalar_t>::destroy_plan(handles);
@@ -1277,7 +1277,7 @@ struct HPG_EXPORT GridShifter final {
 
     int n_x = grid.extent_int(0);
     int n_y = grid.extent_int(1);
-    int n_sto = grid.extent_int(2);
+    int n_mrow = grid.extent_int(2);
     int n_cube = grid.extent_int(3);
 
     int mid_x = n_x / 2;
@@ -1288,15 +1288,15 @@ struct HPG_EXPORT GridShifter final {
 
       K::parallel_for(
         "grid_shift_ee",
-        K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
+        K::TeamPolicy<execution_space>(exec, n_mrow * n_cube, K::AUTO),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto gplane =
             K::subview(
               grid,
               K::ALL,
               K::ALL,
-              team_member.league_rank() % n_sto,
-              team_member.league_rank() / n_sto);
+              team_member.league_rank() % n_mrow,
+              team_member.league_rank() / n_mrow);
           K::parallel_for(
             K::TeamVectorRange(team_member, n_x / 2),
             [=](int x) {
@@ -1315,15 +1315,15 @@ struct HPG_EXPORT GridShifter final {
 
       K::parallel_for(
         "grid_rotation_oo",
-        K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
+        K::TeamPolicy<execution_space>(exec, n_mrow * n_cube, K::AUTO),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto gplane =
             K::subview(
               grid,
               K::ALL,
               K::ALL,
-              team_member.league_rank() % n_sto,
-              team_member.league_rank() / n_sto);
+              team_member.league_rank() % n_mrow,
+              team_member.league_rank() / n_mrow);
           K::parallel_for(
             K::TeamVectorRange(team_member, n_x),
             [=](int x) {
@@ -1345,15 +1345,15 @@ struct HPG_EXPORT GridShifter final {
 
       K::parallel_for(
         "grid_rotation_gen",
-        K::TeamPolicy<execution_space>(exec, n_sto * n_cube, K::AUTO),
+        K::TeamPolicy<execution_space>(exec, n_mrow * n_cube, K::AUTO),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto gplane =
             K::subview(
               grid,
               K::ALL,
               K::ALL,
-              team_member.league_rank() % n_sto,
-              team_member.league_rank() / n_sto);
+              team_member.league_rank() % n_mrow,
+              team_member.league_rank() / n_mrow);
 
           // first pass, parallel over x
           if (n_y % 2 == 1)
@@ -1531,10 +1531,10 @@ public:
   }
 
   std::complex<grid_value_fp>
-  operator()(unsigned x, unsigned y, unsigned stokes, unsigned cube)
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube)
     const override {
 
-    return grid(x, y, stokes, cube);
+    return grid(x, y, mrow, cube);
   }
 };
 
@@ -1562,23 +1562,23 @@ class HPG_EXPORT GridWeightViewArray final
   }
 
   grid_value_fp
-  operator()(unsigned stokes, unsigned cube) const override {
+  operator()(unsigned mrow, unsigned cube) const override {
 
-    return weight(stokes, cube);
+    return weight(mrow, cube);
   }
 };
 
 /** initialize CF array view from CFArray instance */
 template <Device D, typename CFH>
 static void
-init_cf_host(CFH& cf_h, const CFArray& cf, unsigned sp) {
+init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
   static_assert(
     K::SpaceAccessibility<
       typename DeviceT<D>::kokkos_device::memory_space,
       K::HostSpace>
     ::accessible);
 
-  auto extents = cf.extents(sp);
+  auto extents = cf.extents(grp);
   auto oversampling = cf.oversampling();
   K::parallel_for(
     "cf_init",
@@ -1588,12 +1588,12 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned sp) {
        static_cast<int>(extents[1]),
        static_cast<int>(extents[2]),
        static_cast<int>(extents[3])}),
-    [&](int i, int j, int poln, int cube) {
+    [&](int i, int j, int mrow, int cube) {
       auto X = i / oversampling;
       auto x = i % oversampling;
       auto Y = j / oversampling;
       auto y = j % oversampling;
-      cf_h(X, Y, poln, x, y, cube) = cf(i, j, poln, cube, sp);
+      cf_h(X, Y, mrow, x, y, cube) = cf(i, j, mrow, cube, grp);
     });
 }
 
@@ -1704,8 +1704,8 @@ struct CFPool final {
   }
 
   static size_t
-  cf_size(const CFArrayShape* cf, unsigned supp) {
-    auto layout = CFLayout<D>::dimensions(cf, supp);
+  cf_size(const CFArrayShape* cf, unsigned grp) {
+    auto layout = CFLayout<D>::dimensions(cf, grp);
     // TODO: it would be best to use the following to compute
     // allocation size, but it is not implemented in Kokkos
     // 'auto alloc_sz = cfd_view::required_allocation_size(layout)'
@@ -1725,8 +1725,8 @@ struct CFPool final {
   pool_size(const CFArrayShape* cf) {
     size_t result = 0;
     if (cf)
-      for (unsigned supp = 0; supp < cf->num_supports(); ++supp)
-        result += cf_size(cf, supp);
+      for (unsigned grp = 0; grp < cf->num_groups(); ++grp)
+        result += cf_size(cf, grp);
     return result;
   }
 
@@ -1905,10 +1905,11 @@ public:
   std::optional<Error>
   set_convolution_function(Device host_device, CFArray&& cf_array) override {
 
-    for (unsigned supp = 0; supp < cf_array.num_supports(); ++supp) {
-      auto extents = cf_array.extents(supp);
+    for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
+      auto extents = cf_array.extents(grp);
       if (extents[2] != m_grid_size[2])
-        return Error("Unequal size of Stokes dimension in grid and CF");
+        return
+          Error("Unequal size of Mueller row dimension in grid and CF");
       if (extents[0] > m_grid_size[0] * cf_array.oversampling()
           || extents[1] > m_grid_size[1] * cf_array.oversampling())
         return Error("CF support size exceeds grid size");
@@ -1918,11 +1919,11 @@ public:
     m_cf.prepare_pool(&cf_array);
 
     size_t offset = 0;
-    for (unsigned supp = 0; supp < cf_array.num_supports(); ++supp) {
+    for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cf_view<typename CFLayout<D>::layout, memory_space>
         cf_init(
           m_cf.pool.data() + offset,
-          CFLayout<D>::dimensions(&cf_array, supp));
+          CFLayout<D>::dimensions(&cf_array, grp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
                 << " " << cf_init.extent(1)
@@ -1945,7 +1946,7 @@ public:
 #ifdef HPG_ENABLE_SERIAL
       case Device::Serial: {
         cf_h = K::create_mirror_view(cf_init);
-        init_cf_host<Device::Serial>(cf_h, cf_array, supp);
+        init_cf_host<Device::Serial>(cf_h, cf_array, grp);
         K::deep_copy(exec.space, cf_init, cf_h);
         break;
       }
@@ -1953,7 +1954,7 @@ public:
 #ifdef HPG_ENABLE_OPENMP
       case Device::OpenMP: {
         cf_h = K::create_mirror_view(cf_init);
-        init_cf_host<Device::OpenMP>(cf_h, cf_array, supp);
+        init_cf_host<Device::OpenMP>(cf_h, cf_array, grp);
         K::deep_copy(exec.space, cf_init, cf_h);
         break;
       }
@@ -1962,7 +1963,7 @@ public:
         assert(false);
         break;
       }
-      offset += m_cf.cf_size(&cf_array, supp);
+      offset += m_cf.cf_size(&cf_array, grp);
       m_cf.add_cf_group(cf_init, cf_h);
     }
     return std::nullopt;

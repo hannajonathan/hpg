@@ -33,7 +33,7 @@ struct MyCFArray final
   }
 
   unsigned
-  num_supports() const override {
+  num_groups() const override {
     return 1;
   }
 
@@ -43,11 +43,11 @@ struct MyCFArray final
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned sto, unsigned cube, unsigned)
+  operator()(unsigned x, unsigned y, unsigned copol, unsigned cube, unsigned)
     const override {
     return
       m_values[
-        ((x * m_extent[1] + y) * m_extent[2] + sto) * m_extent[3] + cube];
+        ((x * m_extent[1] + y) * m_extent[2] + copol) * m_extent[3] + cube];
   }
 };
 
@@ -100,7 +100,7 @@ init_visibilities(
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
   std::uniform_int_distribution<unsigned> dist_gcube(0, grid_size[3] - 1);
-  std::uniform_int_distribution<unsigned> dist_gsto(0, grid_size[2] - 1);
+  std::uniform_int_distribution<unsigned> dist_gcopol(0, grid_size[2] - 1);
   std::uniform_int_distribution<unsigned> dist_cfcube(0, cf_size[3] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
@@ -191,9 +191,9 @@ run_tests(
     std::cout << "gridded" << std::endl;
     auto weights = g0.grid_weights();
     std::cout << "weights";
-    for (auto sto = 0; sto < grid_size[2]; ++sto)
+    for (auto copol = 0; copol < grid_size[2]; ++copol)
       for (auto ch = 0; ch < grid_size[3]; ++ch)
-        std::cout << " " << weights->operator()(sto, ch);
+        std::cout << " " << weights->operator()(copol, ch);
     std::cout << std::endl;
     {
       auto grid = g0.grid_values();
@@ -255,12 +255,12 @@ dump_grids(
     std::cout << "after fft" << std::endl;
     auto gval = g0.grid_values();
     for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
-      for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
-        std::cout << "cube " << cube << ", sto " << sto << std::endl;
+      for (unsigned copol = 0; copol < grid_size[2]; ++copol) {
+        std::cout << "cube " << cube << ", copol " << copol << std::endl;
         for (unsigned y = 0; y < grid_size[1]; ++y) {
           std::cout << "  " << y << ": ";
           for (unsigned x = 0; x < grid_size[0]; ++x)
-            std::cout << gval->operator()(x, y, sto, cube) << " ";
+            std::cout << gval->operator()(x, y, copol, cube) << " ";
           std::cout << std::endl;
         }
       }
@@ -271,12 +271,12 @@ dump_grids(
     std::cout << "after rotation" << std::endl;
     auto gval = g0.grid_values();
     for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
-      for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
-        std::cout << "cube " << cube << ", sto " << sto << std::endl;
+      for (unsigned copol = 0; copol < grid_size[2]; ++copol) {
+        std::cout << "cube " << cube << ", copol " << copol << std::endl;
         for (unsigned y = 0; y < grid_size[1]; ++y) {
           std::cout << "  " << y << ": ";
           for (unsigned x = 0; x < grid_size[0]; ++x)
-            std::cout << gval->operator()(x, y, sto, cube) << " ";
+            std::cout << gval->operator()(x, y, copol, cube) << " ";
           std::cout << std::endl;
         }
       }
