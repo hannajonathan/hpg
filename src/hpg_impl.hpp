@@ -36,6 +36,18 @@ namespace KExp = Kokkos::Experimental;
  */
 
 namespace hpg {
+
+struct OutOfBoundsCFIndexError
+  : public Error {
+
+  OutOfBoundsCFIndexError(const vis_cf_index_t& idx)
+    : Error(
+      "vis_cf_index_t value (" + std::to_string(std::get<0>(idx))
+      + "," + std::to_string(std::get<1>(idx))
+      + ") is out of bounds for current CFArray",
+      ErrorType::OutOfBoundsCFIndex) {}
+};
+
 namespace Impl {
 
 /** visibility value type */
@@ -1460,7 +1472,7 @@ struct State {
   virtual std::optional<Error>
   set_convolution_function(Device host_device, CFArray&& cf) = 0;
 
-  virtual void
+  virtual std::optional<Error>
   grid_visibilities(
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
@@ -2061,7 +2073,7 @@ public:
   }
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 
-  void
+  std::optional<Error>
   grid_visibilities(
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
@@ -2081,6 +2093,18 @@ public:
     const auto cf_indexes =
       std::make_shared<std::vector<vis_cf_index_t>>(
         std::move(visibility_cf_indexes));
+#ifndef NDEBUG
+    for (auto& [cube, supp] : *cf_indexes) {
+      if ((supp >= m_cf.num_cf_groups)
+          || (cube >= m_cf.cf_d[supp].extent_int(5))) {
+        std::cerr << "vis_cf_index_t value ("
+                  << cube << "," << supp
+                  << ") is out of bounds for current CFArray"
+                  << std::endl;
+        return OutOfBoundsCFIndexError({cube, supp});
+      }
+    }
+#endif // NDEBUG
     const auto weights =
       std::make_shared<std::vector<vis_weight_fp>>(
         std::move(visibility_weights));
@@ -2125,6 +2149,7 @@ public:
       break;
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     }
+    return std::nullopt;
   }
 
   void

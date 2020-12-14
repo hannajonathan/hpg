@@ -25,7 +25,7 @@ struct IncompatibleVisVectorLengthError
   : public Error {
 
   IncompatibleVisVectorLengthError()
-    : Error (
+    : Error(
       "Incompatible visibility vector lengths",
       ErrorType::IncompatibleVisVectorLengths) {}
 };
@@ -114,16 +114,20 @@ struct Impl::GridderState {
 
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
-      result.impl->grid_visibilities(
-        host_device,
-        std::move(visibilities),
-        std::move(visibility_grid_cubes),
-        std::move(visibility_cf_indexes),
-        std::move(visibility_weights),
-        std::move(visibility_frequencies),
-        std::move(visibility_phases),
-        std::move(visibility_coordinates));
-      return result;
+      auto error =
+        result.impl->grid_visibilities(
+          host_device,
+          std::move(visibilities),
+          std::move(visibility_grid_cubes),
+          std::move(visibility_cf_indexes),
+          std::move(visibility_weights),
+          std::move(visibility_frequencies),
+          std::move(visibility_phases),
+          std::move(visibility_coordinates));
+      if (error)
+        return std::move(error.value());
+      else
+        return std::move(result);
     } else {
       return DisabledHostDeviceError();
     }

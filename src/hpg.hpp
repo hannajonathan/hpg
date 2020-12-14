@@ -83,6 +83,7 @@ enum class HPG_EXPORT ErrorType {
   DisabledDevice,
   DisabledHostDevice,
   IncompatibleVisVectorLengths,
+  OutOfBoundsCFIndex,
   Other
 };
 
