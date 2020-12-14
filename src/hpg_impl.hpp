@@ -2096,13 +2096,8 @@ public:
 #ifndef NDEBUG
     for (auto& [cube, supp] : *cf_indexes) {
       if ((supp >= m_cf.num_cf_groups)
-          || (cube >= m_cf.cf_d[supp].extent_int(5))) {
-        std::cerr << "vis_cf_index_t value ("
-                  << cube << "," << supp
-                  << ") is out of bounds for current CFArray"
-                  << std::endl;
+          || (cube >= m_cf.cf_d[supp].extent_int(5)))
         return OutOfBoundsCFIndexError({cube, supp});
-      }
     }
 #endif // NDEBUG
     const auto weights =
