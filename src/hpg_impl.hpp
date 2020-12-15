@@ -604,7 +604,7 @@ struct HPG_EXPORT VisibilityGridder final {
     execution_space exec,
     const K::Array<
       cf_view<cf_layout, memory_space>,
-      HPG_MAX_NUM_CF_SUPPORTS>& cfs,
+      HPG_MAX_NUM_CF_GROUPS>& cfs,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
     const K::View<const unsigned*, memory_space>& grid_cubes,
@@ -720,7 +720,7 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
     execution_space exec,
     const K::Array<
       cf_view<cf_layout, memory_space>,
-      HPG_MAX_NUM_CF_SUPPORTS>& cfs,
+      HPG_MAX_NUM_CF_GROUPS>& cfs,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
     const K::View<const unsigned*, memory_space>& grid_cubes,
@@ -1630,14 +1630,14 @@ struct CFPool final {
   StateT<D> *state;
   K::View<cf_t*, memory_space> pool;
   unsigned num_cf_groups;
-  K::Array<cfd_view, HPG_MAX_NUM_CF_SUPPORTS> cf_d; // unmanaged (in pool)
-  K::Array<cfh_view, HPG_MAX_NUM_CF_SUPPORTS> cf_h; // managed
+  K::Array<cfd_view, HPG_MAX_NUM_CF_GROUPS> cf_d; // unmanaged (in pool)
+  K::Array<cfh_view, HPG_MAX_NUM_CF_GROUPS> cf_h; // managed
 
   CFPool()
     : state(nullptr)
     , num_cf_groups(0) {
 
-    for (size_t i = 0; i < HPG_MAX_NUM_CF_SUPPORTS; ++i) {
+    for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i) {
       cf_d[i] = cfd_view();
       cf_h[i] = cfh_view();
     }
@@ -1647,7 +1647,7 @@ struct CFPool final {
     : state(st)
     , num_cf_groups(0) {
 
-    for (size_t i = 0; i < HPG_MAX_NUM_CF_SUPPORTS; ++i) {
+    for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i) {
       cf_d[i] = cfd_view();
       cf_h[i] = cfh_view();
     }
@@ -1741,7 +1741,7 @@ struct CFPool final {
 
   void
   add_cf_group(cfd_view cfd, cfh_view cfh) {
-    assert(num_cf_groups < HPG_MAX_NUM_CF_SUPPORTS);
+    assert(num_cf_groups < HPG_MAX_NUM_CF_GROUPS);
     cf_d[num_cf_groups] = cfd;
     cf_h[num_cf_groups] = cfh;
     ++num_cf_groups;
