@@ -132,7 +132,8 @@ init_visibilities(
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
   std::vector<hpg::vis_phase_fp>& phases,
-  std::vector<hpg::vis_uvw_t>& coordinates) {
+  std::vector<hpg::vis_uvw_t>& coordinates,
+  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
   vis.clear();
   vis.reserve(num_vis);
@@ -148,6 +149,7 @@ init_visibilities(
   phases.reserve(num_vis);
   coordinates.clear();
   coordinates.reserve(num_vis);
+  cf_phase_screens.resize(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -445,6 +447,7 @@ TEST(Gridder, Reset) {
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
   std::vector<hpg::vis_uvw_t> coordinates;
+  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
     const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
@@ -462,7 +465,8 @@ TEST(Gridder, Reset) {
       weights,
       frequencies,
       phases,
-      coordinates);
+      coordinates,
+      cf_phase_screens);
     g.grid_visibilities(
       default_host_device,
       std::move(vis),
@@ -471,7 +475,8 @@ TEST(Gridder, Reset) {
       std::move(weights),
       std::move(frequencies),
       std::move(phases),
-      std::move(coordinates));
+      std::move(coordinates),
+      std::move(cf_phase_screens));
 
     auto values = g.grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));

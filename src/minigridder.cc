@@ -328,7 +328,7 @@ struct InputData {
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
   std::vector<hpg::vis_uvw_t> coordinates;
-
+  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 };
 
 /** create visibility data
@@ -496,7 +496,8 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
               std::move(id.weights),
               std::move(id.frequencies),
               std::move(id.phases),
-              std::move(id.coordinates)),
+              std::move(id.coordinates),
+              std::move(id.cf_phase_screens)),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));

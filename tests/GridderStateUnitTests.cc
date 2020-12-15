@@ -140,7 +140,8 @@ init_visibilities(
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
   std::vector<hpg::vis_phase_fp>& phases,
-  std::vector<hpg::vis_uvw_t>& coordinates) {
+  std::vector<hpg::vis_uvw_t>& coordinates,
+  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
   vis.clear();
   vis.reserve(num_vis);
@@ -156,6 +157,7 @@ init_visibilities(
   phases.reserve(num_vis);
   coordinates.clear();
   coordinates.reserve(num_vis);
+  cf_phase_screens.resize(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -415,6 +417,7 @@ TEST(GridderState, CopyOrMove) {
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
   std::vector<hpg::vis_uvw_t> coordinates;
+  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
     const std::vector<std::array<unsigned, 4>>
@@ -435,7 +438,8 @@ TEST(GridderState, CopyOrMove) {
       weights,
       frequencies,
       phases,
-      coordinates);
+      coordinates,
+      cf_phase_screens);
     auto gs2 =
       hpg::get_value(
         gs1.grid_visibilities(
@@ -446,7 +450,8 @@ TEST(GridderState, CopyOrMove) {
           decltype(weights)(weights),
           decltype(frequencies)(frequencies),
           decltype(phases)(phases),
-          decltype(coordinates)(coordinates)));
+          decltype(coordinates)(coordinates),
+          decltype(cf_phase_screens)(cf_phase_screens)));
 
     // gridded visibilities should be in gs2, not gs1
     auto [gs3, values] = std::move(gs1).grid_values();
@@ -464,7 +469,8 @@ TEST(GridderState, CopyOrMove) {
           std::move(weights),
           std::move(frequencies),
           std::move(phases),
-          std::move(coordinates)));
+          std::move(coordinates),
+          std::move(cf_phase_screens)));
 
     // gs2 and gs4 should have same grid values
     auto [gs5, values5] = std::move(gs2).grid_values();
@@ -592,6 +598,7 @@ TEST(GridderState, Reset) {
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
   std::vector<hpg::vis_uvw_t> coordinates;
+  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
     const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
@@ -611,7 +618,8 @@ TEST(GridderState, Reset) {
       weights,
       frequencies,
       phases,
-      coordinates);
+      coordinates,
+      cf_phase_screens);
     auto gs2 =
       hpg::get_value(
         std::move(gs1).grid_visibilities(
@@ -622,7 +630,8 @@ TEST(GridderState, Reset) {
           std::move(weights),
           std::move(frequencies),
           std::move(phases),
-          std::move(coordinates)));
+          std::move(coordinates),
+          std::move(cf_phase_screens)));
 
     auto [gs3, values] = std::move(gs2).grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));
@@ -670,6 +679,7 @@ TEST(GridderState, Sequences) {
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
   std::vector<hpg::vis_uvw_t> coordinates;
+  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
     const std::vector<std::array<unsigned, 4>>
@@ -690,7 +700,8 @@ TEST(GridderState, Sequences) {
       weights,
       frequencies,
       phases,
-      coordinates);
+      coordinates,
+      cf_phase_screens);
     auto gs2 =
       hpg::get_value(
         std::move(gs1).grid_visibilities(
@@ -701,7 +712,8 @@ TEST(GridderState, Sequences) {
           decltype(weights)(weights),
           decltype(frequencies)(frequencies),
           decltype(phases)(phases),
-          decltype(coordinates)(coordinates)));
+          decltype(coordinates)(coordinates),
+          decltype(cf_phase_screens)(cf_phase_screens)));
 
     auto err_or_gs3 =
       std::move(gs2).grid_visibilities(
@@ -712,7 +724,8 @@ TEST(GridderState, Sequences) {
         decltype(weights)(weights),
         decltype(frequencies)(frequencies),
         decltype(phases)(phases),
-        decltype(coordinates)(coordinates));
+        decltype(coordinates)(coordinates),
+        decltype(cf_phase_screens)(cf_phase_screens));
     ASSERT_TRUE(hpg::is_value(err_or_gs3));
 
     auto err_or_gs4 =
@@ -729,7 +742,8 @@ TEST(GridderState, Sequences) {
         decltype(weights)(weights),
         decltype(frequencies)(frequencies),
         decltype(phases)(phases),
-        decltype(coordinates)(coordinates));
+        decltype(coordinates)(coordinates),
+        decltype(cf_phase_screens)(cf_phase_screens));
     ASSERT_TRUE(hpg::is_value(err_or_gs5));
 
     auto err_or_gs6 =
@@ -741,7 +755,8 @@ TEST(GridderState, Sequences) {
         decltype(weights)(weights),
         decltype(frequencies)(frequencies),
         decltype(phases)(phases),
-        decltype(coordinates)(coordinates));
+        decltype(coordinates)(coordinates),
+        decltype(cf_phase_screens)(cf_phase_screens));
     ASSERT_TRUE(hpg::is_value(err_or_gs6));
   }
 }
@@ -915,6 +930,7 @@ TEST(GridderState, Batching) {
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
   std::vector<hpg::vis_uvw_t> coordinates;
+  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   init_visibilities(
     num_vis,
@@ -928,7 +944,8 @@ TEST(GridderState, Batching) {
     weights,
     frequencies,
     phases,
-    coordinates);
+    coordinates,
+    cf_phase_screens);
 
   auto gv_small =
     std::get<1>(
@@ -942,7 +959,8 @@ TEST(GridderState, Batching) {
             decltype(weights)(weights),
             decltype(frequencies)(frequencies),
             decltype(phases)(phases),
-            decltype(coordinates)(coordinates))
+            decltype(coordinates)(coordinates),
+            decltype(cf_phase_screens)(cf_phase_screens))
           , [](auto&& g) {
               return std::move(g).grid_values();
             })));
@@ -959,7 +977,8 @@ TEST(GridderState, Batching) {
             decltype(weights)(weights),
             decltype(frequencies)(frequencies),
             decltype(phases)(phases),
-            decltype(coordinates)(coordinates))
+            decltype(coordinates)(coordinates),
+            decltype(cf_phase_screens)(cf_phase_screens))
           , [](auto&& g) {
               return std::move(g).grid_values();
             })));

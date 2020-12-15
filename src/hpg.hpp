@@ -132,9 +132,15 @@ using vis_weight_fp = float;
 using vis_frequency_fp = float;
 /** visibility phase floating point type */
 using vis_phase_fp = double;
+/** CF phase screen floating point type */
+using cf_phase_screen_fp = float;
 
 // vis_uvw_t can be any type that supports std::get<N>() for element access
 using vis_uvw_t = std::array<vis_uvw_fp, 3>;
+
+// cf_phase_screen_t can be any type that supports std::get<N>() for element
+// access
+using cf_phase_screen_t = std::array<cf_phase_screen_fp, 2>;
 
 /** visibility CF index type
  *
@@ -498,16 +504,16 @@ public:
    *
    * The indexing of visibilities and all other metadata vectors must be
    * consistent. For example the weight for the visibility value visibilities[i]
-   * must be located at visibility_weights[i].
+   * must be located at weights[i].
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param visibility_grid_cubes visibility grid cube indexes
-   * @param visibility_cf_indexes visibility convolution function indexes
-   * @param visibility_weights visibility weights
-   * @param visibility_frequencies visibility frequencies
-   * @param visibility_phases visibility phase differences
-   * @param visibility_coordinates visibility coordinates
+   * @param grid_cubes visibility grid cube indexes
+   * @param cf_indexes visibility convolution function indexes
+   * @param weights visibility weights
+   * @param frequencies visibility frequencies
+   * @param phases visibility phase differences
+   * @param coordinates visibility coordinates
    *
    * @sa Gridder::grid_visibilities()
    */
@@ -515,12 +521,47 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
-    std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<vis_cf_index_t>&& visibility_cf_indexes,
-    std::vector<vis_weight_fp>&& visibility_weights,
-    std::vector<vis_frequency_fp>&& visibility_frequencies,
-    std::vector<vis_phase_fp>&& visibility_phases,
-    std::vector<vis_uvw_t>&& visibility_coordinates) const &;
+    std::vector<unsigned>&& grid_cubes,
+    std::vector<vis_cf_index_t>&& cf_indexes,
+    std::vector<vis_weight_fp>&& weights,
+    std::vector<vis_frequency_fp>&& frequencies,
+    std::vector<vis_phase_fp>&& phases,
+    std::vector<vis_uvw_t>&& coordinates) const &;
+
+  /** grid some visibilities
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * The indexing of visibilities and all other metadata vectors must be
+   * consistent. For example the weight for the visibility value visibilities[i]
+   * must be located at weights[i].
+   *
+   * @param host_device device to use for changing array layout
+   * @param visibilities visibilities
+   * @param grid_cubes visibility grid cube indexes
+   * @param cf_indexes visibility convolution function indexes
+   * @param weights visibility weights
+   * @param frequencies visibility frequencies
+   * @param phases visibility phase differences
+   * @param coordinates visibility coordinates
+   * @param cf_phase_screens visibility CF phase screen parameters
+   *
+   * @sa Gridder::grid_visibilities()
+   */
+  rval_t<GridderState>
+  grid_visibilities(
+    Device host_device,
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& grid_cubes,
+    std::vector<vis_cf_index_t>&& cf_indexes,
+    std::vector<vis_weight_fp>&& weights,
+    std::vector<vis_frequency_fp>&& frequencies,
+    std::vector<vis_phase_fp>&& phases,
+    std::vector<vis_uvw_t>&& coordinates,
+    std::vector<cf_phase_screen_t>&& cf_phase_screens) const &;
 
   /** grid some visibilities
    *
@@ -531,16 +572,16 @@ public:
    *
    * The indexing of visibilities and all other metadata vectors must be
    * consistent. For example the weight for the visibility value visibilities[i]
-   * must be located at visibility_weights[i].
+   * must be located at weights[i].
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param visibility_grid_cubes visibility grid cube indexes
-   * @param visibility_cf_indexes visibility convolution function indexes
-   * @param visibility_weights visibility weights
-   * @param visibility_frequencies visibility frequencies
-   * @param visibility_phases visibility phase differences
-   * @param visibility_coordinates visibility coordinates
+   * @param grid_cubes visibility grid cube indexes
+   * @param cf_indexes visibility convolution function indexes
+   * @param weights visibility weights
+   * @param frequencies visibility frequencies
+   * @param phases visibility phase differences
+   * @param coordinates visibility coordinates
    *
    * @sa Gridder::grid_visibilities()
    */
@@ -548,12 +589,47 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
-    std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<vis_cf_index_t>&& visibility_cf_indexes,
-    std::vector<vis_weight_fp>&& visibility_weights,
-    std::vector<vis_frequency_fp>&& visibility_frequencies,
-    std::vector<vis_phase_fp>&& visibility_phases,
-    std::vector<vis_uvw_t>&& visibility_coordinates) &&;
+    std::vector<unsigned>&& grid_cubes,
+    std::vector<vis_cf_index_t>&& cf_indexes,
+    std::vector<vis_weight_fp>&& weights,
+    std::vector<vis_frequency_fp>&& frequencies,
+    std::vector<vis_phase_fp>&& phases,
+    std::vector<vis_uvw_t>&& coordinates) &&;
+
+  /** grid some visibilities
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState that has overwritten the target, but after
+   * gridding task has been submitted to device queue
+   *
+   * The indexing of visibilities and all other metadata vectors must be
+   * consistent. For example the weight for the visibility value visibilities[i]
+   * must be located at weights[i].
+   *
+   * @param host_device device to use for changing array layout
+   * @param visibilities visibilities
+   * @param grid_cubes visibility grid cube indexes
+   * @param cf_indexes visibility convolution function indexes
+   * @param weights visibility weights
+   * @param frequencies visibility frequencies
+   * @param phases visibility phase differences
+   * @param coordinates visibility coordinates
+   * @param cf_phase_screens visibility CF phase screen parameters
+   *
+   * @sa Gridder::grid_visibilities()
+   */
+  rval_t<GridderState>
+  grid_visibilities(
+    Device host_device,
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& grid_cubes,
+    std::vector<vis_cf_index_t>&& cf_indexes,
+    std::vector<vis_weight_fp>&& weights,
+    std::vector<vis_frequency_fp>&& frequencies,
+    std::vector<vis_phase_fp>&& phases,
+    std::vector<vis_uvw_t>&& coordinates,
+    std::vector<cf_phase_screen_t>&& cf_phase_screens) &&;
 
   /** device execution fence
    *
@@ -878,16 +954,16 @@ public:
    *
    * The indexing of visibilities and all other metadata vectors must be
    * consistent. For example the weight for the visibility value visibilities[i]
-   * must be located at visibility_weights[i].
+   * must be located at weights[i].
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param visibility_grid_cubes visibility grid cube indexes
-   * @param visibility_cf_indexes visibility convolution function indexes
-   * @param visibility_weights visibility weights
-   * @param visibility_frequencies visibility frequencies
-   * @param visibility_phases visibility phase differences
-   * @param visibility_coordinates visibility coordinates
+   * @param grid_cubes visibility grid cube indexes
+   * @param cf_indexes visibility convolution function indexes
+   * @param weights visibility weights
+   * @param frequencies visibility frequencies
+   * @param phases visibility phase differences
+   * @param coordinates visibility coordinates
    */
 #if HPG_API >= 17
   std::optional<Error>
@@ -897,12 +973,46 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
-    std::vector<unsigned>&& visibility_grid_cubes,
-    std::vector<vis_cf_index_t>&& visibility_cf_indexes,
-    std::vector<vis_weight_fp>&& visibility_weights,
-    std::vector<vis_frequency_fp>&& visibility_frequencies,
-    std::vector<vis_phase_fp>&& visibility_phases,
-    std::vector<vis_uvw_t>&& visibility_coordinates);
+    std::vector<unsigned>&& grid_cubes,
+    std::vector<vis_cf_index_t>&& cf_indexes,
+    std::vector<vis_weight_fp>&& weights,
+    std::vector<vis_frequency_fp>&& frequencies,
+    std::vector<vis_phase_fp>&& phases,
+    std::vector<vis_uvw_t>&& coordinates);
+
+  /** grid visibilities
+   *
+   * May invoke fence() on target.
+   *
+   * The indexing of visibilities and all other metadata vectors must be
+   * consistent. For example the weight for the visibility value visibilities[i]
+   * must be located at weights[i].
+   *
+   * @param host_device device to use for changing array layout
+   * @param visibilities visibilities
+   * @param grid_cubes visibility grid cube indexes
+   * @param cf_indexes visibility convolution function indexes
+   * @param weights visibility weights
+   * @param frequencies visibility frequencies
+   * @param phases visibility phase differences
+   * @param coordinates visibility coordinates
+   * @param cf_phase_screens visibility CF phase screen parameters
+   */
+#if HPG_API >= 17
+  std::optional<Error>
+#else // HPG_API < 17
+  std::unique_ptr<Error>
+#endif // HPG_API >= 17
+  grid_visibilities(
+    Device host_device,
+    std::vector<std::complex<visibility_fp>>&& visibilities,
+    std::vector<unsigned>&& grid_cubes,
+    std::vector<vis_cf_index_t>&& cf_indexes,
+    std::vector<vis_weight_fp>&& weights,
+    std::vector<vis_frequency_fp>&& frequencies,
+    std::vector<vis_phase_fp>&& phases,
+    std::vector<vis_uvw_t>&& coordinates,
+    std::vector<cf_phase_screen_t>&& cf_phase_screens);
 
   /** device execution fence
    *

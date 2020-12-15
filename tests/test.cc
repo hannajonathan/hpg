@@ -80,7 +80,8 @@ init_visibilities(
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
   std::vector<hpg::vis_phase_fp>& phases,
-  std::vector<hpg::vis_uvw_t>& coordinates) {
+  std::vector<hpg::vis_uvw_t>& coordinates,
+  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
   vis.clear();
   vis.reserve(num_vis);
@@ -96,6 +97,7 @@ init_visibilities(
   phases.reserve(num_vis);
   coordinates.clear();
   coordinates.reserve(num_vis);
+  cf_phase_screens.resize(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -150,7 +152,8 @@ run_tests(
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
   std::vector<hpg::vis_phase_fp>& phases,
-  std::vector<hpg::vis_uvw_t>& coordinates) {
+  std::vector<hpg::vis_uvw_t>& coordinates,
+  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
   {
     std::cout << "GridderState " << dev_name << std::endl;
@@ -193,7 +196,8 @@ run_tests(
       std::remove_reference_t<decltype(weights)>(weights),
       std::remove_reference_t<decltype(frequencies)>(frequencies),
       std::remove_reference_t<decltype(phases)>(phases),
-      std::remove_reference_t<decltype(coordinates)>(coordinates));
+      std::remove_reference_t<decltype(coordinates)>(coordinates),
+      std::remove_reference_t<decltype(cf_phase_screens)>(cf_phase_screens));
     std::cout << "gridded" << std::endl;
     auto weights = g0.grid_weights();
     std::cout << "weights";
@@ -240,7 +244,8 @@ dump_grids(
   std::vector<hpg::vis_weight_fp>& weights,
   std::vector<hpg::vis_frequency_fp>& frequencies,
   std::vector<hpg::vis_phase_fp>& phases,
-  std::vector<hpg::vis_uvw_t>& coordinates) {
+  std::vector<hpg::vis_uvw_t>& coordinates,
+  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
   auto g0 =
     std::get<1>(
@@ -254,7 +259,8 @@ dump_grids(
     std::remove_reference_t<decltype(weights)>(weights),
     std::remove_reference_t<decltype(frequencies)>(frequencies),
     std::remove_reference_t<decltype(phases)>(phases),
-    std::remove_reference_t<decltype(coordinates)>(coordinates));
+    std::remove_reference_t<decltype(coordinates)>(coordinates),
+    std::remove_reference_t<decltype(cf_phase_screens)>(cf_phase_screens));
   g0.normalize();
   auto err = g0.apply_fft();
   assert(!err);
@@ -303,6 +309,7 @@ main(int argc, char* argv[]) {
   std::vector<hpg::vis_frequency_fp> frequencies;
   std::vector<hpg::vis_phase_fp> phases;
   std::vector<hpg::vis_uvw_t> coordinates;
+  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
     std::mt19937 rng(42);
@@ -311,8 +318,9 @@ main(int argc, char* argv[]) {
     const std::array<unsigned, 4> cf_size{31, 21, 2, 3};
     const std::array<float, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);
+    const unsigned num_visibilities = 1000000;
     init_visibilities(
-      1000000,
+      num_visibilities,
       grid_size,
       grid_scale,
       cf_size,
@@ -323,18 +331,21 @@ main(int argc, char* argv[]) {
       weights,
       frequencies,
       phases,
-      coordinates);
+      coordinates,
+      cf_phase_screens);
 #ifdef HPG_ENABLE_SERIAL
     run_tests<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
       grid_size, grid_scale, cf,
-      vis, grid_cubes, cf_indexes, weights, frequencies, phases, coordinates);
+      vis, grid_cubes, cf_indexes, weights, frequencies, phases, coordinates,
+      cf_phase_screens);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     run_tests<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
       grid_size, grid_scale, cf,
-      vis, grid_cubes, cf_indexes, weights, frequencies, phases, coordinates);
+      vis, grid_cubes, cf_indexes, weights, frequencies, phases, coordinates,
+      cf_phase_screens);
 #endif // HPG_ENABLE_CUDA
   }
   {
@@ -344,8 +355,9 @@ main(int argc, char* argv[]) {
     const std::array<unsigned, 4> cf_size{3, 3, 2, 1};
     const std::array<float, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);
+    const unsigned num_visibilities = 50;
     init_visibilities(
-      50,
+      num_visibilities,
       grid_size,
       grid_scale,
       cf_size,
@@ -356,18 +368,21 @@ main(int argc, char* argv[]) {
       weights,
       frequencies,
       phases,
-      coordinates);
+      coordinates,
+      cf_phase_screens);
 #ifdef HPG_ENABLE_SERIAL
     dump_grids<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
       grid_size, grid_scale, cf,
-      vis, grid_cubes, cf_indexes, weights, frequencies, phases, coordinates);
+      vis, grid_cubes, cf_indexes, weights, frequencies, phases, coordinates,
+      cf_phase_screens);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     dump_grids<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
       grid_size, grid_scale, cf,
-      vis, grid_cubes, cf_indexes, weights, frequencies, phases, coordinates);
+      vis, grid_cubes, cf_indexes, weights, frequencies, phases, coordinates,
+      cf_phase_screens);
 #endif // HPG_ENABLE_CUDA
   }
 }
