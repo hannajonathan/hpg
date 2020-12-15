@@ -23,15 +23,31 @@ Compilers:
 ## Build instructions
 
 CMake build options:
-* `Hpg_ENABLE_ALL`: enable all devices enabled by Kokkos installation (default: `ON`)
-* `Hpg_ENABLE_SERIAL`: enable serial implementation (default: value of `Hpg_ENABLE_ALL`)
-* `Hpg_ENABLE_OPENMP`: enable OpenMP implementation (default: value of `Hpg_ENABLE_ALL`)
-* `Hpg_ENABLE_CUDA`: enable CUDA implementation (default: value of `Hpg_ENABLE_ALL`)
+* `Hpg_ENABLE_ALL`: enable all devices enabled by Kokkos installation
+  (default: `ON`)
+* `Hpg_ENABLE_SERIAL`: enable serial implementation (default: value of
+  `Hpg_ENABLE_ALL`)
+* `Hpg_ENABLE_OPENMP`: enable OpenMP implementation (default: value of
+  `Hpg_ENABLE_ALL`)
+* `Hpg_ENABLE_CUDA`: enable CUDA implementation (default: value of
+  `Hpg_ENABLE_ALL`)
 * `Hpg_API`: C++ standard for top-level HPG API (default: 11)
+* `Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS`: enable experimental
+  compute kernel implementations (advanced feature, default: OFF)
+* `Hpg_MAX_NUM_CF_GROUPS`: maximum number of convolution function
+  groups (default: 1000)
 
 Note that the selected implementation(s) must be enabled in the *Kokkos*
 library installation. When building for *CUDA* using *gcc*, *Kokkos'*
 `nvcc_wrapper` must be used to build *HPG*.
+
+The value of `Hpg_MAX_NUM_CF_GROUPS` sets a compile-time limit on the
+size of a vector in the implementation. The "groups" in the name
+refers to the rightmost index of the `hpg::CFArray::operator()`
+method. There is currently no reliable check on whether that
+configured maximum is exceeded by an instance of `hpg::CFArray` at
+runtime; therefore, err on the side of caution when setting this
+value.
 
 Building *libhpg* requires a compiler that supports C++17 or later,
 although the C++ language standard of the *HPG* API can be selected by
