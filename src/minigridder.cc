@@ -22,168 +22,6 @@ static const std::array<float, 2> default_scale{0.001, -0.001};
 # define CF_NUDGE 1
 #endif
 
-/** monadic class of functions with domain A and range rval_t<B> */
-template <typename A, typename B>
-struct RvalM;
-
-/** subclass of RvalM<A> with explicit function type */
-template <typename A, typename B, typename F>
-struct RvalMF;
-
-template <typename A, typename B>
-struct RvalM {
-
-  /** construct an RvalM value as RvalMF<A,F> value with deduced function
-   * type */
-  template <typename F>
-  static RvalMF<A, B, F>
-  pure(F&& f) {
-    return RvalMF<A, B, F>(std::forward<F>(f));
-  }
-};
-
-template <typename A, typename B, typename F>
-struct RvalMF :
-  public RvalM<A, B> {
-
-  static_assert(
-    std::is_same_v<
-      B,
-      typename hpg::rval_value<std::invoke_result_t<F, A>>::type>
-    );
-
-  template <typename G>
-  using gv_t = typename hpg::rval_value<std::invoke_result_t<G, B>>::type;
-
-  template <typename G>
-  using giv_t =
-    typename hpg::rval_value<std::invoke_result_t<G, unsigned, B>>::type;
-
-  F m_f;
-
-  RvalMF(const F& f)
-    : m_f(f) {}
-
-  RvalMF(F&& f)
-    : m_f(std::move(f)) {}
-
-  /** apply contained function to a value */
-  hpg::rval_t<B>
-  operator()(A&& a) const {
-    return m_f(std::forward<A>(a));
-  }
-
-  /** composition with rval_t-valued function */
-  template <typename G>
-  auto
-  and_then(const G& g) const {
-
-    return
-      RvalM<A, gv_t<G>>::pure(
-        [g, f=m_f](A&& a) { return hpg::flatmap(f(std::forward<A>(a)), g); });
-  }
-
-  /** composition with sequential iterations of rval_t-valued function */
-  template <typename G>
-  auto
-  and_then_loop(unsigned n, const G& g) const {
-
-    return
-      RvalM<A, giv_t<G>>::pure(
-        [n, g, f=m_f](A&& a) {
-          auto result = f(std::forward<A>(a));
-          for (unsigned i = 0; i < n; ++i)
-            result =
-              hpg::flatmap(
-                std::move(result),
-                [i, g](auto&& r) {
-                  return g(i, std::move(r));
-                });
-          return result;
-        });
-  }
-
-  /** composition with simple-valued function  */
-  template <typename G>
-  auto
-  map(const G& g) const {
-
-    return
-      RvalM<A, std::invoke_result_t<G, B>>::pure(
-        [g, f=m_f](A&& a) { return hpg::map(f(std::forward<A>(a)), g); });
-  }
-};
-
-template <typename B, typename F>
-struct RvalMF<void, B, F> :
-  public RvalM<void, B> {
-
-  static_assert(
-    std::is_same_v<
-    B,
-    typename hpg::rval_value<std::invoke_result_t<F>>::type>
-    );
-
-  template <typename G>
-  using gv_t = typename hpg::rval_value<std::invoke_result_t<G, B>>::type;
-
-  template <typename G>
-  using giv_t =
-    typename hpg::rval_value<std::invoke_result_t<G, unsigned, B>>::type;
-
-  F m_f;
-
-  RvalMF(const F& f)
-    : m_f(f) {}
-
-  RvalMF(F&& f)
-    : m_f(std::move(f)) {}
-
-  /** apply contained function to a value */
-  hpg::rval_t<B>
-  operator()() const {
-    return m_f();
-  }
-
-  /** composition with rval_t-valued function */
-  template <typename G>
-  auto
-  and_then(const G& g) const {
-
-    return RvalM<void, gv_t<G>>::pure(
-      [g, f=m_f]() { return hpg::flatmap(f(), g); });
-  }
-
-  /** composition with sequential iterations of rval_t-valued function */
-  template <typename G>
-  auto
-  and_then_loop(unsigned n, const G& g) const {
-
-    return
-      RvalM<void, giv_t<G>>::pure(
-        [n, g, f=m_f]() {
-          auto result = f();
-          for (unsigned i = 0; i < n; ++i)
-            result =
-              hpg::flatmap(
-                std::move(result),
-                [i, g](auto&& r) {
-                  return g(i, std::move(r));
-                });
-          return result;
-        });
-  }
-
-  /** composition with simple-valued function  */
-  template <typename G>
-  auto
-  map(const G& g) const {
-
-    return RvalM<void, std::invoke_result_t<G, B>>::pure(
-      [g, f=m_f]() { return hpg::map(f(), g); });
-  }
-};
-
 /** wrapper class to allow argumentparser to return a vector from a
  * single-string-value option
  */
@@ -602,7 +440,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
     ids.push(input_data);
 
   auto time_trial =
-    RvalM<void, hpg::GridderState>::pure(
+    hpg::RvalM<void, hpg::GridderState>::pure(
       // create the GridderState instance
       [&]() {
         return
@@ -633,11 +471,11 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
         return
           std::make_tuple(std::chrono::steady_clock::now(), std::move(result));
       })
-    .and_then_loop(
+    .and_then_repeat(
       // grid visibilities a number of times, copying the start time into the
       // result tuple after each iteration
       spec.repeats,
-      [&](unsigned i, auto&& t_gs) {
+      [&](auto&& t_gs) {
         InputData id;
         if (!ids.empty()) {
           id = std::move(ids.front());
