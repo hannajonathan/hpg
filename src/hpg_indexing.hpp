@@ -90,7 +90,7 @@ public:
     , m_mcol(mcol)
     , m_mrow(mrow) {}
 
-  /** convert CFCellIndex to vis_cf_index_t
+  /** convert CFCellIndex to cf_index_t
    */
   cf_index_t
   cf_index(const CFCellIndex& index) const {
@@ -103,7 +103,7 @@ public:
     return result;
   }
 
-  /** convert vis_cf_index_t to CFCellIndex
+  /** convert cf_index_t to CFCellIndex
    */
   CFCellIndex
   cell_index(cf_index_t index) const {
