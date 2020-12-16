@@ -449,6 +449,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
             spec.device,
             spec.streams - 1,
             spec.batch_size,
+            &input_data.cf,
             input_data.gsize,
             default_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS

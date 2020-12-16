@@ -24,11 +24,43 @@ hpg::Device default_device = hpg::Device::Serial;
 # error "At least one device needs to be enabled"
 #endif
 
-struct MyCFArray final
-  : public hpg::CFArray {
+struct MyCFArrayShape
+  : public hpg::CFArrayShape {
 
   unsigned m_oversampling;
   std::vector<std::array<unsigned, 4>> m_extents;
+
+  MyCFArrayShape() {}
+
+  MyCFArrayShape(
+    unsigned oversampling,
+    const std::vector<std::array<unsigned, 4>>& sizes)
+    : m_oversampling(oversampling) {
+
+    for (auto& sz : sizes)
+      m_extents.push_back(
+        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
+  }
+
+  unsigned
+  oversampling() const override {
+    return m_oversampling;
+  }
+
+  unsigned
+  num_groups() const override {
+    return static_cast<unsigned>(m_extents.size());
+  }
+
+  std::array<unsigned, 4>
+  extents(unsigned grp) const override {
+    return m_extents[grp];
+  }
+};
+
+struct MyCFArray final
+  : private MyCFArrayShape, public hpg::CFArray {
+
   std::vector<std::vector<std::complex<hpg::cf_fp>>> m_values;
 
   MyCFArray() {}
@@ -37,12 +69,8 @@ struct MyCFArray final
     unsigned oversampling,
     const std::vector<std::array<unsigned, 4>>& sizes,
     const std::vector<std::vector<std::complex<hpg::cf_fp>>>& values)
-    : m_oversampling(oversampling)
+    : MyCFArrayShape(oversampling, sizes)
     , m_values(values) {
-
-    for (auto& sz : sizes)
-      m_extents.push_back(
-        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
   }
 
   unsigned
@@ -174,13 +202,17 @@ bool
 values_eq(const T* array0, const T* array1) {
   if constexpr (T::rank == 2) {
     if (array0->extent(0) != array1->extent(0)
-        || array0->extent(1) != array1->extent(1))
+        || array0->extent(1) != array1->extent(1)) {
+      std::cerr << "extents differ" << std::endl;
       return false;
+    }
     for (unsigned i = 0; i < array0->extent(0); ++i)
       for (unsigned j = 0; j < array0->extent(1); ++j)
-        if ((*array0)(i, j) != (*array1)(i, j))
+        if ((*array0)(i, j) != (*array1)(i, j)) {
+          std::cerr << "extents differ" << std::endl;
           return false;
-  } else {
+        }
+    } else {
     if (array0->extent(0) != array1->extent(0)
         || array0->extent(1) != array1->extent(1)
         || array0->extent(2) != array1->extent(2)
@@ -190,8 +222,14 @@ values_eq(const T* array0, const T* array1) {
       for (unsigned j = 0; j < array0->extent(1); ++j)
         for (unsigned k = 0; k < array0->extent(2); ++k)
           for (unsigned m = 0; m < array0->extent(3); ++m)
-            if ((*array0)(i, j, k, m) != (*array1)(i, j, k, m))
+            if ((*array0)(i, j, k, m) != (*array1)(i, j, k, m)) {
+              std::cerr << "values differ at "
+                        << i << "," << j << "," << k << "," << m
+                        << "; " << (*array0)(i, j, k, m)
+                        << " != " << (*array1)(i, j, k, m)
+                        << std::endl;
               return false;
+            }
   }
   return true;
 }
@@ -201,6 +239,9 @@ TEST(GridderState, ConstructorArgs) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
   size_t batch_size = 20;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
   hpg::GridderState gs0;
   auto gs1 =
     hpg::get_value(
@@ -208,6 +249,7 @@ TEST(GridderState, ConstructorArgs) {
         default_device,
         0,
         batch_size,
+        &cf,
         grid_size,
         grid_scale));
 
@@ -218,6 +260,9 @@ TEST(GridderState, ConstructorArgs) {
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
   EXPECT_EQ(gs1.max_added_tasks(), 0);
   EXPECT_EQ(gs1.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(
+    gs1.convolution_function_region_size(nullptr),
+    gs1.convolution_function_region_size(&cf));
 }
 
 // test that GridderState copies have correct parameters
@@ -225,12 +270,16 @@ TEST(GridderState, Copies) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
   size_t batch_size = 20;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
   auto gs0 =
     hpg::get_value(
       hpg::GridderState::create(
         default_device,
         0,
         batch_size,
+        &cf,
         grid_size,
         grid_scale));
   hpg::GridderState gs1 = gs0;
@@ -240,6 +289,9 @@ TEST(GridderState, Copies) {
   EXPECT_EQ(gs1.grid_size(), grid_size);
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
   EXPECT_EQ(gs1.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(
+    gs0.convolution_function_region_size(nullptr),
+    gs1.convolution_function_region_size(nullptr));
 
   hpg::GridderState gs2(gs0);
   EXPECT_FALSE(gs0.is_null());
@@ -247,6 +299,9 @@ TEST(GridderState, Copies) {
   EXPECT_EQ(gs2.grid_size(), grid_size);
   EXPECT_EQ(gs2.grid_scale(), grid_scale);
   EXPECT_EQ(gs2.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(
+    gs0.convolution_function_region_size(nullptr),
+    gs2.convolution_function_region_size(nullptr));
 }
 
 // test that GridderState moves have expected outcomes
@@ -254,14 +309,19 @@ TEST(GridderState, Moves) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
   size_t batch_size = 30;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
   auto gs0 =
     hpg::get_value(
       hpg::GridderState::create(
         default_device,
         0,
         batch_size,
+        &cf,
         grid_size,
         grid_scale));
+  auto cf_region_size = gs0.convolution_function_region_size(nullptr);
   hpg::GridderState gs1 = std::move(gs0);
 
   EXPECT_TRUE(gs0.is_null());
@@ -269,6 +329,7 @@ TEST(GridderState, Moves) {
   EXPECT_EQ(gs1.grid_size(), grid_size);
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
   EXPECT_EQ(gs1.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(gs1.convolution_function_region_size(nullptr), cf_region_size);
 
   hpg::GridderState gs2(std::move(gs1));
   EXPECT_TRUE(gs1.is_null());
@@ -276,15 +337,25 @@ TEST(GridderState, Moves) {
   EXPECT_EQ(gs2.grid_size(), grid_size);
   EXPECT_EQ(gs2.grid_scale(), grid_scale);
   EXPECT_EQ(gs2.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(gs2.convolution_function_region_size(nullptr), cf_region_size);
 }
 
 // test that GridderState grid values and weights are properly initialized
 TEST(GridderState, InitValues) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.12, -0.34};
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
-      hpg::GridderState::create(default_device, 0, 15, grid_size, grid_scale));
+      hpg::GridderState::create(
+        default_device,
+        0,
+        15,
+        &cf,
+        grid_size,
+        grid_scale));
 
   auto [gs1, values] = std::move(gs).grid_values();
   for (size_t i = 0; i < 4; ++i)
@@ -302,12 +373,16 @@ TEST(GridderState, CopyOrMove) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 10;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
       hpg::GridderState::create(
         default_device,
         0,
         num_vis,
+        &cf,
         grid_size,
         grid_scale));
 
@@ -415,9 +490,18 @@ TEST(GridderState, CopyOrMove) {
 TEST(GridderState, CFError) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
-      hpg::GridderState::create(default_device, 0, 10, grid_size, grid_scale));
+      hpg::GridderState::create(
+        default_device,
+        0,
+        10,
+        &cf,
+        grid_size,
+        grid_scale));
 
   std::mt19937 rng(42);
 
@@ -466,12 +550,16 @@ TEST(GridderState, Reset) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 10;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
       hpg::GridderState::create(
         default_device,
         0,
         num_vis,
+        &cf,
         grid_size,
         grid_scale));
 
@@ -540,12 +628,16 @@ TEST(GridderState, Sequences) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 10;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
       hpg::GridderState::create(
         default_device,
         1,
         num_vis,
+        &cf,
         grid_size,
         grid_scale));
 
@@ -651,6 +743,7 @@ TEST(GridderState, Batching) {
           default_device,
           1,
           num_vis / 11,
+          static_cast<const hpg::CFArray*>(&cf),
           grid_size,
           grid_scale)
         , [&](auto&& g) {
@@ -665,6 +758,7 @@ TEST(GridderState, Batching) {
           default_device,
           1,
           num_vis,
+          static_cast<const hpg::CFArray*>(&cf),
           grid_size,
           grid_scale)
         , [&](auto&& g) {

@@ -63,10 +63,10 @@ struct Impl::GridderState {
 
   template <typename GS>
   static std::variant<Error, ::hpg::GridderState>
-  allocate_convolution_function_buffer(GS&& st, const CFArrayShape* shape) {
+  allocate_convolution_function_region(GS&& st, const CFArrayShape* shape) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    auto error = result.impl->allocate_convolution_function_buffer(shape);
+    auto error = result.impl->allocate_convolution_function_region(shape);
     if (error)
       return std::move(error.value());
     else
@@ -162,6 +162,7 @@ GridderState::GridderState(
   Device device,
   unsigned max_added_tasks,
   size_t max_visibility_batch_size,
+  const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -182,6 +183,7 @@ GridderState::GridderState(
       std::make_shared<Impl::StateT<Device::Serial>>(
         max_active_tasks,
         max_visibility_batch_size,
+        init_cf_shape,
         grid_size,
         grid_scale,
         implementation_versions);
@@ -195,6 +197,7 @@ GridderState::GridderState(
       std::make_shared<Impl::StateT<Device::OpenMP>>(
         max_active_tasks,
         max_visibility_batch_size,
+        init_cf_shape,
         grid_size,
         grid_scale,
         implementation_versions);
@@ -208,6 +211,7 @@ GridderState::GridderState(
       std::make_shared<Impl::StateT<Device::Cuda>>(
         max_active_tasks,
         max_visibility_batch_size,
+        init_cf_shape,
         grid_size,
         grid_scale,
         implementation_versions);
@@ -221,6 +225,7 @@ GridderState::GridderState(
       std::make_shared<Impl::StateT<Device::HPX>>(
         max_active_tasks,
         max_visibility_batch_size,
+        init_cf_shape,
         grid_size,
         grid_scale,
         implementation_versions);
@@ -239,6 +244,7 @@ GridderState::create(
   Device device,
   unsigned max_added_tasks,
   size_t max_visibility_batch_size,
+  const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -253,6 +259,7 @@ GridderState::create(
           device,
           max_added_tasks,
           max_visibility_batch_size,
+          init_cf_shape,
           grid_size,
           grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -265,7 +272,7 @@ GridderState::create(
 
 }
 
-GridderState::GridderState(const volatile GridderState& h) {
+GridderState::GridderState(const GridderState& h) {
   *this = h;
 }
 
@@ -274,7 +281,7 @@ GridderState::GridderState(GridderState&& h) {
 }
 
 GridderState&
-GridderState::operator=(const volatile GridderState& rhs) {
+GridderState::operator=(const GridderState& rhs) {
 
   const GridderState& crhs = const_cast<const GridderState&>(rhs);
   switch (crhs.impl->m_device) {
@@ -361,28 +368,35 @@ GridderState::is_null() const noexcept {
   return !bool(impl);
 }
 
-rval_t<GridderState>
-GridderState::allocate_convolution_function_buffer(const CFArrayShape* shape)
-  const volatile & {
+size_t
+GridderState::convolution_function_region_size(const CFArrayShape* shape)
+  const noexcept {
 
-  return
-    to_rval(
-      Impl::GridderState::allocate_convolution_function_buffer(*this, shape));
+  return impl->convolution_function_region_size(shape);
 }
 
 rval_t<GridderState>
-GridderState::allocate_convolution_function_buffer(const CFArrayShape* shape)
+GridderState::allocate_convolution_function_region(const CFArrayShape* shape)
+  const & {
+
+  return
+    to_rval(
+      Impl::GridderState::allocate_convolution_function_region(*this, shape));
+}
+
+rval_t<GridderState>
+GridderState::allocate_convolution_function_region(const CFArrayShape* shape)
   && {
 
   return
     to_rval(
       Impl::GridderState
-      ::allocate_convolution_function_buffer(std::move(*this), shape));
+      ::allocate_convolution_function_region(std::move(*this), shape));
 }
 
 rval_t<GridderState>
 GridderState::set_convolution_function(Device host_device, CFArray&& cf)
-  const volatile & {
+  const & {
 
   return
   to_rval(
@@ -413,7 +427,7 @@ GridderState::grid_visibilities(
   std::vector<vis_weight_fp>&& visibility_weights,
   std::vector<vis_frequency_fp>&& visibility_frequencies,
   std::vector<vis_phase_fp>&& visibility_phases,
-  std::vector<vis_uvw_t>&& visibility_coordinates) const volatile & {
+  std::vector<vis_uvw_t>&& visibility_coordinates) const & {
 
   return
     to_rval(
@@ -456,7 +470,7 @@ GridderState::grid_visibilities(
 }
 
 GridderState
-GridderState::fence() const volatile & {
+GridderState::fence() const & {
 
   GridderState result(*this);
   result.impl->fence();
@@ -472,7 +486,7 @@ GridderState::fence() && {
 }
 
 std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
-GridderState::grid_weights() const volatile & {
+GridderState::grid_weights() const & {
 
   GridderState result(*this);
   return {std::move(result), std::move(result.impl->grid_weights())};
@@ -486,7 +500,7 @@ GridderState::grid_weights() && {
 }
 
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
-GridderState::grid_values() const volatile & {
+GridderState::grid_values() const & {
 
   GridderState result(*this);
   return {std::move(result), std::move(result.impl->grid_values())};
@@ -500,7 +514,7 @@ GridderState::grid_values() && {
 }
 
 GridderState
-GridderState::reset_grid() const volatile & {
+GridderState::reset_grid() const & {
 
   GridderState result(*this);
   result.impl->reset_grid();
@@ -516,7 +530,7 @@ GridderState::reset_grid() && {
 }
 
 GridderState
-GridderState::normalize(grid_value_fp wfactor) const volatile & {
+GridderState::normalize(grid_value_fp wfactor) const & {
 
   GridderState result(*this);
   result.impl->normalize(wfactor);
@@ -532,7 +546,7 @@ GridderState::normalize(grid_value_fp wfactor) && {
 }
 
 rval_t<GridderState>
-GridderState::apply_fft(FFTSign sign, bool in_place) const volatile & {
+GridderState::apply_fft(FFTSign sign, bool in_place) const & {
 
   return to_rval(Impl::GridderState::apply_fft(*this, sign, in_place));
 }
@@ -545,7 +559,7 @@ GridderState::apply_fft(FFTSign sign, bool in_place) && {
 }
 
 GridderState
-GridderState::shift_grid() const volatile & {
+GridderState::shift_grid() const & {
 
   GridderState result(*this);
   result.impl->shift_grid();
@@ -571,6 +585,7 @@ Gridder::Gridder(
   Device device,
   unsigned max_added_tasks,
   size_t max_visibility_batch_size,
+  const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale)
   : state(
@@ -578,10 +593,11 @@ Gridder::Gridder(
       device,
       max_added_tasks,
       max_visibility_batch_size,
+      init_cf_shape,
       grid_size,
       grid_scale)) {}
 
-Gridder::Gridder(const volatile Gridder& other)
+Gridder::Gridder(const Gridder& other)
   : state(other.state) {}
 
 Gridder::Gridder(Gridder&& other)
@@ -597,6 +613,7 @@ Gridder::create(
   Device device,
   unsigned max_added_tasks,
   size_t max_visibility_batch_size,
+  const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -609,6 +626,7 @@ Gridder::create(
       device,
       max_added_tasks,
       max_visibility_batch_size,
+      init_cf_shape,
       grid_size,
       grid_scale,
       implementation_versions);
@@ -619,7 +637,7 @@ Gridder::create(
 }
 
 Gridder&
-Gridder::operator=(const volatile Gridder& rhs) {
+Gridder::operator=(const Gridder& rhs) {
   GridderState tmp(rhs.state);
   state.swap(tmp);
   return *this;
@@ -662,13 +680,20 @@ Gridder::is_null() const noexcept {
   return state.is_null();
 }
 
+size_t
+Gridder::convolution_function_region_size(const CFArrayShape* shape)
+  const noexcept {
+
+  return state.convolution_function_region_size(shape);
+}
+
 #if HPG_API >= 17
 std::optional<Error>
-Gridder::allocate_convolution_function_buffer(const CFArrayShape* shape) {
+Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
 
   return
     fold(
-      std::move(state).allocate_convolution_function_buffer(shape),
+      std::move(state).allocate_convolution_function_region(shape),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
         return std::nullopt;
@@ -679,10 +704,10 @@ Gridder::allocate_convolution_function_buffer(const CFArrayShape* shape) {
 }
 #else // HPG_API < 17
 std::unique_ptr<Error>
-Gridder::allocate_convolution_function_buffer(const CFArrayShape* shape) {
+Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
   std::unique_ptr<Error> result;
   std::tie(result, state) =
-    std::move(state).allocate_convolution_function_buffer(shape);
+    std::move(state).allocate_convolution_function_region(shape);
   return result;
 }
 #endif //HPG_API >= 17
@@ -774,13 +799,12 @@ Gridder::grid_visibilities(
 #endif
 
 void
-Gridder::fence() const volatile {
-  const_cast<Gridder*>(this)->state =
-    std::move(const_cast<Gridder*>(this)->state).fence();
+Gridder::fence() const {
+  state = std::move(state).fence();
 }
 
 std::unique_ptr<GridWeightArray>
-Gridder::grid_weights() const volatile {
+Gridder::grid_weights() const {
   std::unique_ptr<GridWeightArray> result;
   std::tie(const_cast<Gridder*>(this)->state, result) =
     std::move(const_cast<Gridder*>(this)->state).grid_weights();
@@ -788,7 +812,7 @@ Gridder::grid_weights() const volatile {
 }
 
 std::unique_ptr<GridValueArray>
-Gridder::grid_values() const volatile {
+Gridder::grid_values() const {
   std::unique_ptr<GridValueArray> result;
   std::tie(const_cast<Gridder*>(this)->state, result) =
     std::move(const_cast<Gridder*>(this)->state).grid_values();

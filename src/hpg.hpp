@@ -149,11 +149,10 @@ struct HPG_EXPORT GridderState;
 
 /** shape of a convolution function
  *
- * This class is primarily of use as an argument to
- * GridderState::allocate_convolution_function_buffer() or
- * Gridder::allocate_convolution_function_buffer(). Only in cases where it is
- * desired to describe the shape of a CFArray only, without providing any array
- * values, would a standalone subclass of CFArrayShape be required.
+ * This class is primarily of use as an argument to describe the maximum
+ * expected size of a CFArray. Note that CFArray is a subclass of this class.
+ *
+ * @sa CFArray
  */
 class HPG_EXPORT CFArrayShape {
 public:
@@ -265,9 +264,8 @@ constexpr FFTSign fft_sign_dflt = FFTSign::POSITIVE;
  *    GridderState s1 = s0.fence();
  * @endcode
  * will create a copy of s0. Note that a copy will include the grid and the
- * convolution function array. (Many of these methods are const volatile on the
- * target since a fence operation may be involved.) To avoid the copy, the
- * following pattern can be used instead:
+ * convolution function array. To avoid the copy, the following pattern can be
+ * used instead:
  * @code{.cpp}
  *    GridderState s0;
  *    GridderState s1 = std::move(s0).fence();
@@ -303,6 +301,8 @@ protected:
    * may be less than requested)
    * @param max_visibility_batch_size maximum number of visibilities to pass to
    * the gridding kernel at once
+   * @param init_cf_shape shape of CF region for initial memory allocation (per
+   * task)
    * @param grid_size, in logical axis order: X, Y, mrow, cube
    * @param grid_scale, in X, Y order
    *
@@ -322,6 +322,7 @@ protected:
     Device device,
     unsigned max_added_tasks,
     size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -340,6 +341,7 @@ public:
     Device device,
     unsigned max_added_tasks,
     size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -351,7 +353,7 @@ public:
    *
    * Copies all state. Invokes fence() on argument.
    */
-  GridderState(const volatile GridderState&);
+  GridderState(const GridderState&);
 
   /** move constructor
    */
@@ -367,7 +369,7 @@ public:
    * Copies all state. Invokes fence() on argument.
    */
   GridderState&
-  operator=(const volatile GridderState&);
+  operator=(const GridderState&);
 
   /** move assignment
    */
@@ -401,26 +403,21 @@ public:
   bool
   is_null() const noexcept;
 
-  /** allocate memory for convolution function
+  /** size (in bytes) of region allocated for CFArray elements
    *
-   * Increasing memory allocations for convolution functions are handled
-   * automatically by set_convolution_function(), but in a sequence of calls to
-   * set_convolution_function() in which later calls require a larger allocation
-   * than earlier calls, it may be advantageous to use this method in order to
-   * allocate the maximum memory that will be required by the sequence before
-   * starting the sequence, which will then permit the sequence to proceed
-   * without any reallocations. To release all memory allocated for the
-   * convolution function, the caller may pass a null pointer for the method
-   * argument.
+   * Memory allocations for convolution function regions are made per device
+   * task. Values returned for the size of the currently allocated region refer
+   * only to the most recently allocated region; multiplying this value by the
+   * number of device tasks may be an inaccurate measure of the total allocated
+   * region, as asynchronously executing tasks may be using different
+   * convolution functions.
    *
-   * @param shape shape of CFArray
-   *
-   * @return new GridderState that is a copy of the target, but with memory
-   * allocated for convolution function, or error
+   * @param shape if non-null, the memory needed for a CFArray of the given
+   * shape; if null, the size of the currently allocated region in the
+   * target
    */
-  rval_t<GridderState>
-  allocate_convolution_function_buffer(const CFArrayShape* shape)
-    const volatile &;
+  size_t
+  convolution_function_region_size(const CFArrayShape* shape) const noexcept;
 
   /** allocate memory for convolution function
    *
@@ -432,15 +429,35 @@ public:
    * starting the sequence, which will then permit the sequence to proceed
    * without any reallocations. To release all memory allocated for the
    * convolution function, the caller may pass a null pointer for the method
-   * argument.
+   * argument. Invokes fence() on the target.
    *
-   * @param shape shape of CFArray
+   * @param shape shape of CFArray for which to allocate memory (per task)
+   *
+   * @return new GridderState that is a copy of the target, but with memory
+   * allocated for convolution function, or error
+   */
+  rval_t<GridderState>
+  allocate_convolution_function_region(const CFArrayShape* shape) const &;
+
+  /** allocate memory for convolution function
+   *
+   * Increasing memory allocations for convolution functions are handled
+   * automatically by set_convolution_function(), but in a sequence of calls to
+   * set_convolution_function() in which later calls require a larger allocation
+   * than earlier calls, it may be advantageous to use this method in order to
+   * allocate the maximum memory that will be required by the sequence before
+   * starting the sequence, which will then permit the sequence to proceed
+   * without any reallocations. To release all memory allocated for the
+   * convolution function, the caller may pass a null pointer for the method
+   * argument. Invokes fence() on the target.
+   *
+   * @param shape shape of CFArray for which to allocate memory (per task)
    *
    * @return new GridderState that has overwritten the target, but with memory
    * allocated for convolution function, or error
    */
   rval_t<GridderState>
-  allocate_convolution_function_buffer(const CFArrayShape* shape) &&;
+  allocate_convolution_function_region(const CFArrayShape* shape) &&;
 
   /** set convolution function
    *
@@ -455,8 +472,7 @@ public:
    * @sa Gridder::set_convolution_function()
    */
   rval_t<GridderState>
-  set_convolution_function(Device host_device, CFArray&& cf)
-    const volatile &;
+  set_convolution_function(Device host_device, CFArray&& cf) const &;
 
   /** set convolution function
    *
@@ -504,7 +520,7 @@ public:
     std::vector<vis_weight_fp>&& visibility_weights,
     std::vector<vis_frequency_fp>&& visibility_frequencies,
     std::vector<vis_phase_fp>&& visibility_phases,
-    std::vector<vis_uvw_t>&& visibility_coordinates) const volatile &;
+    std::vector<vis_uvw_t>&& visibility_coordinates) const &;
 
   /** grid some visibilities
    *
@@ -550,7 +566,7 @@ public:
    * @sa Gridder::fence()
    */
   GridderState
-  fence() const volatile &;
+  fence() const &;
 
   /** device execution fence
    *
@@ -569,7 +585,7 @@ public:
    * Invokes fence() on target.
    */
   std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
-  grid_weights() const volatile &;
+  grid_weights() const &;
 
   /** get grid plane weights
    *
@@ -583,7 +599,7 @@ public:
    * Invokes fence() on target.
    */
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
-  grid_values() const volatile &;
+  grid_values() const &;
 
   /** get grid values
    *
@@ -597,7 +613,7 @@ public:
    * May invoke fence() on target
    */
   GridderState
-  reset_grid() const volatile &;
+  reset_grid() const &;
 
   /** reset grid values to zero
    *
@@ -614,7 +630,7 @@ public:
    * normalization
    */
   GridderState
-  normalize(grid_value_fp wgt_factor = 1) const volatile &;
+  normalize(grid_value_fp wgt_factor = 1) const &;
 
   /** normalize grid values by scaled weights
    *
@@ -634,8 +650,7 @@ public:
    * @param in_place run FFT in-place, without allocation of another grid
    */
   rval_t<GridderState>
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true)
-    const volatile &;
+  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) const  &;
 
   /** apply FFT to grid array planes
    *
@@ -652,7 +667,7 @@ public:
    * Primarily for use after application of FFT. May invoke fence() on target.
    */
   GridderState
-  shift_grid() const volatile &;
+  shift_grid() const &;
 
   /** shift grid planes by half
    *
@@ -709,6 +724,8 @@ protected:
    * number may be less than requested)
    * @param max_visibility_batch_size maximum number of visibilities to pass to
    * the gridding kernel at once
+   * @param init_cf_shape shape of CF region for initial memory allocation (per
+   * task)
    * @param grid_size, in logical axis order: X, Y, mrow, cube
    * @param grid_scale, in X, Y order
    *
@@ -726,6 +743,7 @@ protected:
     Device device,
     unsigned max_added_tasks,
     size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale);
 
@@ -740,6 +758,7 @@ public:
     Device device,
     unsigned max_added_tasks,
     size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -751,7 +770,7 @@ public:
    *
    * Invokes fence() on argument.
    */
-  Gridder(const volatile Gridder& other);
+  Gridder(const Gridder& other);
 
   /** move constructor */
   Gridder(Gridder&& other);
@@ -761,7 +780,7 @@ public:
    * Invokes fence() on argument
    */
   Gridder&
-  operator=(const volatile Gridder&);
+  operator=(const Gridder&);
 
   /** move assignment*/
   Gridder&
@@ -796,6 +815,22 @@ public:
   bool
   is_null() const noexcept;
 
+
+  /** size (in bytes) of region allocated for CFArray elements
+   *
+   * Memory allocations for convolution function regions are made per device
+   * task. Values returned for the size of the currently allocated region refer
+   * only to the most recently allocated region; multiplying this value by the
+   * number of device tasks may be an inaccurate measure of the total allocated
+   * region, as asynchronously executing tasks may be using different
+   * convolution functions.
+   *
+   * @param shape if non-null, the memory needed for a CFArray of the given
+   * shape; if null, the size of the currently allocated region in the target
+   */
+  size_t
+  convolution_function_region_size(const CFArrayShape* shape) const noexcept;
+
   /** allocate memory for convolution function
    *
    * Increasing memory allocations for convolution functions are handled
@@ -806,9 +841,9 @@ public:
    * starting the sequence, which will then permit the sequence to proceed
    * without any reallocations. To release all memory allocated for the
    * convolution function, the caller may pass a null pointer for the method
-   * argument.
+   * argument. Invokes fence() on the target.
    *
-   * @param shape shape of CFArray
+   * @param shape shape of CFArray for which to allocate memory (per task)
    *
    * @return new GridderState that is a copy of the target, but with memory
    * allocated for convolution function, or error
@@ -818,7 +853,7 @@ public:
 #else // HPG_API < 17
   std::unique_ptr<Error>
 #endif //HPG_API >= 17
-  allocate_convolution_function_buffer(const CFArrayShape* shape);
+  allocate_convolution_function_region(const CFArrayShape* shape);
 
   /** set convolution function
    *
@@ -875,18 +910,18 @@ public:
    * required by users.
    */
   void
-  fence() const volatile;
+  fence() const;
 
   /** get grid plane weights
    *
    * Invokes fence() on target.
    */
   std::unique_ptr<GridWeightArray>
-  grid_weights() const volatile;
+  grid_weights() const;
 
   /** get access to grid values */
   std::unique_ptr<GridValueArray>
-  grid_values() const volatile;
+  grid_values() const;
 
   /** reset grid values to zero
    *
