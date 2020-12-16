@@ -2460,11 +2460,11 @@ protected:
         m_exec_space_indexes.push_back(old_idx);
         m_exec_space_indexes.pop_front();
         new_idx = m_exec_space_indexes.front();
+        // Although there is no need to fence on the new ExecSpace explicitly
+        // for correctness, we use this opportunity to exert back-pressure on
+        // the caller to limit the caller's rate of task submissions
         auto& new_esp = m_exec_spaces[new_idx];
         new_esp.space.fence();
-      } else if (m_current == StreamPhase::COPY
-                 && next == StreamPhase::COMPUTE) {
-        m_exec_spaces[m_exec_space_indexes[1]].space.fence();
       }
     }
     if (m_current == StreamPhase::COMPUTE && next == StreamPhase::COPY)
