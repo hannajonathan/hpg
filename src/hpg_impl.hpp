@@ -2378,7 +2378,9 @@ private:
     CFPool<D> tmp_cf;
     tmp_cf = std::move(m_cf);
     m_cf = std::move(other.m_cf);
+    m_cf.state = this;
     other.m_cf = std::move(tmp_cf);
+    other.m_cf.state = &other;
   }
 
   void
