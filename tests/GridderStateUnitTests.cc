@@ -206,6 +206,12 @@ has_non_zero(const T* array) {
 
 template <typename T>
 bool
+near(const T& x, const T& y) {
+  return std::abs(x - y) <= 1.0e-6 * std::abs(x);
+}
+
+template <typename T>
+bool
 values_eq(const T* array0, const T* array1) {
   if constexpr (T::rank == 2) {
     if (array0->extent(0) != array1->extent(0)
@@ -215,7 +221,7 @@ values_eq(const T* array0, const T* array1) {
     }
     for (unsigned i = 0; i < array0->extent(0); ++i)
       for (unsigned j = 0; j < array0->extent(1); ++j)
-        if ((*array0)(i, j) != (*array1)(i, j)) {
+        if (!near((*array0)(i, j), (*array1)(i, j))) {
           std::cerr << "values differ at "
                     << i << "," << j
                     << "; " << (*array0)(i, j)
@@ -235,7 +241,7 @@ values_eq(const T* array0, const T* array1) {
       for (unsigned j = 0; j < array0->extent(1); ++j)
         for (unsigned k = 0; k < array0->extent(2); ++k)
           for (unsigned m = 0; m < array0->extent(3); ++m)
-            if ((*array0)(i, j, k, m) != (*array1)(i, j, k, m)) {
+            if (!near((*array0)(i, j, k, m), (*array1)(i, j, k, m))) {
               std::cerr << "values differ at "
                         << i << "," << j << "," << k << "," << m
                         << "; " << (*array0)(i, j, k, m)
