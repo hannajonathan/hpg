@@ -216,15 +216,21 @@ values_eq(const T* array0, const T* array1) {
     for (unsigned i = 0; i < array0->extent(0); ++i)
       for (unsigned j = 0; j < array0->extent(1); ++j)
         if ((*array0)(i, j) != (*array1)(i, j)) {
-          std::cerr << "extents differ" << std::endl;
+          std::cerr << "values differ at "
+                    << i << "," << j
+                    << "; " << (*array0)(i, j)
+                    << " != " << (*array1)(i, j)
+                    << std::endl;
           return false;
         }
     } else {
     if (array0->extent(0) != array1->extent(0)
         || array0->extent(1) != array1->extent(1)
         || array0->extent(2) != array1->extent(2)
-        || array0->extent(3) != array1->extent(3))
+        || array0->extent(3) != array1->extent(3)) {
+      std::cerr << "extents differ" << std::endl;
       return false;
+    }
     for (unsigned i = 0; i < array0->extent(0); ++i)
       for (unsigned j = 0; j < array0->extent(1); ++j)
         for (unsigned k = 0; k < array0->extent(2); ++k)
