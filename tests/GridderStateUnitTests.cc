@@ -60,8 +60,10 @@ struct MyCFArrayShape
 };
 
 struct MyCFArray final
-  : private MyCFArrayShape, public hpg::CFArray {
+  : public hpg::CFArray {
 
+  unsigned m_oversampling;
+  std::vector<std::array<unsigned, 4>> m_extents;
   std::vector<std::vector<std::complex<hpg::cf_fp>>> m_values;
 
   MyCFArray() {}
@@ -70,8 +72,12 @@ struct MyCFArray final
     unsigned oversampling,
     const std::vector<std::array<unsigned, 4>>& sizes,
     const std::vector<std::vector<std::complex<hpg::cf_fp>>>& values)
-    : MyCFArrayShape(oversampling, sizes)
+    : m_oversampling(oversampling)
     , m_values(values) {
+
+    for (auto& sz : sizes)
+      m_extents.push_back(
+        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
   }
 
   unsigned
@@ -769,100 +775,82 @@ TEST(GridderState, Serialization) {
 
   // do gridding with the two sets in both orders, and check that the results
   // are identical
-
+  auto test =
+    [&](unsigned first, unsigned second) {
+      return
+        hpg::RvalM<const size_t&, hpg::GridderState>::pure(
+          [=](size_t i) {
+            return
+              hpg::GridderState::create(
+                default_device,
+                0,
+                num_vis,
+                static_cast<const hpg::CFArray*>(&cfs[i]),
+                grid_size,
+                grid_scale);
+          })
+        .and_then(
+          [=](auto&& gs) mutable {
+            return
+              std::move(gs)
+              .set_convolution_function(
+                default_host_device,
+                std::move(cfs[first]));
+          })
+        .and_then(
+          [=](auto&& gs) mutable {
+            return
+              std::move(gs)
+              .grid_visibilities(
+                default_host_device,
+                std::move(vis[first]),
+                std::move(grid_cubes[first]),
+                std::move(cf_indexes[first]),
+                std::move(weights[first]),
+                std::move(frequencies[first]),
+                std::move(phases[first]),
+                std::move(coordinates[first]));
+          })
+        .and_then(
+          [=](auto&& gs) mutable {
+            return
+              std::move(gs)
+              .set_convolution_function(
+                default_host_device,
+                std::move(cfs[second]));
+          })
+        .and_then(
+          [=](auto&& gs) mutable {
+            return
+              std::move(gs)
+              .grid_visibilities(
+                default_host_device,
+                std::move(vis[second]),
+                std::move(grid_cubes[second]),
+                std::move(cf_indexes[second]),
+                std::move(weights[second]),
+                std::move(frequencies[second]),
+                std::move(phases[second]),
+                std::move(coordinates[second]));
+          })
+        .map(
+          [](auto&& gs) {
+            auto [gs1, gv] = std::move(gs).grid_values();
+            auto [gs2, gw] = std::move(gs1).grid_weights();
+            return std::make_tuple(std::move(gv), std::move(gw));
+          });
+    };
   // run this test twice in order to test serialization with both reallocation
   // and reuse of CF regions
   for (size_t i = 0; i < 2; ++i) {
-    auto gs =
-      hpg::get_value(
-        hpg::GridderState::create(
-          default_device,
-          0,
-          num_vis,
-          static_cast<hpg::CFArray*>(&cfs[0]),
-          grid_size,
-          grid_scale));
-
-    // order 0, 1
-    std::unique_ptr<hpg::GridValueArray> values01;
-    std::unique_ptr<hpg::GridWeightArray> weights01;
-    {
-      auto gs1 =
-        hpg::get_value(
-          gs.set_convolution_function(default_host_device, MyCFArray(cfs[0])));
-      auto gs2 =
-        hpg::get_value(
-          std::move(gs1).grid_visibilities(
-            default_host_device,
-            decltype(vis)::value_type(vis[0]),
-            decltype(grid_cubes)::value_type(grid_cubes[0]),
-            decltype(cf_indexes)::value_type(cf_indexes[0]),
-            decltype(weights)::value_type(weights[0]),
-            decltype(frequencies)::value_type(frequencies[0]),
-            decltype(phases)::value_type(phases[0]),
-            decltype(coordinates)::value_type(coordinates[0])));
-      auto gs3 =
-        hpg::get_value(
-          std::move(gs2)
-          .set_convolution_function(default_host_device, MyCFArray(cfs[1])));
-      auto gs4 =
-        hpg::get_value(
-          std::move(gs3).grid_visibilities(
-            default_host_device,
-            decltype(vis)::value_type(vis[1]),
-            decltype(grid_cubes)::value_type(grid_cubes[1]),
-            decltype(cf_indexes)::value_type(cf_indexes[1]),
-            decltype(weights)::value_type(weights[1]),
-            decltype(frequencies)::value_type(frequencies[1]),
-            decltype(phases)::value_type(phases[1]),
-            decltype(coordinates)::value_type(coordinates[1])));
-      hpg::GridderState gs5;
-      std::tie(gs5, values01) = std::move(gs4).grid_values();
-      weights01 = std::get<1>(std::move(gs5).grid_weights());
-      ASSERT_TRUE(has_non_zero(values01.get()));
-      ASSERT_TRUE(has_non_zero(weights01.get()));
-    }
-    // order 1, 0
-    std::unique_ptr<hpg::GridValueArray> values10;
-    std::unique_ptr<hpg::GridWeightArray> weights10;
-    {
-      auto gs1 =
-        hpg::get_value(
-          gs.set_convolution_function(default_host_device, MyCFArray(cfs[1])));
-      auto gs2 =
-        hpg::get_value(
-          std::move(gs1).grid_visibilities(
-            default_host_device,
-            decltype(vis)::value_type(vis[1]),
-            decltype(grid_cubes)::value_type(grid_cubes[1]),
-            decltype(cf_indexes)::value_type(cf_indexes[1]),
-            decltype(weights)::value_type(weights[1]),
-            decltype(frequencies)::value_type(frequencies[1]),
-            decltype(phases)::value_type(phases[1]),
-            decltype(coordinates)::value_type(coordinates[1])));
-      auto gs3 =
-        hpg::get_value(
-          std::move(gs2)
-          .set_convolution_function(default_host_device, MyCFArray(cfs[0])));
-      auto gs4 =
-        hpg::get_value(
-          std::move(gs3).grid_visibilities(
-            default_host_device,
-            decltype(vis)::value_type(vis[0]),
-            decltype(grid_cubes)::value_type(grid_cubes[0]),
-            decltype(cf_indexes)::value_type(cf_indexes[0]),
-            decltype(weights)::value_type(weights[0]),
-            decltype(frequencies)::value_type(frequencies[0]),
-            decltype(phases)::value_type(phases[0]),
-            decltype(coordinates)::value_type(coordinates[0])));
-      hpg::GridderState gs5;
-      std::tie(gs5, values10) = std::move(gs4).grid_values();
-      weights10 = std::get<1>(std::move(gs5).grid_weights());
-      ASSERT_TRUE(has_non_zero(values10.get()));
-      ASSERT_TRUE(has_non_zero(weights10.get()));
-    }
-    EXPECT_TRUE(values_eq(values01.get(), values10.get()));
-    EXPECT_TRUE(values_eq(weights01.get(), weights10.get()));
+    auto r01 = test(0, 1)(i);
+    auto r10 = test(1, 0)(i);
+    ASSERT_TRUE(hpg::is_value(r01));
+    ASSERT_TRUE(hpg::is_value(r10));
+    auto [v01, w01] = hpg::get_value(std::move(r01));
+    auto [v10, w10] = hpg::get_value(std::move(r10));
+    EXPECT_TRUE(values_eq(v01.get(), v10.get()));
+    EXPECT_TRUE(values_eq(w01.get(), w10.get()));
   }
 }
 
