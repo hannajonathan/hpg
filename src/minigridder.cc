@@ -1,3 +1,4 @@
+#define HPG_INTERNAL
 #include "hpg.hpp"
 
 #include "argparse.hpp"

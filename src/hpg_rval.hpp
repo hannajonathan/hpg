@@ -1,5 +1,6 @@
 #pragma once
 #include "hpg_config.hpp"
+#include "hpg_error.hpp"
 #include "hpg_export.h"
 
 #include <tuple>
@@ -8,8 +9,6 @@
 #endif
 
 namespace hpg {
-
-class Error;
 
 /** type for containing a value or an error
  *
@@ -195,7 +194,7 @@ fold(RV&& rv, ValF vf, ErrF ef) {
 }
 #endif // __cplusplus >= 201402L
 
-#if HPG_API >= 17
+#if HPG_API >= 17 || defined(HPG_INTERNAL)
 // The following classes may be of use in a functional programming style of
 // error handling; otherwise, they can be safely ignored.
 

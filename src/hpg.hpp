@@ -2,6 +2,7 @@
 
 #include "hpg_config.hpp"
 #include "hpg_rval.hpp"
+#include "hpg_error.hpp"
 
 #include <complex>
 #include <memory>
@@ -76,38 +77,6 @@ devices() noexcept;
 /** supported host devices */
 const std::set<Device>&
 host_devices() noexcept;
-
-/** error types
- */
-enum class HPG_EXPORT ErrorType {
-  DisabledDevice,
-  DisabledHostDevice,
-  IncompatibleVisVectorLengths,
-  OutOfBoundsCFIndex,
-  Other
-};
-
-/** error class
- */
-class HPG_EXPORT Error {
-private:
-
-  ErrorType m_type;
-
-  std::string m_msg;
-
-public:
-
-  Error(const std::string& msg, ErrorType err = ErrorType::Other);
-
-  const std::string&
-  message() const;
-
-  ErrorType
-  type() const;
-
-  virtual ~Error();
-};
 
 /** hpg scope object
  *
