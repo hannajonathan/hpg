@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+#define HPG_INTERNAL
 #include "hpg_impl.hpp"
 #include "hpg_runtime.hpp"
 
@@ -1118,7 +1119,7 @@ opt_t<Error>
 Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
 #if HPG_API >= 17
   return
-    fold(
+    RvalMM::fold(
       std::move(state).allocate_convolution_function_region(shape),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
@@ -1139,7 +1140,7 @@ opt_t<Error>
 Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
 #if HPG_API >= 17
   return
-    fold(
+    RvalMM::fold(
       std::move(state).set_convolution_function(host_device, std::move(cf)),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
@@ -1184,7 +1185,7 @@ Gridder::grid_visibilities(
   bool update_grid_weights) {
 #if HPG_API >= 17
   return
-    fold(
+    RvalMM::fold(
       std::move(state)
       .grid_visibilities(
         host_device,

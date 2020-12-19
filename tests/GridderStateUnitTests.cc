@@ -1143,7 +1143,7 @@ TEST(GridderState, Serialization) {
   auto test =
     [&](unsigned first, unsigned second) {
       return
-        hpg::RvalM<const size_t&, hpg::GridderState>::pure(
+        hpg::RvalM<size_t, hpg::GridderState>::wrap(
           [=](size_t i) {
             return
               hpg::GridderState::create<1>(
@@ -1200,8 +1200,8 @@ TEST(GridderState, Serialization) {
   // run this test twice in order to test serialization with both reallocation
   // and reuse of CF regions
   for (size_t i = 0; i < 2; ++i) {
-    auto r01 = test(0, 1)(i);
-    auto r10 = test(1, 0)(i);
+    auto r01 = test(0, 1).run(i);
+    auto r10 = test(1, 0).run(i);
     ASSERT_TRUE(hpg::is_value(r01));
     ASSERT_TRUE(hpg::is_value(r10));
     auto [v01, w01] = hpg::get_value(std::move(r01));

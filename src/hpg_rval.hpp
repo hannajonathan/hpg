@@ -18,6 +18,7 @@
 #include "hpg_error.hpp"
 #include "hpg_export.h"
 
+#include <memory>
 #include <tuple>
 #if HPG_API >= 17
 # include <variant>
@@ -165,254 +166,599 @@ rval(const Error& err) {
 
 /** apply function that returns a plain value to an rval_t
  */
-#if __cplusplus >= 201402L
-template <typename RV, typename F>
-HPG_EXPORT auto
-map(RV&& rv, F f) {
-#if HPG_API >= 17
-  using T = std::invoke_result_t<F, typename rval_value<RV>::type>;
-#else // HPG_API < 17
-  using T = typename std::result_of<F(typename rval_value<RV>::type)>::type;
-#endif // HPG_API >= 17
-  if (is_value(rv))
-    return rval<T>(f(get_value(std::forward<RV>(rv))));
-  else
-    return rval<T>(get_error(std::forward<RV>(rv)));
-}
-
-/** apply function that returns an rval_t value to an rval_t
- */
-template <typename RV, typename F>
-HPG_EXPORT auto
-flatmap(RV&& rv, F f) {
-#if HPG_API >= 17
-  using T =
-    typename
-    rval_value<std::invoke_result_t<F, typename rval_value<RV>::type>>::type;
-#else // HPG_API < 17
-  using T =
-    typename rval_value<
-      typename std::result_of<F(typename rval_value<RV>::type)>::type>::type;
-#endif // HPG_API >= 17
-
-  if (is_value(rv))
-    return f(get_value(std::forward<RV>(rv)));
-  else
-    return rval<T>(get_error(std::forward<RV>(rv)));
-}
-
-/** apply function depending on contained value type with common result type
- */
-template <typename RV, typename ValF, typename ErrF>
-HPG_EXPORT auto
-fold(RV&& rv, ValF vf, ErrF ef) {
-#if HPG_API >= 17
-  static_assert(
-    std::is_same_v<
-      std::invoke_result_t<ValF, typename rval_value<RV>::type>,
-      std::invoke_result_t<ErrF, Error>>);
-#else // hpg_api < 17
-  static_assert(
-    std::is_same<
-      typename std::result_of<ValF(typename rval_value<RV>::type)>::type,
-      typename std::result_of<ErrF(Error)>::type>::value);
-#endif // hpg_api >= 17
-
-  if (is_value(rv))
-    return vf(get_value(std::forward<RV>(rv)));
-  else
-    return ef(get_error(std::forward<RV>(rv)));
-}
-#endif // __cplusplus >= 201402L
-
 #if HPG_API >= 17 || defined(HPG_INTERNAL)
+struct HPG_EXPORT RvalMM {
+
+  template <typename T, typename F>
+  static rval_t<std::invoke_result_t<F, T>>
+  map(const rval_t<T>& rv, F f) {
+    if (is_value(rv))
+      return rval<std::invoke_result_t<F, T>>(f(get_value(rv)));
+    else
+      return rval<std::invoke_result_t<F, T>>(get_error(rv));
+  }
+
+  template <typename T, typename F>
+  static rval_t<std::invoke_result_t<F, T>>
+  map(rval_t<T>&& rv, F f) {
+    if (is_value(rv))
+      return rval<std::invoke_result_t<F, T>>(f(get_value(std::move(rv))));
+    else
+      return rval<std::invoke_result_t<F, T>>(get_error(std::move(rv)));
+  }
+
+  /** apply function that returns an rval_t value to an rval_t
+   */
+  template <typename T, typename F>
+  static rval_t<typename rval_value<std::invoke_result_t<F, T>>::type>
+  flatmap(const rval_t<T>& rv, F f) {
+    if (is_value(rv))
+      return f(get_value(rv));
+    else
+      return
+        rval<typename rval_value<std::invoke_result_t<F, T>>::type>(
+          get_error(rv));
+  }
+
+  template <typename T, typename F>
+  static rval_t<typename rval_value<std::invoke_result_t<F, T>>::type>
+  flatmap(rval_t<T>&& rv, F f) {
+    if (is_value(rv))
+      return f(get_value(std::move(rv)));
+    else
+      return
+        rval<typename rval_value<std::invoke_result_t<F, T>>::type>(
+          get_error(std::move(rv)));
+  }
+
+  /** apply function depending on contained value type with common result type
+   */
+  template <typename T, typename ValF, typename ErrF>
+  static std::invoke_result_t<ValF, T>
+  fold(const rval_t<T>& rv, ValF vf, ErrF ef) {
+    static_assert(
+      std::is_same_v<
+        std::invoke_result_t<ValF, T>,
+        std::invoke_result_t<ErrF, Error>>);
+
+    if (is_value(rv))
+      return vf(get_value(rv));
+    else
+      return ef(get_error(rv));
+  }
+
+  template <typename T, typename ValF, typename ErrF>
+  static std::invoke_result_t<ValF, T>
+  fold(rval_t<T>&& rv, ValF vf, ErrF ef) {
+    static_assert(
+      std::is_same_v<
+        std::invoke_result_t<ValF, T>,
+        std::invoke_result_t<ErrF, Error>>);
+
+    if (is_value(rv))
+      return vf(get_value(std::move(rv)));
+    else
+      return ef(get_error(std::move(rv)));
+  }
+};
+
+template <typename Derived, template <typename> typename M>
+struct MonadBase {
+
+  template <typename T>
+  static M<T>
+  flatten(const M<M<T>>& mmt) {
+    return Derived::flat_map(mmt, [](auto&& mt) { return mt; });
+  }
+
+  template <typename T>
+  static M<T>
+  flatten(M<M<T>>&& mmt) {
+    return Derived::flat_map(mmt, [](auto&& mt) { return std::move(mt); });
+  }
+
+  template <typename F>
+  static auto
+  lift(F f) {
+    return
+      [f]<typename MA>(MA&& ma) {
+        return map(std::forward<MA>(ma), f);
+      };
+  }
+
+  template <
+    typename T,
+    typename F,
+    typename S = std::invoke_result_t<F, T>>
+  static M<S>
+  map(const M<T>& mt, F f) {
+    return
+      Derived::flat_map(
+        mt,
+        [f](auto&& t) {
+          return Derived::pure(f(t));
+        });
+  }
+
+  template <
+    typename T,
+    typename F,
+    typename S = std::invoke_result_t<F, T>>
+  static M<S>
+  map(M<T>&& mt, F f) {
+    return
+      Derived::flat_map(
+        std::move(mt),
+        [f](auto&& t) {
+          return Derived::pure(f(std::move(t)));
+        });
+  }
+
+  // TODO: is this correct? There's a bias toward the first argument in
+  // maintaining effects in the result.
+  template <typename A, typename B>
+  static M<std::tuple<A, B>>
+  product(const M<A>& ma, const M<B>& mb) {
+    return
+      Derived::flat_map(
+        ma,
+        [mb](auto&& a) {
+          return
+            Derived::flat_map(
+              mb,
+              [a](auto&& b) {
+                return std::make_tuple(a, b);
+              });
+        });
+  }
+};
+
+template <template <typename> typename M>
+struct Monad
+  : public MonadBase<Monad<M>, M> {
+
+  template <typename T>
+  struct value {
+    using type = void;
+  };
+
+  template <typename T>
+  using value_t = typename value<T>::type;
+
+  template <typename T>
+  static M<T>
+  pure(const T& t);
+
+  template <
+    typename T,
+    typename F,
+    typename S = value_t<std::invoke_result_t<F, T>>>
+  static M<S>
+  flat_map(const M<T>& t, F f);
+
+  template <
+    typename T,
+    typename F,
+    typename S = value_t<std::invoke_result_t<F, T>>>
+  static M<S>
+  flat_map(M<T>&& t, F f);
+
+  template <
+    typename A,
+    typename F,
+    typename B =
+      std::variant_alternative_t<1, value_t<std::invoke_result_t<F, A>>>>
+  static M<B>
+  tail_rec_m(A&& a, F f);
+};
+
+template <>
+struct Monad<rval_t>
+  : public MonadBase<Monad<rval_t>, rval_t> {
+
+  template <typename T>
+  using M = rval_t<T>;
+
+  template <typename T>
+  struct value {
+    using type = void;
+  };
+
+  template <typename T>
+  struct value<rval_t<T>> {
+    using type = T;
+  };
+
+  template <typename T>
+  using value_t = typename value<T>::type;
+
+  template <typename T>
+  static rval_t<T> pure(T&& t) {
+    return rval<T>(std::forward<T>(t));
+  }
+
+  template <
+    typename T,
+    typename F,
+    typename S = value_t<std::invoke_result_t<F, T>>>
+  static rval_t<S>
+  flat_map(const rval_t<T>& rv, F f) {
+    return RvalMM::flatmap(rv, f);
+  }
+
+  template <
+    typename T,
+    typename F,
+    typename S = value_t<std::invoke_result_t<F, T>>>
+  static rval_t<S>
+  flat_map(rval_t<T>&& rv, F f) {
+    return RvalMM::flatmap(std::move(rv), f);
+  }
+
+  template <
+    typename A,
+    typename F,
+    typename B =
+      std::variant_alternative_t<1, value_t<std::invoke_result_t<F, A>>>>
+  static rval_t<B>
+  tail_rec_m(A&& a, F f) {
+    auto mab = f(std::forward<A>(a));
+    bool is_a = true;
+    // be careful here to avoid anything but move construction/assignment of
+    // values in mab
+    while (is_value(mab) && is_a) {
+      auto ab = get_value(std::move(mab));
+      is_a = std::holds_alternative<A>(ab);
+      if (is_a)
+        mab = f(std::get<A>(std::move(ab)));
+      else
+        mab = std::move(ab);
+    }
+    if (is_value(mab))
+      return rval<B>(std::get<B>(get_value(std::move(mab))));
+    else
+      return rval<B>(get_error(mab));
+  }
+};
+
+template <template <typename> typename F>
+struct functor {
+  using type = void;
+};
+
+template <template <typename> typename F>
+concept HasFunctor = requires {
+  typename functor<F>;
+};
+
+template <template <typename> typename F>
+struct applicative
+  : public functor<F> {
+  using type = void;
+};
+
+template <template <typename> typename F>
+concept HasApplicative = requires {
+  typename applicative<F>;
+};
+
+template <template <typename> typename M>
+struct monad
+  : public applicative<M> {
+  using type = void;
+};
+
+template <template <typename> typename M>
+concept HasMonad = requires {
+  typename monad<M>;
+};
+
+template <>
+struct monad<rval_t> {
+  using type = Monad<rval_t>;
+};
+
+template <>
+struct functor<rval_t> {
+  using type = Monad<rval_t>;
+};
+
+template <
+  template <typename> typename M,
+  typename A,
+  typename B>
+struct Kleisli;
+
+template <
+  template <typename> typename M,
+  typename A,
+  typename B,
+  typename F>
+struct KleisliF;
+
+template <
+  template <typename> typename M,
+  typename A,
+  typename B>
+struct Kleisli {
+
+  template <typename F>
+  static KleisliF<M, A, B, F>
+  wrap(F&& f) {
+    return KleisliF<M, A, B, F>(std::forward<F>(f));
+  }
+};
+
+template <
+  template <typename> typename M,
+  typename A,
+  typename B,
+  typename F>
+struct KleisliF {
+
+  F m_f;
+
+  KleisliF(const F& f)
+    : m_f(f) {}
+
+  KleisliF(F&& f)
+    : m_f(std::move(f)) {}
+
+  M<B>
+  run(const A& a) {
+    return m_f(a);
+  }
+
+  M<B>
+  run(A&& a) {
+    return m_f(std::move(a));
+  }
+
+  template <typename G> requires HasMonad<M>
+  auto
+  and_then(G&& g) const & {
+    using C =
+      typename monad<M>::type::template value_t<std::invoke_result_t<G, B>>;
+
+    return
+      Kleisli<M, A, C>::wrap(
+        [g, f=m_f]<typename AA>(AA&& a) {
+          return monad<M>::type::flat_map(f(std::forward<AA>(a)), g);
+        });
+
+  }
+
+  template <typename G> requires HasFunctor<M>
+  auto
+  map(G&& g) const & {
+    using C = std::invoke_result_t<G, B>;
+    return
+      Kleisli<M, A, C>::wrap(
+        [g, f=m_f]<typename AA>(AA&& a) {
+          return functor<M>::type::map(f(std::forward<AA>(a)), g);
+        });
+  }
+};
+
+template <template <typename> typename M, typename B, typename F>
+struct KleisliF<M, void, B, F> {
+
+  F m_f;
+
+  KleisliF(const F& f)
+    : m_f(f) {}
+
+  KleisliF(F&& f)
+    : m_f(std::move(f)) {}
+
+  M<B>
+  run() {
+    return m_f();
+  }
+
+  template <typename G> requires HasMonad<M>
+  auto
+  and_then(G&& g) const & {
+    using C =
+      typename monad<M>::type::template value_t<std::invoke_result_t<G, B>>;
+
+    return
+      Kleisli<M, void, C>::wrap(
+        [g, f=m_f]() {
+          return monad<M>::type::flat_map(f(), g);
+        });
+  }
+
+  template <typename G> requires HasFunctor<M>
+  auto
+  map(G&& g) const & {
+    using C = std::invoke_result_t<G, B>;
+    return
+      Kleisli<M, void, C>::wrap(
+        [g, f=m_f]() {
+          return functor<M>::type::map(f(), g);
+        });
+  }
+};
+
 // The following classes may be of use in a functional programming style of
 // error handling; otherwise, they can be safely ignored.
 
-/** monadic class of functions with domain A and range rval_t\<B> */
-template <typename A, typename B>
-struct RvalM;
-
-/** subclass of RvalM<A> with explicit function type */
 template <typename A, typename B, typename F>
 struct RvalMF;
 
+/** functions with domain A and range rval_t<B> */
 template <typename A, typename B>
-struct RvalM {
+struct RvalM
+  : public Kleisli<rval_t, A, B> {
 
-  /** construct an RvalM value as RvalMF<A,F> value with deduced function
-   * type */
   template <typename F>
   static RvalMF<A, B, F>
-  pure(F&& f) {
+  wrap(F&& f) {
     return RvalMF<A, B, F>(std::forward<F>(f));
   }
 };
 
 template <typename A, typename B, typename F>
-struct RvalMF :
-  public RvalM<A, B> {
+struct RvalMF
+  : public KleisliF<rval_t, A, B, F> {
 
-  static_assert(
-    std::is_same_v<B, typename rval_value<std::invoke_result_t<F, A>>::type>);
-
-  /** value type of G applied to value of type B */
-  template <typename G>
-  using gv_t = typename rval_value<std::invoke_result_t<G, B>>::type;
-
-  /** value type of G applied to a loop index and value of type B */
-  template <typename G>
-  using giv_t =
-    typename rval_value<std::invoke_result_t<G, unsigned, B>>::type;
-
-  F m_f; /**< wrapped function, as value */
+  using KleisliF<rval_t, A, B, F>::m_f;
 
   /** constructor */
   RvalMF(const F& f)
-    : m_f(f) {}
+    : KleisliF<rval_t, A, B, F>(f) {}
 
   /** constructor */
   RvalMF(F&& f)
-    : m_f(std::move(f)) {}
+    : KleisliF<rval_t, A, B, F>(std::move(f)) {}
 
-  /** apply contained function to a value */
   rval_t<B>
-  operator()(A&& a) const {
-    return m_f(std::forward<A>(a));
+  run(const A& a) {
+    return m_f(a);
   }
 
-  /** composition with rval_t-valued function */
-  template <typename G>
-  auto
-  and_then(const G& g) const {
-
-    return
-      RvalM<A, gv_t<G>>::pure(
-        [g, f=m_f](A&& a) { return flatmap(f(std::forward<A>(a)), g); });
+  rval_t<B>
+  run(A&& a) {
+    return m_f(std::move(a));
   }
 
-  /** composition with sequential indexed iterations of rval_t-valued
-   * function */
   template <typename G>
   auto
-  and_then_loop(unsigned n, const G& g) const {
+  and_then(G&& g) const & {
+    using C =
+      typename Monad<rval_t>::template value_t<std::invoke_result_t<G, B>>;
 
     return
-      RvalM<A, giv_t<G>>::pure(
-        [n, g, f=m_f](A&& a) {
-          auto result = f(std::forward<A>(a));
-          for (unsigned i = 0; i < n; ++i)
-            result =
-              flatmap(
-                std::move(result),
-                [i, g](auto&& r) {
-                  return g(i, std::move(r));
-                });
-          return result;
+      RvalM<A, C>::wrap(
+        [g, f=m_f]<typename AA>(AA&& a) {
+          return Monad<rval_t>::flat_map(f(std::forward<AA>(a)), g);
         });
   }
 
-  /** composition with sequential non-indexed iterations of rval_t-valued
-   * function */
   template <typename G>
   auto
-  and_then_repeat(unsigned n, const G& g) const {
-
+  map(G&& g) const & {
+    using C = std::invoke_result_t<G, B>;
     return
-      and_then_loop(n, [g](unsigned, auto&& r) { return g(std::move(r)); });
+      RvalM<A, C>::wrap(
+        [g, f=m_f]<typename AA>(AA&& a) {
+          return Monad<rval_t>::map(f(std::forward<AA>(a)), g);
+        });
   }
 
-  /** composition with simple-valued function  */
   template <typename G>
   auto
-  map(const G& g) const {
-
+  and_then_loop(unsigned n, G&& g) const & {
+    //using C = typename Monad<rval_t>::value<std::invoke_result_t<G, B>>::type;
     return
-      RvalM<A, std::invoke_result_t<G, B>>::pure(
-        [g, f=m_f](A&& a) { return ::hpg::map(f(std::forward<A>(a)), g); });
+      and_then(
+        [g, n]<typename BB>(BB&& b) {
+          using ibb = std::variant<std::tuple<unsigned, B>, B>;
+          return
+            Monad<rval_t>::tail_rec_m(
+              std::make_tuple(n, std::forward<BB>(b)),
+              [g, n](auto&& i_b) -> rval_t<ibb> {
+                auto& [i, b] = i_b;
+                if (i == 0)
+                  return ibb(std::move(b));
+                else
+                  return
+                    Monad<rval_t>::map(
+                      g(n - i, std::move(b)),
+                      [i1=i - 1](auto&& b) -> ibb {
+                        return std::make_tuple(i1, std::move(b));
+                      });
+              });
+        });
+  }
+
+  template <typename G>
+  auto
+  and_then_repeat(unsigned n, G&& g) const & {
+    return
+      and_then_loop(n, [g](unsigned, auto&& b) { return g(std::move(b)); });
   }
 };
 
 /** specialization of RvalMF<A> for A = void */
 template <typename B, typename F>
-struct RvalMF<void, B, F> :
-  public RvalM<void, B> {
+struct RvalMF<void, B, F>
+  : public KleisliF<rval_t, void, B, F> {
 
-  static_assert(
-    std::is_same_v<B, typename rval_value<std::invoke_result_t<F>>::type>);
-
-  /** value type of G applied to value of type B */
-  template <typename G>
-  using gv_t = typename rval_value<std::invoke_result_t<G, B>>::type;
-
-  /** value type of G applied to a loop index and value of type B */
-  template <typename G>
-  using giv_t = typename rval_value<std::invoke_result_t<G, unsigned, B>>::type;
-
-  F m_f; /**< wrapped function, as value */
+  using KleisliF<rval_t, void, B, F>::m_f;
 
   /** constructor */
   RvalMF(const F& f)
-    : m_f(f) {}
+    : KleisliF<rval_t, void, B, F>(f) {}
 
   /** constructor */
   RvalMF(F&& f)
-    : m_f(std::move(f)) {}
+    : KleisliF<rval_t, void, B, F>(std::move(f)) {}
 
-  /** apply contained function to a value */
   rval_t<B>
-  operator()() const {
+  run() {
     return m_f();
   }
 
-  /** composition with rval_t-valued function */
   template <typename G>
   auto
-  and_then(const G& g) const {
-
-    return RvalM<void, gv_t<G>>::pure(
-      [g, f=m_f]() { return flatmap(f(), g); });
-  }
-
-  /** composition with sequential iterations of rval_t-valued function */
-  template <typename G>
-  auto
-  and_then_loop(unsigned n, const G& g) const {
+  and_then(G&& g) const & {
+    using C =
+      typename Monad<rval_t>::template value_t<std::invoke_result_t<G, B>>;
 
     return
-      RvalM<void, giv_t<G>>::pure(
-        [n, g, f=m_f]() {
-          auto result = f();
-          for (unsigned i = 0; i < n; ++i)
-            result =
-              flatmap(
-                std::move(result),
-                [i, g](auto&& r) {
-                  return g(i, std::move(r));
-                });
-          return result;
+      RvalM<void, C>::wrap(
+        [g, f=m_f]() {
+          return Monad<rval_t>::flat_map(f(), g);
         });
   }
 
-  /** composition with sequential non-indexed iterations of rval_t-valued
-   * function */
   template <typename G>
   auto
-  and_then_repeat(unsigned n, const G& g) const {
-
+  map(G&& g) const & {
+    using C = std::invoke_result_t<G, B>;
     return
-      and_then_loop(n, [g](unsigned, auto&& r) { return g(std::move(r)); });
+      RvalM<void, C>::wrap(
+        [g, f=m_f]() {
+          return Monad<rval_t>::map(f(), g);
+        });
   }
 
-  /** composition with simple-valued function  */
   template <typename G>
   auto
-  map(const G& g) const {
+  and_then_loop(unsigned n, G&& g) const & {
+    //using C = typename Monad<rval_t>::value<std::invoke_result_t<G, B>>::type;
+    return
+      and_then(
+        [g, n]<typename BB>(BB&& b) {
+          using ibb = std::variant<std::tuple<unsigned, B>, B>;
+          return
+            Monad<rval_t>::tail_rec_m(
+              std::make_tuple(n, std::forward<BB>(b)),
+              [g, n](auto&& i_b) -> rval_t<ibb> {
+                auto& [i, b] = i_b;
+                if (i == 0)
+                  return ibb(std::move(b));
+                else
+                  return
+                    Monad<rval_t>::map(
+                      g(n - i, std::move(b)),
+                      [i1=i - 1](auto&& b) -> ibb {
+                        return std::make_tuple(i1, std::move(b));
+                      });
+              });
+        });
+  }
 
-    return RvalM<void, std::invoke_result_t<G, B>>::pure(
-      [g, f=m_f]() { return ::hpg::map(f(), g); });
+  template <typename G>
+  auto
+  and_then_repeat(unsigned n, G&& g) const & {
+    return
+      and_then_loop(n, [g](unsigned, auto&& b) { return g(std::move(b)); });
   }
 };
+
 #endif // HPG_API >= 17
 
 }  // end namespace hpg

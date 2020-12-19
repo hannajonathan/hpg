@@ -713,7 +713,7 @@ run_hpg_trial_op(
   }
 
   auto time_trial =
-    hpg::RvalM<void, hpg::GridderState>::pure(
+    hpg::RvalM<void, hpg::GridderState>::wrap(
       // create the GridderState instance
       [&]() {
         return
@@ -757,15 +757,16 @@ run_hpg_trial_op(
         return
           std::make_tuple(std::chrono::steady_clock::now(), std::move(result));
       })
-    .and_then_repeat(
+    .and_then_loop(
       // grid visibilities a number of times, copying the start time into the
       // result tuple after each iteration
       spec.repeats,
-      [&](auto&& t_gs) {
+      [&](unsigned i, auto&& t_gs) {
+        std::cout << "iter " << i << std::endl;
         InputData id = std::move(ids.front());
         ids.pop();
         return
-          map(
+          hpg::Monad<hpg::rval_t>::map(
             gfn(std::get<1>(std::move(t_gs)), std::move(id).visibilities),
             [&](hpg::GridderState&& gs) {
               return
@@ -783,8 +784,8 @@ run_hpg_trial_op(
   // run trial, and print result
   K::Profiling::pushRegion("Trial"s + std::to_string(spec.index));
   auto output =
-    hpg::fold(
-      time_trial(),
+    hpg::RvalMM::fold(
+      time_trial.run(),
       [&spec](const double& t) {
         return spec.run(t);
       },
