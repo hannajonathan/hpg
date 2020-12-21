@@ -2511,6 +2511,7 @@ private:
       for (auto& [cf, last] : m_cfs) {
         cf.state = this;
         cf.prepare_pool(init_cf_shape, true);
+        last.reset();
       }
     } else {
       const StateT* ost = std::get<const StateT*>(init);
@@ -2534,7 +2535,6 @@ private:
         cf.state = this;
       }
     }
-    std::get<1>(m_cfs[0]) = 0;
     m_current = StreamPhase::COPY;
   }
 
