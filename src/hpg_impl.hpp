@@ -2659,7 +2659,7 @@ private:
     if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
       auto dv = K::subview(dview, std::pair((size_t)0, len));
       K::deep_copy(exec, dv, hview);
-      return {hview, dview};
+      return {hview, dv};
     } else {
       return {hview, hview};
     }
