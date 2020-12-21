@@ -8,24 +8,24 @@ namespace hpg {
 
 /** error types
  */
-  enum class HPG_EXPORT ErrorType {
-    DisabledDevice,
-    DisabledHostDevice,
-    IncompatibleVisVectorLengths,
-    OutOfBoundsCFIndex,
-    Other
-  };
+enum class HPG_EXPORT ErrorType {
+  DisabledDevice,
+  DisabledHostDevice,
+  IncompatibleVisVectorLengths,
+  OutOfBoundsCFIndex,
+  Other
+};
 
 /** error class
  */
-  class HPG_EXPORT Error {
-  private:
+class HPG_EXPORT Error {
+private:
 
   ErrorType m_type;
 
   std::string m_msg;
 
-  public:
+public:
 
   Error(const std::string& msg, ErrorType err = ErrorType::Other);
 
@@ -36,7 +36,7 @@ namespace hpg {
   type() const;
 
   virtual ~Error();
-  };
+};
 }  // end namespace hpg
 
 // Local Variables:
