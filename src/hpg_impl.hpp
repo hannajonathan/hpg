@@ -1789,14 +1789,13 @@ struct CFPool final {
   void
   reset(bool free_pool = true) {
     if (state && pool.is_allocated()) {
-      state->fence();
+      if (free_pool)
+        pool = decltype(pool)();
       for (size_t i = 0; i < num_cf_groups; ++i) {
         cf_h[i] = cfh_view();
         cf_d[i] = cfd_view();
       }
       num_cf_groups = 0;
-      if (free_pool)
-        pool = decltype(pool)();
     }
   }
 };
