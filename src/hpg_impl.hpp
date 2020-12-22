@@ -546,7 +546,7 @@ public:
   typedef SumCFWgts reducer;
   typedef cf_wgt_array value_type;
   typedef
-    Kokkos::View<value_type[1], space, K::MemoryUnmanaged> result_view_type;
+    Kokkos::View<value_type*, space, K::MemoryUnmanaged> result_view_type;
 
 private:
   value_type & value;
@@ -629,12 +629,12 @@ struct HPG_EXPORT VisibilityGridder final {
     using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
     using scratch_wgts_view =
-      K::View<cf_wgt_array[1], typename execution_space::scratch_memory_space>;
+      K::View<cf_wgt_array*, typename execution_space::scratch_memory_space>;
 
     K::parallel_for(
       "gridding",
       K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size())),
+      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
       KOKKOS_LAMBDA(const member_type& team_member) {
         auto i = team_member.league_rank();
 
@@ -666,7 +666,7 @@ struct HPG_EXPORT VisibilityGridder final {
         if (0 <= vis.major[0] && vis.major[0] + N_X <= grid.extent_int(0)
             && 0 < vis.major[1] && vis.major[1] + N_Y <= grid.extent_int(1)) {
           // accumulate weights in scratch memory for this visibility
-          scratch_wgts_view cfw(team_member.team_scratch(0));
+          scratch_wgts_view cfw(team_member.team_scratch(0), 1);
           K::parallel_for(
             K::TeamVectorRange(team_member, N_C),
             [=](const int C) {
@@ -745,12 +745,12 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
     using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
     using scratch_wgts_view =
-      K::View<cf_wgt_array[1], typename execution_space::scratch_memory_space>;
+      K::View<cf_wgt_array*, typename execution_space::scratch_memory_space>;
 
     K::parallel_for(
       "gridding",
       K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size())),
+      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
       KOKKOS_LAMBDA(const member_type& team_member) {
         auto i = team_member.league_rank();
 
@@ -778,7 +778,7 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
         const int N_Y = cf.extent_int(1);
         const int N_C = cf.extent_int(2);
         // accumulate weights in scratch memory for this visibility
-        scratch_wgts_view cfw(team_member.team_scratch(0));
+        scratch_wgts_view cfw(team_member.team_scratch(0), 1);
         K::parallel_for(
           K::TeamVectorRange(team_member, N_C),
           [=](const int C) {
