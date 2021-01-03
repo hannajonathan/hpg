@@ -1143,7 +1143,7 @@ TEST(GridderState, Serialization) {
   auto test =
     [&](unsigned first, unsigned second) {
       return
-        hpg::RvalM<size_t, hpg::GridderState>::wrap(
+        hpg::fn::RvalM<size_t, hpg::GridderState>::wrap(
           [=](size_t i) {
             return
               hpg::GridderState::create<1>(

@@ -713,7 +713,7 @@ run_hpg_trial_op(
   }
 
   auto time_trial =
-    hpg::RvalM<void, hpg::GridderState>::wrap(
+    hpg::fn::RvalM<void, hpg::GridderState>::wrap(
       // create the GridderState instance
       [&]() {
         return
@@ -776,7 +776,7 @@ run_hpg_trial_op(
         }
 >>>>>>> Add some documentation for hpg_rval.hpp
         return
-          hpg::Monad<hpg::rval_t>::map(
+          hpg::Fn::Monad<hpg::rval_t>::map(
             gfn(std::get<1>(std::move(t_gs)), std::move(id).visibilities),
             [&](hpg::GridderState&& gs) {
               return

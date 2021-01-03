@@ -254,6 +254,12 @@ struct HPG_EXPORT RvalMM {
   }
 };
 
+/** namespace for implementation of types supporting functional programming
+ *
+ * This is experimental work; not intended for general use.
+ */
+namespace fn {
+
 /** base class for monad type class instances
  */
 template <typename Derived, template <typename> typename M>
@@ -756,6 +762,7 @@ struct HPG_EXPORT RvalMF<void, B, F>
       and_then_loop(n, [g](unsigned, auto&& b) { return g(std::move(b)); });
   }
 };
+} // end namespace fn
 
 #endif // HPG_API >= 17
 
