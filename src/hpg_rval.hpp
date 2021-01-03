@@ -470,6 +470,7 @@ template <
 struct Kleisli;
 
 template <
+  template <typename, typename> typename KM,
   template <typename> typename M,
   typename A,
   typename B,
@@ -482,14 +483,18 @@ template <
   typename B>
 struct Kleisli {
 
+  template <typename A1, typename B1>
+  using KM = Kleisli<M, A1, B1>;
+
   template <typename F>
-  static KleisliF<M, A, B, F>
+  static KleisliF<KM, M, A, B, F>
   wrap(F&& f) {
-    return KleisliF<M, A, B, F>(std::forward<F>(f));
+    return KleisliF<KM, M, A, B, F>(std::forward<F>(f));
   }
 };
 
 template <
+  template <typename, typename> typename KM,
   template <typename> typename M,
   typename A,
   typename B,
@@ -521,7 +526,7 @@ struct KleisliF {
       typename monad<M>::type::template value_t<std::invoke_result_t<G, B>>;
 
     return
-      Kleisli<M, A, C>::wrap(
+      KM<A, C>::wrap(
         [g, f=m_f]<typename AA>(AA&& a) {
           return monad<M>::type::flat_map(f(std::forward<AA>(a)), g);
         });
@@ -533,15 +538,19 @@ struct KleisliF {
   map(G&& g) const & {
     using C = std::invoke_result_t<G, B>;
     return
-      Kleisli<M, A, C>::wrap(
+      KM<A, C>::wrap(
         [g, f=m_f]<typename AA>(AA&& a) {
           return functor<M>::type::map(f(std::forward<AA>(a)), g);
         });
   }
 };
 
-template <template <typename> typename M, typename B, typename F>
-struct KleisliF<M, void, B, F> {
+template <
+  template <typename, typename> typename KM,
+  template <typename> typename M,
+  typename B,
+  typename F>
+struct KleisliF<KM, M, void, B, F> {
 
   F m_f;
 
@@ -563,7 +572,7 @@ struct KleisliF<M, void, B, F> {
       typename monad<M>::type::template value_t<std::invoke_result_t<G, B>>;
 
     return
-      Kleisli<M, void, C>::wrap(
+      KM<void, C>::wrap(
         [g, f=m_f]() {
           return monad<M>::type::flat_map(f(), g);
         });
@@ -574,7 +583,7 @@ struct KleisliF<M, void, B, F> {
   map(G&& g) const & {
     using C = std::invoke_result_t<G, B>;
     return
-      Kleisli<M, void, C>::wrap(
+      KM<void, C>::wrap(
         [g, f=m_f]() {
           return functor<M>::type::map(f(), g);
         });
@@ -601,58 +610,23 @@ struct RvalM
 
 template <typename A, typename B, typename F>
 struct RvalMF
-  : public KleisliF<rval_t, A, B, F> {
+  : public KleisliF<RvalM, rval_t, A, B, F> {
 
-  using KleisliF<rval_t, A, B, F>::m_f;
+  using KleisliF<RvalM, rval_t, A, B, F>::m_f;
 
   /** constructor */
   RvalMF(const F& f)
-    : KleisliF<rval_t, A, B, F>(f) {}
+    : KleisliF<RvalM, rval_t, A, B, F>(f) {}
 
   /** constructor */
   RvalMF(F&& f)
-    : KleisliF<rval_t, A, B, F>(std::move(f)) {}
-
-  rval_t<B>
-  run(const A& a) {
-    return m_f(a);
-  }
-
-  rval_t<B>
-  run(A&& a) {
-    return m_f(std::move(a));
-  }
-
-  template <typename G>
-  auto
-  and_then(G&& g) const & {
-    using C =
-      typename Monad<rval_t>::template value_t<std::invoke_result_t<G, B>>;
-
-    return
-      RvalM<A, C>::wrap(
-        [g, f=m_f]<typename AA>(AA&& a) {
-          return Monad<rval_t>::flat_map(f(std::forward<AA>(a)), g);
-        });
-  }
-
-  template <typename G>
-  auto
-  map(G&& g) const & {
-    using C = std::invoke_result_t<G, B>;
-    return
-      RvalM<A, C>::wrap(
-        [g, f=m_f]<typename AA>(AA&& a) {
-          return Monad<rval_t>::map(f(std::forward<AA>(a)), g);
-        });
-  }
+    : KleisliF<RvalM, rval_t, A, B, F>(std::move(f)) {}
 
   template <typename G>
   auto
   and_then_loop(unsigned n, G&& g) const & {
-    //using C = typename Monad<rval_t>::value<std::invoke_result_t<G, B>>::type;
     return
-      and_then(
+      KleisliF<RvalM, rval_t, A, B, F>::and_then(
         [g, n]<typename BB>(BB&& b) {
           using ibb = std::variant<std::tuple<unsigned, B>, B>;
           return
@@ -684,53 +658,23 @@ struct RvalMF
 /** specialization of RvalMF<A> for A = void */
 template <typename B, typename F>
 struct RvalMF<void, B, F>
-  : public KleisliF<rval_t, void, B, F> {
+  : public KleisliF<RvalM, rval_t, void, B, F> {
 
-  using KleisliF<rval_t, void, B, F>::m_f;
+  using KleisliF<RvalM, rval_t, void, B, F>::m_f;
 
   /** constructor */
   RvalMF(const F& f)
-    : KleisliF<rval_t, void, B, F>(f) {}
+    : KleisliF<RvalM, rval_t, void, B, F>(f) {}
 
   /** constructor */
   RvalMF(F&& f)
-    : KleisliF<rval_t, void, B, F>(std::move(f)) {}
-
-  rval_t<B>
-  run() {
-    return m_f();
-  }
-
-  template <typename G>
-  auto
-  and_then(G&& g) const & {
-    using C =
-      typename Monad<rval_t>::template value_t<std::invoke_result_t<G, B>>;
-
-    return
-      RvalM<void, C>::wrap(
-        [g, f=m_f]() {
-          return Monad<rval_t>::flat_map(f(), g);
-        });
-  }
-
-  template <typename G>
-  auto
-  map(G&& g) const & {
-    using C = std::invoke_result_t<G, B>;
-    return
-      RvalM<void, C>::wrap(
-        [g, f=m_f]() {
-          return Monad<rval_t>::map(f(), g);
-        });
-  }
+    : KleisliF<RvalM, rval_t, void, B, F>(std::move(f)) {}
 
   template <typename G>
   auto
   and_then_loop(unsigned n, G&& g) const & {
-    //using C = typename Monad<rval_t>::value<std::invoke_result_t<G, B>>::type;
     return
-      and_then(
+      KleisliF<RvalM, rval_t, void, B, F>::and_then(
         [g, n]<typename BB>(BB&& b) {
           using ibb = std::variant<std::tuple<unsigned, B>, B>;
           return
