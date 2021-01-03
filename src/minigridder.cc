@@ -762,9 +762,19 @@ run_hpg_trial_op(
       // result tuple after each iteration
       spec.repeats,
       [&](unsigned i, auto&& t_gs) {
+<<<<<<< HEAD
         std::cout << "iter " << i << std::endl;
         InputData id = std::move(ids.front());
         ids.pop();
+=======
+        InputData id;
+        if (!ids.empty()) {
+          id = std::move(ids.front());
+          ids.pop();
+        } else {
+          id = input_data;
+        }
+>>>>>>> Add some documentation for hpg_rval.hpp
         return
           hpg::Monad<hpg::rval_t>::map(
             gfn(std::get<1>(std::move(t_gs)), std::move(id).visibilities),

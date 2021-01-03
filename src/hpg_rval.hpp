@@ -167,8 +167,12 @@ rval(const Error& err) {
 /** apply function that returns a plain value to an rval_t
  */
 #if HPG_API >= 17 || defined(HPG_INTERNAL)
+/** container class of static functions on rval_t values
+ */
 struct HPG_EXPORT RvalMM {
 
+  /** apply function to value contained in an rval_t
+   */
   template <typename T, typename F>
   static rval_t<std::invoke_result_t<F, T>>
   map(const rval_t<T>& rv, F f) {
@@ -178,6 +182,8 @@ struct HPG_EXPORT RvalMM {
       return rval<std::invoke_result_t<F, T>>(get_error(rv));
   }
 
+  /** apply function to value contained in an rval_t
+   */
   template <typename T, typename F>
   static rval_t<std::invoke_result_t<F, T>>
   map(rval_t<T>&& rv, F f) {
@@ -200,6 +206,8 @@ struct HPG_EXPORT RvalMM {
           get_error(rv));
   }
 
+  /** apply function that returns an rval_t value to an rval_t
+   */
   template <typename T, typename F>
   static rval_t<typename rval_value<std::invoke_result_t<F, T>>::type>
   flatmap(rval_t<T>&& rv, F f) {
@@ -211,7 +219,8 @@ struct HPG_EXPORT RvalMM {
           get_error(std::move(rv)));
   }
 
-  /** apply function depending on contained value type with common result type
+  /** apply one of two functions, depending on contained value type, with common
+   * result type
    */
   template <typename T, typename ValF, typename ErrF>
   static std::invoke_result_t<ValF, T>
@@ -227,6 +236,9 @@ struct HPG_EXPORT RvalMM {
       return ef(get_error(rv));
   }
 
+  /** apply one of two functions, depending on contained value type, with common
+   * result type
+   */
   template <typename T, typename ValF, typename ErrF>
   static std::invoke_result_t<ValF, T>
   fold(rval_t<T>&& rv, ValF vf, ErrF ef) {
@@ -242,6 +254,8 @@ struct HPG_EXPORT RvalMM {
   }
 };
 
+/** base class for monad type class instances
+ */
 template <typename Derived, template <typename> typename M>
 struct MonadBase {
 
@@ -313,6 +327,8 @@ struct MonadBase {
   }
 };
 
+/** monad type class
+ */
 template <template <typename> typename M>
 struct Monad
   : public MonadBase<Monad<M>, M> {
@@ -352,6 +368,8 @@ struct Monad
   tail_rec_m(A&& a, F f);
 };
 
+/** monad type class instance for rval_t
+ */
 template <>
 struct Monad<rval_t>
   : public MonadBase<Monad<rval_t>, rval_t> {
@@ -421,8 +439,12 @@ struct Monad<rval_t>
   }
 };
 
+/** type trait for types with a functor type class instance
+ *
+ * note that we're using the term "functor" in the sense of category theory or
+ * functional programming, not the usual c++ terminology */
 template <template <typename> typename F>
-struct functor {
+struct HPG_EXPORT functor {
   using type = void;
 };
 
@@ -431,8 +453,9 @@ concept HasFunctor = requires {
   typename functor<F>;
 };
 
+/** type trait for types with an applicative type class instance */
 template <template <typename> typename F>
-struct applicative
+struct HPG_EXPORT applicative
   : public functor<F> {
   using type = void;
 };
@@ -442,8 +465,9 @@ concept HasApplicative = requires {
   typename applicative<F>;
 };
 
+/** type trait for types with a monad type class instance */
 template <template <typename> typename M>
-struct monad
+struct HPG_EXPORT monad
   : public applicative<M> {
   using type = void;
 };
@@ -453,13 +477,18 @@ concept HasMonad = requires {
   typename monad<M>;
 };
 
+/** monad type class trait for rval_t */
 template <>
-struct monad<rval_t> {
+struct HPG_EXPORT monad<rval_t> {
   using type = Monad<rval_t>;
 };
 
+/** functor type class trait for rval_t
+ *
+ * @todo find a way to avoid the repetition exhibited here for the monad and
+ * functor type traits */
 template <>
-struct functor<rval_t> {
+struct HPG_EXPORT functor<rval_t> {
   using type = Monad<rval_t>;
 };
 
@@ -477,11 +506,13 @@ template <
   typename F>
 struct KleisliF;
 
+/** data type for functions A => M\<B\>
+ */
 template <
   template <typename> typename M,
   typename A,
   typename B>
-struct Kleisli {
+struct HPG_EXPORT Kleisli {
 
   template <typename A1, typename B1>
   using KM = Kleisli<M, A1, B1>;
@@ -493,32 +524,45 @@ struct Kleisli {
   }
 };
 
+/** data type for a given function A => M\<B\>
+ */
 template <
   template <typename, typename> typename KM,
   template <typename> typename M,
   typename A,
   typename B,
   typename F>
-struct KleisliF {
+struct HPG_EXPORT KleisliF {
 
+  /** wrapped function */
   F m_f;
 
+  /** constructor */
   KleisliF(const F& f)
     : m_f(f) {}
 
+  /** constructor */
   KleisliF(F&& f)
     : m_f(std::move(f)) {}
 
+  /** evaluate the function for a value */
   M<B>
   run(const A& a) {
     return m_f(a);
   }
 
+  /** evaluate the function for a value */
   M<B>
   run(A&& a) {
     return m_f(std::move(a));
   }
 
+  /** compose this function with another Kleisli-like function
+   *
+   * @param g, a function B => M\<C\> for some C
+   *
+   * @return Kleisli instance for g(f)
+   */
   template <typename G> requires HasMonad<M>
   auto
   and_then(G&& g) const & {
@@ -533,6 +577,13 @@ struct KleisliF {
 
   }
 
+  /** compose this function with a plain function
+   *
+   * @param g, a function B => C for some C
+   *
+   * @return Kleisli instance for g(f) (understood to mean that g acts on the
+   * value contained in the result of f)
+   */
   template <typename G> requires HasFunctor<M>
   auto
   map(G&& g) const & {
@@ -545,12 +596,14 @@ struct KleisliF {
   }
 };
 
+/** specialization of KleisliF for functions with no argument
+ */
 template <
   template <typename, typename> typename KM,
   template <typename> typename M,
   typename B,
   typename F>
-struct KleisliF<KM, M, void, B, F> {
+struct HPG_EXPORT KleisliF<KM, M, void, B, F> {
 
   F m_f;
 
@@ -594,11 +647,11 @@ struct KleisliF<KM, M, void, B, F> {
 // error handling; otherwise, they can be safely ignored.
 
 template <typename A, typename B, typename F>
-struct RvalMF;
+struct HPG_EXPORT RvalMF;
 
 /** functions with domain A and range rval_t<B> */
 template <typename A, typename B>
-struct RvalM
+struct HPG_EXPORT RvalM
   : public Kleisli<rval_t, A, B> {
 
   template <typename F>
@@ -608,8 +661,9 @@ struct RvalM
   }
 };
 
+/** a function with domain A and range rval_t<B> */
 template <typename A, typename B, typename F>
-struct RvalMF
+struct HPG_EXPORT RvalMF
   : public KleisliF<RvalM, rval_t, A, B, F> {
 
   using KleisliF<RvalM, rval_t, A, B, F>::m_f;
@@ -655,9 +709,9 @@ struct RvalMF
   }
 };
 
-/** specialization of RvalMF<A> for A = void */
+/** a function with empty domain and range rval_t<B> */
 template <typename B, typename F>
-struct RvalMF<void, B, F>
+struct HPG_EXPORT RvalMF<void, B, F>
   : public KleisliF<RvalM, rval_t, void, B, F> {
 
   using KleisliF<RvalM, rval_t, void, B, F>::m_f;
