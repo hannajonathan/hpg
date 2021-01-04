@@ -2264,13 +2264,11 @@ public:
       std::make_shared<std::vector<vis_cf_index_t>>(
         std::move(visibility_cf_indexes));
 #ifndef NDEBUG
-    {
-      auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
-      for (auto& [cube, supp] : *cf_indexes) {
-        if ((supp >= cf.num_cf_groups)
-            || (cube >= cf.cf_d[supp].extent_int(5)))
-          return OutOfBoundsCFIndexError({cube, supp});
-      }
+    for (auto& [cube, supp] : *cf_indexes) {
+      auto& cfpool = std::get<0>(m_cfs[m_cf_indexes.front()]);
+      if ((supp >= cfpool.num_cf_groups)
+          || (cube >= cfpool.cf_d[supp].extent_int(5)))
+        return OutOfBoundsCFIndexError({cube, supp});
     }
 #endif // NDEBUG
     const auto weights =
