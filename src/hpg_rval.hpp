@@ -520,6 +520,15 @@ struct HPG_EXPORT Kleisli {
   }
 };
 
+template <
+  template <typename> typename M,
+  typename A>
+struct HPG_EXPORT KleisliMA {
+
+  template <typename B>
+  using K = Kleisli<M, A, B>;
+};
+
 /** data type for a given function A => M\<B\>
  */
 template <
@@ -636,6 +645,29 @@ struct HPG_EXPORT KleisliF<KM, M, void, B, F> {
         [g, f=m_f]() {
           return functor<M>::type::map(f(), g);
         });
+  }
+};
+
+template <
+  template <typename> typename M,
+  typename A>
+struct Monad<KleisliMA<M, A>::template K>
+  : public MonadBase<
+  Monad<KleisliMA<M, A>::template K>,
+  KleisliMA<M, A>::template K> {
+
+  template <typename B>
+  using K = typename KleisliMA<M, A>::template K<B>;
+
+  template <typename T>
+  static auto pure(T&& t) {
+    return K<std::invoke_result_t<T, A>>::wrap(std::forward<T>(t));
+  }
+
+  template <typename B, typename F>
+  static auto
+  flat_map(const KleisliF<K<B>::template KM, M, A, B, F>& k, F f) {
+    return k.and_then(f);
   }
 };
 
