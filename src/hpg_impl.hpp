@@ -2456,81 +2456,6 @@ public:
     std::vector<vis_weight_fp>&& vis_weights,
     std::vector<vis_frequency_fp>&& vis_frequencies,
     std::vector<vis_phase_fp>&& vis_phases,
-    std::vector<vis_uvw_t>&& vis_coordinates) override {
-
-    const auto vis =
-      std::make_shared<std::vector<std::complex<visibility_fp>>>(
-        std::move(visibilities));
-    const auto grid_cubes =
-      std::make_shared<std::vector<unsigned>>(
-        std::move(vis_grid_cubes));
-    const auto cf_indexes =
-      std::make_shared<std::vector<vis_cf_index_t>>(
-        std::move(vis_cf_indexes));
-#ifndef NDEBUG
-    for (auto& [cube, supp] : *cf_indexes) {
-      auto& cfpool = std::get<0>(m_cfs[m_cf_indexes.front()]);
-      if ((supp >= cfpool.num_cf_groups)
-          || (cube >= cfpool.cf_d[supp].extent_int(5)))
-        return OutOfBoundsCFIndexError({cube, supp});
-    }
-#endif // NDEBUG
-    const auto weights =
-      std::make_shared<std::vector<vis_weight_fp>>(
-        std::move(vis_weights));
-    const auto frequencies =
-      std::make_shared<std::vector<vis_frequency_fp>>(
-        std::move(vis_frequencies));
-    const auto phases =
-      std::make_shared<std::vector<vis_phase_fp>>(
-        std::move(vis_phases));
-    const auto coordinates =
-      std::make_shared<std::vector<vis_uvw_t>>(
-        std::move(vis_coordinates));
-
-    size_t num_visibilities = vis->size();
-    switch (visibility_gridder_version()) {
-    case 0:
-      for (size_t i = 0; i < num_visibilities; i += m_max_visibility_batch_size)
-        default_grid_visibilities(
-          host_device,
-          i,
-          vis,
-          grid_cubes,
-          cf_indexes,
-          weights,
-          frequencies,
-          phases,
-          coordinates);
-      break;
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    case 1:
-      for (size_t i = 0; i < num_visibilities; i += m_max_visibility_batch_size)
-        alt1_grid_visibilities(
-          host_device,
-          i,
-          vis,
-          grid_cubes,
-          cf_indexes,
-          weights,
-          frequencies,
-          phases,
-          coordinates);
-      break;
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    }
-    return std::nullopt;
-  }
-
-  std::optional<Error>
-  grid_visibilities(
-    Device host_device,
-    std::vector<std::complex<visibility_fp>>&& visibilities,
-    std::vector<unsigned>&& vis_grid_cubes,
-    std::vector<vis_cf_index_t>&& vis_cf_indexes,
-    std::vector<vis_weight_fp>&& vis_weights,
-    std::vector<vis_frequency_fp>&& vis_frequencies,
-    std::vector<vis_phase_fp>&& vis_phases,
     std::vector<vis_uvw_t>&& vis_coordinates,
     std::optional<std::vector<cf_phase_screen_t>>&& vis_cf_phase_screens)
     override {
@@ -2546,8 +2471,9 @@ public:
         std::move(vis_cf_indexes));
 #ifndef NDEBUG
     for (auto& [cube, supp] : *cf_indexes) {
-      if ((supp >= m_cf.num_cf_groups)
-          || (cube >= m_cf.cf_d[supp].extent_int(5)))
+      auto& cfpool = std::get<0>(m_cfs[m_cf_indexes.front()]);
+      if ((supp >= cfpool.num_cf_groups)
+          || (cube >= cfpool.cf_d[supp].extent_int(5)))
         return OutOfBoundsCFIndexError({cube, supp});
     }
 #endif // NDEBUG
