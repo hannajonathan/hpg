@@ -333,8 +333,20 @@ struct CFLayout {
 };
 
 /** convert UV coordinate to major and minor grid coordinates
+ *
+ * Computed coordinates may refer to the points in the domain of the CF function
+ * translated to the position of the visibility on the fine (oversampled) grid.
+ *
+ * The three returned coordinates are as follows
+ * - leftmost major grid coordinate of (visibility-centered) CF support
+ * - offset of visibility (on fine grid) from nearest-left major
+ *   grid point (the "minor" coordinate of the CF, always non-negative)
+ * - offset of visibility (on fine grid) from nearest major grid
+ *   point (positive or negative)
+ *
+ * @return tuple comprising three integer coordinates
  */
-KOKKOS_FUNCTION std::tuple<int, int>
+KOKKOS_FUNCTION std::tuple<int, int, int>
 compute_vis_coord(
   int g_offset,
   int oversampling,
@@ -347,13 +359,11 @@ compute_vis_coord(
   long nearest_major_fine_coord =
     std::lrint(double(fine_coord) / oversampling) * oversampling;
   int major = nearest_major_fine_coord / oversampling - cf_radius + g_offset;
-  int minor;
-  if (fine_coord >= nearest_major_fine_coord)
-    minor = fine_coord - nearest_major_fine_coord;
-  else
-    minor = fine_coord - (nearest_major_fine_coord - oversampling);
+  int minor_shift =
+    ((fine_coord >= nearest_major_fine_coord) ? 0 : oversampling);
+  int minor = fine_coord - (nearest_major_fine_coord - minor_shift);
   assert(0 <= minor && minor < oversampling);
-  return {major, minor};
+  return {major, minor, minor - minor_shift};
 }
 
 /** portable sincos()
@@ -378,6 +388,16 @@ sincos<K::Cuda, double>(double ph, double* sn, double* cs) {
 }
 #endif
 
+/** convert phase to complex value
+ */
+template <typename execution_space, typename T>
+KOKKOS_FORCEINLINE_FUNCTION K::complex<T>
+cphase(T ph) {
+  K::complex<T> result;
+  sincos<execution_space, T>(ph, &result.imag(), &result.real());
+  return result;
+}
+
 /** helper class for computing visibility value and index metadata
  *
  * Basically exists to encapsulate conversion from a Visibility value to several
@@ -388,6 +408,7 @@ struct GridVis final {
 
   int major[2]; /**< major grid coordinate */
   int minor[2]; /**< minor grid coordinate */
+  int fine_offset[2]; /**< visibility position - nearest major grid */
   vis_t value; /**< visibility value */
   int grid_cube; /**< grid cube index */
   vis_weight_fp weight; /**< visibility weight */
@@ -405,12 +426,11 @@ struct GridVis final {
     , weight(vis.weight) {
 
     static const vis_frequency_fp c = 299792458.0;
-    K::complex<vis_phase_fp> phasor;
-    sincos<execution_space>(vis.d_phase, &phasor.imag(), &phasor.real());
+    K::complex<vis_phase_fp> phasor = cphase<execution_space>(vis.d_phase);
     value = vis.value * phasor * vis.weight;
     auto inv_lambda = vis.freq / c;
     // can't use std::tie here - CUDA doesn't support it
-    auto [c0, f0] =
+    auto [c0, f0, o0] =
       compute_vis_coord(
         grid_radius[0],
         oversampling[0],
@@ -420,7 +440,8 @@ struct GridVis final {
         fine_scale[0]);
     major[0] = c0;
     minor[0] = f0;
-    auto [c1, f1] =
+    fine_offset[0] = o0;
+    auto [c1, f1, o1] =
       compute_vis_coord(
         grid_radius[1],
         oversampling[1],
@@ -430,6 +451,7 @@ struct GridVis final {
         fine_scale[1]);
     major[1] = c1;
     minor[1] = f1;
+    fine_offset[1] = o1;
     cf_im_factor = (vis.uvw[2] > 0) ? -1 : 1;
   }
 
@@ -602,114 +624,135 @@ public:
 template <typename execution_space, unsigned version>
 struct HPG_EXPORT VisibilityGridder final {
 
+  using member_type = typename K::TeamPolicy<execution_space>::member_type;
+
+  using scratch_wgts_view =
+    K::View<cf_wgt_array*, typename execution_space::scratch_memory_space>;
+
   template <typename cf_layout, typename grid_layout, typename memory_space>
-  static void
-  kernel(
-    execution_space exec,
-    const K::Array<
-      cf_view<cf_layout, memory_space>,
-      HPG_MAX_NUM_CF_GROUPS>& cfs,
-    int num_visibilities,
-    const K::View<const vis_t*, memory_space>& visibilities,
-    const K::View<const unsigned*, memory_space>& grid_cubes,
-    const K::View<const cf_index_t*, memory_space>& cf_indexes,
-    const K::View<const vis_weight_fp*, memory_space>& vis_weights,
-    const K::View<const vis_frequency_fp*, memory_space>& frequencies,
-    const K::View<const vis_phase_fp*, memory_space>& phases,
-    const K::View<const uvw_t*, memory_space>& coordinates,
-    const std::array<grid_scale_fp, 2>& grid_scale,
+  static KOKKOS_FUNCTION void
+  grid_vis(
+    const member_type& team_member,
+    const GridVis<execution_space>& vis,
+    const K::Array<int, 2>& oversampling,
+    const cf_view<cf_layout, memory_space>& cf,
+    const unsigned cf_cube,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
       weights) {
 
-    const K::Array<int, 2>
-      grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
-    const K::Array<int, 2>
-      oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
-    const K::Array<grid_scale_fp, 2> fine_scale{
-      grid_scale[0] * oversampling[0],
-      grid_scale[1] * oversampling[1]};
+    const int N_X = cf.extent_int(0);
+    const int N_Y = cf.extent_int(1);
+    const int N_R = cf.extent_int(2);
 
-    using member_type = typename K::TeamPolicy<execution_space>::member_type;
-
-    using scratch_wgts_view =
-      K::View<cf_wgt_array[1], typename execution_space::scratch_memory_space>;
-
+    // accumulate weights in scratch memory for this visibility
+    scratch_wgts_view cfw(team_member.team_scratch(0), 1);
     K::parallel_for(
-      "gridding",
-      K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size())),
-      KOKKOS_LAMBDA(const member_type& team_member) {
-        auto i = team_member.league_rank();
+      K::TeamVectorRange(team_member, N_R),
+      [=](const int C) {
+        cfw(0).wgts[C] = 0;
+      });
+    team_member.team_barrier();
 
-        const unsigned& cf_cube = cf_indexes(i).first;
-        const unsigned& cf_grp = cf_indexes(i).second;
-        const auto& cf = cfs[cf_grp];
-
-        const K::Array<int, 2>
-          cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
-
-        GridVis<execution_space> vis(
-          Visibility(
-            visibilities(i),
-            grid_cubes(i),
-            vis_weights(i),
-            frequencies(i),
-            phases(i),
-            coordinates(i)),
-          grid_radius,
-          oversampling,
-          cf_radius,
-          fine_scale);
-        // convenience variables
-        const int N_X = cf.extent_int(0);
-        const int N_Y = cf.extent_int(1);
-        const int N_C = cf.extent_int(2);
-        // skip this visibility if all of the updated grid points are not within
-        // grid bounds
-        if (0 <= vis.major[0] && vis.major[0] + N_X <= grid.extent_int(0)
-            && 0 < vis.major[1] && vis.major[1] + N_Y <= grid.extent_int(1)) {
-          // accumulate weights in scratch memory for this visibility
-          scratch_wgts_view cfw(team_member.team_scratch(0));
-          K::parallel_for(
-            K::TeamVectorRange(team_member, N_C),
-            [=](const int C) {
-              cfw(0).wgts[C] = 0;
-            });
-          team_member.team_barrier();
-          /* loop over majorX */
-          K::parallel_reduce(
-            K::TeamVectorRange(team_member, N_X),
-            [=](const int X, cf_wgt_array& cfw_l) {
-              /* loop over elements (rows) of Mueller matrix column  */
-              for (int C = 0; C < N_C; ++C){
-                /* loop over majorY */
-                for (int Y = 0; Y < N_Y; ++Y) {
-                  cf_t cfv = cf(X, Y, C, vis.minor[0], vis.minor[1], cf_cube);
-                  cfv.imag() *= vis.cf_im_factor;
-                  pseudo_atomic_add<execution_space>(
-                    grid(vis.major[0] + X, vis.major[1] + Y, C, vis.grid_cube),
-                    gv_t(cfv * vis.value));
-                  cfw_l.wgts[C] += cfv;
-                }
-              }
-            },
-            SumCFWgts<execution_space>(cfw(0)));
-          // by Kokkos reduction semantics the following barrier should not be
-          // needed, but recent Slack discussion indicates a possible bug, so we
-          // use it here until the issue is resolved
-          team_member.team_barrier();
-          // update weights array
-          K::parallel_for(
-            K::TeamVectorRange(team_member, N_C),
-            [=](const int C) {
-              K::atomic_add(
-                &weights(C, vis.grid_cube),
-                grid_value_fp(
-                  std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
-                  * vis.weight));
-            });
+    K::parallel_reduce(
+      K::TeamVectorRange(team_member, N_X),
+      /* loop over majorX */
+      [=](const int X, cf_wgt_array& cfw_l) {
+        /* loop over elements (rows) of Mueller matrix column  */
+        for (int R = 0; R < N_R; ++R) {
+          /* loop over majorY */
+          for (int Y = 0; Y < N_Y; ++Y) {
+            cf_t cfv = cf(X, Y, R, vis.minor[0], vis.minor[1], cf_cube);
+            cfv.imag() *= vis.cf_im_factor;
+            pseudo_atomic_add<execution_space>(
+              grid(vis.major[0] + X, vis.major[1] + Y, R, vis.grid_cube),
+              gv_t(cfv * vis.value));
+            cfw_l.wgts[R] += cfv;
+          }
         }
+      },
+      SumCFWgts<execution_space>(cfw(0)));
+    // by Kokkos reduction semantics the following barrier should not be
+    // needed, but recent Slack discussion indicates a possible bug, so
+    // we use it here until the issue is resolved
+    team_member.team_barrier();
+    // update weights array
+    K::parallel_for(
+      K::TeamVectorRange(team_member, N_R),
+      [=](const int C) {
+        K::atomic_add(
+          &weights(C, vis.grid_cube),
+          grid_value_fp(
+            std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
+            * vis.weight));
+      });
+  }
+
+  template <typename cf_layout, typename grid_layout, typename memory_space>
+  static KOKKOS_FUNCTION void
+  grid_vis(
+    const member_type& team_member,
+    const GridVis<execution_space>& vis,
+    const K::Array<int, 2>& oversampling,
+    const cf_view<cf_layout, memory_space>& cf,
+    const unsigned cf_cube,
+    const K::Array<int, 2>& cf_radius,
+    const K::Array<cf_phase_screen_fp, 2>& cf_gradient,
+    const grid_view<grid_layout, memory_space>& grid,
+    const weight_view<typename execution_space::array_layout, memory_space>&
+      weights) {
+
+    const int N_X = cf.extent_int(0);
+    const int N_Y = cf.extent_int(1);
+    const int N_R = cf.extent_int(2);
+
+    // accumulate weights in scratch memory for this visibility
+    scratch_wgts_view cfw(team_member.team_scratch(0), 1);
+    K::parallel_for(
+      K::TeamVectorRange(team_member, N_R),
+      [=](const int C) {
+        cfw(0).wgts[C] = 0;
+      });
+    team_member.team_barrier();
+
+    K::parallel_reduce(
+      K::TeamVectorRange(team_member, N_X),
+      /* loop over majorX */
+      [=](const int X, cf_wgt_array& cfw_l) {
+        auto phi_X =
+          cf_gradient[0]
+          * ((X - cf_radius[0]) * oversampling[0] - vis.fine_offset[0]);
+        /* loop over elements (rows) of Mueller matrix column  */
+        for (int R = 0; R < N_R; ++R) {
+          /* loop over majorY */
+          for (int Y = 0; Y < N_Y; ++Y) {
+            cf_t cfv = cf(X, Y, R, vis.minor[0], vis.minor[1], cf_cube);
+            cfv.imag() *= vis.cf_im_factor;
+            auto phi_Y =
+              cf_gradient[1]
+              * ((Y - cf_radius[1]) * oversampling[1] - vis.fine_offset[1]);
+            auto screen = cphase<execution_space>(phi_X + phi_Y);
+            pseudo_atomic_add<execution_space>(
+              grid(vis.major[0] + X, vis.major[1] + Y, R, vis.grid_cube),
+              gv_t(cfv * screen * vis.value));
+            cfw_l.wgts[R] += cfv;
+          }
+        }
+      },
+      SumCFWgts<execution_space>(cfw(0)));
+    // by Kokkos reduction semantics the following barrier should not be
+    // needed, but recent Slack discussion indicates a possible bug, so
+    // we use it here until the issue is resolved
+    team_member.team_barrier();
+    // update weights array
+    K::parallel_for(
+      K::TeamVectorRange(team_member, N_R),
+      [=](const int C) {
+        K::atomic_add(
+          &weights(C, vis.grid_cube),
+          grid_value_fp(
+            std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
+            * vis.weight));
       });
   }
 
@@ -742,87 +785,97 @@ struct HPG_EXPORT VisibilityGridder final {
       grid_scale[0] * oversampling[0],
       grid_scale[1] * oversampling[1]};
 
-    using member_type = typename K::TeamPolicy<execution_space>::member_type;
+    if (cf_phase_screens.extent(0) == 0) {
+      // without CF phase screen
+      K::parallel_for(
+        "gridding",
+        K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
+        .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
+        KOKKOS_LAMBDA(const member_type& team_member) {
+          auto i = team_member.league_rank();
 
-    using scratch_wgts_view =
-      K::View<cf_wgt_array*, typename execution_space::scratch_memory_space>;
+          const unsigned& cf_cube = cf_indexes(i).first;
+          const unsigned& cf_grp = cf_indexes(i).second;
+          const auto& cf = cfs[cf_grp];
 
-    K::parallel_for(
-      "gridding",
-      K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
-      KOKKOS_LAMBDA(const member_type& team_member) {
-        auto i = team_member.league_rank();
+          const K::Array<int, 2>
+            cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
 
-        const unsigned& cf_cube = cf_indexes(i).first;
-        const unsigned& cf_grp = cf_indexes(i).second;
-        const auto& cf = cfs[cf_grp];
+          GridVis<execution_space> vis(
+            Visibility(
+              visibilities(i),
+              grid_cubes(i),
+              vis_weights(i),
+              frequencies(i),
+              phases(i),
+              coordinates(i)),
+            grid_radius,
+            oversampling,
+            cf_radius,
+            fine_scale);
+          // skip this visibility if all of the updated grid points are not
+          // within grid bounds
+          if (0 <= vis.major[0]
+              && vis.major[0] + cf.extent_int(0) <= grid.extent_int(0)
+              && 0 <= vis.major[1]
+              && vis.major[1] + cf.extent_int(1) <= grid.extent_int(1))
+            grid_vis(
+              team_member,
+              vis,
+              oversampling,
+              cf,
+              cf_cube,
+              grid,
+              weights);
+        });
+    } else {
+      // with CF phase screen
+      K::parallel_for(
+        "gridding",
+        K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
+        .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
+        KOKKOS_LAMBDA(const member_type& team_member) {
+          auto i = team_member.league_rank();
 
-        const K::Array<int, 2>
-          cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
+          const unsigned& cf_cube = cf_indexes(i).first;
+          const unsigned& cf_grp = cf_indexes(i).second;
+          const auto& cf = cfs[cf_grp];
 
-        GridVis<execution_space> vis(
-          Visibility(
-            visibilities(i),
-            grid_cubes(i),
-            vis_weights(i),
-            frequencies(i),
-            phases(i),
-            coordinates(i)),
-          grid_radius,
-          oversampling,
-          cf_radius,
-          fine_scale);
-        // convenience variables
-        const int N_X = cf.extent_int(0);
-        const int N_Y = cf.extent_int(1);
-        const int N_C = cf.extent_int(2);
-        // skip this visibility if all of the updated grid points are not within
-        // grid bounds
-        if (0 <= vis.major[0] && vis.major[0] + N_X <= grid.extent_int(0)
-            && 0 <= vis.major[1] && vis.major[1] + N_Y <= grid.extent_int(1)) {
-          // accumulate weights in scratch memory for this visibility
-          scratch_wgts_view cfw(team_member.team_scratch(0), 1);
-          K::parallel_for(
-            K::TeamVectorRange(team_member, N_C),
-            [=](const int C) {
-              cfw(0).wgts[C] = 0;
-            });
-          team_member.team_barrier();
-          /* loop over majorX */
-          K::parallel_reduce(
-            K::TeamVectorRange(team_member, N_X),
-            [=](const int X, cf_wgt_array& cfw_l) {
-              /* loop over elements (rows) of Mueller matrix column  */
-              for (int C = 0; C < N_C; ++C){
-                /* loop over majorY */
-                for (int Y = 0; Y < N_Y; ++Y) {
-                  cf_t cfv = cf(X, Y, C, vis.minor[0], vis.minor[1], cf_cube);
-                  cfv.imag() *= vis.cf_im_factor;
-                  pseudo_atomic_add<execution_space>(
-                    grid(vis.major[0] + X, vis.major[1] + Y, C, vis.grid_cube),
-                    gv_t(cfv * vis.value));
-                  cfw_l.wgts[C] += cfv;
-                }
-              }
-            },
-            SumCFWgts<execution_space>(cfw(0)));
-          // by Kokkos reduction semantics the following barrier should not be
-          // needed, but recent Slack discussion indicates a possible bug, so we
-          // use it here until the issue is resolved
-          team_member.team_barrier();
-          // update weights array
-          K::parallel_for(
-            K::TeamVectorRange(team_member, N_C),
-            [=](const int C) {
-              K::atomic_add(
-                &weights(C, vis.grid_cube),
-                grid_value_fp(
-                  std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
-                  * vis.weight));
-            });
-        }
-      });
+          const K::Array<int, 2>
+            cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
+          const K::Array<cf_phase_screen_fp, 2>
+            cf_gradient{cf_phase_screens(i)[0], cf_phase_screens(i)[1]};
+
+          GridVis<execution_space> vis(
+            Visibility(
+              visibilities(i),
+              grid_cubes(i),
+              vis_weights(i),
+              frequencies(i),
+              phases(i),
+              coordinates(i)),
+            grid_radius,
+            oversampling,
+            cf_radius,
+            fine_scale);
+          // skip this visibility if all of the updated grid points are not
+          // within grid bounds
+          if (0 <= vis.major[0]
+              && vis.major[0] + cf.extent_int(0) <= grid.extent_int(0)
+              && 0 <= vis.major[1]
+              && vis.major[1] + cf.extent_int(1) <= grid.extent_int(1))
+            grid_vis(
+              team_member,
+              vis,
+              oversampling,
+              cf,
+              cf_cube,
+              cf_radius,
+              cf_gradient,
+              grid,
+              weights);
+        });
+    }
   }
 };
 
@@ -830,111 +883,10 @@ struct HPG_EXPORT VisibilityGridder final {
 template <typename execution_space>
 struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
 
-  template <typename cf_layout, typename grid_layout, typename memory_space>
-  static void
-  kernel(
-    execution_space exec,
-    const K::Array<
-      cf_view<cf_layout, memory_space>,
-      HPG_MAX_NUM_CF_GROUPS>& cfs,
-    int num_visibilities,
-    const K::View<const vis_t*, memory_space>& visibilities,
-    const K::View<const unsigned*, memory_space>& grid_cubes,
-    const K::View<const cf_index_t*, memory_space>& cf_indexes,
-    const K::View<const vis_weight_fp*, memory_space>& vis_weights,
-    const K::View<const vis_frequency_fp*, memory_space>& frequencies,
-    const K::View<const vis_phase_fp*, memory_space>& phases,
-    const K::View<const uvw_t*, memory_space>& coordinates,
-    const std::array<grid_scale_fp, 2>& grid_scale,
-    const grid_view<grid_layout, memory_space>& grid,
-    const weight_view<typename execution_space::array_layout, memory_space>&
-      weights) {
+  using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
-    const K::Array<int, 2>
-      grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
-    const K::Array<int, 2>
-      oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
-    const K::Array<grid_scale_fp, 2> fine_scale{
-      grid_scale[0] * oversampling[0],
-      grid_scale[1] * oversampling[1]};
-
-    using member_type = typename K::TeamPolicy<execution_space>::member_type;
-
-    using scratch_wgts_view =
-      K::View<cf_wgt_array[1], typename execution_space::scratch_memory_space>;
-
-    K::parallel_for(
-      "gridding",
-      K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size())),
-      KOKKOS_LAMBDA(const member_type& team_member) {
-        auto i = team_member.league_rank();
-
-        const unsigned& cf_cube = cf_indexes(i).first;
-        const unsigned& cf_grp = cf_indexes(i).second;
-        const auto& cf = cfs[cf_grp];
-
-        const K::Array<int, 2>
-          cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
-
-        GridVis<execution_space> vis(
-          Visibility(
-            visibilities(i),
-            grid_cubes(i),
-            vis_weights(i),
-            frequencies(i),
-            phases(i),
-            coordinates(i)),
-          grid_radius,
-          oversampling,
-          cf_radius,
-          fine_scale);
-        // convenience variables
-        const int N_X = cf.extent_int(0);
-        const int N_Y = cf.extent_int(1);
-        const int N_C = cf.extent_int(2);
-        // accumulate weights in scratch memory for this visibility
-        scratch_wgts_view cfw(team_member.team_scratch(0));
-        K::parallel_for(
-          K::TeamVectorRange(team_member, N_C),
-          [=](const int C) {
-            cfw(0).wgts[C] = 0;
-          });
-        team_member.team_barrier();
-        /* loop over majorX */
-        K::parallel_reduce(
-          K::TeamVectorRange(team_member, N_X),
-          [=](const int X, cf_wgt_array& cfw_l) {
-            /* loop over elements (rows) of Mueller matrix column  */
-            for (int C = 0; C < N_C; ++C){
-              /* loop over majorY */
-              for (int Y = 0; Y < N_Y; ++Y) {
-                cf_t cfv = cf(X, Y, C, vis.minor[0], vis.minor[1], cf_cube);
-                cfv.imag() *= vis.cf_im_factor;
-                pseudo_atomic_add<execution_space>(
-                  grid(vis.major[0] + X, vis.major[1] + Y, C, vis.grid_cube),
-                  gv_t(cfv * vis.value));
-                cfw_l.wgts[C] += cfv;
-              }
-            }
-          },
-          SumCFWgts<execution_space>(cfw(0)));
-        // by Kokkos reduction semantics the following barrier should not be
-        // needed, but recent Slack discussion indicates a possible bug, so we
-        // use it here until the issue is resolved
-        team_member.team_barrier();
-        // update weights array
-        K::parallel_for(
-          K::TeamVectorRange(team_member, N_C),
-          [=](const int C) {
-            K::atomic_add(
-              &weights(C, vis.grid_cube),
-              grid_value_fp(
-                std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
-                * vis.weight));
-          });
-      });
-  }
+  using scratch_wgts_view =
+    K::View<cf_wgt_array*, typename execution_space::scratch_memory_space>;
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
@@ -955,7 +907,7 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
     const std::array<grid_scale_fp, 2>& grid_scale,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
-      weights) {
+    weights) {
 
     const K::Array<int, 2>
       grid_radius{grid.extent_int(0) / 2, grid.extent_int(1) / 2};
@@ -965,82 +917,85 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
       grid_scale[0] * oversampling[0],
       grid_scale[1] * oversampling[1]};
 
-    using member_type = typename K::TeamPolicy<execution_space>::member_type;
+    if (cf_phase_screens.extent(0) == 0) {
+      // without CF phase screen
+      K::parallel_for(
+        "gridding",
+        K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
+        .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
+        KOKKOS_LAMBDA(const member_type& team_member) {
+          auto i = team_member.league_rank();
 
-    using scratch_wgts_view =
-      K::View<cf_wgt_array*, typename execution_space::scratch_memory_space>;
+          const unsigned& cf_cube = cf_indexes(i).first;
+          const unsigned& cf_grp = cf_indexes(i).second;
+          const auto& cf = cfs[cf_grp];
 
-    K::parallel_for(
-      "gridding",
-      K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-      .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
-      KOKKOS_LAMBDA(const member_type& team_member) {
-        auto i = team_member.league_rank();
+          const K::Array<int, 2>
+            cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
 
-        const unsigned& cf_cube = cf_indexes(i).first;
-        const unsigned& cf_grp = cf_indexes(i).second;
-        const auto& cf = cfs[cf_grp];
+          GridVis<execution_space> vis(
+            Visibility(
+              visibilities(i),
+              grid_cubes(i),
+              vis_weights(i),
+              frequencies(i),
+              phases(i),
+              coordinates(i)),
+            grid_radius,
+            oversampling,
+            cf_radius,
+            fine_scale);
+          VisibilityGridder<execution_space, 0>::grid_vis(
+            team_member,
+            vis,
+            oversampling,
+            cf,
+            cf_cube,
+            grid,
+            weights);
+        });
+    } else {
+      // with CF phase screen
+      K::parallel_for(
+        "gridding",
+        K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
+        .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
+        KOKKOS_LAMBDA(const member_type& team_member) {
+          auto i = team_member.league_rank();
 
-        const K::Array<int, 2>
-          cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
+          const unsigned& cf_cube = cf_indexes(i).first;
+          const unsigned& cf_grp = cf_indexes(i).second;
+          const auto& cf = cfs[cf_grp];
 
-        GridVis<execution_space> vis(
-          Visibility(
-            visibilities(i),
-            grid_cubes(i),
-            vis_weights(i),
-            frequencies(i),
-            phases(i),
-            coordinates(i)),
-          grid_radius,
-          oversampling,
-          cf_radius,
-          fine_scale);
-        // convenience variables
-        const int N_X = cf.extent_int(0);
-        const int N_Y = cf.extent_int(1);
-        const int N_C = cf.extent_int(2);
-        // accumulate weights in scratch memory for this visibility
-        scratch_wgts_view cfw(team_member.team_scratch(0), 1);
-        K::parallel_for(
-          K::TeamVectorRange(team_member, N_C),
-          [=](const int C) {
-            cfw(0).wgts[C] = 0;
-          });
-        team_member.team_barrier();
-        /* loop over majorX */
-        K::parallel_reduce(
-          K::TeamVectorRange(team_member, N_X),
-          [=](const int X, cf_wgt_array& cfw_l) {
-            /* loop over elements (rows) of Mueller matrix column  */
-            for (int C = 0; C < N_C; ++C){
-              /* loop over majorY */
-              for (int Y = 0; Y < N_Y; ++Y) {
-                cf_t cfv = cf(X, Y, C, vis.minor[0], vis.minor[1], cf_cube);
-                cfv.imag() *= vis.cf_im_factor;
-                pseudo_atomic_add<execution_space>(
-                  grid(vis.major[0] + X, vis.major[1] + Y, C, vis.grid_cube),
-                  gv_t(cfv * vis.value));
-                cfw_l.wgts[C] += cfv;
-              }
-            }
-          },
-          SumCFWgts<execution_space>(cfw(0)));
-        // by Kokkos reduction semantics the following barrier should not be
-        // needed, but recent Slack discussion indicates a possible bug, so we
-        // use it here until the issue is resolved
-        team_member.team_barrier();
-        // update weights array
-        K::parallel_for(
-          K::TeamVectorRange(team_member, N_C),
-          [=](const int C) {
-            K::atomic_add(
-              &weights(C, vis.grid_cube),
-              grid_value_fp(
-                std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
-                * vis.weight));
-          });
-      });
+          const K::Array<int, 2>
+            cf_radius{cf.extent_int(0) / 2, cf.extent_int(1) / 2};
+          const K::Array<cf_phase_screen_fp, 2>
+            cf_gradient{cf_phase_screens(i)[0], cf_phase_screens(i)[1]};
+
+          GridVis<execution_space> vis(
+            Visibility(
+              visibilities(i),
+              grid_cubes(i),
+              vis_weights(i),
+              frequencies(i),
+              phases(i),
+              coordinates(i)),
+            grid_radius,
+            oversampling,
+            cf_radius,
+            fine_scale);
+          VisibilityGridder<execution_space, 0>::grid_vis(
+            team_member,
+            vis,
+            oversampling,
+            cf,
+            cf_cube,
+            cf_radius,
+            cf_gradient,
+            grid,
+            weights);
+        });
+    }
   }
 };
 #endif //HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -1708,19 +1663,8 @@ struct State {
     std::vector<vis_weight_fp>&& weights,
     std::vector<vis_frequency_fp>&& frequencies,
     std::vector<vis_phase_fp>&& phases,
-    std::vector<vis_uvw_t>&& coordinates) = 0;
-
-  virtual std::optional<Error>
-  grid_visibilities(
-    Device host_device,
-    std::vector<std::complex<visibility_fp>>&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::vector<vis_weight_fp>&& weights,
-    std::vector<vis_frequency_fp>&& frequencies,
-    std::vector<vis_phase_fp>&& phases,
     std::vector<vis_uvw_t>&& coordinates,
-    std::vector<cf_phase_screen_t>&& cf_phase_screens) = 0;
+    std::optional<std::vector<cf_phase_screen_t>>&& cf_phase_screens) = 0;
 
   virtual void
   fence() const = 0;
@@ -2279,7 +2223,8 @@ public:
     const vector_data<vis_weight_fp>& vis_weights,
     const vector_data<vis_frequency_fp>& vis_frequencies,
     const vector_data<vis_phase_fp>& vis_phases,
-    const vector_data<vis_uvw_t>& vis_coordinates) {
+    const vector_data<vis_uvw_t>& vis_coordinates,
+    const vector_data<cf_phase_screen_t>& vis_cf_phase_screens) {
 
     auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
 
@@ -2356,6 +2301,16 @@ public:
         exec_copy.space);
     exec_copy.vis_state.push_back(coordinates_views);
 
+    exec_copy.vis_state.emplace_back(vis_cf_phase_screens);
+    auto cf_phase_screens_views =
+      StateT<D>::copy_to_device_view<cf_ps_t>(
+        exec_copy.cf_phase_screens,
+        vis_cf_phase_screens,
+        offset,
+        len,
+        exec_copy.space);
+    exec_copy.vis_state.push_back(cf_phase_screens_views);
+
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 0>::kernel(
       exec_compute.space,
@@ -2368,232 +2323,13 @@ public:
       std::get<1>(frequencies_views),
       std::get<1>(phases_views),
       std::get<1>(coordinates_views),
-      m_grid_scale,
-      m_grid,
-      m_weights);
-  }
-
-  void
-  default_grid_visibilities(
-    Device /*host_device*/,
-    size_t offset,
-    const vector_data<std::complex<visibility_fp>>& visibilities,
-    const vector_data<unsigned>& vis_grid_cubes,
-    const vector_data<vis_cf_index_t>& vis_cf_indexes,
-    const vector_data<vis_weight_fp>& vis_weights,
-    const vector_data<vis_frequency_fp>& vis_frequencies,
-    const vector_data<vis_phase_fp>& vis_phases,
-    const vector_data<vis_uvw_t>& vis_coordinates,
-    const vector_data<cf_phase_screen_t>& vis_cf_phase_screens) {
-
-    auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
-
-    auto len =
-      std::min(visibilities->size() - offset, m_max_visibility_batch_size);
-
-    exec_copy.vis_state.emplace_back(visibilities);
-    auto [vis_h, vis] =
-      StateT<D>::copy_to_device_view<vis_t>(
-        exec_copy.visibilities,
-        visibilities,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(vis_h);
-
-    exec_copy.vis_state.emplace_back(vis_grid_cubes);
-    auto [grid_cubes_h, grid_cubes] =
-      StateT<D>::copy_to_device_view<unsigned>(
-        exec_copy.grid_cubes,
-        vis_grid_cubes,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(grid_cubes_h);
-
-    exec_copy.vis_state.emplace_back(vis_cf_indexes);
-    auto [cf_indexes_h, cf_indexes] =
-      StateT<D>::copy_to_device_view<cf_index_t>(
-        exec_copy.cf_indexes,
-        vis_cf_indexes,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(cf_indexes_h);
-
-    exec_copy.vis_state.emplace_back(vis_weights);
-    auto [weights_h, weights] =
-      StateT<D>::copy_to_device_view<vis_weight_fp>(
-        exec_copy.weights,
-        vis_weights,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(weights_h);
-
-    exec_copy.vis_state.emplace_back(vis_frequencies);
-    auto [frequencies_h, frequencies] =
-      StateT<D>::copy_to_device_view<vis_frequency_fp>(
-        exec_copy.frequencies,
-        vis_frequencies,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(frequencies_h);
-
-    exec_copy.vis_state.emplace_back(vis_phases);
-    auto [phases_h, phases] =
-      StateT<D>::copy_to_device_view<vis_phase_fp>(
-        exec_copy.phases,
-        vis_phases,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(phases_h);
-
-    exec_copy.vis_state.emplace_back(vis_coordinates);
-    auto [coordinates_h, coordinates] =
-      StateT<D>::copy_to_device_view<uvw_t>(
-        exec_copy.coordinates,
-        vis_coordinates,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(coordinates_h);
-
-    exec_copy.vis_state.emplace_back(vis_cf_phase_screens);
-    auto [cf_phase_screens_h, cf_phase_screens] =
-      StateT<D>::copy_to_device_view<cf_ps_t>(
-        exec_copy.cf_phase_screens,
-        vis_cf_phase_screens,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(cf_phase_screens_h);
-
-    auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
-    Core::VisibilityGridder<execution_space, 0>::kernel(
-      exec_compute.space,
-      m_cf.cf_d,
-      len,
-      vis,
-      grid_cubes,
-      cf_indexes,
-      weights,
-      frequencies,
-      phases,
-      coordinates,
-      cf_phase_screens,
+      std::get<1>(cf_phase_screens_views),
       m_grid_scale,
       m_grid,
       m_weights);
   }
 
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  void
-  alt1_grid_visibilities(
-    Device /*host_device*/,
-    size_t offset,
-    const vector_data<std::complex<visibility_fp>>& visibilities,
-    const vector_data<unsigned>& vis_grid_cubes,
-    const vector_data<vis_cf_index_t>& vis_cf_indexes,
-    const vector_data<vis_weight_fp>& vis_weights,
-    const vector_data<vis_frequency_fp>& vis_frequencies,
-    const vector_data<vis_phase_fp>& vis_phases,
-    const vector_data<vis_uvw_t>& vis_coordinates) {
-
-    auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
-
-    auto len =
-      std::min(visibilities->size() - offset, m_max_visibility_batch_size);
-
-    exec_copy.vis_state.emplace_back(visibilities);
-    auto [vis_h, vis] =
-      StateT<D>::copy_to_device_view<vis_t>(
-        exec_copy.visibilities,
-        visibilities,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(vis_h);
-
-    exec_copy.vis_state.emplace_back(vis_grid_cubes);
-    auto [grid_cubes_h, grid_cubes] =
-      StateT<D>::copy_to_device_view<unsigned>(
-        exec_copy.grid_cubes,
-        vis_grid_cubes,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(grid_cubes_h);
-
-    exec_copy.vis_state.emplace_back(vis_cf_indexes);
-    auto [cf_indexes_h, cf_indexes] =
-      StateT<D>::copy_to_device_view<cf_index_t>(
-        exec_copy.cf_indexes,
-        vis_cf_indexes,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(cf_indexes_h);
-
-    exec_copy.vis_state.emplace_back(vis_weights);
-    auto [weights_h, weights] =
-      StateT<D>::copy_to_device_view<vis_weight_fp>(
-        exec_copy.weights,
-        vis_weights,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(weights_h);
-
-    exec_copy.vis_state.emplace_back(vis_frequencies);
-    auto [frequencies_h, frequencies] =
-      StateT<D>::copy_to_device_view<vis_frequency_fp>(
-        exec_copy.frequencies,
-        vis_frequencies,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(frequencies_h);
-
-    exec_copy.vis_state.emplace_back(vis_phases);
-    auto [phases_h, phases] =
-      StateT<D>::copy_to_device_view<vis_phase_fp>(
-        exec_copy.phases,
-        vis_phases,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(phases_h);
-
-    exec_copy.vis_state.emplace_back(vis_coordinates);
-    auto [coordinates_h, coordinates] =
-      StateT<D>::copy_to_device_view<uvw_t>(
-        exec_copy.coordinates,
-        vis_coordinates,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(coordinates_h);
-
-    auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
-    Core::VisibilityGridder<execution_space, 1>::kernel(
-      exec_compute.space,
-      m_cf.cf_d,
-      len,
-      vis,
-      grid_cubes,
-      cf_indexes,
-      weights,
-      frequencies,
-      phases,
-      coordinates,
-      m_grid_scale,
-      m_grid,
-      m_weights);
-  }
-
   void
   alt1_grid_visibilities(
     Device /*host_device*/,
@@ -2690,7 +2426,7 @@ public:
         offset,
         len,
         exec_copy.space);
-    exec_copy.vis_state.push_back(cf_phase_screens_h);
+    exec_copy.vis_state.push_back(cf_phase_screens_views);
 
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     Core::VisibilityGridder<execution_space, 1>::kernel(
@@ -2796,7 +2532,8 @@ public:
     std::vector<vis_frequency_fp>&& vis_frequencies,
     std::vector<vis_phase_fp>&& vis_phases,
     std::vector<vis_uvw_t>&& vis_coordinates,
-    std::vector<cf_phase_screen_t>&& vis_cf_phase_screens) override {
+    std::optional<std::vector<cf_phase_screen_t>>&& vis_cf_phase_screens)
+    override {
 
     const auto vis =
       std::make_shared<std::vector<std::complex<visibility_fp>>>(
@@ -2826,9 +2563,14 @@ public:
     const auto coordinates =
       std::make_shared<std::vector<vis_uvw_t>>(
         std::move(vis_coordinates));
-    const auto cf_phase_screens =
-      std::make_shared<std::vector<cf_phase_screen_t>>(
-        std::move(vis_cf_phase_screens));
+    std::shared_ptr<std::vector<cf_phase_screen_t>> cf_phase_screens;
+    if (vis_cf_phase_screens)
+      cf_phase_screens =
+        std::make_shared<std::vector<cf_phase_screen_t>>(
+          std::move(vis_cf_phase_screens).value());
+    else
+      cf_phase_screens =
+        std::make_shared<std::vector<cf_phase_screen_t>>();
 
     size_t num_visibilities = vis->size();
     switch (visibility_gridder_version()) {
@@ -3200,14 +2942,18 @@ private:
     size_t len,
     execution_space& exec) {
 
-    vector_view<const DT>
-      hview(reinterpret_cast<const DT*>(vect->data() + offset), len);
-    if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
-      auto dv = K::subview(dview, std::pair((size_t)0, len));
-      K::deep_copy(exec, dv, hview);
-      return {hview, dv};
+    if (vect->size() > 0) {
+      vector_view<const DT>
+        hview(reinterpret_cast<const DT*>(vect->data() + offset), len);
+      if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
+          auto dv = K::subview(dview, std::pair((size_t)0, len));
+          K::deep_copy(exec, dv, hview);
+          return {hview, dv};
+        } else {
+        return {hview, hview};
+      }
     } else {
-      return {hview, hview};
+      return {vector_view<const DT>(), K::View<const DT*, memory_space>()};
     }
   }
 };

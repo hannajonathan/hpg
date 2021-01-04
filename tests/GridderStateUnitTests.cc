@@ -157,7 +157,7 @@ init_visibilities(
   phases.reserve(num_vis);
   coordinates.clear();
   coordinates.reserve(num_vis);
-  cf_phase_screens.resize(num_vis);
+  cf_phase_screens.reserve(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -165,6 +165,8 @@ init_visibilities(
   std::uniform_int_distribution<unsigned> dist_gcopol(0, grid_size[2] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
+  std::uniform_real_distribution<hpg::cf_phase_screen_fp>
+    dist_cfscreen(-3.141, 3.141);
   std::uniform_int_distribution<unsigned> dist_cfgrp(0, cf.num_groups() - 1);
   auto x0 = (cf.oversampling() * (grid_size[0] - 2)) / 2;
   auto y0 = (cf.oversampling() * (grid_size[1] - 2)) / 2;
@@ -185,6 +187,7 @@ init_visibilities(
     frequencies.push_back(freq);
     phases.emplace_back(0.0);
     coordinates.push_back(hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}));
+    cf_phase_screens.push_back({dist_cfscreen(gen), dist_cfscreen(gen)});
   }
 }
 
@@ -783,6 +786,7 @@ TEST(GridderState, Serialization) {
   std::array<std::vector<hpg::vis_frequency_fp>, 2> frequencies;
   std::array<std::vector<hpg::vis_phase_fp>, 2> phases;
   std::array<std::vector<hpg::vis_uvw_t>, 2> coordinates;
+  std::array<std::vector<hpg::cf_phase_screen_t>, 2> cf_phase_screens;
 
   const size_t num_vis = 1000;
 
@@ -799,7 +803,8 @@ TEST(GridderState, Serialization) {
       weights[i],
       frequencies[i],
       phases[i],
-      coordinates[i]);
+      coordinates[i],
+      cf_phase_screens[i]);
 
   // do gridding with the two sets in both orders, and check that the results
   // are identical

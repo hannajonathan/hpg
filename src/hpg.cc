@@ -101,51 +101,8 @@ struct Impl::GridderState {
     std::vector<vis_weight_fp>&& weights,
     std::vector<vis_frequency_fp>&& frequencies,
     std::vector<vis_phase_fp>&& phases,
-    std::vector<vis_uvw_t>&& coordinates) {
-
-    auto len = std::move(visibilities).size();
-    if (std::move(grid_cubes).size() < len
-        || std::move(cf_indexes).size() < len
-        || std::move(weights).size() < len
-        || std::move(frequencies).size() < len
-        || std::move(phases).size() < len
-        || std::move(coordinates).size() < len)
-      return IncompatibleVisVectorLengthError();
-
-    if (host_devices().count(host_device) > 0) {
-      ::hpg::GridderState result(std::forward<GS>(st));
-      auto error =
-        result.impl->grid_visibilities(
-          host_device,
-          std::move(visibilities),
-          std::move(grid_cubes),
-          std::move(cf_indexes),
-          std::move(weights),
-          std::move(frequencies),
-          std::move(phases),
-          std::move(coordinates));
-      if (error)
-        return std::move(error.value());
-      else
-        return std::move(result);
-    } else {
-      return DisabledHostDeviceError();
-    }
-  }
-
-  template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
-  grid_visibilities(
-    GS&& st,
-    Device host_device,
-    std::vector<std::complex<visibility_fp>>&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::vector<vis_weight_fp>&& weights,
-    std::vector<vis_frequency_fp>&& frequencies,
-    std::vector<vis_phase_fp>&& phases,
     std::vector<vis_uvw_t>&& coordinates,
-    std::vector<cf_phase_screen_t>&& cf_phase_screens) {
+    std::optional<std::vector<cf_phase_screen_t>>&& cf_phase_screens) {
 
     auto len = std::move(visibilities).size();
     if (std::move(grid_cubes).size() < len
@@ -154,7 +111,8 @@ struct Impl::GridderState {
         || std::move(frequencies).size() < len
         || std::move(phases).size() < len
         || std::move(coordinates).size() < len
-        || std::move(cf_phase_screens).size() < len)
+        || (bool(cf_phase_screens)
+            && std::move(cf_phase_screens).value().size() < len))
       return IncompatibleVisVectorLengthError();
 
     if (host_devices().count(host_device) > 0) {
@@ -486,7 +444,8 @@ GridderState::grid_visibilities(
         std::move(weights),
         std::move(frequencies),
         std::move(phases),
-        std::move(coordinates)));
+        std::move(coordinates),
+        std::nullopt));
 }
 
 rval_t<GridderState>
@@ -499,7 +458,7 @@ GridderState::grid_visibilities(
   std::vector<vis_frequency_fp>&& frequencies,
   std::vector<vis_phase_fp>&& phases,
   std::vector<vis_uvw_t>&& coordinates,
-  std::vector<cf_phase_screen_t>&& cf_phase_screens) const volatile & {
+  std::vector<cf_phase_screen_t>&& cf_phase_screens) const & {
 
   return
   to_rval(
@@ -538,7 +497,8 @@ GridderState::grid_visibilities(
         std::move(weights),
         std::move(frequencies),
         std::move(phases),
-        std::move(coordinates)));
+        std::move(coordinates),
+        std::nullopt));
 }
 
 rval_t<GridderState>
