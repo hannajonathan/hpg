@@ -445,13 +445,26 @@ struct Monad<rval_t>
   }
 };
 
+
+/** type trait for types with a monad type class instance */
+template <template <typename> typename M>
+struct HPG_EXPORT monad {
+  using type = void;
+};
+
+/** type trait for types with an applicative type class instance */
+template <template <typename> typename F>
+struct HPG_EXPORT applicative {
+  using type = typename monad<F>::type;
+};
+
 /** type trait for types with a functor type class instance
  *
  * note that we're using the term "functor" in the sense of category theory or
  * functional programming, not the usual c++ terminology */
 template <template <typename> typename F>
 struct HPG_EXPORT functor {
-  using type = void;
+  using type = typename applicative<F>::type;
 };
 
 template <template <typename> typename F>
@@ -459,42 +472,19 @@ concept HasFunctor = requires {
   typename functor<F>;
 };
 
-/** type trait for types with an applicative type class instance */
-template <template <typename> typename F>
-struct HPG_EXPORT applicative
-  : public functor<F> {
-  using type = void;
-};
-
 template <template <typename> typename F>
 concept HasApplicative = requires {
   typename applicative<F>;
 };
 
-/** type trait for types with a monad type class instance */
-template <template <typename> typename M>
-struct HPG_EXPORT monad
-  : public applicative<M> {
-  using type = void;
-};
-
-template <template <typename> typename M>
+template <template <typename> typename F>
 concept HasMonad = requires {
-  typename monad<M>;
+  typename monad<F>;
 };
 
 /** monad type class trait for rval_t */
 template <>
 struct HPG_EXPORT monad<rval_t> {
-  using type = Monad<rval_t>;
-};
-
-/** functor type class trait for rval_t
- *
- * @todo find a way to avoid the repetition exhibited here for the monad and
- * functor type traits */
-template <>
-struct HPG_EXPORT functor<rval_t> {
   using type = Monad<rval_t>;
 };
 
