@@ -629,6 +629,12 @@ struct HPG_EXPORT VisibilityGridder final {
   using scratch_wgts_view =
     K::View<cf_wgt_array*, typename execution_space::scratch_memory_space>;
 
+  using scratch_phscr_view =
+    K::View<
+      cf_phase_screen_fp*,
+      typename execution_space::scratch_memory_space>;
+
+  // function for gridding a single visibility, without CF phase screen
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION void
   grid_vis(
@@ -654,6 +660,8 @@ struct HPG_EXPORT VisibilityGridder final {
       });
     team_member.team_barrier();
 
+    // do the multiplication of visibility by CF over all grid points in the
+    // support of the CF centered on the visibility, and add products to grid
     K::parallel_reduce(
       K::TeamVectorRange(team_member, N_X),
       /* loop over majorX */
@@ -688,6 +696,7 @@ struct HPG_EXPORT VisibilityGridder final {
       });
   }
 
+  // function for gridding a single visibility, with CF phase screen
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION void
   grid_vis(
@@ -713,8 +722,8 @@ struct HPG_EXPORT VisibilityGridder final {
       [=](const int R) {
         cfw(0).wgts[R] = 0;
       });
-    team_member.team_barrier();
 
+    // phase screen constants at this visibility's location
     const auto phi_X0 =
       -cf_gradient[0] * (cf_radius[0] * oversampling[0] + vis.fine_offset[0]);
     const auto dphi_X = cf_gradient[0] * oversampling[0];
@@ -722,6 +731,20 @@ struct HPG_EXPORT VisibilityGridder final {
       -cf_gradient[1] * (cf_radius[1] * oversampling[1] + vis.fine_offset[1]);
     const auto dphi_Y = cf_gradient[1] * oversampling[1];
 
+    // compute the values of the phase screen along the Y axis now and store the
+    // results in scratch memory because gridding on the Y axis accesses the
+    // phase screen values for every row of the Mueller matrix column
+    scratch_phscr_view phi_Y(team_member.team_scratch(0), N_Y);
+    K::parallel_for(
+      K::TeamVectorRange(team_member, N_Y),
+      [=](const int Y) {
+        phi_Y[Y] = phi_Y0 + Y * dphi_Y;
+      });
+    team_member.team_barrier();
+
+    // do the multiplication of visibility by corrected CF over all grid points
+    // in the support of the CF centered on the visibility, and add products to
+    // grid
     K::parallel_reduce(
       K::TeamVectorRange(team_member, N_X),
       /* loop over majorX */
@@ -733,8 +756,7 @@ struct HPG_EXPORT VisibilityGridder final {
           for (int Y = 0; Y < N_Y; ++Y) {
             cf_t cfv = cf(X, Y, R, vis.minor[0], vis.minor[1], cf_cube);
             cfv.imag() *= vis.cf_im_factor;
-            auto phi_Y = phi_Y0 + Y * dphi_Y;
-            auto screen = cphase<execution_space>(phi_X + phi_Y);
+            auto screen = cphase<execution_space>(phi_X + phi_Y[Y]);
             pseudo_atomic_add<execution_space>(
               grid(vis.major[0] + X, vis.major[1] + Y, R, vis.grid_cube),
               gv_t(cfv * screen * vis.value));
@@ -766,6 +788,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const K::Array<
       cf_view<cf_layout, memory_space>,
       HPG_MAX_NUM_CF_GROUPS>& cfs,
+    unsigned max_cf_extent_y,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
     const K::View<const unsigned*, memory_space>& grid_cubes,
@@ -790,10 +813,12 @@ struct HPG_EXPORT VisibilityGridder final {
 
     if (cf_phase_screens.extent(0) == 0) {
       // without CF phase screen
+      auto shmem_size = scratch_wgts_view::shmem_size(1);
+
       K::parallel_for(
         "gridding",
         K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-        .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
+        .set_scratch_size(0, K::PerTeam(shmem_size)),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto i = team_member.league_rank();
 
@@ -833,10 +858,14 @@ struct HPG_EXPORT VisibilityGridder final {
         });
     } else {
       // with CF phase screen
+      auto shmem_size =
+        scratch_wgts_view::shmem_size(1)
+        + scratch_phscr_view::shmem_size(max_cf_extent_y);
+
       K::parallel_for(
         "gridding",
         K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-        .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
+        .set_scratch_size(0, K::PerTeam(shmem_size)),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto i = team_member.league_rank();
 
@@ -898,6 +927,7 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
     const K::Array<
       cf_view<cf_layout, memory_space>,
       HPG_MAX_NUM_CF_GROUPS>& cfs,
+    unsigned max_cf_extent_y,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
     const K::View<const unsigned*, memory_space>& grid_cubes,
@@ -1816,12 +1846,14 @@ struct CFPool final {
   StateT<D> *state;
   K::View<cf_t*, memory_space> pool;
   unsigned num_cf_groups;
+  unsigned max_cf_extent_y;
   K::Array<cfd_view, HPG_MAX_NUM_CF_GROUPS> cf_d; // unmanaged (in pool)
   K::Array<cfh_view, HPG_MAX_NUM_CF_GROUPS> cf_h; // managed
 
   CFPool()
     : state(nullptr)
-    , num_cf_groups(0) {
+    , num_cf_groups(0)
+    , max_cf_extent_y(0) {
 
     for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i) {
       cf_d[i] = cfd_view();
@@ -1831,7 +1863,8 @@ struct CFPool final {
 
   CFPool(StateT<D>* st)
     : state(st)
-    , num_cf_groups(0) {
+    , num_cf_groups(0)
+    , max_cf_extent_y(0) {
 
     for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i) {
       cf_d[i] = cfd_view();
@@ -1840,7 +1873,8 @@ struct CFPool final {
   }
 
   CFPool(const CFPool& other)
-    : num_cf_groups(other.num_cf_groups) {
+    : num_cf_groups(other.num_cf_groups)
+    , max_cf_extent_y(other.max_cf_extent_y) {
 
     if (other.pool.extent(0) > 0) {
       pool =
@@ -1870,6 +1904,7 @@ struct CFPool final {
       other.state->fence();
     std::swap(pool, other.pool);
     std::swap(num_cf_groups, other.num_cf_groups);
+    std::swap(max_cf_extent_y, other.max_cf_extent_y);
     std::swap(cf_d, other.cf_d);
     std::swap(cf_h, other.cf_h);
   }
@@ -1880,6 +1915,7 @@ struct CFPool final {
     // TODO: make this exception-safe?
     reset();
     num_cf_groups = rhs.num_cf_groups;
+    max_cf_extent_y = rhs.max_cf_extent_y;
     if (rhs.pool.extent(0) > 0) {
       pool =
         decltype(pool)(
@@ -1915,6 +1951,7 @@ struct CFPool final {
       rhs.state->fence();
     std::swap(pool, rhs.pool);
     std::swap(num_cf_groups, rhs.num_cf_groups);
+    std::swap(max_cf_extent_y, rhs.max_cf_extent_y);
     std::swap(cf_d, rhs.cf_d);
     std::swap(cf_h, rhs.cf_h);
     return *this;
@@ -1966,6 +2003,8 @@ struct CFPool final {
     cf_d[num_cf_groups] = cfd;
     cf_h[num_cf_groups] = cfh;
     ++num_cf_groups;
+    max_cf_extent_y =
+      std::max(max_cf_extent_y, static_cast<unsigned>(cfd.extent(1)));
   }
 
   void
@@ -2315,9 +2354,11 @@ public:
     exec_copy.vis_state.push_back(cf_phase_screens_views);
 
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
+    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     Core::VisibilityGridder<execution_space, 0>::kernel(
       exec_compute.space,
-      std::get<0>(m_cfs[m_cf_indexes.front()]).cf_d,
+      cf.cf_d,
+      cf.max_cf_extent_y,
       len,
       std::get<1>(vis_views),
       std::get<1>(grid_cubes_views),
@@ -2432,9 +2473,11 @@ public:
     exec_copy.vis_state.push_back(cf_phase_screens_views);
 
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
+    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     Core::VisibilityGridder<execution_space, 1>::kernel(
       exec_compute.space,
-      std::get<0>(m_cfs[m_cf_indexes.front()]).cf_d,
+      cf.cf_d,
+      cf.max_cf_extent_y,
       len,
       std::get<1>(vis_views),
       std::get<1>(grid_cubes_views),
