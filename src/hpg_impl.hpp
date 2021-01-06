@@ -664,7 +664,7 @@ struct HPG_EXPORT VisibilityGridder final {
         // skip this visibility if all of the updated grid points are not within
         // grid bounds
         if (0 <= vis.major[0] && vis.major[0] + N_X <= grid.extent_int(0)
-            && 0 < vis.major[1] && vis.major[1] + N_Y <= grid.extent_int(1)) {
+            && 0 <= vis.major[1] && vis.major[1] + N_Y <= grid.extent_int(1)) {
           // accumulate weights in scratch memory for this visibility
           scratch_wgts_view cfw(team_member.team_scratch(0), 1);
           K::parallel_for(
