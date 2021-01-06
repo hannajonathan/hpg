@@ -649,8 +649,8 @@ struct HPG_EXPORT VisibilityGridder final {
     scratch_wgts_view cfw(team_member.team_scratch(0), 1);
     K::parallel_for(
       K::TeamVectorRange(team_member, N_R),
-      [=](const int C) {
-        cfw(0).wgts[C] = 0;
+      [=](const int R) {
+        cfw(0).wgts[R] = 0;
       });
     team_member.team_barrier();
 
@@ -679,11 +679,11 @@ struct HPG_EXPORT VisibilityGridder final {
     // update weights array
     K::parallel_for(
       K::TeamVectorRange(team_member, N_R),
-      [=](const int C) {
+      [=](const int R) {
         K::atomic_add(
-          &weights(C, vis.grid_cube),
+          &weights(R, vis.grid_cube),
           grid_value_fp(
-            std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
+            std::hypot(cfw(0).wgts[R].real(), cfw(0).wgts[R].imag())
             * vis.weight));
       });
   }
@@ -710,27 +710,30 @@ struct HPG_EXPORT VisibilityGridder final {
     scratch_wgts_view cfw(team_member.team_scratch(0), 1);
     K::parallel_for(
       K::TeamVectorRange(team_member, N_R),
-      [=](const int C) {
-        cfw(0).wgts[C] = 0;
+      [=](const int R) {
+        cfw(0).wgts[R] = 0;
       });
     team_member.team_barrier();
+
+    const auto phi_X0 =
+      -cf_gradient[0] * (cf_radius[0] * oversampling[0] + vis.fine_offset[0]);
+    const auto dphi_X = cf_gradient[0] * oversampling[0];
+    const auto phi_Y0 =
+      -cf_gradient[1] * (cf_radius[1] * oversampling[1] + vis.fine_offset[1]);
+    const auto dphi_Y = cf_gradient[1] * oversampling[1];
 
     K::parallel_reduce(
       K::TeamVectorRange(team_member, N_X),
       /* loop over majorX */
       [=](const int X, cf_wgt_array& cfw_l) {
-        auto phi_X =
-          cf_gradient[0]
-          * ((X - cf_radius[0]) * oversampling[0] - vis.fine_offset[0]);
+        auto phi_X = phi_X0 + X * dphi_X;
         /* loop over elements (rows) of Mueller matrix column  */
         for (int R = 0; R < N_R; ++R) {
           /* loop over majorY */
           for (int Y = 0; Y < N_Y; ++Y) {
             cf_t cfv = cf(X, Y, R, vis.minor[0], vis.minor[1], cf_cube);
             cfv.imag() *= vis.cf_im_factor;
-            auto phi_Y =
-              cf_gradient[1]
-              * ((Y - cf_radius[1]) * oversampling[1] - vis.fine_offset[1]);
+            auto phi_Y = phi_Y0 + Y * dphi_Y;
             auto screen = cphase<execution_space>(phi_X + phi_Y);
             pseudo_atomic_add<execution_space>(
               grid(vis.major[0] + X, vis.major[1] + Y, R, vis.grid_cube),
@@ -747,11 +750,11 @@ struct HPG_EXPORT VisibilityGridder final {
     // update weights array
     K::parallel_for(
       K::TeamVectorRange(team_member, N_R),
-      [=](const int C) {
+      [=](const int R) {
         K::atomic_add(
-          &weights(C, vis.grid_cube),
+          &weights(R, vis.grid_cube),
           grid_value_fp(
-            std::hypot(cfw(0).wgts[C].real(), cfw(0).wgts[C].imag())
+            std::hypot(cfw(0).wgts[R].real(), cfw(0).wgts[R].imag())
             * vis.weight));
       });
   }
