@@ -27,6 +27,10 @@
 # include <cufft.h>
 #endif
 
+#ifdef __NVCC__
+# define WORKAROUND_NVCC_IF_CONSTEXPR_BUG
+#endif
+
 namespace K = Kokkos;
 namespace KExp = Kokkos::Experimental;
 
@@ -290,6 +294,9 @@ struct GridLayout {
           strided_grid_layout_order.data(),
           dims.data());
     }
+#ifdef WORKAROUND_NVCC_IF_CONSTEXPR_BUG
+    return layout();
+#endif
   }
 };
 
@@ -300,11 +307,11 @@ struct CFLayout {
   /** Kokkos layout type */
   using layout =
     std::conditional_t<
-    std::is_same_v<
-      typename DeviceT<D>::kokkos_device::array_layout,
-      K::LayoutLeft>,
-    K::LayoutLeft,
-    K::LayoutStride>;
+      std::is_same_v<
+        typename DeviceT<D>::kokkos_device::array_layout,
+        K::LayoutLeft>,
+      K::LayoutLeft,
+      K::LayoutStride>;
 
   /**
    * create Kokkos layout using given CFArray slice
@@ -329,6 +336,9 @@ struct CFLayout {
       static const std::array<int, 6> order{1, 2, 0, 4, 3, 5};
       return K::LayoutStride::order_dimensions(6, order.data(), dims.data());
     }
+#ifdef WORKAROUND_NVCC_IF_CONSTEXPR_BUG
+    return layout();
+#endif
   }
 };
 
@@ -368,6 +378,7 @@ compute_vis_coord(
 
 /** portable sincos()
  */
+#pragma nv_exec_check_disable
 template <typename execution_space, typename T>
 KOKKOS_FORCEINLINE_FUNCTION void
 sincos(T ph, T* sn, T* cs) {
@@ -1216,7 +1227,7 @@ struct HPG_EXPORT FFT final {
 #endif // HPG_ENABLE_OPENMP
 
     {
-      size_t prev_stride = 0;
+      [[maybe_unused]] size_t prev_stride = 0;
       for (size_t d = 0; d < 4; ++d) {
         assert(
           prev_stride <= igrid.layout().stride[strided_grid_layout_order[d]]);
@@ -1450,6 +1461,7 @@ struct HPG_EXPORT FFT<K::Cuda, 0> final {
 #endif // HPG_ENABLE_CUDA
 
 /** swap visibility values */
+#pragma nv_exec_check_disable
 template <typename execution_space>
 KOKKOS_FORCEINLINE_FUNCTION void
 swap_gv(gv_t& a, gv_t&b) {
@@ -2925,9 +2937,13 @@ private:
           auto dv = K::subview(dview, std::pair((size_t)0, len));
           K::deep_copy(exec, dv, hview);
           return {hview, dv};
-        } else {
+      } else {
         return {hview, hview};
       }
+#ifdef WORKAROUND_NVCC_IF_CONSTEXPR_BUG
+      return
+        std::tuple<vector_view<const DT>, K::View<const DT*, memory_space>>();
+#endif
     } else {
       return {vector_view<const DT>(), K::View<const DT*, memory_space>()};
     }

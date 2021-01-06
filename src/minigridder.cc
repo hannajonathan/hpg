@@ -386,6 +386,7 @@ create_input_data(
   auto frequencies_p = result.frequencies.data();
   auto phases_p = result.phases.data();
   auto coordinates_p = result.coordinates.data();
+  auto cf_sizes_p = cf_sizes.data();
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -402,13 +403,13 @@ create_input_data(
         std::complex<hpg::visibility_fp>(
           rstate.frand(-1, 1),
           rstate.frand(-1, 1));
-      *(grid_cubes_p +i) = rstate.urand(0, gsize[3]);
+      *(grid_cubes_p + i) = rstate.urand(0, gsize[3]);
       *(weights_p + i) = rstate.frand(0, 1);
       *(frequencies_p + i) = freq;
       *(phases_p + i) = rstate.frand(-3.14, 3.14);
 
       auto grp = rstate.urand(0, ngrp);
-      auto& cfsz = cf_sizes[grp];
+      auto& cfsz = *(cf_sizes_p + grp);
       *(cf_indexes_p + i) = {rstate.urand(0, cfsz[3]), grp};
 
       std::array<unsigned, 2> border;
