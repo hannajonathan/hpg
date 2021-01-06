@@ -2716,6 +2716,10 @@ private:
           decltype(esp.coordinates)(
             K::ViewAllocateWithoutInitializing("coordinates"),
             m_max_visibility_batch_size);
+        esp.cf_phase_screens =
+          decltype(esp.cf_phase_screens)(
+            K::ViewAllocateWithoutInitializing("cf_phase_screens"),
+            m_max_visibility_batch_size);
       }
     }
 
