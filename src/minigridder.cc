@@ -342,6 +342,7 @@ template <typename Generator>
 InputData
 create_input_data(
   unsigned glen,
+  unsigned polarizations,
   const std::vector<unsigned>& cflen,
   int oversampling,
   bool phase_screen,
@@ -349,7 +350,7 @@ create_input_data(
   bool strictly_inner,
   const Generator& generator) {
 
-  std::array<unsigned, 4> gsize{glen, glen, 1, 1};
+  std::array<unsigned, 4> gsize{glen, glen, polarizations, 1};
 
   InputData result;
   result.gsize = gsize;
@@ -358,8 +359,9 @@ create_input_data(
   std::vector<std::array<unsigned, 4>> cf_sizes;
   std::vector<std::vector<std::complex<hpg::cf_fp>>> cf_values;
   for (auto& cfl : cflen) {
-    cf_sizes.push_back({cfl, cfl, 1, 1});
-    cf_values.emplace_back(cfl * oversampling * cfl * oversampling);
+    cf_sizes.push_back({cfl, cfl, polarizations, 1});
+    cf_values.emplace_back(
+      cfl * oversampling * cfl * oversampling * polarizations);
   }
 
   auto const ngrp = cf_sizes.size();
@@ -562,6 +564,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
 void
 run_trials(
   const std::vector<unsigned>& gsizes,
+  const std::vector<unsigned>& polarizations,
   const std::vector<std::vector<unsigned>>& cfsizes,
   const std::vector<unsigned>& oversamplings,
   const std::vector<unsigned>& visibilities,
@@ -578,36 +581,39 @@ run_trials(
   for (auto& num_repeats : repeats) {
     for (auto& num_visibilities : visibilities) {
       for (auto& gsize : gsizes) {
-        for (auto& cfsize : cfsizes) {
-          for (auto& oversampling : oversamplings) {
-            for (auto& kernel : kernels) {
-              const auto input_data =
-                create_input_data(
-                  gsize,
-                  cfsize,
-                  oversampling,
-                  phase_screen,
-                  num_visibilities,
-                  kernel == 1,
-                  rand_pool_type(348842));
-              for (auto& device : devices) {
-                for (auto& stream : streams) {
-                  for (auto& bsz : batch){
-                    TrialSpec spec(
-                      device,
-                      std::max(stream, 1u),
-                      std::max(bsz, 1u),
-                      gsize,
-                      cfsize,
-                      oversampling,
-                      phase_screen,
-                      num_visibilities,
-                      num_repeats
+        for (auto& num_polarizations : polarizations) {
+          for (auto& cfsize : cfsizes) {
+            for (auto& oversampling : oversamplings) {
+              for (auto& kernel : kernels) {
+                const auto input_data =
+                  create_input_data(
+                    gsize,
+                    num_polarizations,
+                    cfsize,
+                    oversampling,
+                    phase_screen,
+                    num_visibilities,
+                    kernel == 1,
+                    rand_pool_type(348842));
+                for (auto& device : devices) {
+                  for (auto& stream : streams) {
+                    for (auto& bsz : batch){
+                      TrialSpec spec(
+                        device,
+                        std::max(stream, 1u),
+                        std::max(bsz, 1u),
+                        gsize,
+                        cfsize,
+                        oversampling,
+                        phase_screen,
+                        num_visibilities,
+                        num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-                      , {kernel, 0, 0, 0}
+                        , {kernel, 0, 0, 0}
 #endif
-                      );
-                    run_hpg_trial(spec, input_data);
+                        );
+                      run_hpg_trial(spec, input_data);
+                    }
                   }
                 }
               }
@@ -707,8 +713,17 @@ main(int argc, char* argv[]) {
       .help("visibility batch size ["s + std::to_string(dflt) + "]")
       .action(parse_unsigned_args);
   }
+  {
+    unsigned dflt = 1;
+    args
+      .add_argument("-p", "--polarizations")
+      .default_value(argwrap<std::vector<unsigned>>({dflt}))
+      .help(
+        "number of image polarizations ["s + std::to_string(dflt) + "]")
+      .action(parse_unsigned_args);
+  }
   args
-    .add_argument("-p", "--phasescreen")
+    .add_argument("-f", "--phasescreen")
     .default_value(false)
     .implicit_value(true)
     .help("apply phase gradient to CF");
@@ -723,6 +738,8 @@ main(int argc, char* argv[]) {
 
   /* get the command line arguments */
   auto gsize = args.get<argwrap<std::vector<unsigned>>>("--gsize").val;
+  auto polarizations =
+    args.get<argwrap<std::vector<unsigned>>>("--polarizations").val;
   auto cfsizes =
     args.get<argwrap<std::vector<std::vector<unsigned>>>>("--cfsizes").val;
   auto oversampling =
@@ -741,6 +758,7 @@ main(int argc, char* argv[]) {
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)
     run_trials(
       gsize,
+      polarizations,
       cfsizes,
       oversampling,
       visibilities,
