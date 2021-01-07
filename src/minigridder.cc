@@ -136,6 +136,7 @@ struct TrialSpec {
     const int& gsize_,
     const std::vector<unsigned>& cfsize_,
     const int& oversampling_,
+    bool phase_screen_,
     const int& visibilities_,
     const int& repeats_
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -147,6 +148,7 @@ struct TrialSpec {
     , batch_size(batch_size_)
     , gsize(gsize_)
     , oversampling(oversampling_)
+    , phase_screen(phase_screen_)
     , visibilities(visibilities_)
     , repeats(repeats_)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -163,6 +165,7 @@ struct TrialSpec {
   int gsize;
   std::vector<int> cfsize;
   int oversampling;
+  bool phase_screen;
   int visibilities;
   int repeats;
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -183,6 +186,7 @@ struct TrialSpec {
    "grid",
    "cf",
    "osmp",
+   "phscr",
    "nvis",
    "rpt",
    "vis/s"};
@@ -231,6 +235,7 @@ struct TrialSpec {
         << pad_right(std::to_string(gsize))
         << pad_right(cfsz.str())
         << pad_right(std::to_string(oversampling))
+        << pad_right(phase_screen ? "T" : "F")
         << pad_right(nvis.data())
         << pad_right(std::to_string(repeats));
     return oss.str();
@@ -339,6 +344,7 @@ create_input_data(
   unsigned glen,
   const std::vector<unsigned>& cflen,
   int oversampling,
+  bool phase_screen,
   int num_visibilities,
   bool strictly_inner,
   const Generator& generator) {
@@ -378,6 +384,8 @@ create_input_data(
   result.frequencies.resize(num_visibilities);
   result.phases.resize(num_visibilities);
   result.coordinates.resize(num_visibilities);
+  if (phase_screen)
+    result.cf_phase_screens.resize(num_visibilities);
 
   auto visibilities_p = result.visibilities.data();
   auto grid_cubes_p = result.grid_cubes.data();
@@ -386,6 +394,7 @@ create_input_data(
   auto frequencies_p = result.frequencies.data();
   auto phases_p = result.phases.data();
   auto coordinates_p = result.coordinates.data();
+  auto cf_phase_screens_p = result.cf_phase_screens.data();
   auto cf_sizes_p = cf_sizes.data();
 
   const double inv_lambda = 9.75719;
@@ -407,6 +416,9 @@ create_input_data(
       *(weights_p + i) = rstate.frand(0, 1);
       *(frequencies_p + i) = freq;
       *(phases_p + i) = rstate.frand(-3.14, 3.14);
+      if (phase_screen)
+        *(cf_phase_screens_p + i) =
+          {rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)};
 
       auto grp = rstate.urand(0, ngrp);
       auto& cfsz = *(cf_sizes_p + grp);
@@ -431,6 +443,36 @@ create_input_data(
     });
   return result;
 }
+
+auto
+gridvis(hpg::GridderState&& gs, InputData&& id) {
+  if (std::move(id).cf_phase_screens.size() > 0)
+    return
+      std::move(gs)
+      .grid_visibilities(
+        hpg::Device::OpenMP,
+        std::move(id).visibilities,
+        std::move(id).grid_cubes,
+        std::move(id).cf_indexes,
+        std::move(id).weights,
+        std::move(id).frequencies,
+        std::move(id).phases,
+        std::move(id).coordinates,
+        std::move(id).cf_phase_screens);
+  else
+    return
+      std::move(gs)
+      .grid_visibilities(
+        hpg::Device::OpenMP,
+        std::move(id).visibilities,
+        std::move(id).grid_cubes,
+        std::move(id).cf_indexes,
+        std::move(id).weights,
+        std::move(id).frequencies,
+        std::move(id).phases,
+        std::move(id).coordinates);
+}
+
 
 /** gridding with hpg
  */
@@ -488,17 +530,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
         }
         return
           map(
-            std::get<1>(std::move(t_gs))
-            .grid_visibilities(
-              hpg::Device::OpenMP,
-              std::move(id.visibilities),
-              std::move(id.grid_cubes),
-              std::move(id.cf_indexes),
-              std::move(id.weights),
-              std::move(id.frequencies),
-              std::move(id.phases),
-              std::move(id.coordinates),
-              std::move(id.cf_phase_screens)),
+            gridvis(std::get<1>(std::move(t_gs)), std::move(id)),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));
@@ -537,7 +569,8 @@ run_trials(
   const std::vector<hpg::Device>& devices,
   const std::vector<unsigned>& kernels,
   const std::vector<unsigned>& streams,
-  const std::vector<unsigned>& batch) {
+  const std::vector<unsigned>& batch,
+  bool phase_screen) {
 
   using rand_pool_type = typename K::Random_XorShift64_Pool<K::OpenMP>;
 
@@ -553,6 +586,7 @@ run_trials(
                   gsize,
                   cfsize,
                   oversampling,
+                  phase_screen,
                   num_visibilities,
                   kernel == 1,
                   rand_pool_type(348842));
@@ -566,6 +600,7 @@ run_trials(
                       gsize,
                       cfsize,
                       oversampling,
+                      phase_screen,
                       num_visibilities,
                       num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -589,7 +624,7 @@ main(int argc, char* argv[]) {
   /* set up the argument parser */
   argparse::ArgumentParser args("minigridder", "0.0.1");
   args.add_description(
-    "measure achieved memory bandwidth and rate of visibilities gridded "s
+    "measure achieved rate of visibilities gridded "s
     + "for various parameter values. "
     + "many command line options can be expressed as comma-separated lists "
     + "to support running sweeps through different gridding trials "
@@ -672,6 +707,11 @@ main(int argc, char* argv[]) {
       .help("visibility batch size ["s + std::to_string(dflt) + "]")
       .action(parse_unsigned_args);
   }
+  args
+    .add_argument("-p", "--phasescreen")
+    .default_value(false)
+    .implicit_value(true)
+    .help("apply phase gradient to CF");
 
   /* parse the command line arguments */
   try {
@@ -695,6 +735,7 @@ main(int argc, char* argv[]) {
   auto kernels = args.get<argwrap<std::vector<unsigned>>>("--kernel").val;
   auto streams = args.get<argwrap<std::vector<unsigned>>>("--streams").val;
   auto batch = args.get<argwrap<std::vector<unsigned>>>("--batch").val;
+  auto phase_screen = args.get<bool>("--phasescreen");
 
   hpg::ScopeGuard hpg;
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)
@@ -707,7 +748,8 @@ main(int argc, char* argv[]) {
       devices,
       kernels,
       streams,
-      batch);
+      batch,
+      phase_screen);
   else
     std::cerr << "OpenMP device is not enabled: no tests will be run"
               << std::endl;
