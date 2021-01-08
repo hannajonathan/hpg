@@ -106,6 +106,7 @@ set(hpg_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_indexing.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_rval.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/hpg_error.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_config.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_export.h)
 set_target_properties(hpg PROPERTIES
