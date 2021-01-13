@@ -151,6 +151,12 @@ using vis_cf_index_t = std::pair<unsigned, unsigned>;
 namespace Impl {
 struct HPG_EXPORT State;
 struct HPG_EXPORT GridderState;
+
+template <typename T>
+inline constexpr int
+sgn(T val) {
+  return (T(0) < val) - (val < T(0));
+}
 } // end namespace Impl
 
 /** shape of a convolution function
