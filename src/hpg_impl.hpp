@@ -368,8 +368,7 @@ compute_vis_coord(
   vis_frequency_fp inv_lambda,
   grid_scale_fp fine_scale) {
 
-  const double fine_origin =
-    (sgn(fine_scale) * (static_cast<long>(g_size) * oversampling)) / -2.0;
+  const double fine_origin = g_size / -(2.0 * (fine_scale / oversampling));
   const long fine =
     std::lrint(
       std::floor((coord * inv_lambda - fine_origin) * fine_scale)) -

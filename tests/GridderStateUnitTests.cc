@@ -227,10 +227,8 @@ struct ConeCFArray final
       grid_scale[1] * m_oversampling
     };
     const std::array<double, 2> fine_origin{
-      (hpg::Impl::sgn(grid_scale[0]) * long(grid_size[0]) * m_oversampling)
-      / -2.0,
-      (hpg::Impl::sgn(grid_scale[1]) * long(grid_size[1]) * m_oversampling)
-      / -2.0
+      grid_size[0] / -(2.0 * grid_scale[0]),
+      grid_size[1] / -(2.0 * grid_scale[1])
     };
     const std::array<long, 2> fine{
       std::lrint(
