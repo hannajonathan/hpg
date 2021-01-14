@@ -680,6 +680,10 @@ Gridder::create(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   ) noexcept {
 
+#ifndef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  std::array<unsigned, 4> implementation_versions{0, 0, 0, 0};
+#endif
+
   auto err_or_gs =
     GridderState::create(
       device,
@@ -687,7 +691,7 @@ Gridder::create(
       max_visibility_batch_size,
       init_cf_shape,
       grid_size,
-      grid_scale,
+      grid_scale ,
       implementation_versions);
   if (is_value(err_or_gs))
     return rval(Gridder(get_value(std::move(err_or_gs))));
