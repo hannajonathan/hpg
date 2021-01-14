@@ -42,7 +42,7 @@ struct epsilon<float> {
 template <>
 struct epsilon<double> {
   using F = double;
-  static constexpr double val = 1.0e-6;
+  static constexpr double val = 1.0e-3;
 };
 template <>
 struct epsilon<std::complex<float>> {
@@ -52,7 +52,7 @@ struct epsilon<std::complex<float>> {
 template <>
 struct epsilon<std::complex<double>> {
   using F = double;
-  static constexpr double val = 1.0e-6;
+  static constexpr double val = 1.0e-3;
 };
 
 template <typename T>
