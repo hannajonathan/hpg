@@ -364,25 +364,36 @@ KOKKOS_FUNCTION std::tuple<int, int, int>
 compute_vis_coord(
   int g_size,
   int oversampling,
-  int cf_size,
+  int cf_radius,
   vis_uvw_fp coord,
   vis_frequency_fp inv_lambda,
-  grid_scale_fp fine_scale) {
+  grid_scale_fp grid_scale) {
 
-  const double fine_origin = g_size / -(2.0 * (fine_scale / oversampling));
-  const long fine =
-    std::lrint(
-      std::floor((coord * inv_lambda - fine_origin) * fine_scale)) -
-    (cf_size * oversampling) / 2;
-  const long major = fine / oversampling;
-  const long major_fine = major * oversampling;
+  const double position = grid_scale * coord * inv_lambda + g_size / 2;
+  long major = std::lrint(position); // loc
+  const long minor_shift = std::lrint((position - major) * oversampling); // off
+  major -= cf_radius;
+  long minor;
+  if (minor_shift >= 0) {
+    minor = minor_shift;
+  } else {
+    minor = oversampling + minor_shift;
+    major -= 1;
+  }
+  // const double fine_origin = g_size / -(2.0 * (fine_scale / oversampling));
+  // const long fine =
+  //   std::lrint(
+  //     std::floor((coord * inv_lambda - fine_origin) * fine_scale)) -
+  //   (cf_size * oversampling) / 2;
+  // const long major = fine / oversampling;
+  // const long major_fine = major * oversampling;
   // int major = std::lrint(major_fine / oversampling) - cf_radius + g_offset;
   // int minor_shift =
   //   ((fine_coord >= nearest_major_fine_coord) ? 0 : oversampling);
   // int minor = fine_coord - (nearest_major_fine_coord - minor_shift);
-  const long minor = fine - major_fine;
+  // const long minor = fine - major_fine;
   assert(0 <= minor && minor < oversampling);
-  return {major, minor, 0/*FIXME: was minor - minor_shift*/};
+  return {major, minor, minor_shift};
 }
 
 /** portable sincos()
@@ -441,7 +452,7 @@ struct GridVis final {
     const K::Array<int, 2>& grid_size,
     const K::Array<int, 2>& oversampling,
     const K::Array<int, 2>& cf_size,
-    const K::Array<grid_scale_fp, 2>& fine_scale)
+    const K::Array<grid_scale_fp, 2>& grid_scale)
     : grid_cube(vis.grid_cube)
     , weight(vis.weight) {
 
@@ -454,10 +465,10 @@ struct GridVis final {
       compute_vis_coord(
         grid_size[0],
         oversampling[0],
-        cf_size[0],
+        cf_size[0] / 2,
         vis.uvw[0],
         inv_lambda,
-        fine_scale[0]);
+        grid_scale[0]);
     major[0] = c0;
     minor[0] = f0;
     fine_offset[0] = o0;
@@ -465,10 +476,10 @@ struct GridVis final {
       compute_vis_coord(
         grid_size[1],
         oversampling[1],
-        cf_size[1],
+        cf_size[1] / 2,
         vis.uvw[1],
         inv_lambda,
-        fine_scale[1]);
+        grid_scale[1]);
     major[1] = c1;
     minor[1] = f1;
     fine_offset[1] = o1;
@@ -662,13 +673,14 @@ struct HPG_EXPORT VisibilityGridder final {
     const GridVis<execution_space>& vis,
     const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
+    const K::Array<int, 2>& cf_size,
     const unsigned cf_cube,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
       weights) {
 
-    const int N_X = cf.extent_int(0);
-    const int N_Y = cf.extent_int(1);
+    const int N_X = cf_size[0];
+    const int N_Y = cf_size[1];
     const int N_R = cf.extent_int(2);
 
     // accumulate weights in scratch memory for this visibility
@@ -724,15 +736,15 @@ struct HPG_EXPORT VisibilityGridder final {
     const GridVis<execution_space>& vis,
     const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
-    const unsigned cf_cube,
     const K::Array<int, 2>& cf_size,
+    const unsigned cf_cube,
     const K::Array<cf_phase_screen_fp, 2>& cf_gradient,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
       weights) {
 
-    const int N_X = cf.extent_int(0);
-    const int N_Y = cf.extent_int(1);
+    const int N_X = cf_size[0];
+    const int N_Y = cf_size[1];
     const int N_R = cf.extent_int(2);
 
     // accumulate weights in scratch memory for this visibility
@@ -810,6 +822,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const K::Array<
       cf_view<cf_layout, memory_space>,
       HPG_MAX_NUM_CF_GROUPS>& cfs,
+    const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     unsigned max_cf_extent_y,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
@@ -829,9 +842,6 @@ struct HPG_EXPORT VisibilityGridder final {
       grid_size{grid.extent_int(0), grid.extent_int(1)};
     const K::Array<int, 2>
       oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
-    const K::Array<grid_scale_fp, 2> fine_scale{
-      grid_scale[0] * oversampling[0],
-      grid_scale[1] * oversampling[1]};
 
     if (cf_phase_screens.extent(0) == 0) {
       // without CF phase screen
@@ -847,9 +857,8 @@ struct HPG_EXPORT VisibilityGridder final {
           const unsigned& cf_cube = cf_indexes(i).first;
           const unsigned& cf_grp = cf_indexes(i).second;
           const auto& cf = cfs[cf_grp];
-
-          const K::Array<int, 2>
-            cf_size{cf.extent_int(0), cf.extent_int(1)};
+          K::Array<int, 2>
+            cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
 
           GridVis<execution_space> vis(
             Visibility(
@@ -862,18 +871,19 @@ struct HPG_EXPORT VisibilityGridder final {
             grid_size,
             oversampling,
             cf_size,
-            fine_scale);
+            grid_scale);
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
           if (0 <= vis.major[0]
-              && vis.major[0] + cf.extent_int(0) <= grid.extent_int(0)
+              && vis.major[0] + cf_size[0] <= grid.extent_int(0)
               && 0 <= vis.major[1]
-              && vis.major[1] + cf.extent_int(1) <= grid.extent_int(1))
+              && vis.major[1] + cf_size[1] <= grid.extent_int(1))
             grid_vis(
               team_member,
               vis,
               oversampling,
               cf,
+              cf_size,
               cf_cube,
               grid,
               weights);
@@ -894,9 +904,9 @@ struct HPG_EXPORT VisibilityGridder final {
           const unsigned& cf_cube = cf_indexes(i).first;
           const unsigned& cf_grp = cf_indexes(i).second;
           const auto& cf = cfs[cf_grp];
+          K::Array<int, 2>
+            cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
 
-          const K::Array<int, 2>
-            cf_size{cf.extent_int(0), cf.extent_int(1)};
           const K::Array<cf_phase_screen_fp, 2>
             cf_gradient{cf_phase_screens(i)[0], cf_phase_screens(i)[1]};
 
@@ -911,20 +921,20 @@ struct HPG_EXPORT VisibilityGridder final {
             grid_size,
             oversampling,
             cf_size,
-            fine_scale);
+            grid_scale);
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
           if (0 <= vis.major[0]
-              && vis.major[0] + cf.extent_int(0) <= grid.extent_int(0)
+              && vis.major[0] + cf_size[0] <= grid.extent_int(0)
               && 0 <= vis.major[1]
-              && vis.major[1] + cf.extent_int(1) <= grid.extent_int(1))
+              && vis.major[1] + cf_size[1] <= grid.extent_int(1))
             grid_vis(
               team_member,
               vis,
               oversampling,
               cf,
-              cf_cube,
               cf_size,
+              cf_cube,
               cf_gradient,
               grid,
               weights);
@@ -949,6 +959,7 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
     const K::Array<
       cf_view<cf_layout, memory_space>,
       HPG_MAX_NUM_CF_GROUPS>& cfs,
+    const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     unsigned max_cf_extent_y,
     int num_visibilities,
     const K::View<const vis_t*, memory_space>& visibilities,
@@ -968,9 +979,6 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
       grid_size{grid.extent_int(0), grid.extent_int(1)};
     const K::Array<int, 2>
       oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
-    const K::Array<grid_scale_fp, 2> fine_scale{
-      grid_scale[0] * oversampling[0],
-      grid_scale[1] * oversampling[1]};
 
     if (cf_phase_screens.extent(0) == 0) {
       // without CF phase screen
@@ -984,9 +992,8 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
           const unsigned& cf_cube = cf_indexes(i).first;
           const unsigned& cf_grp = cf_indexes(i).second;
           const auto& cf = cfs[cf_grp];
-
-          const K::Array<int, 2>
-            cf_size{cf.extent_int(0), cf.extent_int(1)};
+          K::Array<int, 2>
+            cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
 
           GridVis<execution_space> vis(
             Visibility(
@@ -999,12 +1006,13 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
             grid_size,
             oversampling,
             cf_size,
-            fine_scale);
+            grid_scale);
           VisibilityGridder<execution_space, 0>::grid_vis(
             team_member,
             vis,
             oversampling,
             cf,
+            cf_size,
             cf_cube,
             grid,
             weights);
@@ -1021,9 +1029,9 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
           const unsigned& cf_cube = cf_indexes(i).first;
           const unsigned& cf_grp = cf_indexes(i).second;
           const auto& cf = cfs[cf_grp];
+          K::Array<int, 2>
+            cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
 
-          const K::Array<int, 2>
-            cf_size{cf.extent_int(0), cf.extent_int(1)};
           const K::Array<cf_phase_screen_fp, 2>
             cf_gradient{cf_phase_screens(i)[0], cf_phase_screens(i)[1]};
 
@@ -1038,14 +1046,14 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
             grid_size,
             oversampling,
             cf_size,
-            fine_scale);
+            grid_scale);
           VisibilityGridder<execution_space, 0>::grid_vis(
             team_member,
             vis,
             oversampling,
             cf,
-            cf_cube,
             cf_size,
+            cf_cube,
             cf_gradient,
             grid,
             weights);
@@ -1872,6 +1880,7 @@ struct CFPool final {
   unsigned max_cf_extent_y;
   K::Array<cfd_view, HPG_MAX_NUM_CF_GROUPS> cf_d; // unmanaged (in pool)
   K::Array<cfh_view, HPG_MAX_NUM_CF_GROUPS> cf_h; // managed
+  K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS> cf_radii;
 
   CFPool()
     : state(nullptr)
@@ -1897,7 +1906,8 @@ struct CFPool final {
 
   CFPool(const CFPool& other)
     : num_cf_groups(other.num_cf_groups)
-    , max_cf_extent_y(other.max_cf_extent_y) {
+    , max_cf_extent_y(other.max_cf_extent_y)
+    , cf_radii(other.cf_radii) {
 
     if (other.pool.extent(0) > 0) {
       pool =
@@ -1930,6 +1940,7 @@ struct CFPool final {
     std::swap(max_cf_extent_y, other.max_cf_extent_y);
     std::swap(cf_d, other.cf_d);
     std::swap(cf_h, other.cf_h);
+    std::swap(cf_radii, other.cf_radii);
   }
 
   CFPool&
@@ -1939,6 +1950,7 @@ struct CFPool final {
     reset();
     num_cf_groups = rhs.num_cf_groups;
     max_cf_extent_y = rhs.max_cf_extent_y;
+    cf_radii = rhs.cf_radii;
     if (rhs.pool.extent(0) > 0) {
       pool =
         decltype(pool)(
@@ -1977,6 +1989,7 @@ struct CFPool final {
     std::swap(max_cf_extent_y, rhs.max_cf_extent_y);
     std::swap(cf_d, rhs.cf_d);
     std::swap(cf_h, rhs.cf_h);
+    std::swap(cf_radii, rhs.cf_radii);
     return *this;
   }
 
@@ -2021,10 +2034,16 @@ struct CFPool final {
   }
 
   void
-  add_cf_group(cfd_view cfd, cfh_view cfh) {
+  add_cf_group(
+    const std::array<unsigned, 2>& radii,
+    cfd_view cfd,
+    cfh_view cfh) {
+
     assert(num_cf_groups < HPG_MAX_NUM_CF_GROUPS);
     cf_d[num_cf_groups] = cfd;
     cf_h[num_cf_groups] = cfh;
+    cf_radii[num_cf_groups] =
+      {static_cast<int>(radii[0]), static_cast<int>(radii[1])};
     ++num_cf_groups;
     max_cf_extent_y =
       std::max(max_cf_extent_y, static_cast<unsigned>(cfd.extent(1)));
@@ -2273,7 +2292,7 @@ public:
         break;
       }
       offset += cf.cf_size(&cf_array, grp);
-      cf.add_cf_group(cf_init, cf_h);
+      cf.add_cf_group(cf_array.radii(grp), cf_init, cf_h);
     }
     return std::nullopt;
   }
@@ -2381,6 +2400,7 @@ public:
     Core::VisibilityGridder<execution_space, 0>::kernel(
       exec_compute.space,
       cf.cf_d,
+      cf.cf_radii,
       cf.max_cf_extent_y,
       len,
       std::get<1>(vis_views),
@@ -2500,6 +2520,7 @@ public:
     Core::VisibilityGridder<execution_space, 1>::kernel(
       exec_compute.space,
       cf.cf_d,
+      cf.cf_radii,
       cf.max_cf_extent_y,
       len,
       std::get<1>(vis_views),

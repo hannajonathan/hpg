@@ -422,11 +422,14 @@ TEST(Gridder, CF) {
 
 // test that Gridder::reset_grid() correctly resets grid weights and values
 TEST(Gridder, Reset) {
-  std::array<unsigned, 4> grid_size{6, 5, 4, 3};
+  std::array<unsigned, 4> grid_size{16, 15, 4, 3};
   std::array<float, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 10;
+  auto padding = 2 * hpg::CFArray::padding;
   const std::vector<std::array<unsigned, 4>>
-    cf_sizes{{3, 3, 4, 3}, {2, 2, 4, 2}};
+    cf_sizes{
+      {3 + padding, 3 + padding, 4, 3},
+      {2 + padding, 2 + padding, 4, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   auto g =
     std::get<1>(
@@ -450,7 +453,7 @@ TEST(Gridder, Reset) {
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
-    const std::array<unsigned, 4> cf_size{3, 3, 4, 3};
+    const std::array<unsigned, 4> cf_size{3 + padding, 3 + padding, 4, 3};
     MyCFArray cf = create_cf(10, {cf_size}, rng);
     g.set_convolution_function(default_host_device, MyCFArray(cf));
     init_visibilities(

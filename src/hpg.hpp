@@ -201,6 +201,15 @@ public:
     unsigned grp)
     const = 0;
 
+  std::array<unsigned, 2>
+  radii(unsigned grp) const {
+    auto os = oversampling();
+    auto ext = extents(grp);
+    return {
+      ((ext[0] - 2 * padding * os) / os) / 2,
+      ((ext[1] - 2 * padding * os) / os) / 2};
+  }
+
   virtual ~CFArray() {}
 };
 
