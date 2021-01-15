@@ -408,7 +408,7 @@ public:
   grid_size() const noexcept;
 
   /** grid scale */
-  const std::array<grid_scale_fp, 2>&
+  std::array<grid_scale_fp, 2>
   grid_scale() const noexcept;
 
   /** null state query */
@@ -890,7 +890,7 @@ public:
   grid_size() const noexcept;
 
   /** grid scale */
-  const std::array<grid_scale_fp, 2>&
+  std::array<grid_scale_fp, 2>
   grid_scale() const noexcept;
 
   /** null state query */

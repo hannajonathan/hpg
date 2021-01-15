@@ -362,9 +362,9 @@ GridderState::grid_size() const noexcept {
   return impl->m_grid_size;
 }
 
-const std::array<grid_scale_fp, 2>&
+std::array<grid_scale_fp, 2>
 GridderState::grid_scale() const noexcept {
-  return impl->m_grid_scale;
+  return {impl->m_grid_scale[0], impl->m_grid_scale[1]};
 }
 
 bool
@@ -732,7 +732,7 @@ Gridder::grid_size() const noexcept {
   return state.grid_size();
 }
 
-const std::array<grid_scale_fp, 2>&
+std::array<grid_scale_fp, 2>
 Gridder::grid_scale() const noexcept {
   return state.grid_scale();
 }

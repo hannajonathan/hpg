@@ -819,7 +819,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const K::View<const vis_phase_fp*, memory_space>& phases,
     const K::View<const uvw_t*, memory_space>& coordinates,
     const K::View<const cf_ps_t*, memory_space>& cf_phase_screens,
-    const std::array<grid_scale_fp, 2>& grid_scale,
+    const K::Array<grid_scale_fp, 2>& grid_scale,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
       weights) {
@@ -958,7 +958,7 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
     const K::View<const vis_phase_fp*, memory_space>& phases,
     const K::View<const uvw_t*, memory_space>& coordinates,
     const K::View<const cf_ps_t*, memory_space>& cf_phase_screens,
-    const std::array<grid_scale_fp, 2>& grid_scale,
+    const K::Array<grid_scale_fp, 2>& grid_scale,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights) {
@@ -1646,7 +1646,7 @@ struct State {
   size_t m_max_visibility_batch_size; /**< maximum number of visibilities to
                                          sent to gridding kernel at once */
   std::array<unsigned, 4> m_grid_size; /**< grid size */
-  std::array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
+  K::Array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
   std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
 
   State(Device device)
@@ -1663,7 +1663,7 @@ struct State {
     , m_max_active_tasks(max_active_tasks)
     , m_max_visibility_batch_size(max_visibility_batch_size)
     , m_grid_size(grid_size)
-    , m_grid_scale(grid_scale)
+    , m_grid_scale({grid_scale[0], grid_scale[1]})
     , m_implementation_versions(implementation_versions) {}
 
   static size_t
@@ -2116,11 +2116,11 @@ public:
   StateT(const StateT& st)
     : State(
       D,
-      const_cast<const StateT&>(st).m_max_active_tasks,
-      const_cast<const StateT&>(st).m_max_visibility_batch_size,
-      const_cast<const StateT&>(st).m_grid_size,
-      const_cast<const StateT&>(st).m_grid_scale,
-      const_cast<const StateT&>(st).m_implementation_versions) {
+      st.m_max_active_tasks,
+      st.m_max_visibility_batch_size,
+      st.m_grid_size,
+      {st.m_grid_scale[0], st.m_grid_scale[1]},
+      st.m_implementation_versions) {
 
     st.fence();
     init_state(&st);
