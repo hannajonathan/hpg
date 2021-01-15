@@ -321,12 +321,13 @@ struct CFLayout {
   static layout
   dimensions(const CFArrayShape* cf, unsigned grp) {
     auto extents = cf->extents(grp);
+    auto os = cf->oversampling();
     std::array<int, 6> dims{
-      static_cast<int>(extents[0] / cf->oversampling()),
-      static_cast<int>(extents[1] / cf->oversampling()),
+      static_cast<int>((extents[0] + os - 1) / os),
+      static_cast<int>((extents[1] + os - 1) / os),
       static_cast<int>(extents[2]),
-      static_cast<int>(cf->oversampling()),
-      static_cast<int>(cf->oversampling()),
+      static_cast<int>(os),
+      static_cast<int>(os),
       static_cast<int>(extents[3])
     };
     if constexpr (std::is_same_v<layout, K::LayoutLeft>) {

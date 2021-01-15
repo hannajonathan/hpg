@@ -190,6 +190,8 @@ public:
 
   using scalar_type = std::complex<cf_fp>;
 
+  static constexpr unsigned padding = 2;
+
   virtual std::complex<cf_fp>
   operator()(
     unsigned x,
