@@ -1023,6 +1023,109 @@ hpg::is_initialized() noexcept {
   return Impl::is_initialized();
 }
 
+rval_t<
+  std::tuple<std::string, std::vector<std::vector<DeviceCFArray::scalar_type>>>>
+DeviceCFArray::layout_for_device(
+  Device device,
+  Device host_device,
+  const CFArray& cf) {
+
+  if (host_devices().count(host_device) == 0)
+    return DisabledHostDeviceError();
+
+  std::vector<std::vector<scalar_type>> arrays;
+  switch (device) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial:
+    arrays =
+      Impl::DeviceCFArray<Device::Serial>::layout_for_device(host_device, cf);
+    break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP:
+    arrays =
+      Impl::DeviceCFArray<Device::OpenMP>::layout_for_device(host_device, cf);
+    break;
+#endif
+#ifdef HPG_ENABLE_CUDA
+  case Device::Cuda:
+    arrays =
+      Impl::DeviceCFArray<Device::Cuda>::layout_for_device(host_device, cf);
+    break;
+#endif
+#ifdef HPG_ENABLE_HPX
+  case Device::HPX:
+    arrays =
+      Impl::DeviceCFArray<Device::HPX>::layout_for_device(host_device, cf);
+    break;
+#endif
+  default:
+    assert(false);
+    break;
+  }
+  return
+    std::make_tuple(
+      Impl::construct_cf_layout_version(Impl::cf_layout_version_number, device),
+      std::move(arrays));
+}
+
+rval_t<std::unique_ptr<DeviceCFArray>>
+DeviceCFArray::create(
+  const std::string& layout,
+  unsigned oversampling,
+  std::vector<std::tuple<std::array<unsigned, 4>, std::vector<scalar_type>>>&&
+    arrays) {
+
+  auto opt_vn_dev = Impl::parsed_cf_layout_version(layout);
+  if (!opt_vn_dev)
+    return Error("Provided layout is invalid", ErrorType::InvalidCFLayout);
+  auto& [vn, opt_dev] = opt_vn_dev.value();
+  // require an exact device match in cf layout
+  if (!opt_dev)
+    return DisabledDeviceError();
+  switch (opt_dev.value()) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial:
+    return
+      std::make_unique<Impl::DeviceCFArray<Device::Serial>>(
+        layout,
+        oversampling,
+        std::move(arrays));
+#endif // HPG_ENABLE_SERIAL
+    break;
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP:
+    return
+      std::make_unique<Impl::DeviceCFArray<Device::OpenMP>>(
+        layout,
+        oversampling,
+        std::move(arrays));
+#endif // HPG_ENABLE_OPENMP
+    break;
+#ifdef HPG_ENABLE_CUDA
+  case Device::Cuda:
+    return
+      std::make_unique<Impl::DeviceCFArray<Device::Cuda>>(
+        layout,
+        oversampling,
+        std::move(arrays));
+#endif //HPG_ENABLE_CUDA
+    break;
+#ifdef HPG_ENABLE_HPX
+  case Device::HPX:
+    return
+      std::make_unique<Impl::DeviceCFArray<Device::HPX>>(
+        layout,
+        oversampling,
+        std::move(arrays));
+#endif // HPG_ENABLE_HPX
+    break;
+  default:
+    return DisabledDeviceError();
+    break;
+  }
+}
+
 // Local Variables:
 // mode: c++
 // c-basic-offset: 2

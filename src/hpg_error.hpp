@@ -13,6 +13,7 @@ enum class HPG_EXPORT ErrorType {
   DisabledHostDevice,
   IncompatibleVisVectorLengths,
   OutOfBoundsCFIndex,
+  InvalidCFLayout,
   Other
 };
 

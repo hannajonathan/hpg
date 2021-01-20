@@ -151,9 +151,11 @@ template <Device D>
 struct DeviceT {
   using kokkos_device = void;
 
-  static unsigned constexpr active_task_limit = 0;
+  static constexpr unsigned active_task_limit = 0;
 
   using stream_type = void;
+
+  static constexpr const char* const name = "";
 };
 
 #ifdef HPG_ENABLE_SERIAL
@@ -161,9 +163,11 @@ template <>
 struct DeviceT<Device::Serial> {
   using kokkos_device = K::Serial;
 
-  static unsigned constexpr active_task_limit = 1;
+  static constexpr unsigned active_task_limit = 1;
 
   using stream_type = void;
+
+  static constexpr const char* const name = "Serial";
 };
 #endif // HPG_ENABLE_SERIAL
 
@@ -172,9 +176,11 @@ template <>
 struct DeviceT<Device::OpenMP> {
   using kokkos_device = K::OpenMP;
 
-  static unsigned constexpr active_task_limit = 1;
+  static constexpr unsigned active_task_limit = 1;
 
   using stream_type = void;
+
+  static constexpr const char* const name = "OpenMP";
 };
 #endif // HPG_ENABLE_OPENMP
 
@@ -186,9 +192,11 @@ struct DeviceT<Device::Cuda> {
   // the maximum number of concurrent kernels for NVIDIA devices depends on
   // compute capability; set a large value here, much larger than any capability
   // through 8.6, and leave it to the user to limit the request
-  static unsigned constexpr active_task_limit = 1024;
+  static constexpr unsigned active_task_limit = 1024;
 
   using stream_type = cudaStream_t;
+
+  static constexpr const char* const name = "Cuda";
 
   static bool
   create_stream(stream_type& stream) {
@@ -219,6 +227,8 @@ struct DeviceT<Device::HPX> {
   static unsigned constexpr active_task_limit = 1024;
 
   using stream_type = void;
+
+  static constexpr const char* const name = "HPX";
 };
 #endif // HPG_ENABLE_HPX
 
@@ -299,6 +309,13 @@ struct GridLayout {
 #endif
   }
 };
+
+/** CFLayout version number
+ *
+ * @todo make something useful of this, maybe add a value template parameter to
+ * CFLayout?
+ */
+static constexpr unsigned cf_layout_version_number = 0;
 
 /** device-specific constant-support CF array layout */
 template <Device D>
@@ -2177,6 +2194,194 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
     });
 }
 
+static std::optional<std::tuple<unsigned, std::optional<Device>>>
+parsed_cf_layout_version(const std::string& layout) {
+  auto dash = layout.find('-');
+  std::optional<unsigned> vn;
+  if (dash != std::string::npos) {
+    try {
+      vn = std::stoi(layout.substr(0, dash));
+      if (vn.value() < 0)
+        vn.reset();
+    } catch (...) {}
+  }
+  if (vn) {
+    std::string dev = layout.substr(dash + 1);
+#ifdef HPG_ENABLE_SERIAL
+    if (dev == DeviceT<Device::Serial>::name)
+      return std::make_tuple(vn.value(), std::optional<Device>(Device::Serial));
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    if (dev == DeviceT<Device::OpenMP>::name)
+      return std::make_tuple(vn.value(), std::optional<Device>(Device::OpenMP));
+#endif
+#ifdef HPG_ENABLE_CUDA
+    if (dev == DeviceT<Device::Cuda>::name)
+      return std::make_tuple(vn.value(), std::optional<Device>(Device::Cuda));
+#endif
+#ifdef HPG_ENABLE_HPX
+    if (dev == DeviceT<Device::HPX>::name)
+      return std::make_tuple(vn.value(), std::optional<Device>(Device::HPX));
+#endif
+    return std::make_tuple(vn.value(), std::nullopt);
+  }
+  return std::nullopt;
+}
+
+static std::string
+construct_cf_layout_version(unsigned vn, Device device) {
+  std::ostringstream oss;
+  oss << vn << "-";
+  switch (device) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial:
+    oss << DeviceT<Device::Serial>::name;
+    break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP:
+    oss << DeviceT<Device::OpenMP>::name;
+    break;
+#endif
+#ifdef HPG_ENABLE_CUDA
+  case Device::Cuda:
+    oss << DeviceT<Device::Cuda>::name;
+    break;
+#endif
+#ifdef HPG_ENABLE_HPX
+  case Device::HPX:
+    oss << DeviceT<Device::HPX>::name;
+    break;
+#endif
+  default:
+    assert(false);
+    break;
+  }
+  return oss.str();
+}
+
+/** device-specific implementation sub-class of hpg::DeviceCFArray class */
+template <Device D>
+class DeviceCFArray
+  : public hpg::DeviceCFArray {
+public:
+
+  // notice layout for device D, but in HostSpace
+  using cfd_view_h = cf_view<typename CFLayout<D>::layout, K::HostSpace>;
+
+  /** layout version string */
+  std::string m_version;
+  /** oversampling factor */
+  unsigned m_oversampling;
+  /** extents by group */
+  std::vector<std::array<unsigned, 4>> m_extents;
+  /** buffers in host memory with CF values */
+  std::vector<std::vector<scalar_type>> m_arrays;
+  /** Views of host memory buffers */
+  std::vector<cfd_view_h> m_views;
+
+  static std::vector<std::vector<scalar_type>>
+  layout_for_device(Device host_device, const CFArray& cf) {
+
+    std::vector<std::vector<scalar_type>> result;
+
+    for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
+      auto layout = CFLayout<D>::dimensions(&cf, grp);
+      // TODO: it would be best to use the following to compute
+      // allocation size, but it is not implemented in Kokkos
+      // 'auto alloc_sz = cfd_view_h::required_allocation_size(layout)'
+      auto alloc_sz =
+        cf_view<typename DeviceT<D>::kokkos_device::array_layout, K::HostSpace>
+        ::required_allocation_size(
+          layout.dimension[0],
+          layout.dimension[1],
+          layout.dimension[2],
+          layout.dimension[3],
+          layout.dimension[4],
+          layout.dimension[5]);
+      result.emplace_back(((alloc_sz + (sizeof(cf_t) - 1)) / sizeof(cf_t)));
+      cfd_view_h cfd(reinterpret_cast<cf_t*>(result.back().data()), layout);
+      switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+      case Device::Serial:
+        init_cf_host<Device::Serial>(cfd, cf, grp);
+        break;
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_OPENMP
+      case Device::OpenMP:
+        init_cf_host<Device::OpenMP>(cfd, cf, grp);
+        break;
+#endif // HPG_ENABLE_SERIAL
+      default:
+        assert(false);
+        break;
+      }
+    }
+    return result;
+  }
+
+  DeviceCFArray(
+    const std::string& version,
+    unsigned oversampling,
+    std::vector<std::tuple<std::array<unsigned, 4>, std::vector<scalar_type>>>&&
+      arrays)
+    : m_version(version)
+    , m_oversampling(oversampling) {
+
+    for (auto&& e_v : arrays) {
+      m_extents.push_back(std::get<0>(e_v));
+      m_arrays.push_back(std::get<1>(std::move(e_v)));
+      m_views.emplace_back(
+        reinterpret_cast<cf_t*>(m_arrays.back().data()),
+        CFLayout<D>::dimensions(this, m_extents.size() - 1));
+    }
+  }
+
+  virtual ~DeviceCFArray() {}
+
+  unsigned
+  oversampling() const override {
+    return m_oversampling;
+  }
+
+  unsigned
+  num_groups() const override {
+    return m_arrays.size();
+  }
+
+  std::array<unsigned, 4>
+  extents(unsigned grp) const override {
+    return m_extents[grp];
+  }
+
+  const char*
+  layout() const override {
+    return m_version.c_str();
+  }
+
+  std::complex<cf_fp>
+  operator()(
+    unsigned x,
+    unsigned y,
+    unsigned mrow,
+    unsigned cube,
+    unsigned grp) const override {
+    return
+      m_views[grp](
+        x / m_oversampling,
+        y / m_oversampling,
+        mrow,
+        x % m_oversampling,
+        y % m_oversampling,
+        cube);
+  }
+
+  Device
+  device() const override {
+    return D;
+  }
+};
+
 /** names for stream states */
 enum class StreamPhase {
   COPY,
@@ -2201,6 +2406,7 @@ struct StateT;
 
 template <Device D>
 struct CFPool final {
+
   using kokkos_device = typename DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
@@ -2212,7 +2418,7 @@ struct CFPool final {
   unsigned num_cf_groups;
   unsigned max_cf_extent_y;
   K::Array<cfd_view, HPG_MAX_NUM_CF_GROUPS> cf_d; // unmanaged (in pool)
-  K::Array<cfh_view, HPG_MAX_NUM_CF_GROUPS> cf_h; // managed
+  std::vector<std::any> cf_h;
   K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS> cf_radii;
 
   CFPool()
@@ -2220,10 +2426,8 @@ struct CFPool final {
     , num_cf_groups(0)
     , max_cf_extent_y(0) {
 
-    for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i) {
+    for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i)
       cf_d[i] = cfd_view();
-      cf_h[i] = cfh_view();
-    }
   }
 
   CFPool(StateT<D>* st)
@@ -2231,10 +2435,8 @@ struct CFPool final {
     , num_cf_groups(0)
     , max_cf_extent_y(0) {
 
-    for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i) {
+    for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i)
       cf_d[i] = cfd_view();
-      cf_h[i] = cfh_view();
-    }
   }
 
   CFPool(const CFPool& other)
@@ -2370,11 +2572,11 @@ struct CFPool final {
   add_cf_group(
     const std::array<unsigned, 2>& radii,
     cfd_view cfd,
-    cfh_view cfh) {
+    std::any cfh) {
 
     assert(num_cf_groups < HPG_MAX_NUM_CF_GROUPS);
     cf_d[num_cf_groups] = cfd;
-    cf_h[num_cf_groups] = cfh;
+    cf_h.push_back(cfh);
     cf_radii[num_cf_groups] =
       {static_cast<int>(radii[0]), static_cast<int>(radii[1])};
     ++num_cf_groups;
@@ -2383,14 +2585,99 @@ struct CFPool final {
   }
 
   void
+  add_host_cfs(Device host_device, execution_space espace, CFArray&& cf_array) {
+    prepare_pool(&cf_array);
+    size_t offset = 0;
+    for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
+      cfd_view cf_init(
+        pool.data() + offset,
+        CFLayout<D>::dimensions(&cf_array, grp));
+#ifndef NDEBUG
+      std::cout << "alloc cf sz " << cf_init.extent(0)
+                << " " << cf_init.extent(1)
+                << " " << cf_init.extent(2)
+                << " " << cf_init.extent(3)
+                << " " << cf_init.extent(4)
+                << " " << cf_init.extent(5)
+                << std::endl;
+      std::cout << "alloc cf str " << cf_init.stride(0)
+                << " " << cf_init.stride(1)
+                << " " << cf_init.stride(2)
+                << " " << cf_init.stride(3)
+                << " " << cf_init.stride(4)
+                << " " << cf_init.stride(5)
+                << std::endl;
+#endif // NDEBUG
+
+      typename decltype(cf_init)::HostMirror cf_h;
+      switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+      case Device::Serial:
+        cf_h = K::create_mirror_view(cf_init);
+        init_cf_host<Device::Serial>(cf_h, cf_array, grp);
+        K::deep_copy(espace, cf_init, cf_h);
+        break;
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_OPENMP
+      case Device::OpenMP:
+        cf_h = K::create_mirror_view(cf_init);
+        init_cf_host<Device::OpenMP>(cf_h, cf_array, grp);
+        K::deep_copy(espace, cf_init, cf_h);
+        break;
+#endif // HPG_ENABLE_SERIAL
+      default:
+        assert(false);
+        break;
+      }
+      offset += cf_size(&cf_array, grp);
+      add_cf_group(cf_array.radii(grp), cf_init, cf_h);
+    }
+  }
+
+  void
+  add_device_cfs(execution_space espace, DeviceCFArray<D>&& cf_array) {
+    prepare_pool(&cf_array);
+    size_t offset = 0;
+    for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
+      cfd_view cf_init(
+        pool.data() + offset,
+        CFLayout<D>::dimensions(&cf_array, grp));
+#ifndef NDEBUG
+      std::cout << "alloc cf sz " << cf_init.extent(0)
+                << " " << cf_init.extent(1)
+                << " " << cf_init.extent(2)
+                << " " << cf_init.extent(3)
+                << " " << cf_init.extent(4)
+                << " " << cf_init.extent(5)
+                << std::endl;
+      std::cout << "alloc cf str " << cf_init.stride(0)
+                << " " << cf_init.stride(1)
+                << " " << cf_init.stride(2)
+                << " " << cf_init.stride(3)
+                << " " << cf_init.stride(4)
+                << " " << cf_init.stride(5)
+                << std::endl;
+#endif // NDEBUG
+
+      K::deep_copy(espace, cf_init, cf_array.m_views[grp]);
+      offset += cf_size(&cf_array, grp);
+      add_cf_group(
+        cf_array.radii(grp),
+        cf_init,
+        std::make_tuple(
+          std::move(cf_array.m_arrays[grp]),
+          cf_array.m_views[grp]));
+    }
+  }
+
+  void
   reset(bool free_pool = true) {
     if (state && pool.is_allocated()) {
       if (free_pool)
         pool = decltype(pool)();
-      for (size_t i = 0; i < num_cf_groups; ++i) {
-        cf_h[i] = cfh_view();
+      cf_h.clear();
+      for (size_t i = 0; i < num_cf_groups; ++i)
         cf_d[i] = cfd_view();
-      }
       num_cf_groups = 0;
     }
   }
@@ -2577,55 +2864,12 @@ public:
     switch_cf_pool();
     auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
-    cf.prepare_pool(&cf_array);
-
-    size_t offset = 0;
-    for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
-      cf_view<typename CFLayout<D>::layout, memory_space>
-        cf_init(
-          cf.pool.data() + offset,
-          CFLayout<D>::dimensions(&cf_array, grp));
-#ifndef NDEBUG
-      std::cout << "alloc cf sz " << cf_init.extent(0)
-                << " " << cf_init.extent(1)
-                << " " << cf_init.extent(2)
-                << " " << cf_init.extent(3)
-                << " " << cf_init.extent(4)
-                << " " << cf_init.extent(5)
-                << std::endl;
-      std::cout << "alloc cf str " << cf_init.stride(0)
-                << " " << cf_init.stride(1)
-                << " " << cf_init.stride(2)
-                << " " << cf_init.stride(3)
-                << " " << cf_init.stride(4)
-                << " " << cf_init.stride(5)
-                << std::endl;
-#endif // NDEBUG
-
-      typename decltype(cf_init)::HostMirror cf_h;
-      switch (host_device) {
-#ifdef HPG_ENABLE_SERIAL
-      case Device::Serial: {
-        cf_h = K::create_mirror_view(cf_init);
-        init_cf_host<Device::Serial>(cf_h, cf_array, grp);
-        K::deep_copy(exec.space, cf_init, cf_h);
-        break;
-      }
-#endif // HPG_ENABLE_SERIAL
-#ifdef HPG_ENABLE_OPENMP
-      case Device::OpenMP: {
-        cf_h = K::create_mirror_view(cf_init);
-        init_cf_host<Device::OpenMP>(cf_h, cf_array, grp);
-        K::deep_copy(exec.space, cf_init, cf_h);
-        break;
-      }
-#endif // HPG_ENABLE_SERIAL
-      default:
-        assert(false);
-        break;
-      }
-      offset += cf.cf_size(&cf_array, grp);
-      cf.add_cf_group(cf_array.radii(grp), cf_init, cf_h);
+    try {
+      cf.add_device_cfs(
+        exec.space,
+        std::move(dynamic_cast<DeviceCFArray<D>&&>(cf_array)));
+    } catch (const std::bad_cast&) {
+      cf.add_host_cfs(host_device, exec.space, std::move(cf_array));
     }
     return std::nullopt;
   }

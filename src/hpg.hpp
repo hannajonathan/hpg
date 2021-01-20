@@ -77,6 +77,8 @@ devices() noexcept;
 HPG_EXPORT const std::set<Device>&
 host_devices() noexcept;
 
+const char* cf_layout_unspecified_version = "";
+
 /** hpg scope object
  *
  * Intended to help avoid errors caused by objects that exist after the call
@@ -202,6 +204,11 @@ public:
   using value_type = std::complex<cf_fp>;
 
   static constexpr unsigned padding = 2;
+
+  virtual const char*
+  layout() const {
+    return cf_layout_unspecified_version;
+  }
 
   virtual std::complex<cf_fp>
   operator()(
