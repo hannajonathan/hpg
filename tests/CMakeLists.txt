@@ -14,6 +14,10 @@ add_executable(GridArraysUnitTests GridArraysUnitTests.cc)
 target_link_libraries(GridArraysUnitTests hpg gtest_main)
 add_test(NAME GridArraysUnitTests COMMAND GridArraysUnitTests)
 
+add_executable(DeviceCFArrayUnitTests DeviceCFArrayUnitTests.cc)
+target_link_libraries(DeviceCFArrayUnitTests hpg gtest_main)
+add_test(NAME DeviceCFArrayUnitTests COMMAND DeviceCFArrayUnitTests)
+
 # basic test application
 #
 add_executable(test0 test.cc)
