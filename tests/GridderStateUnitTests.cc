@@ -246,8 +246,6 @@ struct ConeCFArray final
       minor[1] = m_oversampling + minor_shift[1];
       major[1] -= 1;
     }
-    std::cout << "M0 " << major[0] << "," << major[1] << std::endl
-              << "m0 " << minor[0] << "," << minor[1] << std::endl;
     int cfsz = 2 * m_oversampled_radius + 1;
     std::complex<hpg::grid_value_fp> gvis(vis);
     bool result = true;
@@ -263,12 +261,6 @@ struct ConeCFArray final
           cf = (*this)(xf, yf);
         cf *= gvis;
         result = near(g, cf);
-        if (!result)
-          std::cout << "(" << x << "," << y << "), "
-                    << "(" << xf << "," << yf << "): "
-                    << g
-                    << "; " << cf
-                    << std::endl;
       }
     return result;
   }
@@ -1185,74 +1177,6 @@ TEST(GridderState, Batching) {
               return std::move(g).grid_values();
             })));
   EXPECT_TRUE(values_eq(gv_small.get(), gv_large.get()));
-}
-
-TEST(GridderState, GridOne) {
-  const std::array<unsigned, 4> grid_size{16384, 16384, 1, 1};
-  const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
-  constexpr unsigned cf_radius = 45;
-  constexpr unsigned cf_oversampling = 20;
-  constexpr hpg::vis_frequency_fp freq = 3.629e+09;
-  constexpr std::complex<hpg::visibility_fp> vis(-0.211675,0.30002);
-  constexpr hpg::vis_weight_fp wgt = 1.0;
-  const hpg::vis_uvw_t uvw{2344.1, 638.066, -1826.55};
-
-  ConeCFArray cf(cf_oversampling, cf_radius);
-
-  auto test =
-    hpg::RvalM<void, hpg::GridderState>::pure(
-      [=]() {
-        return
-          hpg::GridderState::create(
-            default_device,
-            0,
-            1,
-            static_cast<const hpg::CFArray*>(&cf),
-            grid_size,
-            grid_scale);
-      })
-    .and_then(
-      [=](auto&& gs) {
-        return
-          std::move(gs)
-          .set_convolution_function(default_host_device, ConeCFArray(cf));
-      })
-    .and_then(
-      [=](auto&& gs) {
-        return
-          std::move(gs)
-          .grid_visibilities(
-            default_host_device,
-            {vis},
-            {0},
-            {{0, 0}},
-            {wgt},
-            {freq},
-            {0.0},
-            {uvw});
-      })
-    .map(
-      [](auto&& gs) {
-        auto [gs1, gv] = std::move(gs).grid_values();
-        auto [gs2, gw] = std::move(gs1).grid_weights();
-        return std::make_tuple(std::move(gv), std::move(gw));
-      });
-  ;
-  const std::array<float, 2> fine_scale{
-    grid_scale[0] * cf_oversampling,
-    grid_scale[1] * cf_oversampling
-  };
-  auto err_or_result = test();
-  ASSERT_TRUE(hpg::is_value(err_or_result));
-  auto [v, w] = hpg::get_value(std::move(err_or_result));
-  EXPECT_TRUE(
-    cf.verify_gridded_vis(
-      v.get(),
-      grid_size,
-      grid_scale,
-      vis,
-      freq,
-      uvw));
 }
 
 TEST(GridderState, Gridding) {
