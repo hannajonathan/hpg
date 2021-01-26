@@ -159,6 +159,12 @@ sgn(T val) {
 }
 } // end namespace Impl
 
+/** array layout enumeration */
+enum class Layout {
+  Right, /**< C order: rightmost index has smallest stride */
+  Left, /**< FORTRAN order: leftmost index has smallest stride */
+};
+
 /** shape of a convolution function
  *
  * This class is primarily of use as an argument to describe the maximum
