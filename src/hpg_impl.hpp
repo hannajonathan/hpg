@@ -772,7 +772,7 @@ struct HPG_EXPORT VisibilityGridder final {
     K::parallel_for(
       K::TeamVectorRange(team_member, N_Y),
       [=](const int Y) {
-        phi_Y[Y] = phi_Y0 + Y * dphi_Y;
+        phi_Y(Y) = phi_Y0 + Y * dphi_Y;
       });
     team_member.team_barrier();
 
@@ -790,7 +790,7 @@ struct HPG_EXPORT VisibilityGridder final {
           for (int Y = 0; Y < N_Y; ++Y) {
             cf_t cfv = cf(X, Y, R, vis.minor[0], vis.minor[1], cf_cube);
             cfv.imag() *= vis.cf_im_factor;
-            auto screen = cphase<execution_space>(phi_X + phi_Y[Y]);
+            auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
             pseudo_atomic_add<execution_space>(
               grid(vis.major[0] + X, vis.major[1] + Y, R, vis.grid_cube),
               gv_t(cfv * screen * vis.value));
