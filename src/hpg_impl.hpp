@@ -1784,7 +1784,6 @@ public:
     return grid(x, y, mrow, cube);
   }
 
-
   template <Device H>
   void
   copy_into(scalar_type* dst, Layout layout) const {
@@ -1801,10 +1800,10 @@ public:
         typename grid_t::data_type,
         K::LayoutLeft,
         typename grid_t::memory_space,
-        K::MemoryTraits<K::Unmanaged>> buff(
+        K::MemoryTraits<K::Unmanaged>> dstv(
           reinterpret_cast<typename grid_t::pointer_type>(dst),
           grid.extent(0), grid.extent(1), grid.extent(2), grid.extent(3));
-      K::deep_copy(espace, buff, grid);
+      K::deep_copy(espace, dstv, grid);
       espace.fence();
       break;
     }
@@ -1813,10 +1812,10 @@ public:
         typename grid_t::data_type,
         K::LayoutRight,
         typename grid_t::memory_space,
-        K::MemoryTraits<K::Unmanaged>> buff(
+        K::MemoryTraits<K::Unmanaged>> dstv(
           reinterpret_cast<typename grid_t::pointer_type>(dst),
           grid.extent(0), grid.extent(1), grid.extent(2), grid.extent(3));
-      K::deep_copy(espace, buff, grid);
+      K::deep_copy(espace, dstv, grid);
       espace.fence();
       break;
     }
@@ -1877,6 +1876,70 @@ class HPG_EXPORT GridWeightViewArray final
   operator()(unsigned mrow, unsigned cube) const override {
 
     return weight(mrow, cube);
+  }
+
+  template <Device H>
+  void
+  copy_into(scalar_type* dst, Layout layout) const {
+
+    // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
+    // (otherwise, the following is broken, not least because it may result in
+    // an out-of-bounds access on dst)
+
+    auto espace = typename DeviceT<H>::kokkos_device::execution_space();
+
+    switch (layout) {
+    case Layout::Left: {
+      K::View<
+        typename weight_t::data_type,
+        K::LayoutLeft,
+        typename weight_t::memory_space,
+        K::MemoryTraits<K::Unmanaged>> dstv(
+          reinterpret_cast<typename weight_t::pointer_type>(dst),
+          weight.extent(0), weight.extent(1));
+      K::deep_copy(espace, dstv, weight);
+      espace.fence();
+      break;
+    }
+    case Layout::Right: {
+      K::View<
+        typename weight_t::data_type,
+        K::LayoutRight,
+        typename weight_t::memory_space,
+        K::MemoryTraits<K::Unmanaged>> dstv(
+          reinterpret_cast<typename weight_t::pointer_type>(dst),
+          weight.extent(0), weight.extent(1));
+      K::deep_copy(espace, dstv, weight);
+      espace.fence();
+      break;
+    }
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+  void
+  copy_into(
+    Device host_device,
+    scalar_type* dst,
+    Layout layout) const override {
+
+    switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+    case Device::Serial:
+      copy_into<Device::Serial>(dst, layout);
+      break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    case Device::OpenMP:
+      copy_into<Device::OpenMP>(dst, layout);
+      break;
+#endif
+    default:
+      assert(false);
+      break;
+    }
   }
 };
 

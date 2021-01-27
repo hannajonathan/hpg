@@ -267,6 +267,17 @@ public:
   virtual grid_value_fp
   operator()(unsigned mrow, unsigned cube) const = 0;
 
+  virtual void
+  copy_into(
+    Device host_device,
+    scalar_type* dst,
+    Layout layout = Layout::Left) const = 0;
+
+  virtual size_t
+  min_buffer_size() const {
+    return extent(0) * extent(1);
+  }
+
   virtual ~GridWeightArray() {}
 };
 
