@@ -1762,8 +1762,7 @@ public:
 
   using memory_space = typename DeviceT<D>::kokkos_device::memory_space;
   using layout = typename GridLayout<D>::layout;
-  using grid_t =
-    typename const_grid_view<layout, memory_space>::host_mirror_type;
+  using grid_t = typename const_grid_view<layout, memory_space>::HostMirror;
 
   grid_t grid;
 
@@ -1786,7 +1785,7 @@ public:
 
   template <Device H>
   void
-  copy_to(scalar_type* dst, Layout layout) const {
+  copy_to(scalar_type* dst, Layout lyo) const {
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
     // (otherwise, the following is broken, not least because it may result in
@@ -1794,7 +1793,7 @@ public:
 
     auto espace = typename DeviceT<H>::kokkos_device::execution_space();
 
-    switch (layout) {
+    switch (lyo) {
     case Layout::Left: {
       K::View<
         typename grid_t::data_type,
@@ -1826,21 +1825,102 @@ public:
   }
 
   void
-  copy_to(Device host_device, scalar_type* dst, Layout layout) const override {
+  copy_to(Device host_device, scalar_type* dst, Layout lyo) const override {
 
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial:
-      copy_to<Device::Serial>(dst, layout);
+      copy_to<Device::Serial>(dst, lyo);
       break;
 #endif
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP:
-      copy_to<Device::OpenMP>(dst, layout);
+      copy_to<Device::OpenMP>(dst, lyo);
       break;
 #endif
     default:
       assert(false);
+      break;
+    }
+  }
+
+  template <Device H>
+  static std::unique_ptr<GridValueViewArray>
+  copy_from(
+    const std::string& name,
+    scalar_type* src,
+    const std::array<unsigned, rank>& extents,
+    Layout lyo) {
+
+    std::array<int, rank> iext{
+      static_cast<int>(extents[0]),
+      static_cast<int>(extents[1]),
+      static_cast<int>(extents[2]),
+      static_cast<int>(extents[3])};
+    grid_t grid(
+      K::ViewAllocateWithoutInitializing(name),
+      GridLayout<D>::dimensions(iext));
+
+    // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
+    // (otherwise, the following is broken, not least because it may result in
+    // an out-of-bounds access on dst)
+
+    auto espace = typename DeviceT<H>::kokkos_device::execution_space();
+
+    switch (lyo) {
+    case Layout::Left: {
+      K::View<
+        typename grid_t::data_type,
+        K::LayoutLeft,
+        typename grid_t::memory_space,
+        K::MemoryTraits<K::Unmanaged>> srcv(
+          reinterpret_cast<typename grid_t::pointer_type>(src),
+          grid.extent(0), grid.extent(1), grid.extent(2), grid.extent(3));
+      K::deep_copy(espace, grid, srcv);
+      espace.fence();
+      break;
+    }
+    case Layout::Right: {
+      K::View<
+        typename grid_t::data_type,
+        K::LayoutRight,
+        typename grid_t::memory_space,
+        K::MemoryTraits<K::Unmanaged>> srcv(
+          reinterpret_cast<typename grid_t::pointer_type>(src),
+          grid.extent(0), grid.extent(1), grid.extent(2), grid.extent(3));
+      K::deep_copy(espace, grid, srcv);
+      espace.fence();
+      break;
+    }
+    default:
+      assert(false);
+      break;
+    }
+    return std::make_unique<GridValueViewArray>(grid);
+  }
+
+  static std::unique_ptr<GridValueViewArray>
+  copy_from(
+    const std::string& name,
+    Device host_device,
+    scalar_type* src,
+    const std::array<unsigned, rank>& extents,
+    Layout lyo) {
+
+    switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+    case Device::Serial:
+      return copy_from<Device::Serial>(name, src, extents, lyo);
+      break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    case Device::OpenMP:
+      return copy_from<Device::OpenMP>(name, src, extents, lyo);
+      break;
+#endif
+    default:
+      assert(false);
+      return nullptr;
       break;
     }
   }
@@ -1854,8 +1934,7 @@ class HPG_EXPORT GridWeightViewArray final
 
   using memory_space = typename DeviceT<D>::kokkos_device::memory_space;
   using layout = typename DeviceT<D>::kokkos_device::array_layout;
-  using weight_t =
-    typename const_weight_view<layout, memory_space>::host_mirror_type;
+  using weight_t = typename const_weight_view<layout, memory_space>::HostMirror;
 
   weight_t weight;
 
@@ -1877,7 +1956,7 @@ class HPG_EXPORT GridWeightViewArray final
 
   template <Device H>
   void
-  copy_to(scalar_type* dst, Layout layout) const {
+  copy_to(scalar_type* dst, Layout lyo) const {
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
     // (otherwise, the following is broken, not least because it may result in
@@ -1885,7 +1964,7 @@ class HPG_EXPORT GridWeightViewArray final
 
     auto espace = typename DeviceT<H>::kokkos_device::execution_space();
 
-    switch (layout) {
+    switch (lyo) {
     case Layout::Left: {
       K::View<
         typename weight_t::data_type,
@@ -1917,21 +1996,102 @@ class HPG_EXPORT GridWeightViewArray final
   }
 
   void
-  copy_to(Device host_device, scalar_type* dst, Layout layout) const override {
+  copy_to(Device host_device, scalar_type* dst, Layout lyo) const override {
 
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial:
-      copy_to<Device::Serial>(dst, layout);
+      copy_to<Device::Serial>(dst, lyo);
       break;
 #endif
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP:
-      copy_to<Device::OpenMP>(dst, layout);
+      copy_to<Device::OpenMP>(dst, lyo);
       break;
 #endif
     default:
       assert(false);
+      break;
+    }
+  }
+
+  template <Device H>
+  static std::unique_ptr<GridWeightViewArray>
+  copy_from(
+    const std::string& name,
+    scalar_type* src,
+    const std::array<unsigned, rank>& extents,
+    Layout lyo) {
+
+    // std::array<int, rank> iext{
+    //   static_cast<int>(extents[0]),
+    //   static_cast<int>(extents[1]),
+    //   static_cast<int>(extents[2]),
+    //   static_cast<int>(extents[3])};
+    weight_t weight(
+      K::ViewAllocateWithoutInitializing(name),
+      layout(extents[0], extents[1]));
+
+    // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
+    // (otherwise, the following is broken, not least because it may result in
+    // an out-of-bounds access on dst)
+
+    auto espace = typename DeviceT<H>::kokkos_device::execution_space();
+
+    switch (lyo) {
+    case Layout::Left: {
+      K::View<
+        typename weight_t::data_type,
+        K::LayoutLeft,
+        typename weight_t::memory_space,
+        K::MemoryTraits<K::Unmanaged>> srcv(
+          reinterpret_cast<typename weight_t::pointer_type>(src),
+          weight.extent(0), weight.extent(1));
+      K::deep_copy(espace, weight, srcv);
+      espace.fence();
+      break;
+    }
+    case Layout::Right: {
+      K::View<
+        typename weight_t::data_type,
+        K::LayoutRight,
+        typename weight_t::memory_space,
+        K::MemoryTraits<K::Unmanaged>> srcv(
+          reinterpret_cast<typename weight_t::pointer_type>(src),
+          weight.extent(0), weight.extent(1));
+      K::deep_copy(espace, weight, srcv);
+      espace.fence();
+      break;
+    }
+    default:
+      assert(false);
+      break;
+    }
+    return std::make_unique<GridWeightViewArray>(weight);
+  }
+
+  static std::unique_ptr<GridWeightViewArray>
+  copy_from(
+    const std::string& name,
+    Device host_device,
+    scalar_type* src,
+    const std::array<unsigned, rank>& extents,
+    Layout lyo) {
+
+    switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+    case Device::Serial:
+      return copy_from<Device::Serial>(name, src, extents, lyo);
+      break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    case Device::OpenMP:
+      return copy_from<Device::OpenMP>(name, src, extents, lyo);
+      break;
+#endif
+    default:
+      assert(false);
+      return nullptr;
       break;
     }
   }
@@ -3105,6 +3265,129 @@ private:
 };
 
 } // end namespace Impl
+
+std::unique_ptr<GridValueArray>
+GridValueArray::copy_from(
+  const std::string& name,
+  Device target_device,
+  Device host_device,
+  scalar_type* src,
+  const std::array<unsigned, GridValueArray::rank>& extents,
+  Layout layout) {
+
+  switch (target_device) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial:
+    return
+      Impl::GridValueViewArray<Device::Serial>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP:
+    return
+      Impl::GridValueViewArray<Device::OpenMP>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_CUDA
+  case Device::Cuda:
+    return
+      Impl::GridValueViewArray<Device::Cuda>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_HPX
+  case Device::HPX:
+    return
+      Impl::GridValueViewArray<Device::HPX>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+  default:
+    assert(false);
+    return nullptr;
+    break;
+  }
+}
+
+std::unique_ptr<GridWeightArray>
+GridWeightArray::copy_from(
+  const std::string& name,
+  Device target_device,
+  Device host_device,
+  scalar_type* src,
+  const std::array<unsigned, GridWeightArray::rank>& extents,
+  Layout layout) {
+
+  switch (target_device) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial:
+    return
+      Impl::GridWeightViewArray<Device::Serial>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP:
+    return
+      Impl::GridWeightViewArray<Device::OpenMP>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_CUDA
+  case Device::Cuda:
+    return
+      Impl::GridWeightViewArray<Device::Cuda>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_HPX
+  case Device::HPX:
+    return
+      Impl::GridWeightViewArray<Device::HPX>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+  default:
+    assert(false);
+    return nullptr;
+    break;
+  }
+}
+
 } // end namespace hpg
 
 // Local Variables:

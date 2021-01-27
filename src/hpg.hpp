@@ -248,6 +248,15 @@ public:
   }
 
   virtual ~GridValueArray() {}
+
+  static std::unique_ptr<GridValueArray>
+  copy_from(
+    const std::string& name,
+    Device target_device,
+    Device host_device,
+    scalar_type* src,
+    const std::array<unsigned, rank>& extents,
+    Layout layout = Layout::Left);
 };
 
 /** wrapper for access to copy of grid weights
@@ -279,6 +288,15 @@ public:
   }
 
   virtual ~GridWeightArray() {}
+
+  static std::unique_ptr<GridWeightArray>
+  copy_from(
+    const std::string& name,
+    Device target_device,
+    Device host_device,
+    scalar_type* src,
+    const std::array<unsigned, rank>& extents,
+    Layout layout = Layout::Left);
 };
 
 class HPG_EXPORT Gridder;
