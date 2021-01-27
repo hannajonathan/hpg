@@ -10,6 +10,10 @@ add_executable(CFIndexerUnitTests CFIndexerUnitTests.cc)
 target_link_libraries(CFIndexerUnitTests hpg gtest_main)
 add_test(NAME CFIndexerUnitTests COMMAND CFIndexerUnitTests)
 
+add_executable(GridArraysUnitTests GridArraysUnitTests.cc)
+target_link_libraries(GridArraysUnitTests hpg gtest_main)
+add_test(NAME GridArraysUnitTests COMMAND GridArraysUnitTests)
+
 # basic test application
 #
 add_executable(test0 test.cc)
