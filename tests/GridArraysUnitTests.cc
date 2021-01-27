@@ -271,7 +271,7 @@ grid_weight_encode(unsigned mr, unsigned cb) {
   return hpg::grid_value_fp(1000 * mr) +  hpg::grid_value_fp(cb);
 }
 
-TEST(GridArrays, ValuesLayouts) {
+TEST(GridArrays, CopyToValuesLayouts) {
   std::array<unsigned, 4> grid_size{8, 8, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   auto padding = 2 * hpg::CFArray::padding;
@@ -339,7 +339,124 @@ TEST(GridArrays, ValuesLayouts) {
   }
 }
 
-TEST(GridArrays, WeightsLayouts) {
+TEST(GridArrays, CopyFromValuesLayouts) {
+  std::array<unsigned, 4> grid_size{8, 8, 4, 3};
+
+  auto gvals_sz = grid_size[0] * grid_size[1] * grid_size[2] * grid_size[3];
+  // copy grid values from left layout, and check results
+  {
+    std::vector<hpg::GridValueArray::scalar_type> gvals_left(gvals_sz);
+    for (unsigned x = 0; x < grid_size[0]; ++x)
+      for (unsigned y = 0; y < grid_size[1]; ++y)
+        for (unsigned mr = 0; mr < grid_size[2]; ++mr)
+          for (unsigned cb = 0; cb < grid_size[3]; ++cb)
+            gvals_left[
+              x + grid_size[0] * (y + grid_size[1] * (mr + grid_size[2] * cb))]
+              = grid_value_encode(x, y, mr, cb);
+    auto gvals =
+      hpg::GridValueArray::copy_from(
+        "v0",
+        default_device,
+        default_host_device,
+        gvals_left.data(),
+        grid_size,
+        hpg::Layout::Left);
+
+    bool eq = true;
+    for (unsigned x = 0; eq && x < grid_size[0]; ++x)
+      for (unsigned y = 0; eq && y < grid_size[1]; ++y)
+        for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
+          for (unsigned cb = 0; eq && cb < grid_size[3]; ++cb) {
+            auto val = grid_value_encode(x, y, mr, cb);
+            EXPECT_EQ((*gvals)(x, y, mr, cb), val);
+            eq = ((*gvals)(x, y, mr, cb) == val);
+          }
+  }
+  // copy grid values to right layout, and check results
+  {
+    std::vector<hpg::GridValueArray::scalar_type> gvals_right(gvals_sz);
+    for (unsigned x = 0; x < grid_size[0]; ++x)
+      for (unsigned y = 0; y < grid_size[1]; ++y)
+        for (unsigned mr = 0; mr < grid_size[2]; ++mr)
+          for (unsigned cb = 0; cb < grid_size[3]; ++cb)
+            gvals_right[
+              cb + grid_size[3] * (mr + grid_size[2] * (y + grid_size[1] * x))]
+              = grid_value_encode(x, y, mr, cb);
+
+    auto gvals =
+      hpg::GridValueArray::copy_from(
+        "v1",
+        default_device,
+        default_host_device,
+        gvals_right.data(),
+        grid_size,
+        hpg::Layout::Right);
+
+    bool eq = true;
+    for (unsigned x = 0; eq && x < grid_size[0]; ++x)
+      for (unsigned y = 0; eq && y < grid_size[1]; ++y)
+        for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
+          for (unsigned cb = 0; eq && cb < grid_size[3]; ++cb) {
+            auto val = grid_value_encode(x, y, mr, cb);
+            EXPECT_EQ((*gvals)(x, y, mr, cb), val);
+            eq = ((*gvals)(x, y, mr, cb) == val);
+          }
+  }
+}
+
+TEST(GridArrays, CopyFromWeightsLayouts) {
+  std::array<unsigned, 2> grid_size{4, 3};
+
+  auto gwgts_sz = grid_size[0] * grid_size[1];
+  // copy grid weights from left layout, and check results
+  {
+    std::vector<hpg::GridWeightArray::scalar_type> gwgts_left(gwgts_sz);
+    for (unsigned mr = 0; mr < grid_size[0]; ++mr)
+      for (unsigned cb = 0; cb < grid_size[1]; ++cb)
+        gwgts_left[mr + grid_size[0] * cb] = grid_weight_encode(mr, cb);
+    auto gwgts =
+      hpg::GridWeightArray::copy_from(
+        "w0",
+        default_device,
+        default_host_device,
+        gwgts_left.data(),
+        grid_size,
+        hpg::Layout::Left);
+
+    bool eq = true;
+    for (unsigned mr = 0; eq && mr < grid_size[0]; ++mr)
+      for (unsigned cb = 0; eq && cb < grid_size[1]; ++cb) {
+        auto wgt = grid_weight_encode(mr, cb);
+        EXPECT_EQ((*gwgts)(mr, cb), wgt);
+        eq = ((*gwgts)(mr, cb) == wgt);
+      }
+  }
+  // copy grid weights to right layout, and check results
+  {
+    std::vector<hpg::GridWeightArray::scalar_type> gwgts_right(gwgts_sz);
+    for (unsigned mr = 0; mr < grid_size[0]; ++mr)
+      for (unsigned cb = 0; cb < grid_size[1]; ++cb)
+        gwgts_right[cb + grid_size[1] * mr] = grid_weight_encode(mr, cb);
+
+    auto gwgts =
+      hpg::GridWeightArray::copy_from(
+        "w1",
+        default_device,
+        default_host_device,
+        gwgts_right.data(),
+        grid_size,
+        hpg::Layout::Right);
+
+    bool eq = true;
+    for (unsigned mr = 0; eq && mr < grid_size[0]; ++mr)
+      for (unsigned cb = 0; eq && cb < grid_size[1]; ++cb) {
+        auto wgt = grid_weight_encode(mr, cb);
+        EXPECT_EQ((*gwgts)(mr, cb), wgt);
+        eq = ((*gwgts)(mr, cb) == wgt);
+      }
+  }
+}
+TEST(GridArrays, CopyToWeightsLayouts) {
   std::array<unsigned, 4> grid_size{8, 8, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   auto padding = 2 * hpg::CFArray::padding;
