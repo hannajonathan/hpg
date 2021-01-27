@@ -261,50 +261,155 @@ has_non_zero(const T* array) {
   return false;
 }
 
-template <typename T>
-bool
-values_eq(const T* array0, const T* array1) {
-  if constexpr (T::rank == 2) {
-    if (array0->extent(0) != array1->extent(0)
-        || array0->extent(1) != array1->extent(1)) {
-      std::cerr << "extents differ" << std::endl;
-      return false;
-    }
-    for (unsigned i = 0; i < array0->extent(0); ++i)
-      for (unsigned j = 0; j < array0->extent(1); ++j)
-        if (!near((*array0)(i, j), (*array1)(i, j))) {
-          std::cerr << "values differ at "
-                    << i << "," << j
-                    << "; " << (*array0)(i, j)
-                    << " != " << (*array1)(i, j)
-                    << std::endl;
-          return false;
-        }
-    } else {
-    if (array0->extent(0) != array1->extent(0)
-        || array0->extent(1) != array1->extent(1)
-        || array0->extent(2) != array1->extent(2)
-        || array0->extent(3) != array1->extent(3)) {
-      std::cerr << "extents differ" << std::endl;
-      return false;
-    }
-    for (unsigned i = 0; i < array0->extent(0); ++i)
-      for (unsigned j = 0; j < array0->extent(1); ++j)
-        for (unsigned k = 0; k < array0->extent(2); ++k)
-          for (unsigned m = 0; m < array0->extent(3); ++m)
-            if (!near((*array0)(i, j, k, m), (*array1)(i, j, k, m))) {
-              std::cerr << "values differ at "
-                        << i << "," << j << "," << k << "," << m
-                        << "; " << (*array0)(i, j, k, m)
-                        << " != " << (*array1)(i, j, k, m)
-                        << std::endl;
-              return false;
-            }
-  }
-  return true;
+std::complex<hpg::grid_value_fp>
+grid_value_encode(unsigned x, unsigned y, unsigned mr, unsigned cb) {
+  return {hpg::grid_value_fp(x * 1000 + y), hpg::grid_value_fp(mr * 1000 + cb)};
 }
 
-TEST(GridArrays, CopyIntoLayouts) {
+hpg::grid_value_fp
+grid_weight_encode(unsigned mr, unsigned cb) {
+  return hpg::grid_value_fp(1000 * mr) +  hpg::grid_value_fp(cb);
+}
+
+TEST(GridArrays, ValuesLayouts) {
+  std::array<unsigned, 4> grid_size{8, 8, 4, 3};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
+  auto padding = 2 * hpg::CFArray::padding;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{
+      {3 + padding, 3 + padding, 4, 3},
+      {2 + padding, 2 + padding, 4, 2}};
+
+  std::mt19937 rng(42);
+  MyCFArray cf = create_cf(10, cf_sizes, rng);
+
+  auto gs_or_err =
+    hpg::GridderState::create(
+      default_device,
+      0,
+      4,
+      &cf,
+      grid_size,
+      grid_scale);
+  ASSERT_TRUE(hpg::is_value(gs_or_err));
+  auto gs = hpg::get_value(std::move(gs_or_err));
+  auto gvals = std::get<1>(gs.grid_values());
+  for (unsigned x = 0; x < grid_size[0]; ++x)
+    for (unsigned y = 0; y < grid_size[1]; ++y)
+      for (unsigned mr = 0; mr < grid_size[2]; ++mr)
+        for (unsigned cb = 0; cb < grid_size[3]; ++cb)
+          (*gvals)(x, y, mr, cb) = grid_value_encode(x, y, mr, cb);
+
+  auto gvals_sz = gvals->min_buffer_size();
+  // copy grid values to left layout, and check results
+  {
+    std::vector<hpg::GridValueArray::scalar_type> gvals_left(gvals_sz);
+    gvals->copy_into(
+      default_host_device,
+      gvals_left.data(),
+      hpg::Layout::Left);
+
+    bool eq = true;
+    for (unsigned x = 0; eq && x < grid_size[0]; ++x)
+      for (unsigned y = 0; eq && y < grid_size[1]; ++y)
+        for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
+          for (unsigned cb = 0; eq && cb < grid_size[3]; ++cb) {
+            auto& l =
+              gvals_left[
+                x + grid_size[0] * (y + grid_size[1] * (mr + grid_size[2] * cb))];
+            auto val = grid_value_encode(x, y, mr, cb);
+            EXPECT_EQ(l, val);
+            eq = (l == val);
+          }
+  }
+  // copy grid values to right layout, and check results
+  {
+    std::vector<hpg::GridValueArray::scalar_type> gvals_right(gvals_sz);
+    gvals->copy_into(
+      default_host_device,
+      gvals_right.data(),
+      hpg::Layout::Right);
+
+    bool eq = true;
+    for (unsigned x = 0; eq && x < grid_size[0]; ++x)
+      for (unsigned y = 0; eq && y < grid_size[1]; ++y)
+        for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
+          for (unsigned cb = 0; eq && cb < grid_size[3]; ++cb) {
+            auto& r =
+              gvals_right[
+                cb + grid_size[3] * (mr + grid_size[2] * (y + grid_size[1] * x))];
+            auto val = grid_value_encode(x, y, mr, cb);
+            EXPECT_EQ(r, val);
+            eq = (r == val);
+          }
+  }
+}
+
+TEST(GridArrays, WeightsLayouts) {
+  std::array<unsigned, 4> grid_size{8, 8, 4, 3};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
+  auto padding = 2 * hpg::CFArray::padding;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{
+      {3 + padding, 3 + padding, 4, 3},
+      {2 + padding, 2 + padding, 4, 2}};
+
+  std::mt19937 rng(42);
+  MyCFArray cf = create_cf(10, cf_sizes, rng);
+
+  auto gs_or_err =
+    hpg::GridderState::create(
+      default_device,
+      0,
+      4,
+      &cf,
+      grid_size,
+      grid_scale);
+  ASSERT_TRUE(hpg::is_value(gs_or_err));
+  auto gs = hpg::get_value(std::move(gs_or_err));
+  auto gwgts = std::get<1>(gs.grid_weights());
+  for (unsigned mr = 0; mr < grid_size[2]; ++mr)
+    for (unsigned cb = 0; cb < grid_size[3]; ++cb)
+      (*gwgts)(mr, cb) = grid_weight_encode(mr, cb);
+
+  auto gwgts_sz = gwgts->min_buffer_size();
+  // copy grid weights to left layout, and check results
+  {
+    std::vector<hpg::GridWeightArray::scalar_type> gwgts_left(gwgts_sz);
+    gwgts->copy_into(
+      default_host_device,
+      gwgts_left.data(),
+      hpg::Layout::Left);
+
+    bool eq = true;
+    for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
+      for (unsigned cb = 0; eq && cb < grid_size[3]; ++cb) {
+        auto& l = gwgts_left[mr + grid_size[2] * cb];
+        auto wgt = grid_weight_encode(mr, cb);
+        EXPECT_EQ(l, wgt);
+        eq = (l == wgt);
+      }
+  }
+  // copy grid weights to right layout, and check results
+  {
+    std::vector<hpg::GridWeightArray::scalar_type> gwgts_right(gwgts_sz);
+    gwgts->copy_into(
+      default_host_device,
+      gwgts_right.data(),
+      hpg::Layout::Right);
+
+    bool eq = true;
+    for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
+      for (unsigned cb = 0; eq && cb < grid_size[3]; ++cb) {
+        auto& r = gwgts_right[cb + grid_size[3] * mr];
+        auto wgt = grid_weight_encode(mr, cb);
+        EXPECT_EQ(r, wgt);
+        eq = (r == wgt);
+      }
+  }
+}
+
+TEST(GridArrays, CompareLayouts) {
   std::array<unsigned, 4> grid_size{20, 20, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 100;
