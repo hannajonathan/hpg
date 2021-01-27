@@ -1786,7 +1786,7 @@ public:
 
   template <Device H>
   void
-  copy_into(scalar_type* dst, Layout layout) const {
+  copy_to(scalar_type* dst, Layout layout) const {
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
     // (otherwise, the following is broken, not least because it may result in
@@ -1826,20 +1826,17 @@ public:
   }
 
   void
-  copy_into(
-    Device host_device,
-    scalar_type* dst,
-    Layout layout) const override {
+  copy_to(Device host_device, scalar_type* dst, Layout layout) const override {
 
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial:
-      copy_into<Device::Serial>(dst, layout);
+      copy_to<Device::Serial>(dst, layout);
       break;
 #endif
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP:
-      copy_into<Device::OpenMP>(dst, layout);
+      copy_to<Device::OpenMP>(dst, layout);
       break;
 #endif
     default:
@@ -1880,7 +1877,7 @@ class HPG_EXPORT GridWeightViewArray final
 
   template <Device H>
   void
-  copy_into(scalar_type* dst, Layout layout) const {
+  copy_to(scalar_type* dst, Layout layout) const {
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
     // (otherwise, the following is broken, not least because it may result in
@@ -1920,20 +1917,17 @@ class HPG_EXPORT GridWeightViewArray final
   }
 
   void
-  copy_into(
-    Device host_device,
-    scalar_type* dst,
-    Layout layout) const override {
+  copy_to(Device host_device, scalar_type* dst, Layout layout) const override {
 
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
     case Device::Serial:
-      copy_into<Device::Serial>(dst, layout);
+      copy_to<Device::Serial>(dst, layout);
       break;
 #endif
 #ifdef HPG_ENABLE_OPENMP
     case Device::OpenMP:
-      copy_into<Device::OpenMP>(dst, layout);
+      copy_to<Device::OpenMP>(dst, layout);
       break;
 #endif
     default:

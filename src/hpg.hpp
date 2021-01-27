@@ -237,7 +237,7 @@ public:
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) const = 0;
 
   virtual void
-  copy_into(
+  copy_to(
     Device host_device,
     scalar_type* dst,
     Layout layout = Layout::Left) const = 0;
@@ -268,7 +268,7 @@ public:
   operator()(unsigned mrow, unsigned cube) const = 0;
 
   virtual void
-  copy_into(
+  copy_to(
     Device host_device,
     scalar_type* dst,
     Layout layout = Layout::Left) const = 0;

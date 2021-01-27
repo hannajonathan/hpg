@@ -304,10 +304,7 @@ TEST(GridArrays, ValuesLayouts) {
   // copy grid values to left layout, and check results
   {
     std::vector<hpg::GridValueArray::scalar_type> gvals_left(gvals_sz);
-    gvals->copy_into(
-      default_host_device,
-      gvals_left.data(),
-      hpg::Layout::Left);
+    gvals->copy_to(default_host_device, gvals_left.data(), hpg::Layout::Left);
 
     bool eq = true;
     for (unsigned x = 0; eq && x < grid_size[0]; ++x)
@@ -325,10 +322,7 @@ TEST(GridArrays, ValuesLayouts) {
   // copy grid values to right layout, and check results
   {
     std::vector<hpg::GridValueArray::scalar_type> gvals_right(gvals_sz);
-    gvals->copy_into(
-      default_host_device,
-      gvals_right.data(),
-      hpg::Layout::Right);
+    gvals->copy_to(default_host_device, gvals_right.data(), hpg::Layout::Right);
 
     bool eq = true;
     for (unsigned x = 0; eq && x < grid_size[0]; ++x)
@@ -376,10 +370,7 @@ TEST(GridArrays, WeightsLayouts) {
   // copy grid weights to left layout, and check results
   {
     std::vector<hpg::GridWeightArray::scalar_type> gwgts_left(gwgts_sz);
-    gwgts->copy_into(
-      default_host_device,
-      gwgts_left.data(),
-      hpg::Layout::Left);
+    gwgts->copy_to(default_host_device, gwgts_left.data(), hpg::Layout::Left);
 
     bool eq = true;
     for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
@@ -393,10 +384,7 @@ TEST(GridArrays, WeightsLayouts) {
   // copy grid weights to right layout, and check results
   {
     std::vector<hpg::GridWeightArray::scalar_type> gwgts_right(gwgts_sz);
-    gwgts->copy_into(
-      default_host_device,
-      gwgts_right.data(),
-      hpg::Layout::Right);
+    gwgts->copy_to(default_host_device, gwgts_right.data(), hpg::Layout::Right);
 
     bool eq = true;
     for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
@@ -496,26 +484,14 @@ TEST(GridArrays, CompareLayouts) {
   auto gvals_sz = gvals->min_buffer_size();
   std::vector<hpg::GridValueArray::scalar_type> gvals_left(gvals_sz);
   std::vector<hpg::GridValueArray::scalar_type> gvals_right(gvals_sz);
-  gvals->copy_into(
-    default_host_device,
-    gvals_left.data(),
-    hpg::Layout::Left);
-  gvals->copy_into(
-    default_host_device,
-    gvals_right.data(),
-    hpg::Layout::Right);
+  gvals->copy_to(default_host_device, gvals_left.data(), hpg::Layout::Left);
+  gvals->copy_to(default_host_device, gvals_right.data(), hpg::Layout::Right);
   // copy gwgts into arrays with left and right layouts
   auto gwgts_sz = gwgts->min_buffer_size();
   std::vector<hpg::GridWeightArray::scalar_type> gwgts_left(gwgts_sz);
   std::vector<hpg::GridWeightArray::scalar_type> gwgts_right(gwgts_sz);
-  gwgts->copy_into(
-    default_host_device,
-    gwgts_left.data(),
-    hpg::Layout::Left);
-  gwgts->copy_into(
-    default_host_device,
-    gwgts_right.data(),
-    hpg::Layout::Right);
+  gwgts->copy_to(default_host_device, gwgts_left.data(), hpg::Layout::Left);
+  gwgts->copy_to(default_host_device, gwgts_right.data(), hpg::Layout::Right);
   // check equality of gvals and gwgts in all layouts
   bool eq = true;
   for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr) {
