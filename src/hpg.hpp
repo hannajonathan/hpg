@@ -219,7 +219,7 @@ public:
   virtual ~CFArray() {}
 };
 
-/** wrapper for read-only access to grid values
+/** wrapper for access to copy of grid values
  *
  * @todo: replace with mdspan?
  */
@@ -233,7 +233,7 @@ public:
   virtual unsigned
   extent(unsigned dim) const = 0;
 
-  virtual std::complex<grid_value_fp>
+  virtual std::complex<grid_value_fp>&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) const = 0;
 
   virtual void
@@ -250,7 +250,7 @@ public:
   virtual ~GridValueArray() {}
 };
 
-/** wrapper for read-only access to grid weights
+/** wrapper for access to copy of grid weights
  *
  * @todo: replace with mdspan?
  */
@@ -264,7 +264,7 @@ public:
   virtual unsigned
   extent(unsigned dim) const = 0;
 
-  virtual grid_value_fp
+  virtual grid_value_fp&
   operator()(unsigned mrow, unsigned cube) const = 0;
 
   virtual void
@@ -701,28 +701,28 @@ public:
   GridderState
   fence() &&;
 
-  /** get grid plane weights
+  /** get copy of grid plane weights
    *
    * Invokes fence() on target.
    */
   std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
   grid_weights() const &;
 
-  /** get grid plane weights
+  /** get copy of grid plane weights
    *
    * Invokes fence() on target.
    */
   std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
   grid_weights() &&;
 
-  /** get grid values
+  /** get copy of grid values
    *
    * Invokes fence() on target.
    */
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   grid_values() const &;
 
-  /** get grid values
+  /** get copy of grid values
    *
    * Invokes fence() on target.
    */
@@ -731,14 +731,14 @@ public:
 
   /** reset grid values to zero
    *
-   * May invoke fence() on target
+   * Also resets grid plane weights to zero. May invoke fence() on target.
    */
   GridderState
   reset_grid() const &;
 
   /** reset grid values to zero
    *
-   * May invoke fence() on target
+   * Also resets grid plane weights to zero. May invoke fence() on target.
    */
   GridderState
   reset_grid() &&;
@@ -1067,20 +1067,23 @@ public:
   void
   fence() const;
 
-  /** get grid plane weights
+  /** get copy of grid plane weights
    *
    * Invokes fence() on target.
    */
   std::unique_ptr<GridWeightArray>
   grid_weights() const;
 
-  /** get access to grid values */
+  /** get copy of grid values
+   *
+   * Invokes fence() on target.
+   */
   std::unique_ptr<GridValueArray>
   grid_values() const;
 
   /** reset grid values to zero
    *
-   * May invoke fence() on target.
+   * Also resets grid plane weights to zero. May invoke fence() on target.
    */
   void
   reset_grid();

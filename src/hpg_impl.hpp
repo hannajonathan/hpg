@@ -1777,11 +1777,11 @@ public:
     return grid.extent(dim);
   }
 
-  std::complex<grid_value_fp>
+  std::complex<grid_value_fp>&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube)
     const override {
 
-    return grid(x, y, mrow, cube);
+    return reinterpret_cast<scalar_type&>(grid(x, y, mrow, cube));
   }
 
   template <Device H>
@@ -1872,7 +1872,7 @@ class HPG_EXPORT GridWeightViewArray final
     return weight.extent(dim);
   }
 
-  grid_value_fp
+  grid_value_fp&
   operator()(unsigned mrow, unsigned cube) const override {
 
     return weight(mrow, cube);
