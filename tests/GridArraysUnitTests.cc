@@ -304,7 +304,7 @@ values_eq(const T* array0, const T* array1) {
   return true;
 }
 
-TEST(GridValueArray, CopyIntoLayouts) {
+TEST(GridArrays, CopyIntoLayouts) {
   std::array<unsigned, 4> grid_size{20, 20, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 100;
@@ -375,41 +375,80 @@ TEST(GridValueArray, CopyIntoLayouts) {
       })
     .map(
       [](auto&& gs) {
-        return std::get<1>(std::move(gs).grid_values());
+        auto [gs1, values] = std::move(gs).grid_values();
+        auto [gs2, weights] = std::move(gs1).grid_weights();
+        return std::make_tuple(std::move(values), std::move(weights));
       });
 
-  auto grid_or_err = gridding();
-  ASSERT_TRUE(hpg::is_value(grid_or_err));
-  auto grid = hpg::get_value(std::move(grid_or_err));
-  ASSERT_TRUE(has_non_zero(grid.get()));
-  auto sz = grid->min_buffer_size();
-  std::vector<hpg::GridValueArray::scalar_type> grid_left(sz);
-  std::vector<hpg::GridValueArray::scalar_type> grid_right(sz);
-  grid->copy_into(default_host_device, grid_left.data(), hpg::Layout::Left);
-  grid->copy_into(default_host_device, grid_right.data(), hpg::Layout::Right);
+  auto arrays_or_err = gridding();
+  ASSERT_TRUE(hpg::is_value(arrays_or_err));
+  auto [gvals, gwgts] = hpg::get_value(std::move(arrays_or_err));
+  ASSERT_TRUE(bool(gvals));
+  ASSERT_TRUE(bool(gwgts));
+  ASSERT_TRUE(has_non_zero(gvals.get()));
+  ASSERT_TRUE(has_non_zero(gwgts.get()));
+  // copy gvals into arrays with left and right layouts
+  auto gvals_sz = gvals->min_buffer_size();
+  std::vector<hpg::GridValueArray::scalar_type> gvals_left(gvals_sz);
+  std::vector<hpg::GridValueArray::scalar_type> gvals_right(gvals_sz);
+  gvals->copy_into(
+    default_host_device,
+    gvals_left.data(),
+    hpg::Layout::Left);
+  gvals->copy_into(
+    default_host_device,
+    gvals_right.data(),
+    hpg::Layout::Right);
+  // copy gwgts into arrays with left and right layouts
+  auto gwgts_sz = gwgts->min_buffer_size();
+  std::vector<hpg::GridWeightArray::scalar_type> gwgts_left(gwgts_sz);
+  std::vector<hpg::GridWeightArray::scalar_type> gwgts_right(gwgts_sz);
+  gwgts->copy_into(
+    default_host_device,
+    gwgts_left.data(),
+    hpg::Layout::Left);
+  gwgts->copy_into(
+    default_host_device,
+    gwgts_right.data(),
+    hpg::Layout::Right);
+  // check equality of gvals and gwgts in all layouts
   bool eq = true;
-  for (unsigned x = 0; eq && x < grid_size[0]; ++x)
-    for (unsigned y = 0; eq && y < grid_size[1]; ++y)
-      for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
-        for (unsigned cb = 0; eq && cb < grid_size[3]; ++cb) {
-          auto& l =
-            grid_left[
+  for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr) {
+    for (unsigned cb = 0; eq && cb < grid_size[3]; ++cb) {
+      auto& wl = gwgts_left[mr + grid_size[2] * cb];
+      auto& wr = gwgts_right[cb + grid_size[3] * mr];
+      EXPECT_EQ(wl, wr);
+      eq = (wl == wr) && (wl == (*gwgts)(mr, cb));
+      if (!eq)
+        std::cout << "weight at "
+                  << mr << ","
+                  << cb << ": "
+                  << wl << " "
+                  << wr << " "
+                  << (*gwgts)(mr, cb) << std::endl;
+      for (unsigned x = 0; eq && x < grid_size[0]; ++x) {
+        for (unsigned y = 0; eq && y < grid_size[1]; ++y) {
+          auto& vl =
+            gvals_left[
               x + grid_size[0] * (y + grid_size[1] * (mr + grid_size[2] * cb))];
-          auto& r =
-            grid_right[
+          auto& vr =
+            gvals_right[
               cb + grid_size[3] * (mr + grid_size[2] * (y + grid_size[1] * x))];
-          EXPECT_EQ(l, r);
-          eq = (l == r) && (l == (*grid)(x, y, mr, cb));
+          EXPECT_EQ(vl, vr);
+          eq = (vl == vr) && (vl == (*gvals)(x, y, mr, cb));
           if (!eq)
-            std::cout << "at "
+            std::cout << "value at "
                       << x << ","
                       << y << ","
                       << mr << ","
                       << cb << ": "
-                      << l << " "
-                      << r << " "
-                      << (*grid)(x, y, mr, cb) << std::endl;
+                      << vl << " "
+                      << vr << " "
+                      << (*gvals)(x, y, mr, cb) << std::endl;
         }
+      }
+    }
+  }
 }
 
 int
