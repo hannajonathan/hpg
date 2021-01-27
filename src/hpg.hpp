@@ -236,12 +236,22 @@ public:
   virtual std::complex<grid_value_fp>&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) const = 0;
 
+  /** copy values to a buffer in requested layout
+   *
+   * @param host_device host device to use for copying values
+   * @param dst destination buffer
+   * @param layout array layout of values copied into dst
+   */
   virtual void
   copy_to(
     Device host_device,
     scalar_type* dst,
     Layout layout = Layout::Left) const = 0;
 
+  /** minimum size of buffer for destination of copy_to()
+   *
+   * @return number of elements required in a destination buffer
+   */
   virtual size_t
   min_buffer_size() const {
     return extent(0) * extent(1) * extent(2) * extent(3);
@@ -249,6 +259,16 @@ public:
 
   virtual ~GridValueArray() {}
 
+  /** create GridValueArray instance from values in a buffer
+   *
+   * @param name name of Kokkos::View underlying return value (implementation
+   * detail)
+   * @param target_device device for which result value is intended to be used
+   * @param host_device host device to use for copying values
+   * @param src source buffer
+   * @param extents grid size
+   * @param layout array layout of values copied from src
+   */
   static std::unique_ptr<GridValueArray>
   copy_from(
     const std::string& name,
@@ -276,12 +296,22 @@ public:
   virtual grid_value_fp&
   operator()(unsigned mrow, unsigned cube) const = 0;
 
+  /** copy values to a buffer in requested layout
+   *
+   * @param host_device host device to use for copying values
+   * @param dst destination buffer
+   * @param layout array layout of values copied into dst
+ */
   virtual void
   copy_to(
     Device host_device,
     scalar_type* dst,
     Layout layout = Layout::Left) const = 0;
 
+  /** minimum size of buffer for destination of copy_to()
+   *
+   * @return number of elements required in a destination buffer
+   */
   virtual size_t
   min_buffer_size() const {
     return extent(0) * extent(1);
@@ -289,6 +319,16 @@ public:
 
   virtual ~GridWeightArray() {}
 
+  /** create GridWeightArray instance from values in a buffer
+   *
+   * @param name name of Kokkos::View underlying return value (implementation
+   * detail)
+   * @param target_device device for which result value is intended to be used
+   * @param host_device host device to use for copying values
+   * @param src source buffer
+   * @param extents grid size
+   * @param layout array layout of values copied from src
+   */
   static std::unique_ptr<GridWeightArray>
   copy_from(
     const std::string& name,
