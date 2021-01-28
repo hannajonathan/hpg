@@ -512,8 +512,9 @@ struct GridVis final {
   int cf_major[2]; /**< CF major coordinate */
   int fine_offset[2]; /**< visibility position - nearest major grid */
   vis_t value; /**< visibility value */
+  vis_weight_fp weight;/**< visibility weight */
+  K::complex<vis_phase_fp> phasor;
   int grid_cube; /**< grid cube index */
-  vis_weight_fp weight; /**< visibility weight */
   cf_fp cf_im_factor; /**< weight conjugation factor */
 
   KOKKOS_INLINE_FUNCTION GridVis() {};
@@ -524,12 +525,12 @@ struct GridVis final {
     const K::Array<int, 2>& oversampling,
     const K::Array<int, 2>& cf_size,
     const K::Array<grid_scale_fp, 2>& grid_scale)
-    : grid_cube(vis.grid_cube)
-    , weight(vis.weight) {
+    : value(vis.value)
+    , weight(vis.weight)
+    , phasor(cphase<execution_space>(vis.d_phase))
+    , grid_cube(vis.grid_cube) {
 
     static const vis_frequency_fp c = 299792458.0;
-    K::complex<vis_phase_fp> phasor = cphase<execution_space>(vis.d_phase);
-    value = vis.value * phasor * vis.weight;
     auto inv_lambda = vis.freq / c;
     // can't use std::tie here - CUDA doesn't support it
     auto [g0, maj0, min0, f0] =
@@ -767,6 +768,7 @@ struct HPG_EXPORT VisibilityGridder final {
 
     // do the multiplication of visibility by CF over all grid points in the
     // support of the CF centered on the visibility, and add products to grid
+    auto visval = vis.weight * vis.value * vis.phasor;
     K::parallel_reduce(
       K::TeamVectorRange(team_member, N_X),
       /* loop over majorX */
@@ -790,7 +792,7 @@ struct HPG_EXPORT VisibilityGridder final {
                 Y + vis.grid_coord[1],
                 R,
                 vis.grid_cube),
-              gv_t(cfv * vis.value));
+              gv_t(cfv * visval));
             cfw_l.wgts[R] += cfv;
           }
         }
@@ -863,6 +865,7 @@ struct HPG_EXPORT VisibilityGridder final {
     // do the multiplication of visibility by corrected CF over all grid points
     // in the support of the CF centered on the visibility, and add products to
     // grid
+    auto visval = vis.weight * vis.value * vis.phasor;
     K::parallel_reduce(
       K::TeamVectorRange(team_member, N_X),
       /* loop over majorX */
@@ -888,7 +891,7 @@ struct HPG_EXPORT VisibilityGridder final {
                 Y + vis.grid_coord[1],
                 R,
                 vis.grid_cube),
-              gv_t(cfv * screen * vis.value));
+              gv_t(cfv * screen * visval));
             cfw_l.wgts[R] += cfv;
           }
         }
