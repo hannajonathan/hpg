@@ -12,15 +12,6 @@ struct DisabledDeviceError
     : Error("Requested device is not enabled", ErrorType::DisabledDevice) {}
 };
 
-struct DisabledHostDeviceError
-  : public Error {
-
-  DisabledHostDeviceError()
-    : Error(
-      "Requested host device is not enabled",
-      ErrorType::DisabledHostDevice) {}
-};
-
 struct IncompatibleVisVectorLengthError
   : public Error {
 
@@ -81,6 +72,22 @@ struct Impl::GridderState {
       ::hpg::GridderState result(std::forward<GS>(st));
       auto error =
         result.impl->set_convolution_function(host_device, std::move(cf));
+      if (error)
+        return std::move(error.value());
+      else
+        return std::move(result);
+    } else {
+      return DisabledHostDeviceError();
+    }
+  }
+
+  template <typename GS>
+  static std::variant<Error, ::hpg::GridderState>
+  set_model(GS&& st, Device host_device, GridValueArray&& gv) {
+
+    if (host_devices().count(host_device) > 0) {
+      ::hpg::GridderState result(std::forward<GS>(st));
+      auto error = result.impl->set_model(host_device, std::move(gv));
       if (error)
         return std::move(error.value());
       else
@@ -403,23 +410,35 @@ GridderState::set_convolution_function(Device host_device, CFArray&& cf)
   const & {
 
   return
-  to_rval(
-    Impl::GridderState::set_convolution_function(
-      *this,
-      host_device,
-      std::move(cf)));
+    to_rval(
+      Impl::GridderState
+      ::set_convolution_function(*this, host_device, std::move(cf)));
 }
 
 rval_t<GridderState>
 GridderState::set_convolution_function(Device host_device, CFArray&& cf) && {
 
   return
-  to_rval(
-    Impl::GridderState
-    ::set_convolution_function(
-      std::move(*this),
-      host_device,
-      std::move(cf)));
+    to_rval(
+      Impl::GridderState
+      ::set_convolution_function(std::move(*this), host_device, std::move(cf)));
+}
+
+rval_t<GridderState>
+GridderState::set_model(Device host_device, GridValueArray&& gv)
+  const & {
+
+  return
+    to_rval(Impl::GridderState::set_model(*this, host_device, std::move(gv)));
+}
+
+rval_t<GridderState>
+GridderState::set_model(Device host_device, GridValueArray&& gv) && {
+
+  return
+    to_rval(
+      Impl::GridderState
+      ::set_model(std::move(*this), host_device, std::move(gv)));
 }
 
 rval_t<GridderState>
@@ -585,6 +604,22 @@ GridderState::reset_grid() && {
 
   GridderState result(std::move(*this));
   result.impl->reset_grid();
+  return result;
+}
+
+GridderState
+GridderState::reset_model() const & {
+
+  GridderState result(*this);
+  result.impl->reset_model();
+  return result;
+}
+
+GridderState
+GridderState::reset_model() && {
+
+  GridderState result(std::move(*this));
+  result.impl->reset_model();
   return result;
 }
 
@@ -792,6 +827,27 @@ Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
 }
 
 opt_error_t
+Gridder::set_model(Device host_device, GridValueArray&& gv) {
+#if HPG_API >= 17
+  return
+    fold(
+      std::move(state).set_model(host_device, std::move(gv)),
+      [this](auto&& gs) -> std::optional<Error> {
+        this->state = std::move(gs);
+        return std::nullopt;
+      },
+      [](auto&& err) -> std::optional<Error> {
+        return std::move(err);
+      });
+#else // HPG_API < 17
+  std::unique_ptr<Error> result;
+  std::tie(result, state) =
+    std::move(state).set_model(host_device, std::move(gv));
+  return result;
+#endif //HPG_API >= 17
+}
+
+opt_error_t
 Gridder::grid_visibilities(
   Device host_device,
   std::vector<std::complex<visibility_fp>>&& visibilities,
@@ -912,6 +968,11 @@ Gridder::grid_values() const {
 void
 Gridder::reset_grid() {
   state = std::move(state).reset_grid();
+}
+
+void
+Gridder::reset_model() {
+  state = std::move(state).reset_model();
 }
 
 void

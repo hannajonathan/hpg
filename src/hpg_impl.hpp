@@ -41,6 +41,15 @@ namespace KExp = Kokkos::Experimental;
 
 namespace hpg {
 
+struct DisabledHostDeviceError
+  : public Error {
+
+  DisabledHostDeviceError()
+    : Error(
+      "Requested host device is not enabled",
+      ErrorType::DisabledHostDevice) {}
+};
+
 struct OutOfBoundsCFIndexError
   : public Error {
 
@@ -50,6 +59,29 @@ struct OutOfBoundsCFIndexError
       + "," + std::to_string(std::get<1>(idx))
       + ") is out of bounds for current CFArray",
       ErrorType::OutOfBoundsCFIndex) {}
+};
+
+struct InvalidModelGridSizeError
+  : public Error {
+
+  InvalidModelGridSizeError(
+    const std::array<unsigned, GridValueArray::rank>& model_size,
+    const std::array<unsigned, GridValueArray::rank>& grid_size)
+    : Error(
+      "model grid size " + sz2str(model_size)
+      + " is different from visibility grid size " + sz2str(grid_size),
+      ErrorType::InvalidModelGridSize) {}
+
+  static std::string
+  sz2str(const std::array<unsigned, GridValueArray::rank>& sz) {
+    std::ostringstream oss;
+    oss << "[" << sz[0]
+        << "," << sz[1]
+        << "," << sz[2]
+        << "," << sz[3]
+        << "]" << std::endl;
+    return oss.str();
+  }
 };
 
 namespace Impl {
@@ -1801,6 +1833,9 @@ struct State {
   set_convolution_function(Device host_device, CFArray&& cf) = 0;
 
   virtual std::optional<Error>
+  set_model(Device host_device, GridValueArray&& gv) = 0;
+
+  virtual std::optional<Error>
   grid_visibilities(
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
@@ -1823,6 +1858,9 @@ struct State {
 
   virtual void
   reset_grid() = 0;
+
+  virtual void
+  reset_model() = 0;
 
   virtual void
   normalize(grid_value_fp wfactor) = 0;
@@ -2418,6 +2456,28 @@ layout_for_device(
     assert(false);
     break;
   }
+
+/** initialize model visibilities view from GridValueArray instance */
+template <Device D, typename GVH>
+static void
+init_model(GVH& gv_h, const GridValueArray& gv) {
+  static_assert(
+    K::SpaceAccessibility<
+      typename DeviceT<D>::kokkos_device::memory_space,
+      K::HostSpace>
+    ::accessible);
+
+  K::parallel_for(
+    "init_model",
+    K::MDRangePolicy<K::Rank<4>, typename DeviceT<D>::kokkos_device>(
+      {0, 0, 0, 0},
+      {static_cast<int>(gv.extent(0)),
+       static_cast<int>(gv.extent(1)),
+       static_cast<int>(gv.extent(2)),
+       static_cast<int>(gv.extent(3))}),
+    [&](int x, int y, int mr, int cb) {
+      gv_h(x, y, mr, cb) = gv(x, y, mr, cb);
+    });
 }
 
 /** names for stream states */
@@ -2761,6 +2821,7 @@ public:
 
   grid_view<typename GridLayout<D>::layout, memory_space> m_grid;
   weight_view<typename execution_space::array_layout, memory_space> m_weights;
+  grid_view<typename GridLayout<D>::layout, memory_space> m_model;
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
@@ -2816,6 +2877,7 @@ public:
 
     m_grid = std::move(st).m_grid;
     m_weights = std::move(st).m_weights;
+    m_model = std::move(st).m_model;
     m_streams = std::move(st).m_streams;
     m_exec_spaces = std::move(st).m_exec_spaces;
     m_exec_space_indexes = std::move(st).m_exec_space_indexes;
@@ -2837,6 +2899,7 @@ public:
     fence();
     m_grid = decltype(m_grid)();
     m_weights = decltype(m_weights)();
+    m_model = decltype(m_model)();
     for (auto& [cf, last] : m_cfs)
       cf.reset();
     m_exec_spaces.clear();
@@ -2908,6 +2971,41 @@ public:
         std::move(dynamic_cast<DeviceCFArray<D>&&>(cf_array)));
     } catch (const std::bad_cast&) {
       cf.add_host_cfs(host_device, exec.space, std::move(cf_array));
+    }
+    return std::nullopt;
+  }
+
+  std::optional<Error>
+  set_model(Device host_device, GridValueArray&& gv) override {
+    std::array<unsigned, 4>
+      model_sz{gv.extent(0), gv.extent(1), gv.extent(2), gv.extent(3)};
+    if (m_grid_size != model_sz)
+      return InvalidModelGridSizeError(model_sz, m_grid_size);
+
+    fence();
+    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+    try {
+      GridValueViewArray<D> gvv =
+        std::move(dynamic_cast<GridValueViewArray<D>&&>(gv));
+      K::deep_copy(exec.space, m_model, gvv.grid);
+    } catch (const std::bad_cast&) {
+      auto model_h = K::create_mirror_view(m_model);
+      switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+      case Device::Serial:
+        init_model<Device::Serial>(model_h, gv);
+        break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+      case Device::OpenMP:
+        init_model<Device::OpenMP>(model_h, gv);
+        break;
+#endif
+      default:
+        return DisabledHostDeviceError();
+        break;
+      }
+      K::deep_copy(exec.space, m_model, model_h);
     }
     return std::nullopt;
   }
@@ -3275,6 +3373,17 @@ public:
   }
 
   void
+  reset_model() override {
+    fence();
+    std::array<int, 4> ig{
+      static_cast<int>(m_grid_size[0]),
+      static_cast<int>(m_grid_size[1]),
+      static_cast<int>(m_grid_size[2]),
+      static_cast<int>(m_grid_size[3])};
+    m_model = decltype(m_model)("model", GridLayout<D>::dimensions(ig));
+  }
+
+  void
   normalize(grid_value_fp wfactor) override {
     const_weight_view<typename execution_space::array_layout, memory_space>
       cweights = m_weights;
@@ -3356,6 +3465,7 @@ private:
 
     std::swap(m_grid, other.m_grid);
     std::swap(m_weights, other.m_weights);
+    std::swap(m_model, other.m_model);
     std::swap(m_streams, other.m_streams);
     std::swap(m_exec_spaces, other.m_exec_spaces);
     std::swap(m_exec_space_indexes, other.m_exec_space_indexes);
@@ -3435,6 +3545,12 @@ private:
         cf.prepare_pool(init_cf_shape, true);
         last.reset();
       }
+      std::array<int, 4> ig{
+        static_cast<int>(m_grid_size[0]),
+        static_cast<int>(m_grid_size[1]),
+        static_cast<int>(m_grid_size[2]),
+        static_cast<int>(m_grid_size[3])};
+      m_model = decltype(m_model)("model", GridLayout<D>::dimensions(ig));
     } else {
       const StateT* ost = std::get<const StateT*>(init);
       for (auto& i : ost->m_exec_space_indexes) {
@@ -3457,6 +3573,16 @@ private:
         cf = std::get<0>(ost->m_cfs[i]);
         cf.state = this;
       }
+      std::array<int, 4> ig{
+        static_cast<int>(m_grid_size[0]),
+        static_cast<int>(m_grid_size[1]),
+        static_cast<int>(m_grid_size[2]),
+        static_cast<int>(m_grid_size[3])};
+      m_model =
+        decltype(m_model)(
+          K::ViewAllocateWithoutInitializing("model"),
+          GridLayout<D>::dimensions(ig));
+      K::deep_copy(m_exec_spaces[0].space, m_model, ost->m_model);
     }
     m_current = StreamPhase::COPY;
   }

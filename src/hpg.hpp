@@ -690,6 +690,12 @@ public:
   rval_t<GridderState>
   set_convolution_function(Device host_device, CFArray&& cf) &&;
 
+  rval_t<GridderState>
+  set_model(Device host_device, GridValueArray&& gv) const &;
+
+  rval_t<GridderState>
+  set_model(Device host_device, GridValueArray&& gv) &&;
+
   /** grid some visibilities
    *
    * May invoke fence() on target.
@@ -892,6 +898,20 @@ public:
    */
   GridderState
   reset_grid() &&;
+
+  /** reset model visibilities to zero
+   *
+   * May invoke fence() on target
+   */
+  GridderState
+  reset_model() const &;
+
+  /** reset model visibilities to zero
+   *
+   * May invoke fence() on target
+   */
+  GridderState
+  reset_model() &&;
 
   /** normalize grid values by scaled weights
    *
@@ -1135,6 +1155,13 @@ public:
   opt_error_t
   set_convolution_function(Device host_device, CFArray&&);
 
+#if HPG_API >= 17
+  std::optional<Error>
+#else // HPG_API < 17
+  std::unique_ptr<Error>
+#endif //HPG_API >= 17
+  set_model(Device host_device, GridValueArray&& gv);
+
   /** grid visibilities
    *
    * May invoke fence() on target.
@@ -1221,6 +1248,9 @@ public:
    */
   void
   reset_grid();
+
+  void
+  reset_model();
 
   /** normalize grid values by weights
    *

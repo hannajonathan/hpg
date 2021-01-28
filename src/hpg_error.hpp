@@ -14,6 +14,7 @@ enum class HPG_EXPORT ErrorType {
   IncompatibleVisVectorLengths,
   OutOfBoundsCFIndex,
   InvalidCFLayout,
+  InvalidModelGridSize,
   Other
 };
 
