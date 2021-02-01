@@ -29,6 +29,8 @@ hpg::Device default_device = hpg::Device::Serial;
 
 using namespace std::complex_literals;
 
+#undef SHOW_COORDINATES
+
 template <typename T>
 struct epsilon {
   using F = void;
@@ -212,6 +214,81 @@ struct ConeCFArray final
     return operator()(x, y, 0, 0, 0);
   }
 
+  std::array<std::array<long, 2>, 3>
+  coords(
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<hpg::grid_scale_fp, 2>& grid_scale,
+    const hpg::vis_frequency_fp& freq,
+    const hpg::vis_uvw_t& uvw) const {
+
+    constexpr hpg::vis_frequency_fp c = 299792458.0;
+#ifdef SHOW_COORDINATES
+    std::cout << "uvw: " << uvw[0]
+              << ", " << uvw[1]
+              << ", " << uvw[2]
+              << std::endl
+              << "scale: " << grid_scale[0]
+              << ", " << grid_scale[1]
+              << std::endl
+              << "size: " << grid_size[0]
+              << ", " << grid_size[1]
+              << std::endl
+              << "freq: " << freq
+              << std::endl;
+#endif
+    const std::array<double, 2> position{
+      grid_scale[0] * uvw[0] * (freq / c) + grid_size[0] / 2.0,
+      grid_scale[1] * uvw[1] * (freq / c) + grid_size[1] / 2.0
+    };
+#ifdef SHOW_COORDINATES
+    std::cout << "position: " << position[0]
+              << ", " << position[1] << std::endl;
+#endif
+    std::array<long, 2>
+      grid_coord{std::lrint(position[0]), std::lrint(position[1])};
+#ifdef SHOW_COORDINATES
+    std::cout << "grid_coord (0): " << grid_coord[0]
+              << ", " << grid_coord[1] << std::endl;
+#endif
+    const std::array<long, 2> fine_offset{
+      std::lrint((position[0] - grid_coord[0]) * m_oversampling),
+      std::lrint((position[1] - grid_coord[1]) * m_oversampling)
+    };
+#ifdef SHOW_COORDINATES
+    std::cout << "fine_offset: " << fine_offset[0]
+              << ", " << fine_offset[1] << std::endl;
+#endif
+    std::array<long, 2> cf_major;
+    grid_coord[0] -= m_radius;
+    grid_coord[1] -= m_radius;
+#ifdef SHOW_COORDINATES
+    std::cout << "grid_coord (1): " << grid_coord[0]
+              << ", " << grid_coord[1] << std::endl;
+#endif
+    std::array<long, 2> cf_minor;
+    if (fine_offset[0] >= 0) {
+      cf_minor[0] = fine_offset[0];
+      cf_major[0] = hpg::CFArray::padding;
+    } else {
+      cf_minor[0] = m_oversampling + fine_offset[0];
+      cf_major[0] = hpg::CFArray::padding - 1;
+    }
+    if (fine_offset[1] >= 0) {
+      cf_minor[1] = fine_offset[1];
+      cf_major[1] = hpg::CFArray::padding;
+    } else {
+      cf_minor[1] = m_oversampling + fine_offset[1];
+      cf_major[1] = hpg::CFArray::padding - 1;
+    }
+#ifdef SHOW_COORDINATES
+    std::cout << "cf_major: " << cf_major[0]
+              << ", " << cf_major[1] << std::endl;
+    std::cout << "cf_minor: " << cf_minor[0]
+              << ", " << cf_minor[1] << std::endl;
+#endif
+    return {grid_coord, cf_major, cf_minor};
+  }
+
   bool
   verify_gridded_vis(
     const hpg::GridValueArray* grid,
@@ -221,48 +298,76 @@ struct ConeCFArray final
     const hpg::vis_frequency_fp& freq,
     const hpg::vis_uvw_t& uvw) const {
 
-    constexpr hpg::vis_frequency_fp c = 299792458.0;
-    const std::array<double, 2> position{
-      grid_scale[0] * uvw[0] * (freq / c) + grid_size[0] / 2,
-      grid_scale[1] * uvw[1] * (freq / c) + grid_size[1] / 2
-    };
-    std::array<long, 2> major{std::lrint(position[0]), std::lrint(position[1])};
-    const std::array<long, 2> minor_shift{
-      std::lrint((position[0] - major[0]) * m_oversampling),
-      std::lrint((position[1] - major[1]) * m_oversampling)
-    };
-    major[0] -= m_radius;
-    major[1] -= m_radius;
-    std::array<long, 2> minor;
-    if (minor_shift[0] >= 0) {
-      minor[0] = minor_shift[0];
-    } else {
-      minor[0] = m_oversampling + minor_shift[0];
-      major[0] -= 1;
-    }
-    if (minor_shift[1] >= 0) {
-      minor[1] = minor_shift[1];
-    } else {
-      minor[1] = m_oversampling + minor_shift[1];
-      major[1] -= 1;
-    }
+    auto [grid_coord, cf_major, cf_minor] =
+      coords(grid_size, grid_scale, freq, uvw);
+
     int cfsz = 2 * m_oversampled_radius + 1;
     std::complex<hpg::grid_value_fp> gvis(vis);
     bool result = true;
     for (int x = 0; result && x < grid_size[0]; ++x)
       for (int y = 0; result && y < grid_size[1]; ++y) {
-        int xf = (x - major[0]) * int(m_oversampling) + minor[0];
-        int yf = (y - major[1]) * int(m_oversampling) + minor[1];
         auto g = (*grid)(x, y, 0, 0);
         std::complex<hpg::grid_value_fp> cf;
-        if (0 <= xf && xf < cfsz && 0 <= yf && yf < cfsz
-            && major[0] <= x && x < major[0] + 2 * m_radius + 1
-            && major[1] <= y && y < major[1] + 2 * m_radius + 1)
+        if (grid_coord[0] <= x && x < grid_coord[0] + 2 * m_radius + 1
+            && grid_coord[1] <= y && y < grid_coord[1] + 2 * m_radius + 1) {
+          int xf =
+            (x - grid_coord[0] + cf_major[0]) * int(m_oversampling)
+            + cf_minor[0];
+          int yf =
+            (y - grid_coord[1] + cf_major[1]) * int(m_oversampling)
+            + cf_minor[1];
           cf = (*this)(xf, yf);
+        }
         cf *= gvis;
         result = near(g, cf);
+        if (!result)
+          std::cout << "at " << x << "," << y
+                    << ": " << cf << ";" << g
+                    << std::endl;
       }
     return result;
+  }
+
+  std::array<std::array<int, 2>, 2>
+  cf_footprint(
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<hpg::grid_scale_fp, 2>& grid_scale,
+    const hpg::vis_frequency_fp& freq,
+    const hpg::vis_uvw_t& uvw) const {
+
+    auto grid_coord = std::get<0>(coords(grid_size, grid_scale, freq, uvw));
+    return {
+      std::array<int, 2>{int(grid_coord[0]), int(grid_coord[1])},
+      std::array<int, 2>{
+        int(grid_coord[0]) + 2 * m_radius,
+        int(grid_coord[1]) + 2 * m_radius}};
+  }
+
+  bool
+  verify_cf_footprint(
+    const hpg::GridValueArray* grid,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<hpg::grid_scale_fp, 2>& grid_scale,
+    const std::complex<hpg::visibility_fp>& vis,
+    const hpg::vis_frequency_fp& freq,
+    const hpg::vis_uvw_t& uvw) const {
+
+    auto [grid_coord, cf_major, cf_minor] =
+      coords(grid_size, grid_scale, freq, uvw);
+
+    std::array<std::array<int, 2>, 2> measured_footprint{
+      std::array<int, 2>{2 * int(grid_size[0]), 2 * int(grid_size[1])},
+      std::array<int, 2>{-1, -1}
+    };
+    for (int x = 0; x < grid_size[0]; ++x)
+      for (int y = 0; y < grid_size[1]; ++y)
+        if ((*grid)(x, y, 0, 0) != hpg::GridValueArray::scalar_type(0)) {
+          measured_footprint[0][0] = std::min(measured_footprint[0][0], x);
+          measured_footprint[0][1] = std::min(measured_footprint[0][1], y);
+          measured_footprint[1][0] = std::max(measured_footprint[1][0], x);
+          measured_footprint[1][1] = std::max(measured_footprint[1][1], y);
+        }
+    return measured_footprint == cf_footprint(grid_size, grid_scale, freq, uvw);
   }
 };
 
@@ -1196,13 +1301,8 @@ TEST(GridderState, Gridding) {
         hpg::RvalM<void, hpg::GridderState>::pure(
           [=]() {
             return
-              hpg::GridderState::create(
-                default_device,
-                0,
-                1,
-                static_cast<const hpg::CFArray*>(&cf),
-                grid_size,
-                grid_scale);
+              hpg::GridderState
+              ::create(default_device, 0, 1, &cf, grid_size, grid_scale);
           })
         .and_then(
           [=](auto&& gs) {
@@ -1245,6 +1345,71 @@ TEST(GridderState, Gridding) {
       EXPECT_TRUE(
         cf.verify_gridded_vis(v.get(), grid_size, grid_scale, vis, c, uvw));
     }
+}
+
+TEST(GridderState, GridOne) {
+  const std::array<unsigned, 4> grid_size{16384, 16384, 1, 1};
+  const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
+  constexpr unsigned cf_radius = 45;
+  constexpr unsigned cf_oversampling = 20;
+  constexpr hpg::vis_frequency_fp freq = 3.693e+09;
+  constexpr std::complex<hpg::visibility_fp> vis(1.0, -1.0);
+  constexpr hpg::vis_weight_fp wgt = 1.0;
+
+  ConeCFArray cf(cf_oversampling, cf_radius);
+
+  auto test =
+    [=](hpg::vis_uvw_t uvw) {
+      return
+        hpg::RvalM<void, hpg::GridderState>::pure(
+          [=]() {
+            return
+              hpg::GridderState
+              ::create(default_device, 0, 1, &cf, grid_size, grid_scale);
+          })
+        .and_then(
+          [=](auto&& gs) {
+            return
+              std::move(gs)
+              .set_convolution_function(default_host_device, ConeCFArray(cf));
+          })
+        .and_then(
+          [=](auto&& gs) {
+            return
+              std::move(gs)
+              .grid_visibilities(
+                default_host_device,
+                {vis},
+                {0},
+                {{0, 0}},
+                {wgt},
+                {freq},
+                {0.0},
+                {uvw});
+          })
+        .map(
+          [](auto&& gs) {
+            auto [gs1, gv] = std::move(gs).grid_values();
+            auto [gs2, gw] = std::move(gs1).grid_weights();
+            return std::make_tuple(std::move(gv), std::move(gw));
+          });
+        };
+  const std::array<float, 2> fine_scale{
+    grid_scale[0] * cf_oversampling,
+    grid_scale[1] * cf_oversampling
+  };
+
+  const hpg::vis_uvw_t uvw{2344.1, 638.066, -1826.55};
+  auto [ll, ur] = cf.cf_footprint(grid_size, grid_scale, freq, uvw);
+  EXPECT_EQ(ll[0], 9523);
+  EXPECT_EQ(ll[1], 8522);
+  EXPECT_EQ(ur[0], 9613);
+  EXPECT_EQ(ur[1], 8612);
+  auto err_or_result = test(uvw)();
+  ASSERT_TRUE(hpg::is_value(err_or_result));
+  auto [g, w] = hpg::get_value(std::move(err_or_result));
+  EXPECT_TRUE(
+    cf.verify_cf_footprint(g.get(), grid_size, grid_scale, vis, freq, uvw));
 }
 
 int
