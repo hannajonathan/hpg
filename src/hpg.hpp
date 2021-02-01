@@ -231,6 +231,44 @@ public:
   virtual ~CFArray() {}
 };
 
+/** CFArray sub-class for stored (cached) values in optimized layout for
+ * devices
+ */
+class HPG_EXPORT DeviceCFArray
+  : public CFArray {
+public:
+
+  /** create value vectors of a CFArray in optimized layout for device
+   *
+   * @param device target device
+   * @param host_device host device to use for converting layout
+   * @param cf CFArray instance to reorganize
+   *
+   * @return layout version string and vector of values in optimal layout (one
+   * per group of cf)
+   */
+  static rval_t<std::tuple<std::string, std::vector<std::vector<scalar_type>>>>
+  layout_for_device(Device device, Device host_device, const CFArray& cf);
+
+  /** create a DeviceCFArray (sub-class) instance
+   *
+   * @param version version string
+   * @param oversampling CF oversampling factor
+   * @param arrays extent and values in given layout for every CFArray group
+   */
+  static rval_t<std::unique_ptr<DeviceCFArray>>
+  create(
+    const std::string& version,
+    unsigned oversampling,
+    std::vector<std::tuple<std::array<unsigned, 4>, std::vector<scalar_type>>>&&
+      arrays);
+
+  virtual Device
+  device() const = 0;
+
+  virtual ~DeviceCFArray() {}
+};
+
 /** wrapper for access to copy of grid values
  *
  * @todo: replace with mdspan?
