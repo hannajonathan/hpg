@@ -343,24 +343,26 @@ struct CFLayout {
   }
 };
 
-/** convert UV coordinate to major and minor grid coordinates
+/** convert UV coordinate to major and minor grid coordinates, and CF
+ * coordinates
  *
  * Computed coordinates may refer to the points in the domain of the CF function
  * translated to the position of the visibility on the fine (oversampled) grid.
  *
- * The three returned coordinates are as follows
+ * The four returned coordinates are as follows
  * - leftmost major grid coordinate of (visibility-centered) CF support
+ * - leftmost major CF coordinate within CF support
  * - offset of visibility (on fine grid) from nearest-left major
  *   grid point (the "minor" coordinate of the CF, always non-negative)
  * - offset of visibility (on fine grid) from nearest major grid
  *   point (positive or negative)
  *
- * For negative fine_scale values, in the above description, change "left" to
+ * For negative grid_scale values, in the above description, change "left" to
  * "right"
  *
- * @return tuple comprising three integer coordinates
+ * @return tuple comprising four integer coordinates
  */
-KOKKOS_FUNCTION std::tuple<int, int, int>
+KOKKOS_FUNCTION std::tuple<int, int, int, int>
 compute_vis_coord(
   int g_size,
   int oversampling,
@@ -369,16 +371,18 @@ compute_vis_coord(
   vis_frequency_fp inv_lambda,
   grid_scale_fp grid_scale) {
 
-  const double position = grid_scale * coord * inv_lambda + g_size / 2;
-  long major = std::lrint(position); // loc
-  const long minor_shift = std::lrint((position - major) * oversampling); // off
-  major -= cf_radius;
-  long minor;
-  if (minor_shift >= 0) {
-    minor = minor_shift;
+  const double position = grid_scale * coord * inv_lambda + g_size / 2.0;
+  long grid_coord = std::lrint(position); // loc
+  const long fine_offset = std::lrint((position - grid_coord) * oversampling); // off
+  grid_coord -= cf_radius;
+  long cf_minor;
+  long cf_major;
+  if (fine_offset >= 0) {
+    cf_minor = fine_offset;
+    cf_major = CFArray::padding;
   } else {
-    minor = oversampling + minor_shift;
-    major -= 1;
+    cf_minor = oversampling + fine_offset;
+    cf_major = CFArray::padding - 1;
   }
   // const double fine_origin = g_size / -(2.0 * (fine_scale / oversampling));
   // const long fine =
@@ -392,8 +396,8 @@ compute_vis_coord(
   //   ((fine_coord >= nearest_major_fine_coord) ? 0 : oversampling);
   // int minor = fine_coord - (nearest_major_fine_coord - minor_shift);
   // const long minor = fine - major_fine;
-  assert(0 <= minor && minor < oversampling);
-  return {major, minor, minor_shift};
+  assert(0 <= cf_minor && cf_minor < oversampling);
+  return {grid_coord, cf_major, cf_minor, fine_offset};
 }
 
 /** portable sincos()
@@ -437,8 +441,9 @@ cphase(T ph) {
 template <typename execution_space>
 struct GridVis final {
 
-  int major[2]; /**< major grid coordinate */
-  int minor[2]; /**< minor grid coordinate */
+  int grid_coord[2]; /**< grid coordinate */
+  int cf_minor[2]; /**< CF minor coordinate */
+  int cf_major[2]; /**< CF major coordinate */
   int fine_offset[2]; /**< visibility position - nearest major grid */
   vis_t value; /**< visibility value */
   int grid_cube; /**< grid cube index */
@@ -461,7 +466,7 @@ struct GridVis final {
     value = vis.value * phasor * vis.weight;
     auto inv_lambda = vis.freq / c;
     // can't use std::tie here - CUDA doesn't support it
-    auto [c0, f0, o0] =
+    auto [g0, maj0, min0, f0] =
       compute_vis_coord(
         grid_size[0],
         oversampling[0],
@@ -469,10 +474,11 @@ struct GridVis final {
         vis.uvw[0],
         inv_lambda,
         grid_scale[0]);
-    major[0] = c0;
-    minor[0] = f0;
-    fine_offset[0] = o0;
-    auto [c1, f1, o1] =
+    grid_coord[0] = g0;
+    cf_major[0] = maj0;
+    cf_minor[0] = min0;
+    fine_offset[0] = f0;
+    auto [g1, maj1, min1, f1] =
       compute_vis_coord(
         grid_size[1],
         oversampling[1],
@@ -480,9 +486,10 @@ struct GridVis final {
         vis.uvw[1],
         inv_lambda,
         grid_scale[1]);
-    major[1] = c1;
-    minor[1] = f1;
-    fine_offset[1] = o1;
+    grid_coord[1] = g1;
+    cf_major[1] = maj1;
+    cf_minor[1] = min1;
+    fine_offset[1] = f1;
     cf_im_factor = (vis.uvw[2] > 0) ? -1 : 1;
   }
 
@@ -702,10 +709,21 @@ struct HPG_EXPORT VisibilityGridder final {
         for (int R = 0; R < N_R; ++R) {
           /* loop over majorY */
           for (int Y = 0; Y < N_Y; ++Y) {
-            cf_t cfv = cf(X, Y, R, vis.minor[0], vis.minor[1], cf_cube);
+            cf_t cfv =
+              cf(
+                X + vis.cf_major[0],
+                Y + vis.cf_major[1],
+                R,
+                vis.cf_minor[0],
+                vis.cf_minor[1],
+                cf_cube);
             cfv.imag() *= vis.cf_im_factor;
             pseudo_atomic_add<execution_space>(
-              grid(vis.major[0] + X, vis.major[1] + Y, R, vis.grid_cube),
+              grid(
+                X + vis.grid_coord[0],
+                Y + vis.grid_coord[1],
+                R,
+                vis.grid_cube),
               gv_t(cfv * vis.value));
             cfw_l.wgts[R] += cfv;
           }
@@ -788,11 +806,22 @@ struct HPG_EXPORT VisibilityGridder final {
         for (int R = 0; R < N_R; ++R) {
           /* loop over majorY */
           for (int Y = 0; Y < N_Y; ++Y) {
-            cf_t cfv = cf(X, Y, R, vis.minor[0], vis.minor[1], cf_cube);
+            cf_t cfv =
+              cf(
+                X + vis.cf_major[0],
+                Y + vis.cf_major[1],
+                R,
+                vis.cf_minor[0],
+                vis.cf_minor[1],
+                cf_cube);
             cfv.imag() *= vis.cf_im_factor;
             auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
             pseudo_atomic_add<execution_space>(
-              grid(vis.major[0] + X, vis.major[1] + Y, R, vis.grid_cube),
+              grid(
+                X + vis.grid_coord[0],
+                Y + vis.grid_coord[1],
+                R,
+                vis.grid_cube),
               gv_t(cfv * screen * vis.value));
             cfw_l.wgts[R] += cfv;
           }
@@ -874,10 +903,10 @@ struct HPG_EXPORT VisibilityGridder final {
             grid_scale);
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
-          if (0 <= vis.major[0]
-              && vis.major[0] + cf_size[0] <= grid.extent_int(0)
-              && 0 <= vis.major[1]
-              && vis.major[1] + cf_size[1] <= grid.extent_int(1))
+          if (0 <= vis.grid_coord[0]
+              && vis.grid_coord[0] + cf_size[0] <= grid.extent_int(0)
+              && 0 <= vis.grid_coord[1]
+              && vis.grid_coord[1] + cf_size[1] <= grid.extent_int(1))
             grid_vis(
               team_member,
               vis,
@@ -924,10 +953,10 @@ struct HPG_EXPORT VisibilityGridder final {
             grid_scale);
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
-          if (0 <= vis.major[0]
-              && vis.major[0] + cf_size[0] <= grid.extent_int(0)
-              && 0 <= vis.major[1]
-              && vis.major[1] + cf_size[1] <= grid.extent_int(1))
+          if (0 <= vis.grid_coord[0]
+              && vis.grid_coord[0] + cf_size[0] <= grid.extent_int(0)
+              && 0 <= vis.grid_coord[1]
+              && vis.grid_coord[1] + cf_size[1] <= grid.extent_int(1))
             grid_vis(
               team_member,
               vis,
