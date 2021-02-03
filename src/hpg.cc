@@ -981,6 +981,50 @@ Gridder::shift_grid() {
   state = std::move(state).shift_grid();
 }
 
+#if HPG_API >= 17
+std::optional<Error>
+GridValueArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
+  const {
+
+  if (host_devices().count(host_device) == 0)
+    return DisabledHostDeviceError();
+  unsafe_copy_to(host_device, dst, layout);
+  return std::nullopt;
+}
+#else // HPG_API < 17
+std::unique_ptr<Error>
+GridValueArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
+  const {
+
+  if (host_devices().count(host_device) == 0)
+    return std::unique_ptr<Error>(new DisabledHostDeviceError());
+  unsafe_copy_to(host_device, dst, layout);
+  return nullptr;
+}
+#endif //HPG_API >= 17
+
+#if HPG_API >= 17
+std::optional<Error>
+GridWeightArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
+  const {
+
+  if (host_devices().count(host_device) == 0)
+    return DisabledHostDeviceError();
+  unsafe_copy_to(host_device, dst, layout);
+  return std::nullopt;
+}
+#else // HPG_API < 17
+std::unique_ptr<Error>
+GridWeightArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
+  const {
+
+  if (host_devices().count(host_device) == 0)
+    return std::unique_ptr<Error>(new DisabledHostDeviceError());
+  unsafe_copy_to(host_device, dst, layout);
+  return nullptr;
+}
+#endif //HPG_API >= 17
+
 bool
 hpg::initialize() {
   return Impl::initialize();

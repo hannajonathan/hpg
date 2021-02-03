@@ -1853,8 +1853,11 @@ public:
     }
   }
 
+protected:
+
   void
-  copy_to(Device host_device, scalar_type* dst, Layout lyo) const override {
+  unsafe_copy_to(Device host_device, scalar_type* dst, Layout lyo)
+    const override {
 
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
@@ -1872,6 +1875,8 @@ public:
       break;
     }
   }
+
+public:
 
   template <Device H>
   static std::unique_ptr<GridValueViewArray>
@@ -2024,8 +2029,11 @@ class HPG_EXPORT GridWeightViewArray final
     }
   }
 
+protected:
+
   void
-  copy_to(Device host_device, scalar_type* dst, Layout lyo) const override {
+  unsafe_copy_to(Device host_device, scalar_type* dst, Layout lyo)
+    const override {
 
     switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
@@ -2043,6 +2051,8 @@ class HPG_EXPORT GridWeightViewArray final
       break;
     }
   }
+
+public:
 
   template <Device H>
   static std::unique_ptr<GridWeightViewArray>

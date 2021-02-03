@@ -241,12 +241,18 @@ public:
    * @param host_device host device to use for copying values
    * @param dst destination buffer
    * @param layout array layout of values copied into dst
+   *
+   * @return an Error, iff host_device names a disabled host device
    */
-  virtual void
+#if HPG_API >= 17
+  std::optional<Error>
+#else // HPG_API < 17
+  std::unique_ptr<Error>
+#endif //HPG_API >= 17
   copy_to(
     Device host_device,
     scalar_type* dst,
-    Layout layout = Layout::Left) const = 0;
+    Layout layout = Layout::Left) const;
 
   /** minimum size of buffer for destination of copy_to()
    *
@@ -277,6 +283,15 @@ public:
     scalar_type* src,
     const std::array<unsigned, rank>& extents,
     Layout layout = Layout::Left);
+
+protected:
+
+  /** unsafe version of copy_to()
+   *
+   * Assumes host_device names an enabled host device
+   */
+  virtual void
+  unsafe_copy_to(Device host_device, scalar_type* dst, Layout layout) const = 0;
 };
 
 /** wrapper for access to copy of grid weights
@@ -301,12 +316,18 @@ public:
    * @param host_device host device to use for copying values
    * @param dst destination buffer
    * @param layout array layout of values copied into dst
- */
-  virtual void
+   *
+   * @return an Error, iff host_device names a disabled host device
+   */
+#if HPG_API >= 17
+  std::optional<Error>
+#else // HPG_API < 17
+  std::unique_ptr<Error>
+#endif //HPG_API >= 17
   copy_to(
     Device host_device,
     scalar_type* dst,
-    Layout layout = Layout::Left) const = 0;
+    Layout layout = Layout::Left) const;
 
   /** minimum size of buffer for destination of copy_to()
    *
@@ -337,6 +358,15 @@ public:
     scalar_type* src,
     const std::array<unsigned, rank>& extents,
     Layout layout = Layout::Left);
+
+protected:
+
+  /** unsafe version of copy_to()
+   *
+   * Assumes host_device names an enabled host device
+   */
+  virtual void
+  unsafe_copy_to(Device host_device, scalar_type* dst, Layout layout) const = 0;
 };
 
 class HPG_EXPORT Gridder;
