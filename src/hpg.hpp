@@ -45,21 +45,20 @@ namespace hpg {
  *
  * @return true, if and only if initialization succeeded
  */
-bool initialize();
+HPG_EXPORT bool initialize();
 
 /** global finalization of hpg
  *
  * Function is idempotent, but should only be called by a process after a call
  * to hpg::initialize()
  */
-void finalize();
+HPG_EXPORT void finalize();
 
 /** query whether hpg has been initialized
  *
  * Note the result will remain "true" after finalization.
  */
-bool
-is_initialized() noexcept;
+HPG_EXPORT bool is_initialized() noexcept;
 
 /** backend device type
  */
@@ -71,11 +70,11 @@ enum class HPG_EXPORT Device {
 };
 
 /** supported devices */
-const std::set<Device>&
+HPG_EXPORT const std::set<Device>&
 devices() noexcept;
 
 /** supported host devices */
-const std::set<Device>&
+HPG_EXPORT const std::set<Device>&
 host_devices() noexcept;
 
 /** hpg scope object
@@ -160,7 +159,7 @@ sgn(T val) {
 } // end namespace Impl
 
 /** array layout enumeration */
-enum class Layout {
+enum class HPG_EXPORT Layout {
   Right, /**< C order: rightmost index has smallest stride */
   Left, /**< FORTRAN order: leftmost index has smallest stride */
 };
