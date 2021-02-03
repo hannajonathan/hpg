@@ -194,7 +194,7 @@ class HPG_EXPORT CFArray
   : public CFArrayShape {
 public:
 
-  using scalar_type = std::complex<cf_fp>;
+  using value_type = std::complex<cf_fp>;
 
   static constexpr unsigned padding = 2;
 
@@ -228,7 +228,7 @@ public:
 
   static constexpr unsigned rank = 4;
 
-  using scalar_type = std::complex<grid_value_fp>;
+  using value_type = std::complex<grid_value_fp>;
 
   virtual unsigned
   extent(unsigned dim) const = 0;
@@ -251,7 +251,7 @@ public:
 #endif //HPG_API >= 17
   copy_to(
     Device host_device,
-    scalar_type* dst,
+    value_type* dst,
     Layout layout = Layout::Left) const;
 
   /** minimum size of buffer for destination of copy_to()
@@ -280,7 +280,7 @@ public:
     const std::string& name,
     Device target_device,
     Device host_device,
-    scalar_type* src,
+    value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout layout = Layout::Left);
 
@@ -291,7 +291,7 @@ protected:
    * Assumes host_device names an enabled host device
    */
   virtual void
-  unsafe_copy_to(Device host_device, scalar_type* dst, Layout layout) const = 0;
+  unsafe_copy_to(Device host_device, value_type* dst, Layout layout) const = 0;
 };
 
 /** wrapper for access to copy of grid weights
@@ -303,7 +303,7 @@ public:
 
   static constexpr unsigned rank = 2;
 
-  using scalar_type = grid_value_fp;
+  using value_type = grid_value_fp;
 
   virtual unsigned
   extent(unsigned dim) const = 0;
@@ -326,7 +326,7 @@ public:
 #endif //HPG_API >= 17
   copy_to(
     Device host_device,
-    scalar_type* dst,
+    value_type* dst,
     Layout layout = Layout::Left) const;
 
   /** minimum size of buffer for destination of copy_to()
@@ -355,7 +355,7 @@ public:
     const std::string& name,
     Device target_device,
     Device host_device,
-    scalar_type* src,
+    value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout layout = Layout::Left);
 
@@ -366,7 +366,7 @@ protected:
    * Assumes host_device names an enabled host device
    */
   virtual void
-  unsafe_copy_to(Device host_device, scalar_type* dst, Layout layout) const = 0;
+  unsafe_copy_to(Device host_device, value_type* dst, Layout layout) const = 0;
 };
 
 class HPG_EXPORT Gridder;

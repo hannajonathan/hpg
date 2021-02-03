@@ -248,14 +248,14 @@ has_non_zero(const T* array) {
   if constexpr (T::rank == 2) {
     for (unsigned i = 0; i < array->extent(0); ++i)
       for (unsigned j = 0; j < array->extent(1); ++j)
-        if ((*array)(i, j) != typename T::scalar_type(0))
+        if ((*array)(i, j) != typename T::value_type(0))
           return true;
   } else {
     for (unsigned i = 0; i < array->extent(0); ++i)
       for (unsigned j = 0; j < array->extent(1); ++j)
         for (unsigned k = 0; k < array->extent(2); ++k)
           for (unsigned m = 0; m < array->extent(3); ++m)
-            if ((*array)(i, j, k, m) != typename T::scalar_type(0))
+            if ((*array)(i, j, k, m) != typename T::value_type(0))
               return true;
   }
   return false;
@@ -269,6 +269,48 @@ grid_value_encode(unsigned x, unsigned y, unsigned mr, unsigned cb) {
 hpg::grid_value_fp
 grid_weight_encode(unsigned mr, unsigned cb) {
   return hpg::grid_value_fp(1000 * mr) +  hpg::grid_value_fp(cb);
+}
+
+TEST(GridArrays, GridValueReadWrite) {
+  std::array<unsigned, 4> grid_size{8, 8, 4, 3};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
+  auto padding = 2 * hpg::CFArray::padding;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{
+      {3 + padding, 3 + padding, 4, 3},
+      {2 + padding, 2 + padding, 4, 2}};
+
+  std::mt19937 rng(42);
+  MyCFArray cf = create_cf(10, cf_sizes, rng);
+
+  auto gs_or_err =
+    hpg::GridderState::create(
+      default_device,
+      0,
+      4,
+      &cf,
+      grid_size,
+      grid_scale);
+  ASSERT_TRUE(hpg::is_value(gs_or_err));
+  auto gs = hpg::get_value(std::move(gs_or_err));
+  auto gvals = std::get<1>(gs.grid_values());
+
+  // write values to grid and read them back
+  for (unsigned x = 0; x < grid_size[0]; ++x)
+    for (unsigned y = 0; y < grid_size[1]; ++y)
+      for (unsigned mr = 0; mr < grid_size[2]; ++mr)
+        for (unsigned cb = 0; cb < grid_size[3]; ++cb)
+          (*gvals)(x, y, mr, cb) = grid_value_encode(x, y, mr, cb);
+  bool eq = true;
+  for (unsigned x = 0; eq && x < grid_size[0]; ++x)
+    for (unsigned y = 0; eq && y < grid_size[1]; ++y)
+      for (unsigned mr = 0; eq && mr < grid_size[2]; ++mr)
+        for (unsigned cb = 0; eq && cb < grid_size[3]; ++cb) {
+          auto& g = (*gvals)(x, y, mr, cb);
+          auto val = grid_value_encode(x, y, mr, cb);
+          EXPECT_EQ(g, val);
+          eq = (g == val);
+        }
 }
 
 TEST(GridArrays, CopyToValuesLayouts) {
@@ -303,7 +345,7 @@ TEST(GridArrays, CopyToValuesLayouts) {
   auto gvals_sz = gvals->min_buffer_size();
   // copy grid values to left layout, and check results
   {
-    std::vector<hpg::GridValueArray::scalar_type> gvals_left(gvals_sz);
+    std::vector<hpg::GridValueArray::value_type> gvals_left(gvals_sz);
     auto opt_err =
       gvals->copy_to(
         default_host_device,
@@ -326,7 +368,7 @@ TEST(GridArrays, CopyToValuesLayouts) {
   }
   // copy grid values to right layout, and check results
   {
-    std::vector<hpg::GridValueArray::scalar_type> gvals_right(gvals_sz);
+    std::vector<hpg::GridValueArray::value_type> gvals_right(gvals_sz);
     auto opt_err =
       gvals->copy_to(
         default_host_device,
@@ -355,7 +397,7 @@ TEST(GridArrays, CopyFromValuesLayouts) {
   auto gvals_sz = grid_size[0] * grid_size[1] * grid_size[2] * grid_size[3];
   // copy grid values from left layout, and check results
   {
-    std::vector<hpg::GridValueArray::scalar_type> gvals_left(gvals_sz);
+    std::vector<hpg::GridValueArray::value_type> gvals_left(gvals_sz);
     for (unsigned x = 0; x < grid_size[0]; ++x)
       for (unsigned y = 0; y < grid_size[1]; ++y)
         for (unsigned mr = 0; mr < grid_size[2]; ++mr)
@@ -384,7 +426,7 @@ TEST(GridArrays, CopyFromValuesLayouts) {
   }
   // copy grid values to right layout, and check results
   {
-    std::vector<hpg::GridValueArray::scalar_type> gvals_right(gvals_sz);
+    std::vector<hpg::GridValueArray::value_type> gvals_right(gvals_sz);
     for (unsigned x = 0; x < grid_size[0]; ++x)
       for (unsigned y = 0; y < grid_size[1]; ++y)
         for (unsigned mr = 0; mr < grid_size[2]; ++mr)
@@ -420,7 +462,7 @@ TEST(GridArrays, CopyFromWeightsLayouts) {
   auto gwgts_sz = grid_size[0] * grid_size[1];
   // copy grid weights from left layout, and check results
   {
-    std::vector<hpg::GridWeightArray::scalar_type> gwgts_left(gwgts_sz);
+    std::vector<hpg::GridWeightArray::value_type> gwgts_left(gwgts_sz);
     for (unsigned mr = 0; mr < grid_size[0]; ++mr)
       for (unsigned cb = 0; cb < grid_size[1]; ++cb)
         gwgts_left[mr + grid_size[0] * cb] = grid_weight_encode(mr, cb);
@@ -443,7 +485,7 @@ TEST(GridArrays, CopyFromWeightsLayouts) {
   }
   // copy grid weights to right layout, and check results
   {
-    std::vector<hpg::GridWeightArray::scalar_type> gwgts_right(gwgts_sz);
+    std::vector<hpg::GridWeightArray::value_type> gwgts_right(gwgts_sz);
     for (unsigned mr = 0; mr < grid_size[0]; ++mr)
       for (unsigned cb = 0; cb < grid_size[1]; ++cb)
         gwgts_right[cb + grid_size[1] * mr] = grid_weight_encode(mr, cb);
@@ -496,7 +538,7 @@ TEST(GridArrays, CopyToWeightsLayouts) {
   auto gwgts_sz = gwgts->min_buffer_size();
   // copy grid weights to left layout, and check results
   {
-    std::vector<hpg::GridWeightArray::scalar_type> gwgts_left(gwgts_sz);
+    std::vector<hpg::GridWeightArray::value_type> gwgts_left(gwgts_sz);
     auto opt_err =
       gwgts->copy_to(
         default_host_device,
@@ -515,7 +557,7 @@ TEST(GridArrays, CopyToWeightsLayouts) {
   }
   // copy grid weights to right layout, and check results
   {
-    std::vector<hpg::GridWeightArray::scalar_type> gwgts_right(gwgts_sz);
+    std::vector<hpg::GridWeightArray::value_type> gwgts_right(gwgts_sz);
     auto opt_err =
       gwgts->copy_to(
         default_host_device,
@@ -619,8 +661,8 @@ TEST(GridArrays, CompareLayouts) {
   ASSERT_TRUE(has_non_zero(gwgts.get()));
   // copy gvals into arrays with left and right layouts
   auto gvals_sz = gvals->min_buffer_size();
-  std::vector<hpg::GridValueArray::scalar_type> gvals_left(gvals_sz);
-  std::vector<hpg::GridValueArray::scalar_type> gvals_right(gvals_sz);
+  std::vector<hpg::GridValueArray::value_type> gvals_left(gvals_sz);
+  std::vector<hpg::GridValueArray::value_type> gvals_right(gvals_sz);
   {
     auto oerr =
       gvals->copy_to(default_host_device, gvals_left.data(), hpg::Layout::Left);
@@ -637,8 +679,8 @@ TEST(GridArrays, CompareLayouts) {
 
   // copy gwgts into arrays with left and right layouts
   auto gwgts_sz = gwgts->min_buffer_size();
-  std::vector<hpg::GridWeightArray::scalar_type> gwgts_left(gwgts_sz);
-  std::vector<hpg::GridWeightArray::scalar_type> gwgts_right(gwgts_sz);
+  std::vector<hpg::GridWeightArray::value_type> gwgts_left(gwgts_sz);
+  std::vector<hpg::GridWeightArray::value_type> gwgts_right(gwgts_sz);
   {
     auto oerr =
       gwgts->copy_to(default_host_device, gwgts_left.data(), hpg::Layout::Left);

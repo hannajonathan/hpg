@@ -361,7 +361,7 @@ struct ConeCFArray final
     };
     for (int x = 0; x < grid_size[0]; ++x)
       for (int y = 0; y < grid_size[1]; ++y)
-        if ((*grid)(x, y, 0, 0) != hpg::GridValueArray::scalar_type(0)) {
+        if ((*grid)(x, y, 0, 0) != hpg::GridValueArray::value_type(0)) {
           measured_footprint[0][0] = std::min(measured_footprint[0][0], x);
           measured_footprint[0][1] = std::min(measured_footprint[0][1], y);
           measured_footprint[1][0] = std::max(measured_footprint[1][0], x);
@@ -463,14 +463,14 @@ has_non_zero(const T* array) {
   if constexpr (T::rank == 2) {
     for (unsigned i = 0; i < array->extent(0); ++i)
       for (unsigned j = 0; j < array->extent(1); ++j)
-        if ((*array)(i, j) != typename T::scalar_type(0))
+        if ((*array)(i, j) != typename T::value_type(0))
           return true;
   } else {
     for (unsigned i = 0; i < array->extent(0); ++i)
       for (unsigned j = 0; j < array->extent(1); ++j)
         for (unsigned k = 0; k < array->extent(2); ++k)
           for (unsigned m = 0; m < array->extent(3); ++m)
-            if ((*array)(i, j, k, m) != typename T::scalar_type(0))
+            if ((*array)(i, j, k, m) != typename T::value_type(0))
               return true;
   }
   return false;

@@ -983,7 +983,7 @@ Gridder::shift_grid() {
 
 #if HPG_API >= 17
 std::optional<Error>
-GridValueArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
+GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
   if (host_devices().count(host_device) == 0)
@@ -993,7 +993,7 @@ GridValueArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
 }
 #else // HPG_API < 17
 std::unique_ptr<Error>
-GridValueArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
+GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
   if (host_devices().count(host_device) == 0)
@@ -1005,7 +1005,7 @@ GridValueArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
 
 #if HPG_API >= 17
 std::optional<Error>
-GridWeightArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
+GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
   if (host_devices().count(host_device) == 0)
@@ -1015,7 +1015,7 @@ GridWeightArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
 }
 #else // HPG_API < 17
 std::unique_ptr<Error>
-GridWeightArray::copy_to(Device host_device, scalar_type* dst, Layout layout)
+GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
   if (host_devices().count(host_device) == 0)

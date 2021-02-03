@@ -1814,7 +1814,7 @@ public:
 
   template <Device H>
   void
-  copy_to(scalar_type* dst, Layout lyo) const {
+  copy_to(value_type* dst, Layout lyo) const {
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
     // (otherwise, the following is broken, not least because it may result in
@@ -1856,7 +1856,7 @@ public:
 protected:
 
   void
-  unsafe_copy_to(Device host_device, scalar_type* dst, Layout lyo)
+  unsafe_copy_to(Device host_device, value_type* dst, Layout lyo)
     const override {
 
     switch (host_device) {
@@ -1882,7 +1882,7 @@ public:
   static std::unique_ptr<GridValueViewArray>
   copy_from(
     const std::string& name,
-    scalar_type* src,
+    value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
@@ -1937,7 +1937,7 @@ public:
   copy_from(
     const std::string& name,
     Device host_device,
-    scalar_type* src,
+    value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
@@ -1990,7 +1990,7 @@ class HPG_EXPORT GridWeightViewArray final
 
   template <Device H>
   void
-  copy_to(scalar_type* dst, Layout lyo) const {
+  copy_to(value_type* dst, Layout lyo) const {
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
     // (otherwise, the following is broken, not least because it may result in
@@ -2032,7 +2032,7 @@ class HPG_EXPORT GridWeightViewArray final
 protected:
 
   void
-  unsafe_copy_to(Device host_device, scalar_type* dst, Layout lyo)
+  unsafe_copy_to(Device host_device, value_type* dst, Layout lyo)
     const override {
 
     switch (host_device) {
@@ -2058,7 +2058,7 @@ public:
   static std::unique_ptr<GridWeightViewArray>
   copy_from(
     const std::string& name,
-    scalar_type* src,
+    value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
@@ -2113,7 +2113,7 @@ public:
   copy_from(
     const std::string& name,
     Device host_device,
-    scalar_type* src,
+    value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
@@ -3310,7 +3310,7 @@ GridValueArray::copy_from(
   const std::string& name,
   Device target_device,
   Device host_device,
-  scalar_type* src,
+  value_type* src,
   const std::array<unsigned, GridValueArray::rank>& extents,
   Layout layout) {
 
@@ -3371,7 +3371,7 @@ GridWeightArray::copy_from(
   const std::string& name,
   Device target_device,
   Device host_device,
-  scalar_type* src,
+  value_type* src,
   const std::array<unsigned, GridWeightArray::rank>& extents,
   Layout layout) {
 

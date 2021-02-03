@@ -186,14 +186,14 @@ has_non_zero(const T* array) {
   if constexpr (T::rank == 2) {
     for (unsigned i = 0; i < array->extent(0); ++i)
       for (unsigned j = 0; j < array->extent(1); ++j)
-        if ((*array)(i, j) != typename T::scalar_type(0))
+        if ((*array)(i, j) != typename T::value_type(0))
           return true;
   } else {
     for (unsigned i = 0; i < array->extent(0); ++i)
       for (unsigned j = 0; j < array->extent(1); ++j)
         for (unsigned k = 0; k < array->extent(2); ++k)
           for (unsigned m = 0; m < array->extent(3); ++m)
-            if ((*array)(i, j, k, m) != typename T::scalar_type(0))
+            if ((*array)(i, j, k, m) != typename T::value_type(0))
               return true;
   }
   return false;
