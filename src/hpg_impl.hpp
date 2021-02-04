@@ -1805,18 +1805,17 @@ public:
     return grid.extent(dim);
   }
 
-  value_type
+  const value_type&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube)
     const override {
 
-    return grid(x, y, mrow, cube);
+    return reinterpret_cast<const value_type&>(grid(x, y, mrow, cube));
   }
 
-  void
-  set_value(unsigned x, unsigned y, unsigned mrow, unsigned cube, const value_type& val)
-    override {
+  value_type&
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) override {
 
-    grid(x, y, mrow, cube) = val;
+    return reinterpret_cast<value_type&>(grid(x, y, mrow, cube));
   }
 
   template <Device H>
@@ -1989,16 +1988,16 @@ class HPG_EXPORT GridWeightViewArray final
     return weight.extent(dim);
   }
 
-  grid_value_fp
+  const value_type&
   operator()(unsigned mrow, unsigned cube) const override {
 
     return weight(mrow, cube);
   }
 
-  void
-  set_value(unsigned mrow, unsigned cube, const value_type& val) override {
+  value_type&
+  operator()(unsigned mrow, unsigned cube) override {
 
-    weight(mrow, cube) = val;
+    return weight(mrow, cube);
   }
 
   template <Device H>

@@ -238,16 +238,11 @@ public:
   virtual unsigned
   extent(unsigned dim) const = 0;
 
-  virtual value_type
+  virtual const value_type&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) const = 0;
 
-  virtual void
-  set_value(
-    unsigned x,
-    unsigned y,
-    unsigned mrow,
-    unsigned cube,
-    const value_type& val) = 0;
+  virtual value_type&
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) = 0;
 
   /** copy values to a buffer in requested layout
    *
@@ -317,11 +312,11 @@ public:
   virtual unsigned
   extent(unsigned dim) const = 0;
 
-  virtual value_type
+  virtual const value_type&
   operator()(unsigned mrow, unsigned cube) const = 0;
 
-  virtual void
-  set_value(unsigned mrow, unsigned cube, const value_type& val) = 0;
+  virtual value_type&
+  operator()(unsigned mrow, unsigned cube) = 0;
 
   /** copy values to a buffer in requested layout
    *

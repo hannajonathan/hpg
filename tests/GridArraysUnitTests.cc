@@ -300,7 +300,7 @@ TEST(GridArrays, GridValueReadWrite) {
     for (unsigned y = 0; y < grid_size[1]; ++y)
       for (unsigned mr = 0; mr < grid_size[2]; ++mr)
         for (unsigned cb = 0; cb < grid_size[3]; ++cb)
-          gvals->set_value(x, y, mr, cb, grid_value_encode(x, y, mr, cb));
+          (*gvals)(x, y, mr, cb) = grid_value_encode(x, y, mr, cb);
   bool eq = true;
   for (unsigned x = 0; eq && x < grid_size[0]; ++x)
     for (unsigned y = 0; eq && y < grid_size[1]; ++y)
@@ -340,7 +340,7 @@ TEST(GridArrays, CopyToValuesLayouts) {
     for (unsigned y = 0; y < grid_size[1]; ++y)
       for (unsigned mr = 0; mr < grid_size[2]; ++mr)
         for (unsigned cb = 0; cb < grid_size[3]; ++cb)
-          gvals->set_value(x, y, mr, cb, grid_value_encode(x, y, mr, cb));
+          (*gvals)(x, y, mr, cb) = grid_value_encode(x, y, mr, cb);
 
   auto gvals_sz = gvals->min_buffer_size();
   // copy grid values to left layout, and check results
@@ -533,7 +533,7 @@ TEST(GridArrays, CopyToWeightsLayouts) {
   auto gwgts = std::get<1>(gs.grid_weights());
   for (unsigned mr = 0; mr < grid_size[2]; ++mr)
     for (unsigned cb = 0; cb < grid_size[3]; ++cb)
-      gwgts->set_value(mr, cb, grid_weight_encode(mr, cb));
+      (*gwgts)(mr, cb) = grid_weight_encode(mr, cb);
 
   auto gwgts_sz = gwgts->min_buffer_size();
   // copy grid weights to left layout, and check results
