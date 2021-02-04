@@ -1791,25 +1791,32 @@ public:
 
   using memory_space = typename DeviceT<D>::kokkos_device::memory_space;
   using layout = typename GridLayout<D>::layout;
-  using grid_t = typename const_grid_view<layout, memory_space>::HostMirror;
+  using grid_t = typename grid_view<layout, memory_space>::HostMirror;
 
   grid_t grid;
 
   GridValueViewArray(const grid_t& grid_)
     : grid(grid_) {}
 
-  ~GridValueViewArray() {}
+  virtual ~GridValueViewArray() {}
 
   unsigned
   extent(unsigned dim) const override {
     return grid.extent(dim);
   }
 
-  std::complex<grid_value_fp>&
+  value_type
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube)
     const override {
 
-    return reinterpret_cast<scalar_type&>(grid(x, y, mrow, cube));
+    return grid(x, y, mrow, cube);
+  }
+
+  void
+  set_value(unsigned x, unsigned y, unsigned mrow, unsigned cube, const value_type& val)
+    override {
+
+    grid(x, y, mrow, cube) = val;
   }
 
   template <Device H>
@@ -1968,24 +1975,30 @@ class HPG_EXPORT GridWeightViewArray final
 
   using memory_space = typename DeviceT<D>::kokkos_device::memory_space;
   using layout = typename DeviceT<D>::kokkos_device::array_layout;
-  using weight_t = typename const_weight_view<layout, memory_space>::HostMirror;
+  using weight_t = typename weight_view<layout, memory_space>::HostMirror;
 
   weight_t weight;
 
   GridWeightViewArray(const weight_t& weight_)
     : weight(weight_) {}
 
-  ~GridWeightViewArray() {}
+  virtual ~GridWeightViewArray() {}
 
   unsigned
   extent(unsigned dim) const override {
     return weight.extent(dim);
   }
 
-  grid_value_fp&
+  grid_value_fp
   operator()(unsigned mrow, unsigned cube) const override {
 
     return weight(mrow, cube);
+  }
+
+  void
+  set_value(unsigned mrow, unsigned cube, const value_type& val) override {
+
+    weight(mrow, cube) = val;
   }
 
   template <Device H>
