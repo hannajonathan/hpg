@@ -272,7 +272,7 @@ grid_weight_encode(unsigned mr, unsigned cb) {
 }
 
 TEST(GridArrays, GridValueReadWrite) {
-  std::array<unsigned, 4> grid_size{8, 8, 4, 3};
+  std::array<unsigned, 4> grid_size{8, 9, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   auto padding = 2 * hpg::CFArray::padding;
   const std::vector<std::array<unsigned, 4>>
@@ -314,7 +314,7 @@ TEST(GridArrays, GridValueReadWrite) {
 }
 
 TEST(GridArrays, CopyToValuesLayouts) {
-  std::array<unsigned, 4> grid_size{8, 8, 4, 3};
+  std::array<unsigned, 4> grid_size{8, 9, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   auto padding = 2 * hpg::CFArray::padding;
   const std::vector<std::array<unsigned, 4>>
@@ -392,7 +392,7 @@ TEST(GridArrays, CopyToValuesLayouts) {
 }
 
 TEST(GridArrays, CopyFromValuesLayouts) {
-  std::array<unsigned, 4> grid_size{8, 8, 4, 3};
+  std::array<unsigned, 4> grid_size{8, 9, 4, 3};
 
   auto gvals_sz = grid_size[0] * grid_size[1] * grid_size[2] * grid_size[3];
   // copy grid values from left layout, and check results
@@ -509,7 +509,7 @@ TEST(GridArrays, CopyFromWeightsLayouts) {
   }
 }
 TEST(GridArrays, CopyToWeightsLayouts) {
-  std::array<unsigned, 4> grid_size{8, 8, 4, 3};
+  std::array<unsigned, 4> grid_size{8, 9, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   auto padding = 2 * hpg::CFArray::padding;
   const std::vector<std::array<unsigned, 4>>
@@ -577,7 +577,7 @@ TEST(GridArrays, CopyToWeightsLayouts) {
 }
 
 TEST(GridArrays, CompareLayouts) {
-  std::array<unsigned, 4> grid_size{20, 20, 4, 3};
+  std::array<unsigned, 4> grid_size{20, 21, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 100;
   auto padding = 2 * hpg::CFArray::padding;
