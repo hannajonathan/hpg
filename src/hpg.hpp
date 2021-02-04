@@ -147,6 +147,12 @@ using cf_phase_screen_t = std::array<cf_phase_screen_fp, 2>;
  */
 using vis_cf_index_t = std::pair<unsigned, unsigned>;
 
+#if HPG_API >= 17
+using opt_error_t = std::optional<Error>;
+#else // HPG_API < 17
+using opt_error_t = std::unique_ptr<Error>;
+#endif //HPG_API >= 17
+
 namespace Impl {
 struct HPG_EXPORT State;
 struct HPG_EXPORT GridderState;
@@ -251,11 +257,7 @@ public:
    *
    * @return an Error, iff host_device names a disabled host device
    */
-#if HPG_API >= 17
-  std::optional<Error>
-#else // HPG_API < 17
-  std::unique_ptr<Error>
-#endif //HPG_API >= 17
+  opt_error_t
   copy_to(
     Device host_device,
     value_type* dst,
@@ -329,11 +331,7 @@ public:
    *
    * @return an Error, iff host_device names a disabled host device
    */
-#if HPG_API >= 17
-  std::optional<Error>
-#else // HPG_API < 17
-  std::unique_ptr<Error>
-#endif //HPG_API >= 17
+  opt_error_t
   copy_to(
     Device host_device,
     value_type* dst,
@@ -1067,11 +1065,7 @@ public:
    * @return new GridderState that is a copy of the target, but with memory
    * allocated for convolution function, or error
    */
-#if HPG_API >= 17
-  std::optional<Error>
-#else // HPG_API < 17
-  std::unique_ptr<Error>
-#endif //HPG_API >= 17
+  opt_error_t
   allocate_convolution_function_region(const CFArrayShape* shape);
 
   /** set convolution function
@@ -1084,11 +1078,7 @@ public:
    * @param host_device device to use for changing array layout
    * @param cf convolution function array
    */
-#if HPG_API >= 17
-  std::optional<Error>
-#else // HPG_API < 17
-  std::unique_ptr<Error>
-#endif //HPG_API >= 17
+  opt_error_t
   set_convolution_function(Device host_device, CFArray&&);
 
   /** grid visibilities
@@ -1108,11 +1098,7 @@ public:
    * @param phases visibility phase differences
    * @param coordinates visibility coordinates
    */
-#if HPG_API >= 17
-  std::optional<Error>
-#else // HPG_API < 17
-  std::unique_ptr<Error>
-#endif // HPG_API >= 17
+  opt_error_t
   grid_visibilities(
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
@@ -1141,11 +1127,7 @@ public:
    * @param coordinates visibility coordinates
    * @param cf_phase_screens visibility CF phase screen parameters
    */
-#if HPG_API >= 17
-  std::optional<Error>
-#else // HPG_API < 17
-  std::unique_ptr<Error>
-#endif // HPG_API >= 17
+  opt_error_t
   grid_visibilities(
     Device host_device,
     std::vector<std::complex<visibility_fp>>&& visibilities,
@@ -1203,11 +1185,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-#if HPG_API >= 17
-  std::optional<Error>
-#else // HPG_API < 17
-  std::unique_ptr<Error>
-#endif //HPG_API >= 17
+  opt_error_t
   apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true);
 
   /** shift grid planes by half

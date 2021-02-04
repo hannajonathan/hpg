@@ -749,10 +749,9 @@ Gridder::convolution_function_region_size(const CFArrayShape* shape)
   return state.convolution_function_region_size(shape);
 }
 
-#if HPG_API >= 17
-std::optional<Error>
+opt_error_t
 Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
-
+#if HPG_API >= 17
   return
     fold(
       std::move(state).allocate_convolution_function_region(shape),
@@ -763,21 +762,17 @@ Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
       [](auto&& err) -> std::optional<Error> {
         return std::move(err);
       });
-}
-#else // HPG_API < 17
-std::unique_ptr<Error>
-Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
+#else //HPG_API < 17
   std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).allocate_convolution_function_region(shape);
   return result;
-}
 #endif //HPG_API >= 17
+}
 
-#if HPG_API >= 17
-std::optional<Error>
+opt_error_t
 Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
-
+#if HPG_API >= 17
   return
     fold(
       std::move(state).set_convolution_function(host_device, std::move(cf)),
@@ -788,20 +783,15 @@ Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
       [](auto&& err) -> std::optional<Error> {
         return std::move(err);
       });
-}
 #else // HPG_API < 17
-std::unique_ptr<Error>
-Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
-
   std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).set_convolution_function(host_device, std::move(cf));
   return result;
-}
 #endif //HPG_API >= 17
+}
 
-#if HPG_API >= 17
-std::optional<Error>
+opt_error_t
 Gridder::grid_visibilities(
   Device host_device,
   std::vector<std::complex<visibility_fp>>&& visibilities,
@@ -811,7 +801,7 @@ Gridder::grid_visibilities(
   std::vector<vis_frequency_fp>&& frequencies,
   std::vector<vis_phase_fp>&& phases,
   std::vector<vis_uvw_t>&& coordinates) {
-
+#if HPG_API >= 17
   return
     fold(
       std::move(state)
@@ -831,9 +821,24 @@ Gridder::grid_visibilities(
       [](auto&& err) -> std::optional<Error> {
         return std::move(err);
       });
+#else // HPG_API < 17
+  std::unique_ptr<Error> result;
+  std::tie(result, state) =
+    std::move(state)
+    .grid_visibilities(
+      host_device,
+      std::move(visibilities),
+      std::move(grid_cubes),
+      std::move(cf_indexes),
+      std::move(weights),
+      std::move(frequencies),
+      std::move(phases),
+      std::move(coordinates));
+  return result;
+#endif // HPG_API >= 17
 }
 
-std::optional<Error>
+opt_error_t
 Gridder::grid_visibilities(
   Device host_device,
   std::vector<std::complex<visibility_fp>>&& visibilities,
@@ -844,7 +849,7 @@ Gridder::grid_visibilities(
   std::vector<vis_phase_fp>&& phases,
   std::vector<vis_uvw_t>&& coordinates,
   std::vector<cf_phase_screen_t>&& cf_phase_screens) {
-
+#if HPG_API >= 17
   return
     fold(
       std::move(state)
@@ -865,46 +870,7 @@ Gridder::grid_visibilities(
       [](auto&& err) -> std::optional<Error> {
         return std::move(err);
       });
-}
 #else // HPG_API < 17
-std::unique_ptr<Error>
-Gridder::grid_visibilities(
-  Device host_device,
-  std::vector<std::complex<visibility_fp>>&& visibilities,
-  std::vector<unsigned>&& grid_cubes,
-  std::vector<vis_cf_index_t>&& cf_indexes,
-  std::vector<vis_weight_fp>&& weights,
-  std::vector<vis_frequency_fp>&& frequencies,
-  std::vector<vis_phase_fp>&& phases,
-  std::vector<vis_uvw_t>&& coordinates) {
-
-  std::unique_ptr<Error> result;
-  std::tie(result, state) =
-    std::move(state)
-    .grid_visibilities(
-      host_device,
-      std::move(visibilities),
-      std::move(grid_cubes),
-      std::move(cf_indexes),
-      std::move(weights),
-      std::move(frequencies),
-      std::move(phases),
-      std::move(coordinates));
-  return result;
-}
-
-std::unique_ptr<Error>
-Gridder::grid_visibilities(
-  Device host_device,
-  std::vector<std::complex<visibility_fp>>&& visibilities,
-  std::vector<unsigned>&& grid_cubes,
-  std::vector<vis_cf_index_t>&& cf_indexes,
-  std::vector<vis_weight_fp>&& weights,
-  std::vector<vis_frequency_fp>&& frequencies,
-  std::vector<vis_phase_fp>&& phases,
-  std::vector<vis_uvw_t>&& coordinates,
-  std::vector<cf_phase_screen_t>&& cf_phase_screens) {
-
   std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state)
@@ -919,8 +885,8 @@ Gridder::grid_visibilities(
       std::move(coordinates),
       std::move(cf_phase_screens));
   return result;
+#endif // HPG_API >= 17
 }
-#endif
 
 void
 Gridder::fence() const {
@@ -953,9 +919,9 @@ Gridder::normalize(grid_value_fp wgt_factor) {
   state = std::move(state).normalize(wgt_factor);
 }
 
-#if HPG_API >= 17
-std::optional<Error>
+opt_error_t
 Gridder::apply_fft(FFTSign sign, bool in_place) {
+#if HPG_API >= 17
   return
     fold(
       std::move(state).apply_fft(sign, in_place),
@@ -966,64 +932,49 @@ Gridder::apply_fft(FFTSign sign, bool in_place) {
       [](auto&& err) -> std::optional<Error> {
         return std::move(err);
       });
-}
 #else // HPG_API < 17
-std::unique_ptr<Error>
-Gridder::apply_fft(FFTSign sign, bool in_place) {
   std::unique_ptr<Error> result;
   std::tie(result, state) = std::move(state).apply_fft(sign, in_place);
   return result;
-}
 #endif //HPG_API >= 17
+}
 
 void
 Gridder::shift_grid() {
   state = std::move(state).shift_grid();
 }
 
-#if HPG_API >= 17
-std::optional<Error>
+opt_error_t
 GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
-
+#if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
     return DisabledHostDeviceError();
   unsafe_copy_to(host_device, dst, layout);
   return std::nullopt;
-}
 #else // HPG_API < 17
-std::unique_ptr<Error>
-GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
-  const {
-
   if (host_devices().count(host_device) == 0)
     return std::unique_ptr<Error>(new DisabledHostDeviceError());
   unsafe_copy_to(host_device, dst, layout);
   return nullptr;
-}
 #endif //HPG_API >= 17
+}
 
-#if HPG_API >= 17
-std::optional<Error>
+opt_error_t
 GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
-
+#if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
     return DisabledHostDeviceError();
   unsafe_copy_to(host_device, dst, layout);
   return std::nullopt;
-}
 #else // HPG_API < 17
-std::unique_ptr<Error>
-GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
-  const {
-
   if (host_devices().count(host_device) == 0)
     return std::unique_ptr<Error>(new DisabledHostDeviceError());
   unsafe_copy_to(host_device, dst, layout);
   return nullptr;
-}
 #endif //HPG_API >= 17
+}
 
 bool
 hpg::initialize() {
