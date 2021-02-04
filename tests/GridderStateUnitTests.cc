@@ -301,7 +301,6 @@ struct ConeCFArray final
     auto [grid_coord, cf_major, cf_minor] =
       coords(grid_size, grid_scale, freq, uvw);
 
-    int cfsz = 2 * m_oversampled_radius + 1;
     std::complex<hpg::grid_value_fp> gvis(vis);
     bool result = true;
     for (int x = 0; result && x < grid_size[0]; ++x)
