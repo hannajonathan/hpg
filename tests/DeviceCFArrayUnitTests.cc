@@ -147,14 +147,14 @@ has_non_zero(const T* array) {
   if constexpr (T::rank == 2) {
       for (unsigned i = 0; i < array->extent(0); ++i)
         for (unsigned j = 0; j < array->extent(1); ++j)
-          if ((*array)(i, j) != typename T::scalar_type(0))
+          if ((*array)(i, j) != typename T::value_type(0))
             return true;
     } else {
     for (unsigned i = 0; i < array->extent(0); ++i)
       for (unsigned j = 0; j < array->extent(1); ++j)
         for (unsigned k = 0; k < array->extent(2); ++k)
           for (unsigned m = 0; m < array->extent(3); ++m)
-            if ((*array)(i, j, k, m) != typename T::scalar_type(0))
+            if ((*array)(i, j, k, m) != typename T::value_type(0))
               return true;
   }
   return false;
@@ -221,7 +221,7 @@ TEST(DeviceCFArray, Create) {
   auto [vsn, arrays] = hpg::get_value(std::move(arrays_or_err));
   EXPECT_EQ(arrays.size(), cf.num_groups());
   std::vector<
-    std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::scalar_type>>>
+    std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
   for (unsigned grp = 0; grp < arrays.size(); ++grp)
     sized_arrays.emplace_back(cf.extents(grp), std::move(arrays[grp]));
@@ -252,7 +252,7 @@ TEST(DeviceCFArray, LayoutVersion) {
         default_host_device,
         cf));
   std::vector<
-    std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::scalar_type>>>
+    std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
   for (unsigned grp = 0; grp < arrays.size(); ++grp)
     sized_arrays.emplace_back(cf.extents(grp), std::move(arrays[grp]));
@@ -282,7 +282,7 @@ TEST(DeviceCFArray, Gridding) {
         default_host_device,
         cf));
   std::vector<
-    std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::scalar_type>>>
+    std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
   for (unsigned grp = 0; grp < arrays.size(); ++grp)
     sized_arrays.emplace_back(cf.extents(grp), std::move(arrays[grp]));

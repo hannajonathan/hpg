@@ -2276,14 +2276,14 @@ public:
   /** extents by group */
   std::vector<std::array<unsigned, 4>> m_extents;
   /** buffers in host memory with CF values */
-  std::vector<std::vector<scalar_type>> m_arrays;
+  std::vector<std::vector<value_type>> m_arrays;
   /** Views of host memory buffers */
   std::vector<cfd_view_h> m_views;
 
-  static std::vector<std::vector<scalar_type>>
+  static std::vector<std::vector<value_type>>
   layout_for_device(Device host_device, const CFArray& cf) {
 
-    std::vector<std::vector<scalar_type>> result;
+    std::vector<std::vector<value_type>> result;
 
     for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
       auto layout = CFLayout<D>::dimensions(&cf, grp);
@@ -2323,7 +2323,7 @@ public:
   DeviceCFArray(
     const std::string& version,
     unsigned oversampling,
-    std::vector<std::tuple<std::array<unsigned, 4>, std::vector<scalar_type>>>&&
+    std::vector<std::tuple<std::array<unsigned, 4>, std::vector<value_type>>>&&
       arrays)
     : m_version(version)
     , m_oversampling(oversampling) {

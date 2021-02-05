@@ -1024,7 +1024,7 @@ hpg::is_initialized() noexcept {
 }
 
 rval_t<
-  std::tuple<std::string, std::vector<std::vector<DeviceCFArray::scalar_type>>>>
+  std::tuple<std::string, std::vector<std::vector<DeviceCFArray::value_type>>>>
 DeviceCFArray::layout_for_device(
   Device device,
   Device host_device,
@@ -1033,7 +1033,7 @@ DeviceCFArray::layout_for_device(
   if (host_devices().count(host_device) == 0)
     return DisabledHostDeviceError();
 
-  std::vector<std::vector<scalar_type>> arrays;
+  std::vector<std::vector<value_type>> arrays;
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
@@ -1073,7 +1073,7 @@ rval_t<std::unique_ptr<DeviceCFArray>>
 DeviceCFArray::create(
   const std::string& layout,
   unsigned oversampling,
-  std::vector<std::tuple<std::array<unsigned, 4>, std::vector<scalar_type>>>&&
+  std::vector<std::tuple<std::array<unsigned, 4>, std::vector<value_type>>>&&
     arrays) {
 
   auto opt_vn_dev = Impl::parsed_cf_layout_version(layout);

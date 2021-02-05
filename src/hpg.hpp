@@ -247,7 +247,7 @@ public:
    * @return layout version string and vector of values in optimal layout (one
    * per group of cf)
    */
-  static rval_t<std::tuple<std::string, std::vector<std::vector<scalar_type>>>>
+  static rval_t<std::tuple<std::string, std::vector<std::vector<value_type>>>>
   layout_for_device(Device device, Device host_device, const CFArray& cf);
 
   /** create a DeviceCFArray (sub-class) instance
@@ -260,7 +260,7 @@ public:
   create(
     const std::string& version,
     unsigned oversampling,
-    std::vector<std::tuple<std::array<unsigned, 4>, std::vector<scalar_type>>>&&
+    std::vector<std::tuple<std::array<unsigned, 4>, std::vector<value_type>>>&&
       arrays);
 
   virtual Device
