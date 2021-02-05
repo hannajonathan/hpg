@@ -1031,7 +1031,12 @@ DeviceCFArray::layout_for_device(
   const CFArray& cf) {
 
   if (host_devices().count(host_device) == 0)
-    return DisabledHostDeviceError();
+    return
+      rval<
+        std::tuple<
+          std::string,
+          std::vector<std::vector<DeviceCFArray::value_type>>>>(
+            DisabledHostDeviceError());
 
   std::vector<std::vector<value_type>> arrays;
   switch (device) {
@@ -1064,9 +1069,12 @@ DeviceCFArray::layout_for_device(
     break;
   }
   return
-    std::make_tuple(
-      Impl::construct_cf_layout_version(Impl::cf_layout_version_number, device),
-      std::move(arrays));
+    rval(
+      std::make_tuple(
+        Impl::construct_cf_layout_version(
+          Impl::cf_layout_version_number,
+          device),
+        std::move(arrays)));
 }
 
 rval_t<std::unique_ptr<DeviceCFArray>>
