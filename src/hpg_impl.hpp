@@ -2197,7 +2197,7 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
 static std::optional<std::tuple<unsigned, std::optional<Device>>>
 parsed_cf_layout_version(const std::string& layout) {
   auto dash = layout.find('-');
-  std::optional<unsigned> vn;
+  std::optional<int> vn;
   if (dash != std::string::npos) {
     try {
       vn = std::stoi(layout.substr(0, dash));
@@ -2209,21 +2209,33 @@ parsed_cf_layout_version(const std::string& layout) {
     std::string dev = layout.substr(dash + 1);
 #ifdef HPG_ENABLE_SERIAL
     if (dev == DeviceT<Device::Serial>::name)
-      return std::make_tuple(vn.value(), std::optional<Device>(Device::Serial));
+      return
+        std::make_tuple(
+          static_cast<unsigned>(vn.value()),
+          std::optional<Device>(Device::Serial));
 #endif
 #ifdef HPG_ENABLE_OPENMP
     if (dev == DeviceT<Device::OpenMP>::name)
-      return std::make_tuple(vn.value(), std::optional<Device>(Device::OpenMP));
+      return
+        std::make_tuple(
+          static_cast<unsigned>(vn.value()),
+          std::optional<Device>(Device::OpenMP));
 #endif
 #ifdef HPG_ENABLE_CUDA
     if (dev == DeviceT<Device::Cuda>::name)
-      return std::make_tuple(vn.value(), std::optional<Device>(Device::Cuda));
+      return
+        std::make_tuple(
+          static_cast<unsigned>(vn.value()),
+          std::optional<Device>(Device::Cuda));
 #endif
 #ifdef HPG_ENABLE_HPX
     if (dev == DeviceT<Device::HPX>::name)
-      return std::make_tuple(vn.value(), std::optional<Device>(Device::HPX));
+      return
+        std::make_tuple(
+          static_cast<unsigned>(vn.value()),
+          std::optional<Device>(Device::HPX));
 #endif
-    return std::make_tuple(vn.value(), std::nullopt);
+    return std::make_tuple(static_cast<unsigned>(vn.value()), std::nullopt);
   }
   return std::nullopt;
 }
