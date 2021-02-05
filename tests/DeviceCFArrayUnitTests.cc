@@ -209,6 +209,7 @@ values_eq(const T* array0, const T* array1) {
   return true;
 }
 
+// test array returned from hpg::DeviceCFArray::layout_for_device()
 TEST(DeviceCFArray, Create) {
   const unsigned oversampling = 20;
   ConeCFArray cf(oversampling, {10, 20, 30});
@@ -242,6 +243,7 @@ TEST(DeviceCFArray, Create) {
   }
 }
 
+// tests of layout versioning
 TEST(DeviceCFArray, LayoutVersion) {
   const unsigned oversampling = 20;
   ConeCFArray cf(oversampling, {10});
@@ -269,6 +271,7 @@ TEST(DeviceCFArray, LayoutVersion) {
   // enabled devices makes this difficult.
 }
 
+// tests of gridding using a DeviceCFArray
 TEST(DeviceCFArray, Gridding) {
   // CF definition
   const unsigned oversampling = 20;
