@@ -137,10 +137,12 @@ using vis_phase_fp = double;
 using cf_phase_screen_fp = float;
 
 // vis_uvw_t can be any type that supports std::get<N>() for element access
+/** UVW coordinate type */
 using vis_uvw_t = std::array<vis_uvw_fp, 3>;
 
 // cf_phase_screen_t can be any type that supports std::get<N>() for element
 // access
+/** CF phase screen type */
 using cf_phase_screen_t = std::array<cf_phase_screen_fp, 2>;
 
 /** visibility CF index type
@@ -149,6 +151,7 @@ using cf_phase_screen_t = std::array<cf_phase_screen_fp, 2>;
  */
 using vis_cf_index_t = std::pair<unsigned, unsigned>;
 
+/** type to represent a possible error */
 #if HPG_API >= 17
 using opt_error_t = std::optional<Error>;
 #else // HPG_API < 17
