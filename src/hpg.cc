@@ -1086,50 +1086,56 @@ DeviceCFArray::create(
 
   auto opt_vn_dev = Impl::parsed_cf_layout_version(layout);
   if (!opt_vn_dev)
-    return Error("Provided layout is invalid", ErrorType::InvalidCFLayout);
+    return
+      rval<std::unique_ptr<DeviceCFArray>>(
+        Error("Provided layout is invalid", ErrorType::InvalidCFLayout));
   auto& [vn, opt_dev] = opt_vn_dev.value();
   // require an exact device match in cf layout
   if (!opt_dev)
-    return DisabledDeviceError();
+    return rval<std::unique_ptr<DeviceCFArray>>(DisabledDeviceError());
   switch (opt_dev.value()) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     return
-      std::make_unique<Impl::DeviceCFArray<Device::Serial>>(
-        layout,
-        oversampling,
-        std::move(arrays));
+      rval<std::unique_ptr<DeviceCFArray>>(
+        std::make_unique<Impl::DeviceCFArray<Device::Serial>>(
+          layout,
+          oversampling,
+          std::move(arrays)));
 #endif // HPG_ENABLE_SERIAL
     break;
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     return
-      std::make_unique<Impl::DeviceCFArray<Device::OpenMP>>(
-        layout,
-        oversampling,
-        std::move(arrays));
+      rval<std::unique_ptr<DeviceCFArray>>(
+        std::make_unique<Impl::DeviceCFArray<Device::OpenMP>>(
+          layout,
+          oversampling,
+          std::move(arrays)));
 #endif // HPG_ENABLE_OPENMP
     break;
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     return
-      std::make_unique<Impl::DeviceCFArray<Device::Cuda>>(
-        layout,
-        oversampling,
-        std::move(arrays));
+      rval<std::unique_ptr<DeviceCFArray>>(
+        std::make_unique<Impl::DeviceCFArray<Device::Cuda>>(
+          layout,
+          oversampling,
+          std::move(arrays)));
 #endif //HPG_ENABLE_CUDA
     break;
 #ifdef HPG_ENABLE_HPX
   case Device::HPX:
     return
-      std::make_unique<Impl::DeviceCFArray<Device::HPX>>(
-        layout,
-        oversampling,
-        std::move(arrays));
+      rval<std::unique_ptr<DeviceCFArray>>(
+        std::make_unique<Impl::DeviceCFArray<Device::HPX>>(
+          layout,
+          oversampling,
+          std::move(arrays)));
 #endif // HPG_ENABLE_HPX
     break;
   default:
-    return DisabledDeviceError();
+    return rval<std::unique_ptr<DeviceCFArray>>(DisabledDeviceError());
     break;
   }
 }
