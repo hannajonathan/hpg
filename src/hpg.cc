@@ -1023,45 +1023,38 @@ hpg::is_initialized() noexcept {
   return Impl::is_initialized();
 }
 
-rval_t<
-  std::tuple<std::string, std::vector<std::vector<DeviceCFArray::value_type>>>>
-DeviceCFArray::layout_for_device(
+rval_t<std::string>
+CFArray::copy_to(
   Device device,
   Device host_device,
-  const CFArray& cf) {
+  unsigned grp,
+  value_type* dst) const {
 
   if (host_devices().count(host_device) == 0)
-    return
-      rval<
-        std::tuple<
-          std::string,
-          std::vector<std::vector<DeviceCFArray::value_type>>>>(
-            DisabledHostDeviceError());
+    return rval<std::string>(DisabledHostDeviceError());
 
-  std::vector<std::vector<value_type>> arrays;
+  if (devices().count(device) == 0)
+    return rval<std::string>(DisabledDeviceError());
+
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
-    arrays =
-      Impl::DeviceCFArray<Device::Serial>::layout_for_device(host_device, cf);
+    Impl::layout_for_device<Device::Serial>(host_device, *this, grp, dst);
     break;
 #endif
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
-    arrays =
-      Impl::DeviceCFArray<Device::OpenMP>::layout_for_device(host_device, cf);
+    Impl::layout_for_device<Device::OpenMP>(host_device, *this, grp, dst);
     break;
 #endif
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
-    arrays =
-      Impl::DeviceCFArray<Device::Cuda>::layout_for_device(host_device, cf);
+    Impl::layout_for_device<Device::Cuda>(host_device, *this, grp, dst);
     break;
 #endif
 #ifdef HPG_ENABLE_HPX
   case Device::HPX:
-    arrays =
-      Impl::DeviceCFArray<Device::HPX>::layout_for_device(host_device, cf);
+    Impl::layout_for_device<Device::HPX>(host_device, *this, grp, dst);
     break;
 #endif
   default:
@@ -1070,11 +1063,94 @@ DeviceCFArray::layout_for_device(
   }
   return
     rval(
-      std::make_tuple(
-        Impl::construct_cf_layout_version(
-          Impl::cf_layout_version_number,
-          device),
-        std::move(arrays)));
+      Impl::construct_cf_layout_version(
+        Impl::cf_layout_version_number,
+        device));
+}
+
+rval_t<size_t>
+CFArray::min_buffer_size(Device device, unsigned grp) const {
+
+  if (devices().count(device) == 0)
+    return rval<size_t>(DisabledDeviceError());
+
+  size_t alloc_sz;
+
+  switch (device) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial: {
+    auto layout = Impl::CFLayout<Device::Serial>::dimensions(this, grp);
+    alloc_sz =
+      Impl::cf_view<
+        typename Impl::DeviceT<Device::Serial>::kokkos_device::array_layout,
+        K::HostSpace>
+      ::required_allocation_size(
+        layout.dimension[0],
+        layout.dimension[1],
+        layout.dimension[2],
+        layout.dimension[3],
+        layout.dimension[4],
+        layout.dimension[5]);
+    break;
+  }
+#endif
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP: {
+    auto layout = Impl::CFLayout<Device::OpenMP>::dimensions(this, grp);
+    alloc_sz =
+      Impl::cf_view<
+        typename Impl::DeviceT<Device::OpenMP>::kokkos_device::array_layout,
+        K::HostSpace>
+      ::required_allocation_size(
+        layout.dimension[0],
+        layout.dimension[1],
+        layout.dimension[2],
+        layout.dimension[3],
+        layout.dimension[4],
+        layout.dimension[5]);
+    break;
+  }
+#endif
+#ifdef HPG_ENABLE_CUDA
+  case Device::Cuda: {
+    auto layout = Impl::CFLayout<Device::Cuda>::dimensions(this, grp);
+    alloc_sz =
+      Impl::cf_view<
+        typename Impl::DeviceT<Device::Cuda>::kokkos_device::array_layout,
+        K::HostSpace>
+      ::required_allocation_size(
+        layout.dimension[0],
+        layout.dimension[1],
+        layout.dimension[2],
+        layout.dimension[3],
+        layout.dimension[4],
+        layout.dimension[5]);
+    break;
+  }
+#endif
+#ifdef HPG_ENABLE_HPX
+  case Device::HPX: {
+    auto layout = Impl::CFLayout<Device::HPX>::dimensions(this, grp);
+    alloc_sz =
+      Impl::cf_view<
+        typename Impl::DeviceT<Device::HPX>::kokkos_device::array_layout,
+        K::HostSpace>
+      ::required_allocation_size(
+        layout.dimension[0],
+        layout.dimension[1],
+        layout.dimension[2],
+        layout.dimension[3],
+        layout.dimension[4],
+        layout.dimension[5]);
+    break;
+  }
+#endif
+  default:
+    assert(false);
+    break;
+  }
+  return
+    rval<size_t>((alloc_sz + (sizeof(Impl::cf_t) - 1)) / sizeof(Impl::cf_t));
 }
 
 rval_t<std::unique_ptr<DeviceCFArray>>

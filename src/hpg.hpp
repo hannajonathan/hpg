@@ -232,6 +232,29 @@ public:
   }
 
   virtual ~CFArray() {}
+
+  /** copy values into a buffer with optimal layout for a given device
+   *
+   * @param device target device
+   * @param host_device host device to use for converting layout
+   * @param grp group index
+   * @param dst buffer into which to copy values
+   *
+   * @return layout version string or error
+   */
+  rval_t<std::string>
+  copy_to(Device device, Device host_device, unsigned grp, value_type* dst)
+    const;
+
+  /** minimum size of buffer for destination of copy_to()
+   *
+   * @param device target device
+   * @param grp group index
+   *
+   * @return number of elements required in a destination buffer or error
+   */
+  rval_t<size_t>
+  min_buffer_size(Device device, unsigned grp) const;
 };
 
 /** CFArray sub-class for stored (cached) values in optimized layout for
@@ -240,18 +263,6 @@ public:
 class HPG_EXPORT DeviceCFArray
   : public CFArray {
 public:
-
-  /** create value vectors of a CFArray in optimized layout for device
-   *
-   * @param device target device
-   * @param host_device host device to use for converting layout
-   * @param cf CFArray instance to reorganize
-   *
-   * @return layout version string and vector of values in optimal layout (one
-   * per group of cf)
-   */
-  static rval_t<std::tuple<std::string, std::vector<std::vector<value_type>>>>
-  layout_for_device(Device device, Device host_device, const CFArray& cf);
 
   /** create a DeviceCFArray (sub-class) instance
    *

@@ -210,25 +210,38 @@ values_eq(const T* array0, const T* array1) {
   return true;
 }
 
-// test array returned from hpg::DeviceCFArray::layout_for_device()
+// test array returned from hpg::CFArray::copy_to()
 TEST(DeviceCFArray, Create) {
   const unsigned oversampling = 20;
   ConeCFArray cf(oversampling, {10, 20, 30});
-  auto arrays_or_err =
-    hpg::DeviceCFArray::layout_for_device(
-      default_device,
-      default_host_device,
-      cf);
-  ASSERT_TRUE(hpg::is_value(arrays_or_err));
-  auto [vsn, arrays] = hpg::get_value(std::move(arrays_or_err));
-  EXPECT_EQ(arrays.size(), cf.num_groups());
+  std::vector<std::vector<ConeCFArray::value_type>> arrays;
+  std::optional<std::string> vsn;
+  for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
+    auto sz_or_err = cf.min_buffer_size(default_device, grp);
+    ASSERT_TRUE(hpg::is_value(sz_or_err));
+    arrays.emplace_back(hpg::get_value(sz_or_err));
+    auto vsn_or_err =
+      cf.copy_to(
+        default_device,
+        default_host_device,
+        grp,
+        arrays.back().data());
+    ASSERT_TRUE(hpg::is_value(vsn_or_err));
+    if (vsn)
+      EXPECT_EQ(vsn, hpg::get_value(vsn_or_err));
+    else
+      vsn = hpg::get_value(vsn_or_err);
+  }
   std::vector<
     std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
   for (unsigned grp = 0; grp < arrays.size(); ++grp)
     sized_arrays.emplace_back(cf.extents(grp), std::move(arrays[grp]));
   auto devcf_or_err =
-    hpg::DeviceCFArray::create(vsn, oversampling, std::move(sized_arrays));
+    hpg::DeviceCFArray::create(
+      vsn.value(),
+      oversampling,
+      std::move(sized_arrays));
   ASSERT_TRUE(hpg::is_value(devcf_or_err));
   auto devcf = hpg::get_value(std::move(devcf_or_err));
   EXPECT_EQ(devcf->device(), default_device);
@@ -248,17 +261,17 @@ TEST(DeviceCFArray, Create) {
 TEST(DeviceCFArray, LayoutVersion) {
   const unsigned oversampling = 20;
   ConeCFArray cf(oversampling, {10});
-  auto [vsn, arrays] =
-    hpg::get_value(
-      hpg::DeviceCFArray::layout_for_device(
-        default_device,
-        default_host_device,
-        cf));
+  std::vector<ConeCFArray::value_type>
+    array(hpg::get_value(cf.min_buffer_size(default_device, 0)));
+  auto vsn_or_err =
+    cf.copy_to(default_device, default_host_device, 0, array.data());
+  ASSERT_TRUE(hpg::is_value(vsn_or_err));
+  std::string vsn = hpg::get_value(vsn_or_err);
+
   std::vector<
     std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
-  for (unsigned grp = 0; grp < arrays.size(); ++grp)
-    sized_arrays.emplace_back(cf.extents(grp), std::move(arrays[grp]));
+  sized_arrays.emplace_back(cf.extents(0), std::move(array));
   auto devcf_or_err =
     hpg::DeviceCFArray::create(
       hpg::cf_layout_unspecified_version,
@@ -278,18 +291,17 @@ TEST(DeviceCFArray, Gridding) {
   const unsigned oversampling = 20;
   ConeCFArray cf(oversampling, {10});
 
-  // create DeviceCFArray version
-  auto [vsn, arrays] =
-    hpg::get_value(
-      hpg::DeviceCFArray::layout_for_device(
-        default_device,
-        default_host_device,
-        cf));
+  // create DeviceCFArray
+  std::vector<ConeCFArray::value_type>
+    array(hpg::get_value(cf.min_buffer_size(default_device, 0)));
+  auto vsn_or_err =
+    cf.copy_to(default_device, default_host_device, 0, array.data());
+  ASSERT_TRUE(hpg::is_value(vsn_or_err));
+  std::string vsn = hpg::get_value(vsn_or_err);
   std::vector<
     std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
-  for (unsigned grp = 0; grp < arrays.size(); ++grp)
-    sized_arrays.emplace_back(cf.extents(grp), std::move(arrays[grp]));
+  sized_arrays.emplace_back(cf.extents(0), std::move(array));
   auto devcf =
     hpg::get_value(
       hpg::DeviceCFArray::create(vsn, oversampling, std::move(sized_arrays)));

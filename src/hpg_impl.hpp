@@ -2292,46 +2292,6 @@ public:
   /** Views of host memory buffers */
   std::vector<cfd_view_h> m_views;
 
-  static std::vector<std::vector<value_type>>
-  layout_for_device(Device host_device, const CFArray& cf) {
-
-    std::vector<std::vector<value_type>> result;
-
-    for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
-      auto layout = CFLayout<D>::dimensions(&cf, grp);
-      // TODO: it would be best to use the following to compute
-      // allocation size, but it is not implemented in Kokkos
-      // 'auto alloc_sz = cfd_view_h::required_allocation_size(layout)'
-      auto alloc_sz =
-        cf_view<typename DeviceT<D>::kokkos_device::array_layout, K::HostSpace>
-        ::required_allocation_size(
-          layout.dimension[0],
-          layout.dimension[1],
-          layout.dimension[2],
-          layout.dimension[3],
-          layout.dimension[4],
-          layout.dimension[5]);
-      result.emplace_back(((alloc_sz + (sizeof(cf_t) - 1)) / sizeof(cf_t)));
-      cfd_view_h cfd(reinterpret_cast<cf_t*>(result.back().data()), layout);
-      switch (host_device) {
-#ifdef HPG_ENABLE_SERIAL
-      case Device::Serial:
-        init_cf_host<Device::Serial>(cfd, cf, grp);
-        break;
-#endif // HPG_ENABLE_SERIAL
-#ifdef HPG_ENABLE_OPENMP
-      case Device::OpenMP:
-        init_cf_host<Device::OpenMP>(cfd, cf, grp);
-        break;
-#endif // HPG_ENABLE_SERIAL
-      default:
-        assert(false);
-        break;
-      }
-    }
-    return result;
-  }
-
   DeviceCFArray(
     const std::string& version,
     unsigned oversampling,
@@ -2393,6 +2353,36 @@ public:
     return D;
   }
 };
+
+template <Device D>
+static void
+layout_for_device(
+  Device host_device,
+  const CFArray& cf,
+  unsigned grp,
+  CFArray::value_type* dst) {
+
+  auto layout = CFLayout<D>::dimensions(&cf, grp);
+  typename DeviceCFArray<D>::cfd_view_h
+    cfd(reinterpret_cast<cf_t*>(dst), layout);
+  switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial:
+    init_cf_host<Device::Serial>(cfd, cf, grp);
+    typename DeviceT<Device::Serial>::kokkos_device::execution_space().fence();
+    break;
+#endif // HPG_ENABLE_SERIAL
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP:
+    init_cf_host<Device::OpenMP>(cfd, cf, grp);
+    typename DeviceT<Device::OpenMP>::kokkos_device::execution_space().fence();
+    break;
+#endif // HPG_ENABLE_SERIAL
+  default:
+    assert(false);
+    break;
+  }
+}
 
 /** names for stream states */
 enum class StreamPhase {
