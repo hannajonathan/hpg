@@ -367,15 +367,32 @@ struct CFLayout {
  * translated to the position of the visibility on the fine (oversampled) grid.
  *
  * The four returned coordinates are as follows
- * - leftmost major grid coordinate of (visibility-centered) CF support
+ * - leftmost grid coordinate of (visibility-centered) CF support
  * - leftmost major CF coordinate within CF support
- * - offset of visibility (on fine grid) from nearest-left major
- *   grid point (the "minor" coordinate of the CF, always non-negative)
- * - offset of visibility (on fine grid) from nearest major grid
+ * - the "minor" coordinate of the CF, always non-negative
+ * - offset of visibility (on fine grid) to nearest major grid
  *   point (positive or negative)
  *
  * For negative grid_scale values, in the above description, change "left" to
  * "right"
+ *
+ * The value of the minor coordinate must be between 0 and oversampling - 1
+ * (inclusive); it's computation proceeds as follows:
+ *
+ * - G is the grid coordinate nearest position
+ * - fine_offset is the distance from (visibility) position to nearest grid
+ * coordinate, (G - position) * oversampling
+ * - points at which CF are evaluated are {(I - (position - G)) * oversampling}
+ * or {I * oversampling + fine_offset} for I in some range of integers
+ * - the left edge of the support of CF is nominally at CFArray::padding
+ * - CFArray employs a decomposed form of 1d index i as (i / oversampling, i %
+ * oversampling), where the second component is always between 0 and
+ * oversampling - 1
+ * - if fine_offset >= 0, {I * oversampling + fine_offset}, and the CF indexes
+ * are (I, fine_offset)
+ * - if fine_offset <= 0, {I * oversampling + fine_offset} = {(I - 1) *
+ *  oversampling + (fine_offset + oversampling)}, and the CF indexes are (I - 1,
+ *  fine_offset + oversampling)
  *
  * @return tuple comprising four integer coordinates
  */
@@ -389,8 +406,8 @@ compute_vis_coord(
   grid_scale_fp grid_scale) {
 
   const double position = grid_scale * coord * inv_lambda + g_size / 2.0;
-  long grid_coord = std::lrint(position); // loc
-  const long fine_offset = std::lrint((position - grid_coord) * oversampling); // off
+  long grid_coord = std::lrint(position);
+  const long fine_offset = std::lrint((grid_coord - position) * oversampling);
   grid_coord -= cf_radius;
   long cf_minor;
   long cf_major;
@@ -793,11 +810,11 @@ struct HPG_EXPORT VisibilityGridder final {
     // phase screen constants at this visibility's location
     const auto phi_X0 =
       -cf_gradient[0]
-      * ((cf_size[0] * oversampling[0]) / 2 + vis.fine_offset[0]);
+      * ((cf_size[0] * oversampling[0]) / 2 - vis.fine_offset[0]);
     const auto dphi_X = cf_gradient[0] * oversampling[0];
     const auto phi_Y0 =
       -cf_gradient[1]
-      * ((cf_size[1] * oversampling[1]) / 2 + vis.fine_offset[1]);
+      * ((cf_size[1] * oversampling[1]) / 2 - vis.fine_offset[1]);
     const auto dphi_Y = cf_gradient[1] * oversampling[1];
 
     // compute the values of the phase screen along the Y axis now and store the

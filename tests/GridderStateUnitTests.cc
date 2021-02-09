@@ -251,8 +251,8 @@ struct ConeCFArray final
               << ", " << grid_coord[1] << std::endl;
 #endif
     const std::array<long, 2> fine_offset{
-      std::lrint((position[0] - grid_coord[0]) * m_oversampling),
-      std::lrint((position[1] - grid_coord[1]) * m_oversampling)
+      std::lrint((grid_coord[0] - position[0]) * m_oversampling),
+      std::lrint((grid_coord[1] - position[1]) * m_oversampling)
     };
 #ifdef SHOW_COORDINATES
     std::cout << "fine_offset: " << fine_offset[0]
