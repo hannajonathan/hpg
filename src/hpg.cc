@@ -976,6 +976,9 @@ GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
 #endif //HPG_API >= 17
 }
 
+const char * const
+hpg::cf_layout_unspecified_version = "";
+
 bool
 hpg::initialize() {
   return Impl::initialize();

@@ -77,7 +77,7 @@ devices() noexcept;
 HPG_EXPORT const std::set<Device>&
 host_devices() noexcept;
 
-const char* cf_layout_unspecified_version = "";
+extern const char * const cf_layout_unspecified_version;
 
 /** hpg scope object
  *
