@@ -326,13 +326,9 @@ struct InputData {
   std::array<unsigned, 4> gsize;
   int oversampling;
 
-  std::vector<std::complex<hpg::visibility_fp>> visibilities;
+  std::vector<hpg::VisData<1>> visibilities;
   std::vector<unsigned> grid_cubes;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
-  std::vector<hpg::vis_weight_fp> weights;
-  std::vector<hpg::vis_frequency_fp> frequencies;
-  std::vector<hpg::vis_phase_fp> phases;
-  std::vector<hpg::vis_uvw_t> coordinates;
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 };
 
@@ -382,20 +378,12 @@ create_input_data(
   result.visibilities.resize(num_visibilities);
   result.grid_cubes.resize(num_visibilities);
   result.cf_indexes.resize(num_visibilities);
-  result.weights.resize(num_visibilities);
-  result.frequencies.resize(num_visibilities);
-  result.phases.resize(num_visibilities);
-  result.coordinates.resize(num_visibilities);
   if (phase_screen)
     result.cf_phase_screens.resize(num_visibilities);
 
   auto visibilities_p = result.visibilities.data();
   auto grid_cubes_p = result.grid_cubes.data();
   auto cf_indexes_p = result.cf_indexes.data();
-  auto weights_p = result.weights.data();
-  auto frequencies_p = result.frequencies.data();
-  auto phases_p = result.phases.data();
-  auto coordinates_p = result.coordinates.data();
   auto cf_phase_screens_p = result.cf_phase_screens.data();
   auto cf_sizes_p = cf_sizes.data();
 
@@ -409,19 +397,8 @@ create_input_data(
     "init_vis",
     K::RangePolicy<K::OpenMP>(0, num_visibilities),
     KOKKOS_LAMBDA(const int i) {
-      auto rstate = generator.get_state();
-      *(visibilities_p + i) =
-        std::complex<hpg::visibility_fp>(
-          rstate.frand(-1, 1),
-          rstate.frand(-1, 1));
-      *(grid_cubes_p + i) = rstate.urand(0, gsize[3]);
-      *(weights_p + i) = rstate.frand(0, 1);
-      *(frequencies_p + i) = freq;
-      *(phases_p + i) = rstate.frand(-3.14, 3.14);
-      if (phase_screen)
-        *(cf_phase_screens_p + i) =
-          {rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)};
 
+      auto rstate = generator.get_state();
       auto grp = rstate.urand(0, ngrp);
       auto& cfsz = *(cf_sizes_p + grp);
       *(cf_indexes_p + i) = {rstate.urand(0, cfsz[3]), grp};
@@ -437,10 +414,22 @@ create_input_data(
       float ulim = (x0 - border[0]) / uscale;
       float vlim = (y0 - border[1]) / vscale;
 
-      *(coordinates_p + i) = {
-        rstate.frand(-ulim, ulim),
-        rstate.frand(-vlim, vlim),
-        0.0};
+      *(visibilities_p + i) =
+        hpg::VisData<1>(
+          {std::complex<hpg::visibility_fp>(
+              rstate.frand(-1, 1),
+              rstate.frand(-1, 1))},
+          {rstate.frand(0, 1)},
+          freq,
+          rstate.frand(-3.14, 3.14),
+          {rstate.frand(-ulim, ulim),
+           rstate.frand(-vlim, vlim),
+           0.0});
+      *(grid_cubes_p + i) = rstate.urand(0, gsize[3]);
+      if (phase_screen)
+        *(cf_phase_screens_p + i) =
+          {rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)};
+
       generator.free_state(rstate);
     });
   return result;
@@ -456,10 +445,6 @@ gridvis(hpg::GridderState&& gs, InputData&& id) {
         std::move(id).visibilities,
         std::move(id).grid_cubes,
         std::move(id).cf_indexes,
-        std::move(id).weights,
-        std::move(id).frequencies,
-        std::move(id).phases,
-        std::move(id).coordinates,
         std::move(id).cf_phase_screens);
   else
     return
@@ -468,11 +453,7 @@ gridvis(hpg::GridderState&& gs, InputData&& id) {
         hpg::Device::OpenMP,
         std::move(id).visibilities,
         std::move(id).grid_cubes,
-        std::move(id).cf_indexes,
-        std::move(id).weights,
-        std::move(id).frequencies,
-        std::move(id).phases,
-        std::move(id).coordinates);
+        std::move(id).cf_indexes);
 }
 
 

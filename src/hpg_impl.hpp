@@ -2459,6 +2459,7 @@ layout_for_device(
     assert(false);
     break;
   }
+}
 
 /** initialize model visibilities view from GridValueArray instance */
 template <Device D, typename GVH>

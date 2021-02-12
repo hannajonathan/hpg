@@ -85,13 +85,9 @@ init_visibilities(
   const std::array<float, 2>& grid_scale,
   const hpg::CFArray* cf,
   Generator& gen,
-  std::vector<std::complex<hpg::visibility_fp>>& vis,
+  std::vector<hpg::VisData<1>>& vis,
   std::vector<unsigned>& grid_cubes,
   std::vector<hpg::vis_cf_index_t>& cf_indexes,
-  std::vector<hpg::vis_weight_fp>& weights,
-  std::vector<hpg::vis_frequency_fp>& frequencies,
-  std::vector<hpg::vis_phase_fp>& phases,
-  std::vector<hpg::vis_uvw_t>& coordinates,
   std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
   vis.clear();
@@ -100,14 +96,6 @@ init_visibilities(
   grid_cubes.reserve(num_vis);
   cf_indexes.clear();
   cf_indexes.reserve(num_vis);
-  weights.clear();
-  weights.reserve(num_vis);
-  frequencies.clear();
-  frequencies.reserve(num_vis);
-  phases.clear();
-  phases.reserve(num_vis);
-  coordinates.clear();
-  coordinates.reserve(num_vis);
   cf_phase_screens.reserve(num_vis);
 
   const double inv_lambda = 9.75719;
@@ -131,13 +119,15 @@ init_visibilities(
     double vlim = (y0 - (cfextents[1]) / 2) / vscale;
     std::uniform_real_distribution<hpg::vis_uvw_fp> dist_u(-ulim, ulim);
     std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
-    vis.emplace_back(dist_vis(gen), dist_vis(gen));
+    vis.push_back(
+      hpg::VisData<1>(
+        {std::complex<hpg::visibility_fp>(dist_vis(gen), dist_vis(gen))},
+        {dist_weight(gen)},
+        freq,
+        0.0,
+        hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0})));
     grid_cubes.push_back(dist_gcube(gen));
     cf_indexes.push_back({dist_cfcube(gen), grp});
-    weights.push_back(dist_weight(gen));
-    frequencies.push_back(freq);
-    phases.emplace_back(0.0);
-    coordinates.push_back(hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}));
     cf_phase_screens.push_back({dist_cfscreen(gen), dist_cfscreen(gen)});
   }
 }
@@ -313,13 +303,9 @@ TEST(DeviceCFArray, Gridding) {
   // visibilities
   unsigned num_vis = 1000;
   std::mt19937 rng(42);
-  std::vector<std::complex<hpg::visibility_fp>> vis;
+  std::vector<hpg::VisData<1>> vis;
   std::vector<unsigned> grid_cubes;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
-  std::vector<hpg::vis_weight_fp> weights;
-  std::vector<hpg::vis_frequency_fp> frequencies;
-  std::vector<hpg::vis_phase_fp> phases;
-  std::vector<hpg::vis_uvw_t> coordinates;
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   init_visibilities(
@@ -331,10 +317,6 @@ TEST(DeviceCFArray, Gridding) {
     vis,
     grid_cubes,
     cf_indexes,
-    weights,
-    frequencies,
-    phases,
-    coordinates,
     cf_phase_screens);
 
   // cf GridderState
@@ -384,10 +366,6 @@ TEST(DeviceCFArray, Gridding) {
             decltype(vis)(vis),
             decltype(grid_cubes)(grid_cubes),
             decltype(cf_indexes)(cf_indexes),
-            decltype(weights)(weights),
-            decltype(frequencies)(frequencies),
-            decltype(phases)(phases),
-            decltype(coordinates)(coordinates),
             decltype(cf_phase_screens)(cf_phase_screens));
       })
     .map(
