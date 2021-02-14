@@ -400,14 +400,11 @@ init_visibilities(
   const MyCFArray& cf,
   Generator& gen,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<unsigned>& grid_cubes,
   std::vector<hpg::vis_cf_index_t>& cf_indexes,
   std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
   vis.clear();
   vis.reserve(num_vis);
-  grid_cubes.clear();
-  grid_cubes.reserve(num_vis);
   cf_indexes.clear();
   cf_indexes.reserve(num_vis);
   cf_phase_screens.reserve(num_vis);
@@ -439,9 +436,8 @@ init_visibilities(
         {dist_weight(gen)},
         freq,
         0.0,
-        hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0})));
-    ;
-    grid_cubes.push_back(dist_gcube(gen));
+        hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
+        dist_gcube(gen)));
     cf_indexes.push_back({dist_cfcube(gen), grp});
     cf_phase_screens.push_back({dist_cfscreen(gen), dist_cfscreen(gen)});
   }
@@ -679,7 +675,6 @@ TEST(GridderState, CopyOrMove) {
   std::mt19937 rng(42);
 
   std::vector<hpg::VisData<1>> vis;
-  std::vector<unsigned> grid_cubes;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
@@ -699,7 +694,6 @@ TEST(GridderState, CopyOrMove) {
       cf,
       rng,
       vis,
-      grid_cubes,
       cf_indexes,
       cf_phase_screens);
     auto gs2 =
@@ -707,7 +701,6 @@ TEST(GridderState, CopyOrMove) {
         gs1.grid_visibilities(
           default_host_device,
           decltype(vis)(vis),
-          decltype(grid_cubes)(grid_cubes),
           decltype(cf_indexes)(cf_indexes),
           decltype(cf_phase_screens)(cf_phase_screens)));
 
@@ -722,7 +715,6 @@ TEST(GridderState, CopyOrMove) {
         std::move(gs3).grid_visibilities(
           default_host_device,
           std::move(vis),
-          std::move(grid_cubes),
           std::move(cf_indexes),
           std::move(cf_phase_screens)));
 
@@ -853,7 +845,6 @@ TEST(GridderState, Reset) {
   std::mt19937 rng(42);
 
   std::vector<hpg::VisData<1>> vis;
-  std::vector<unsigned> grid_cubes;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
@@ -870,7 +861,6 @@ TEST(GridderState, Reset) {
       cf,
       rng,
       vis,
-      grid_cubes,
       cf_indexes,
       cf_phase_screens);
     auto gs2 =
@@ -878,7 +868,6 @@ TEST(GridderState, Reset) {
         std::move(gs1).grid_visibilities(
           default_host_device,
           std::move(vis),
-          std::move(grid_cubes),
           std::move(cf_indexes),
           std::move(cf_phase_screens)));
 
@@ -925,7 +914,6 @@ TEST(GridderState, Sequences) {
   std::mt19937 rng(42);
 
   std::vector<hpg::VisData<1>> vis;
-  std::vector<unsigned> grid_cubes;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
@@ -945,7 +933,6 @@ TEST(GridderState, Sequences) {
       cf,
       rng,
       vis,
-      grid_cubes,
       cf_indexes,
       cf_phase_screens);
     auto gs2 =
@@ -953,7 +940,6 @@ TEST(GridderState, Sequences) {
         std::move(gs1).grid_visibilities(
           default_host_device,
           decltype(vis)(vis),
-          decltype(grid_cubes)(grid_cubes),
           decltype(cf_indexes)(cf_indexes),
           decltype(cf_phase_screens)(cf_phase_screens)));
 
@@ -961,7 +947,6 @@ TEST(GridderState, Sequences) {
       std::move(gs2).grid_visibilities(
         default_host_device,
         decltype(vis)(vis),
-        decltype(grid_cubes)(grid_cubes),
         decltype(cf_indexes)(cf_indexes),
         decltype(cf_phase_screens)(cf_phase_screens));
     ASSERT_TRUE(hpg::is_value(err_or_gs3));
@@ -975,7 +960,6 @@ TEST(GridderState, Sequences) {
       hpg::get_value(std::move(err_or_gs4)).grid_visibilities(
         default_host_device,
         decltype(vis)(vis),
-        decltype(grid_cubes)(grid_cubes),
         decltype(cf_indexes)(cf_indexes),
         decltype(cf_phase_screens)(cf_phase_screens));
     ASSERT_TRUE(hpg::is_value(err_or_gs5));
@@ -984,7 +968,6 @@ TEST(GridderState, Sequences) {
       hpg::get_value(std::move(err_or_gs5)).grid_visibilities(
         default_host_device,
         decltype(vis)(vis),
-        decltype(grid_cubes)(grid_cubes),
         decltype(cf_indexes)(cf_indexes),
         decltype(cf_phase_screens)(cf_phase_screens));
     ASSERT_TRUE(hpg::is_value(err_or_gs6));
@@ -1009,7 +992,6 @@ TEST(GridderState, Serialization) {
     create_cf(10, cf_sizes[1], rng)};
 
   std::array<std::vector<hpg::VisData<1>>, 2> vis;
-  std::array<std::vector<unsigned>, 2> grid_cubes;
   std::array<std::vector<hpg::vis_cf_index_t>, 2> cf_indexes;
   std::array<std::vector<hpg::cf_phase_screen_t>, 2> cf_phase_screens;
 
@@ -1023,7 +1005,6 @@ TEST(GridderState, Serialization) {
       cfs[i],
       rng,
       vis[i],
-      grid_cubes[i],
       cf_indexes[i],
       cf_phase_screens[i]);
 
@@ -1058,7 +1039,6 @@ TEST(GridderState, Serialization) {
               .grid_visibilities(
                 default_host_device,
                 std::move(vis[first]),
-                std::move(grid_cubes[first]),
                 std::move(cf_indexes[first]));
           })
         .and_then(
@@ -1076,7 +1056,6 @@ TEST(GridderState, Serialization) {
               .grid_visibilities(
                 default_host_device,
                 std::move(vis[second]),
-                std::move(grid_cubes[second]),
                 std::move(cf_indexes[second]));
           })
         .map(
@@ -1145,7 +1124,6 @@ TEST(GridderState, Batching) {
           }));
 
   std::vector<hpg::VisData<1>> vis;
-  std::vector<unsigned> grid_cubes;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
@@ -1156,7 +1134,6 @@ TEST(GridderState, Batching) {
     cf,
     rng,
     vis,
-    grid_cubes,
     cf_indexes,
     cf_phase_screens);
 
@@ -1167,7 +1144,6 @@ TEST(GridderState, Batching) {
           std::move(gs_small).grid_visibilities(
             default_host_device,
             decltype(vis)(vis),
-            decltype(grid_cubes)(grid_cubes),
             decltype(cf_indexes)(cf_indexes),
             decltype(cf_phase_screens)(cf_phase_screens))
           , [](auto&& g) {
@@ -1181,7 +1157,6 @@ TEST(GridderState, Batching) {
           std::move(gs_large).grid_visibilities(
             default_host_device,
             decltype(vis)(vis),
-            decltype(grid_cubes)(grid_cubes),
             decltype(cf_indexes)(cf_indexes),
             decltype(cf_phase_screens)(cf_phase_screens))
           , [](auto&& g) {
@@ -1223,8 +1198,7 @@ TEST(GridderState, Gridding) {
               .grid_visibilities(
                 default_host_device,
                 std::vector<hpg::VisData<1>>{
-                  hpg::VisData<1>({vis}, {wgt}, c, 0.0, uvw)},
-                {0},
+                  hpg::VisData<1>({vis}, {wgt}, c, 0.0, uvw, 0)},
                 {{0, 0}});
           })
         .map(
@@ -1283,8 +1257,7 @@ TEST(GridderState, GridOne) {
               .grid_visibilities(
                 default_host_device,
                 std::vector<hpg::VisData<1>>{
-                  hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw)},
-                {0},
+                  hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw, 0)},
                 {{0, 0}});
           })
         .map(

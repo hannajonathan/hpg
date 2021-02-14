@@ -75,14 +75,11 @@ init_visibilities(
   const std::array<unsigned, 4>& cf_size,
   Generator& gen,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<unsigned>& grid_cubes,
   std::vector<hpg::vis_cf_index_t>& cf_indexes,
   std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
   vis.clear();
   vis.reserve(num_vis);
-  grid_cubes.clear();
-  grid_cubes.reserve(num_vis);
   cf_indexes.clear();
   cf_indexes.reserve(num_vis);
   cf_phase_screens.resize(num_vis);
@@ -111,8 +108,8 @@ init_visibilities(
         {dist_weight(gen)},
         freq,
         0.0,
-        hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0})));
-    grid_cubes.push_back(dist_gcube(gen));
+        hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
+        dist_gcube(gen)));
     cf_indexes.push_back({dist_cfcube(gen), 0});
   }
 }
@@ -137,7 +134,6 @@ run_tests(
   const std::array<float, 2>& grid_scale,
   const MyCFArray& cf,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<unsigned>& grid_cubes,
   std::vector<hpg::vis_cf_index_t>& cf_indexes,
   std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
@@ -177,7 +173,6 @@ run_tests(
     g0.grid_visibilities(
       host_dev,
       std::remove_reference_t<decltype(vis)>(vis),
-      std::remove_reference_t<decltype(grid_cubes)>(grid_cubes),
       std::remove_reference_t<decltype(cf_indexes)>(cf_indexes),
       std::remove_reference_t<decltype(cf_phase_screens)>(cf_phase_screens));
     std::cout << "gridded" << std::endl;
@@ -221,7 +216,6 @@ dump_grids(
   const std::array<float, 2>& grid_scale,
   const MyCFArray& cf,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<unsigned>& grid_cubes,
   std::vector<hpg::vis_cf_index_t>& cf_indexes,
   std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
@@ -232,7 +226,6 @@ dump_grids(
   g0.grid_visibilities(
     host_dev,
     std::remove_reference_t<decltype(vis)>(vis),
-    std::remove_reference_t<decltype(grid_cubes)>(grid_cubes),
     std::remove_reference_t<decltype(cf_indexes)>(cf_indexes),
     std::remove_reference_t<decltype(cf_phase_screens)>(cf_phase_screens));
   g0.normalize();
@@ -277,7 +270,6 @@ main(int argc, char* argv[]) {
   hpg::ScopeGuard hpg;
 
   std::vector<hpg::VisData<1>> vis;
-  std::vector<unsigned> grid_cubes;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
@@ -296,18 +288,17 @@ main(int argc, char* argv[]) {
       cf_size,
       rng,
       vis,
-      grid_cubes,
       cf_indexes,
       cf_phase_screens);
 #ifdef HPG_ENABLE_SERIAL
     run_tests<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, grid_cubes, cf_indexes, cf_phase_screens);
+      grid_size, grid_scale, cf, vis, cf_indexes, cf_phase_screens);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     run_tests<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, grid_cubes, cf_indexes, cf_phase_screens);
+      grid_size, grid_scale, cf, vis, cf_indexes, cf_phase_screens);
 #endif // HPG_ENABLE_CUDA
   }
   {
@@ -325,18 +316,17 @@ main(int argc, char* argv[]) {
       cf_size,
       rng,
       vis,
-      grid_cubes,
       cf_indexes,
       cf_phase_screens);
 #ifdef HPG_ENABLE_SERIAL
     dump_grids<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, grid_cubes, cf_indexes, cf_phase_screens);
+      grid_size, grid_scale, cf, vis, cf_indexes, cf_phase_screens);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     dump_grids<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, grid_cubes, cf_indexes, cf_phase_screens);
+      grid_size, grid_scale, cf, vis, cf_indexes, cf_phase_screens);
 #endif // HPG_ENABLE_CUDA
   }
 }

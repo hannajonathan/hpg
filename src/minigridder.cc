@@ -327,7 +327,6 @@ struct InputData {
   int oversampling;
 
   std::vector<hpg::VisData<1>> visibilities;
-  std::vector<unsigned> grid_cubes;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 };
@@ -376,13 +375,11 @@ create_input_data(
   result.cf = CFArray(cf_sizes, oversampling, cf_values);
 
   result.visibilities.resize(num_visibilities);
-  result.grid_cubes.resize(num_visibilities);
   result.cf_indexes.resize(num_visibilities);
   if (phase_screen)
     result.cf_phase_screens.resize(num_visibilities);
 
   auto visibilities_p = result.visibilities.data();
-  auto grid_cubes_p = result.grid_cubes.data();
   auto cf_indexes_p = result.cf_indexes.data();
   auto cf_phase_screens_p = result.cf_phase_screens.data();
   auto cf_sizes_p = cf_sizes.data();
@@ -424,8 +421,8 @@ create_input_data(
           rstate.frand(-3.14, 3.14),
           {rstate.frand(-ulim, ulim),
            rstate.frand(-vlim, vlim),
-           0.0});
-      *(grid_cubes_p + i) = rstate.urand(0, gsize[3]);
+           0.0},
+          rstate.urand(0, gsize[3]));
       if (phase_screen)
         *(cf_phase_screens_p + i) =
           {rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)};
@@ -443,7 +440,6 @@ gridvis(hpg::GridderState&& gs, InputData&& id) {
       .grid_visibilities(
         hpg::Device::OpenMP,
         std::move(id).visibilities,
-        std::move(id).grid_cubes,
         std::move(id).cf_indexes,
         std::move(id).cf_phase_screens);
   else
@@ -452,7 +448,6 @@ gridvis(hpg::GridderState&& gs, InputData&& id) {
       .grid_visibilities(
         hpg::Device::OpenMP,
         std::move(id).visibilities,
-        std::move(id).grid_cubes,
         std::move(id).cf_indexes);
 }
 

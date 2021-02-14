@@ -86,14 +86,11 @@ init_visibilities(
   const hpg::CFArray* cf,
   Generator& gen,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<unsigned>& grid_cubes,
   std::vector<hpg::vis_cf_index_t>& cf_indexes,
   std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
 
   vis.clear();
   vis.reserve(num_vis);
-  grid_cubes.clear();
-  grid_cubes.reserve(num_vis);
   cf_indexes.clear();
   cf_indexes.reserve(num_vis);
   cf_phase_screens.reserve(num_vis);
@@ -125,8 +122,8 @@ init_visibilities(
         {dist_weight(gen)},
         freq,
         0.0,
-        hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0})));
-    grid_cubes.push_back(dist_gcube(gen));
+        hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
+        dist_gcube(gen)));
     cf_indexes.push_back({dist_cfcube(gen), grp});
     cf_phase_screens.push_back({dist_cfscreen(gen), dist_cfscreen(gen)});
   }
@@ -304,7 +301,6 @@ TEST(DeviceCFArray, Gridding) {
   unsigned num_vis = 1000;
   std::mt19937 rng(42);
   std::vector<hpg::VisData<1>> vis;
-  std::vector<unsigned> grid_cubes;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
   std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
@@ -315,7 +311,6 @@ TEST(DeviceCFArray, Gridding) {
     &cf,
     rng,
     vis,
-    grid_cubes,
     cf_indexes,
     cf_phase_screens);
 
@@ -364,7 +359,6 @@ TEST(DeviceCFArray, Gridding) {
           .grid_visibilities(
             default_host_device,
             decltype(vis)(vis),
-            decltype(grid_cubes)(grid_cubes),
             decltype(cf_indexes)(cf_indexes),
             decltype(cf_phase_screens)(cf_phase_screens));
       })

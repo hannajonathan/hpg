@@ -4,6 +4,7 @@
 #include "hpg_rval.hpp"
 #include "hpg_error.hpp"
 
+#include <cassert>
 #include <complex>
 #include <memory>
 #include <set>
@@ -161,23 +162,32 @@ using opt_error_t = std::unique_ptr<Error>;
 template <unsigned N>
 struct VisData {
 
+  /** visibility values, ordered by polarization*/
   std::array<std::complex<visibility_fp>, N> m_visibilities;
+  /** visibility weights, ordered by polarization*/
   std::array<vis_weight_fp, N> m_weights;
+  /** visibility frequency */
   vis_frequency_fp m_frequency;
+  /** visibility phase */
   vis_phase_fp m_phase;
+  /** visibility UVW coordinates */
   vis_uvw_t m_uvw;
+  /** grid cube index */
+  unsigned m_grid_cube;
 
   VisData(
     const std::array<std::complex<visibility_fp>, N>& visibilities,
     const std::array<vis_weight_fp, N>& weights,
     const vis_frequency_fp& frequency,
     const vis_phase_fp& phase,
-    const vis_uvw_t& uvw)
+    const vis_uvw_t& uvw,
+    const unsigned& grid_cube)
     : m_visibilities(visibilities)
     , m_weights(weights)
     , m_frequency(frequency)
     , m_phase(phase)
-    , m_uvw(uvw) {}
+    , m_uvw(uvw)
+    , m_grid_cube(grid_cube) {}
 
   VisData() {}
 };
@@ -229,6 +239,28 @@ struct VisDataVector {
   VisDataVector(std::vector<VisData<4>>&& v)
     : m_npol(4)
     , m_vis_data(vis_data(std::move(v))) {}
+
+  size_t
+  size() const {
+    switch (m_npol) {
+    case 1:
+      return m_vis_data.vd1.size();
+      break;
+    case 2:
+      return m_vis_data.vd2.size();
+      break;
+    case 3:
+      return m_vis_data.vd3.size();
+      break;
+    case 4:
+      return m_vis_data.vd4.size();
+      break;
+    default:
+      assert(false);
+      return 0;
+      break;
+    }
+  }
 };
 
 } // end namespace Impl
@@ -766,7 +798,6 @@ protected:
   grid_visibilities(
     Device host_device,
     Impl::VisDataVector&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes) const &;
 
 public:
@@ -784,7 +815,6 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param grid_cubes visibility grid cube indexes
    * @param cf_indexes visibility convolution function indexes
    *
    * @sa Gridder::grid_visibilities()
@@ -794,14 +824,12 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes) const & {
 
     return
       grid_visibilities(
         host_device,
         Impl::VisDataVector(std::move(visibilities)),
-        std::move(grid_cubes),
         std::move(cf_indexes));
   };
 
@@ -811,7 +839,6 @@ protected:
   grid_visibilities(
     Device host_device,
     Impl::VisDataVector&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes,
     std::vector<cf_phase_screen_t>&& cf_phase_screens) const &;
 
@@ -830,7 +857,6 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param grid_cubes visibility grid cube indexes
    * @param cf_indexes visibility convolution function indexes
    * @param cf_phase_screens visibility CF phase screen parameters
    *
@@ -841,7 +867,6 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes,
     std::vector<cf_phase_screen_t>&& cf_phase_screens) const & {
 
@@ -849,7 +874,6 @@ public:
       grid_visibilities(
         host_device,
         Impl::VisDataVector(std::move(visibilities)),
-        std::move(grid_cubes),
         std::move(cf_indexes),
         std::move(cf_phase_screens));
   }
@@ -860,7 +884,6 @@ protected:
   grid_visibilities(
     Device host_device,
     Impl::VisDataVector&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes) &&;
 
 public:
@@ -878,7 +901,6 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param grid_cubes visibility grid cube indexes
    * @param cf_indexes visibility convolution function indexes
    *
    * @sa Gridder::grid_visibilities()
@@ -888,7 +910,6 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes) && {
 
     return
@@ -896,7 +917,6 @@ public:
       .grid_visibilities(
         host_device,
         Impl::VisDataVector(std::move(visibilities)),
-        std::move(grid_cubes),
         std::move(cf_indexes));
   }
 
@@ -906,7 +926,6 @@ protected:
   grid_visibilities(
     Device host_device,
     Impl::VisDataVector&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes,
     std::vector<cf_phase_screen_t>&& cf_phase_screens) &&;
 
@@ -925,7 +944,6 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param grid_cubes visibility grid cube indexes
    * @param cf_indexes visibility convolution function indexes
    * @param cf_phase_screens visibility CF phase screen parameters
    *
@@ -936,7 +954,6 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes,
     std::vector<cf_phase_screen_t>&& cf_phase_screens) && {
 
@@ -945,7 +962,6 @@ public:
       .grid_visibilities(
         host_device,
         Impl::VisDataVector(std::move(visibilities)),
-        std::move(grid_cubes),
         std::move(cf_indexes),
         std::move(cf_phase_screens));
   }
@@ -1282,7 +1298,6 @@ protected:
   grid_visibilities(
     Device host_device,
     Impl::VisDataVector&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes);
 
 public:
@@ -1297,7 +1312,6 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param grid_cubes visibility grid cube indexes
    * @param cf_indexes visibility convolution function indexes
    */
   template <unsigned N>
@@ -1305,14 +1319,12 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes) {
 
     return
       grid_visibilities(
         host_device,
         Impl::VisDataVector(std::move(visibilities)),
-        std::move(grid_cubes),
         std::move(cf_indexes));
   }
 
@@ -1322,7 +1334,6 @@ protected:
   grid_visibilities(
     Device host_device,
     Impl::VisDataVector&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes,
     std::vector<cf_phase_screen_t>&& cf_phase_screens);
 
@@ -1338,7 +1349,6 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
-   * @param grid_cubes visibility grid cube indexes
    * @param cf_indexes visibility convolution function indexes
    * @param cf_phase_screens visibility CF phase screen parameters
    */
@@ -1347,7 +1357,6 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
     std::vector<vis_cf_index_t>&& cf_indexes,
     std::vector<cf_phase_screen_t>&& cf_phase_screens) {
 
@@ -1355,7 +1364,6 @@ public:
       grid_visibilities(
         host_device,
         Impl::VisDataVector(std::move(visibilities)),
-        std::move(grid_cubes),
         std::move(cf_indexes),
         std::move(cf_phase_screens));
   }

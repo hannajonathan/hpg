@@ -102,22 +102,12 @@ struct Impl::GridderState {
   grid_visibilities(
     GS&& st,
     Device host_device,
-    std::vector<std::complex<visibility_fp>>&& visibilities,
-    std::vector<unsigned>&& grid_cubes,
+    VisDataVector&& visibilities,
     std::vector<vis_cf_index_t>&& cf_indexes,
-    std::vector<vis_weight_fp>&& weights,
-    std::vector<vis_frequency_fp>&& frequencies,
-    std::vector<vis_phase_fp>&& phases,
-    std::vector<vis_uvw_t>&& coordinates,
     std::optional<std::vector<cf_phase_screen_t>>&& cf_phase_screens) {
 
     auto len = std::move(visibilities).size();
-    if (std::move(grid_cubes).size() < len
-        || std::move(cf_indexes).size() < len
-        || std::move(weights).size() < len
-        || std::move(frequencies).size() < len
-        || std::move(phases).size() < len
-        || std::move(coordinates).size() < len
+    if (std::move(cf_indexes).size() < len
         || (bool(cf_phase_screens)
             && std::move(cf_phase_screens).value().size() < len))
       return IncompatibleVisVectorLengthError();
@@ -128,12 +118,7 @@ struct Impl::GridderState {
         result.impl->grid_visibilities(
           host_device,
           std::move(visibilities),
-          std::move(grid_cubes),
           std::move(cf_indexes),
-          std::move(weights),
-          std::move(frequencies),
-          std::move(phases),
-          std::move(coordinates),
           std::move(cf_phase_screens));
       if (error)
         return std::move(error.value());
@@ -500,7 +485,6 @@ rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
   Impl::VisDataVector&& visibilities,
-  std::vector<unsigned>&& grid_cubes,
   std::vector<vis_cf_index_t>&& cf_indexes) const & {
 
   return
@@ -508,13 +492,8 @@ GridderState::grid_visibilities(
       Impl::GridderState::grid_visibilities(
         *this,
         host_device,
-        extract_visibilities(visibilities),
-        std::move(grid_cubes),
+        std::move(visibilities),
         std::move(cf_indexes),
-        extract_weights(visibilities),
-        extract_frequencies(visibilities),
-        extract_phases(visibilities),
-        extract_coordinates(visibilities),
         std::nullopt));
 }
 
@@ -522,7 +501,6 @@ rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
   Impl::VisDataVector&& visibilities,
-  std::vector<unsigned>&& grid_cubes,
   std::vector<vis_cf_index_t>&& cf_indexes,
   std::vector<cf_phase_screen_t>&& cf_phase_screens) const & {
 
@@ -531,13 +509,8 @@ GridderState::grid_visibilities(
     Impl::GridderState::grid_visibilities(
       *this,
       host_device,
-      extract_visibilities(visibilities),
-      std::move(grid_cubes),
+      std::move(visibilities),
       std::move(cf_indexes),
-      extract_weights(visibilities),
-      extract_frequencies(visibilities),
-      extract_phases(visibilities),
-      extract_coordinates(visibilities),
       std::move(cf_phase_screens)));
 }
 
@@ -545,7 +518,6 @@ rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
   Impl::VisDataVector&& visibilities,
-  std::vector<unsigned>&& grid_cubes,
   std::vector<vis_cf_index_t>&& cf_indexes) && {
 
   return
@@ -553,13 +525,8 @@ GridderState::grid_visibilities(
       Impl::GridderState::grid_visibilities(
         std::move(*this),
         std::move(host_device),
-        extract_visibilities(visibilities),
-        std::move(grid_cubes),
+        std::move(visibilities),
         std::move(cf_indexes),
-        extract_weights(visibilities),
-        extract_frequencies(visibilities),
-        extract_phases(visibilities),
-        extract_coordinates(visibilities),
         std::nullopt));
 }
 
@@ -567,7 +534,6 @@ rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
   Impl::VisDataVector&& visibilities,
-  std::vector<unsigned>&& grid_cubes,
   std::vector<vis_cf_index_t>&& cf_indexes,
   std::vector<cf_phase_screen_t>&& cf_phase_screens) && {
 
@@ -576,13 +542,8 @@ GridderState::grid_visibilities(
     Impl::GridderState::grid_visibilities(
       std::move(*this),
       std::move(host_device),
-      extract_visibilities(visibilities),
-      std::move(grid_cubes),
+      std::move(visibilities),
       std::move(cf_indexes),
-      extract_weights(visibilities),
-      extract_frequencies(visibilities),
-      extract_phases(visibilities),
-      extract_coordinates(visibilities),
       std::move(cf_phase_screens)));
 }
 
@@ -890,7 +851,6 @@ opt_error_t
 Gridder::grid_visibilities(
   Device host_device,
   Impl::VisDataVector&& visibilities,
-  std::vector<unsigned>&& grid_cubes,
   std::vector<vis_cf_index_t>&& cf_indexes) {
 #if HPG_API >= 17
   return
@@ -899,7 +859,6 @@ Gridder::grid_visibilities(
       .grid_visibilities(
         host_device,
         std::move(visibilities),
-        std::move(grid_cubes),
         std::move(cf_indexes)),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
@@ -915,7 +874,6 @@ Gridder::grid_visibilities(
     .grid_visibilities(
       host_device,
       std::move(visibilities),
-      std::move(grid_cubes),
       std::move(cf_indexes));
   return result;
 #endif // HPG_API >= 17
@@ -925,7 +883,6 @@ opt_error_t
 Gridder::grid_visibilities(
   Device host_device,
   Impl::VisDataVector&& visibilities,
-  std::vector<unsigned>&& grid_cubes,
   std::vector<vis_cf_index_t>&& cf_indexes,
   std::vector<cf_phase_screen_t>&& cf_phase_screens) {
 #if HPG_API >= 17
@@ -935,7 +892,6 @@ Gridder::grid_visibilities(
       .grid_visibilities(
         host_device,
         std::move(visibilities),
-        std::move(grid_cubes),
         std::move(cf_indexes),
         std::move(cf_phase_screens)),
       [this](auto&& gs) -> std::optional<Error> {
@@ -952,7 +908,6 @@ Gridder::grid_visibilities(
     .grid_visibilities(
       host_device,
       std::move(visibilities),
-      std::move(grid_cubes),
       std::move(cf_indexes),
       std::move(cf_phase_screens));
   return result;
