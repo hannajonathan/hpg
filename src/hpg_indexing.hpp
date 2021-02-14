@@ -20,14 +20,12 @@ struct HPG_EXPORT CFCellIndex final {
     unsigned time,
     unsigned w_plane,
     unsigned frequency,
-    unsigned mcol,
-    unsigned mrow)
+    unsigned mueller)
     : m_baseline_class(baseline_class)
     , m_time(time)
     , m_w_plane(w_plane)
     , m_frequency(frequency)
-    , m_mcol(mcol)
-    , m_mrow(mrow) {}
+    , m_mueller(mueller) {}
 
   /** equality operator
    *
@@ -40,16 +38,14 @@ struct HPG_EXPORT CFCellIndex final {
       && m_time == rhs.m_time
       && m_w_plane == rhs.m_w_plane
       && m_frequency == rhs.m_frequency
-      && m_mcol == rhs.m_mcol
-      && m_mrow == rhs.m_mrow;
+      && m_mueller == rhs.m_mueller;
   }
 
   unsigned m_baseline_class;
   unsigned m_time;
   unsigned m_w_plane;
   unsigned m_frequency;
-  unsigned m_mcol; // i.e, visibility polarization product index
-  unsigned m_mrow; // i.e, image polarization product index
+  unsigned m_mueller;
 };
 
 /** index converter class between vis_cf_index_t and CFCellIndex
@@ -64,15 +60,14 @@ public:
   // pair elements: (axis length, allows variable-size CF)
   using axis_desc_t = std::pair<unsigned, bool>;
 
-  // array elements: (mrow, cube, grp)
-  using cf_index_t = std::array<unsigned, 3>;
+  // array elements: (plane, grp)
+  using cf_index_t = std::array<unsigned, 2>;
 
   axis_desc_t m_baseline_class;
   axis_desc_t m_time;
   axis_desc_t m_w_plane;
   axis_desc_t m_frequency;
-  axis_desc_t m_mcol;
-  axis_desc_t m_mrow;
+  axis_desc_t m_mueller;
 
   /** constructor
    */
@@ -81,25 +76,23 @@ public:
     const axis_desc_t& time,
     const axis_desc_t& w_plane,
     const axis_desc_t& frequency,
-    const axis_desc_t& mcol,
-    const axis_desc_t& mrow)
+    const axis_desc_t& mueller)
     : m_baseline_class(baseline_class)
     , m_time(time)
     , m_w_plane(w_plane)
     , m_frequency(frequency)
-    , m_mcol(mcol)
-    , m_mrow(mrow) {}
+    , m_mueller(mueller) {}
 
   /** convert CFCellIndex to cf_index_t
    */
   cf_index_t
   cf_index(const CFCellIndex& index) const {
-    cf_index_t result{index.m_mrow, 0, 0};
+    cf_index_t result{0, 0};
     acc_index(result, index.m_baseline_class, m_baseline_class);
     acc_index(result, index.m_time, m_time);
     acc_index(result, index.m_w_plane, m_w_plane);
     acc_index(result, index.m_frequency, m_frequency);
-    acc_index(result, index.m_mcol, m_mcol);
+    acc_index(result, index.m_mueller, m_mueller);
     return result;
   }
 
@@ -108,8 +101,7 @@ public:
   CFCellIndex
   cell_index(cf_index_t index) const {
     CFCellIndex result;
-    result.m_mrow = index[0];
-    sep_index(result.m_mcol, index, m_mcol);
+    sep_index(result.m_mueller, index, m_mueller);
     sep_index(result.m_frequency, index, m_frequency);
     sep_index(result.m_w_plane, index, m_w_plane);
     sep_index(result.m_time, index, m_time);
@@ -121,46 +113,45 @@ public:
    */
   cf_index_t
   cf_extents() const {
-    cf_index_t result{m_mrow.first, 1, 1};
+    cf_index_t result{1, 1};
     ext_index(result, m_baseline_class);
     ext_index(result, m_time);
     ext_index(result, m_w_plane);
     ext_index(result, m_frequency);
-    ext_index(result, m_mcol);
+    ext_index(result, m_mueller);
     return result;
   }
 
   /** extents of CFCellIndex
    */
-  std::array<unsigned, 6>
+  std::array<unsigned, 5>
   cell_extents() const {
     return {
       m_baseline_class.first,
       m_time.first,
       m_w_plane.first,
       m_frequency.first,
-      m_mcol.first,
-      m_mrow.first};
+      m_mueller.first};
   }
 
 private:
 
   static void
   acc_index(cf_index_t& index, unsigned i, const axis_desc_t& ad) {
-    unsigned& index_part = (ad.second ? index[2] : index[1]);
+    unsigned& index_part = (ad.second ? index[1] : index[0]);
     index_part = index_part * ad.first + i;
   }
 
   static void
   sep_index(unsigned& index, cf_index_t& i, const axis_desc_t& ad) {
-    unsigned& i_part = (ad.second ? i[2] : i[1]);
+    unsigned& i_part = (ad.second ? i[1] : i[0]);
     index = i_part % ad.first;
     i_part /= ad.first;
   }
 
   static void
   ext_index(cf_index_t& index, const axis_desc_t& ad) {
-    unsigned& index_part = (ad.second ? index[2] : index[1]);
+    unsigned& index_part = (ad.second ? index[1] : index[0]);
     index_part *= ad.first;
   }
 };
