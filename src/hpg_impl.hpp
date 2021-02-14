@@ -307,6 +307,10 @@ using vector_data = std::shared_ptr<std::vector<T>>;
 /** device-specific grid layout */
 static const std::array<int, 4> strided_grid_layout_order{1, 2, 0, 3};
 
+/** view for VisData<N> */
+template <unsigned N, typename memory_space>
+using visdata_view = K::View<VisData<N>*, memory_space>;
+
 /** device-specific grid array layout */
 template <Device D>
 struct GridLayout {
@@ -2834,13 +2838,13 @@ struct ExecSpace final {
   using kokkos_device = typename DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
-  using v1 = K::View<VisData<1>*, memory_space>;
-  using v2 = K::View<VisData<2>*, memory_space>;
-  using v3 = K::View<VisData<3>*, memory_space>;
-  using v4 = K::View<VisData<4>*, memory_space>;
 
   execution_space space;
-  std::variant<v1, v2, v3, v4> visibilities;
+  std::variant<
+    visdata_view<1, memory_space>,
+    visdata_view<2, memory_space>,
+    visdata_view<3, memory_space>,
+    visdata_view<4, memory_space>> visibilities;
   K::View<cf_index_t*, memory_space> cf_indexes;
   K::View<cf_ps_t*, memory_space> cf_phase_screens;
   std::vector<std::any> vis_state;
@@ -2865,10 +2869,6 @@ public:
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
   using stream_type = typename DeviceT<D>::stream_type;
-  using v1 = typename ExecSpace<D>::v1;
-  using v2 = typename ExecSpace<D>::v2;
-  using v3 = typename ExecSpace<D>::v3;
-  using v4 = typename ExecSpace<D>::v4;
 
   grid_view<typename GridLayout<D>::layout, memory_space> m_grid;
   weight_view<typename execution_space::array_layout, memory_space> m_weights;
@@ -3091,7 +3091,7 @@ public:
     exec_copy.vis_state.emplace_back(visibilities);
     auto vis_views =
       StateT<D>::copy_to_device_view<VisData<N>>(
-        std::get<K::View<VisData<N>*, memory_space>>(exec_copy.visibilities),
+        std::get<visdata_view<N, memory_space>>(exec_copy.visibilities),
         visibilities,
         offset,
         len,
@@ -3155,7 +3155,7 @@ public:
     exec_copy.vis_state.emplace_back(visibilities);
     auto vis_views =
       StateT<D>::copy_to_device_view<VisData<N>>(
-        std::get<K::View<VisData<N>*, memory_space>>(exec_copy.visibilities),
+        std::get<visdata_view<N, memory_space>>(exec_copy.visibilities),
         visibilities,
         offset,
         len,
@@ -3498,17 +3498,29 @@ private:
         auto& st_esp = ost->m_exec_spaces[i];
         std::visit(
           overloaded {
-            [&esp](const v1& v) {
-              K::deep_copy(esp.space, std::get<v1>(esp.visibilities), v);
+            [&esp](const visdata_view<1, memory_space>& v) {
+              K::deep_copy(
+                esp.space,
+                std::get<visdata_view<1, memory_space>>(esp.visibilities),
+                v);
             },
-            [&esp](const v2& v) {
-              K::deep_copy(esp.space, std::get<v2>(esp.visibilities), v);
+            [&esp](const visdata_view<2, memory_space>& v) {
+              K::deep_copy(
+                esp.space,
+                std::get<visdata_view<2, memory_space>>(esp.visibilities),
+                v);
             },
-            [&esp](const v3& v) {
-              K::deep_copy(esp.space, std::get<v3>(esp.visibilities), v);
+            [&esp](const visdata_view<3, memory_space>& v) {
+              K::deep_copy(
+                esp.space,
+                std::get<visdata_view<3, memory_space>>(esp.visibilities),
+                v);
             },
-            [&esp](const v4& v) {
-              K::deep_copy(esp.space, std::get<v4>(esp.visibilities), v);
+            [&esp](const visdata_view<4, memory_space>& v) {
+              K::deep_copy(
+                esp.space,
+                std::get<visdata_view<4, memory_space>>(esp.visibilities),
+                v);
             }
           },
           st_esp.visibilities);
