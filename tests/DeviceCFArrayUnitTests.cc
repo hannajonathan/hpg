@@ -57,14 +57,14 @@ struct ConeCFArray final
     return m_radius.size();
   }
 
-  std::array<unsigned, 4>
+  std::array<unsigned, 3>
   extents(unsigned grp) const override {
     unsigned w = 2 * m_oversampled_radius[grp] + 1;
-    return {w, w, 1, 1};
+    return {w, w, 1};
   }
 
   std::complex<float>
-  operator()(unsigned x, unsigned y, unsigned, unsigned, unsigned grp)
+  operator()(unsigned x, unsigned y, unsigned, unsigned grp)
     const override {
 
     std::complex<float> p(
@@ -86,14 +86,12 @@ init_visibilities(
   const hpg::CFArray* cf,
   Generator& gen,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<hpg::vis_cf_index_t>& cf_indexes,
-  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
+  std::vector<hpg::vis_cf_index_t>& cf_indexes) {
 
   vis.clear();
   vis.reserve(num_vis);
   cf_indexes.clear();
   cf_indexes.reserve(num_vis);
-  cf_phase_screens.reserve(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -101,8 +99,8 @@ init_visibilities(
   std::uniform_int_distribution<unsigned> dist_gcopol(0, grid_size[2] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
-  std::uniform_real_distribution<hpg::cf_phase_screen_fp>
-    dist_cfscreen(-3.141, 3.141);
+  std::uniform_real_distribution<hpg::cf_phase_gradient_fp>
+    dist_cfgrad(-3.141, 3.141);
   std::uniform_int_distribution<unsigned> dist_cfgrp(0, cf->num_groups() - 1);
   auto x0 = (cf->oversampling() * (grid_size[0] - 2)) / 2;
   auto y0 = (cf->oversampling() * (grid_size[1] - 2)) / 2;
@@ -123,9 +121,9 @@ init_visibilities(
         freq,
         0.0,
         hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
+        {dist_cfgrad(gen), dist_cfgrad(gen)},
         dist_gcube(gen)));
     cf_indexes.push_back({dist_cfcube(gen), grp});
-    cf_phase_screens.push_back({dist_cfscreen(gen), dist_cfscreen(gen)});
   }
 }
 
@@ -220,7 +218,7 @@ TEST(DeviceCFArray, Create) {
       vsn = hpg::get_value(vsn_or_err);
   }
   std::vector<
-    std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
+    std::tuple<std::array<unsigned, 3>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
   for (unsigned grp = 0; grp < arrays.size(); ++grp)
     sized_arrays.emplace_back(cf.extents(grp), std::move(arrays[grp]));
@@ -240,7 +238,7 @@ TEST(DeviceCFArray, Create) {
     auto radius = cf.m_oversampled_radius[grp];
     for (unsigned y = 0; y < radius; ++y)
       for (unsigned x = 0; x < radius; ++x)
-        EXPECT_EQ((*devcf)(x, y, 0, 0, grp), cf(x, y, 0, 0, grp));
+        EXPECT_EQ((*devcf)(x, y, 0, grp), cf(x, y, 0, grp));
   }
 }
 
@@ -256,7 +254,7 @@ TEST(DeviceCFArray, LayoutVersion) {
   std::string vsn = hpg::get_value(vsn_or_err);
 
   std::vector<
-    std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
+    std::tuple<std::array<unsigned, 3>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
   sized_arrays.emplace_back(cf.extents(0), std::move(array));
   auto devcf_or_err =
@@ -286,7 +284,7 @@ TEST(DeviceCFArray, Gridding) {
   ASSERT_TRUE(hpg::is_value(vsn_or_err));
   std::string vsn = hpg::get_value(vsn_or_err);
   std::vector<
-    std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
+    std::tuple<std::array<unsigned, 3>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
   sized_arrays.emplace_back(cf.extents(0), std::move(array));
   auto devcf =
@@ -302,7 +300,6 @@ TEST(DeviceCFArray, Gridding) {
   std::mt19937 rng(42);
   std::vector<hpg::VisData<1>> vis;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
-  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   init_visibilities(
     num_vis,
@@ -311,8 +308,7 @@ TEST(DeviceCFArray, Gridding) {
     &cf,
     rng,
     vis,
-    cf_indexes,
-    cf_phase_screens);
+    cf_indexes);
 
   // cf GridderState
   auto gs_cf =
@@ -359,8 +355,8 @@ TEST(DeviceCFArray, Gridding) {
           .grid_visibilities(
             default_host_device,
             decltype(vis)(vis),
-            decltype(cf_indexes)(cf_indexes),
-            decltype(cf_phase_screens)(cf_phase_screens));
+            true,
+            decltype(cf_indexes)(cf_indexes));
       })
     .map(
       [](auto&& gs) {

@@ -134,17 +134,17 @@ using vis_weight_fp = float;
 using vis_frequency_fp = float;
 /** visibility phase floating point type */
 using vis_phase_fp = double;
-/** CF phase screen floating point type */
-using cf_phase_screen_fp = float;
+/** CF phase gradient floating point type */
+using cf_phase_gradient_fp = float;
 
 // vis_uvw_t can be any type that supports std::get<N>() for element access
 /** UVW coordinate type */
 using vis_uvw_t = std::array<vis_uvw_fp, 3>;
 
-// cf_phase_screen_t can be any type that supports std::get<N>() for element
+// cf_phase_gradient_t can be any type that supports std::get<N>() for element
 // access
-/** CF phase screen type */
-using cf_phase_screen_t = std::array<cf_phase_screen_fp, 2>;
+/** CF phase gradient type */
+using cf_phase_gradient_t = std::array<cf_phase_gradient_fp, 2>;
 
 /** visibility CF index type
  *
@@ -172,8 +172,26 @@ struct VisData {
   vis_phase_fp m_phase;
   /** visibility UVW coordinates */
   vis_uvw_t m_uvw;
+  /** phase gradient */
+  cf_phase_gradient_t m_cf_phase_gradient;
   /** grid cube index */
   unsigned m_grid_cube;
+
+  VisData(
+    const std::array<std::complex<visibility_fp>, N>& visibilities,
+    const std::array<vis_weight_fp, N>& weights,
+    const vis_frequency_fp& frequency,
+    const vis_phase_fp& phase,
+    const vis_uvw_t& uvw,
+    const cf_phase_gradient_t& cf_phase_gradient,
+    const unsigned& grid_cube)
+    : m_visibilities(visibilities)
+    , m_weights(weights)
+    , m_frequency(frequency)
+    , m_phase(phase)
+    , m_uvw(uvw)
+    , m_cf_phase_gradient(cf_phase_gradient)
+    , m_grid_cube(grid_cube) {}
 
   VisData(
     const std::array<std::complex<visibility_fp>, N>& visibilities,
@@ -795,6 +813,7 @@ protected:
   grid_visibilities(
     Device host_device,
     Impl::VisDataVector&& visibilities,
+    bool with_cf_phase_gradients,
     std::vector<vis_cf_index_t>&& cf_indexes) const &;
 
 public:
@@ -812,6 +831,8 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
+   * @param with_cf_phase_gradients visibilities are provided with CF phase
+   * gradient values
    * @param cf_indexes visibility convolution function indexes
    *
    * @sa Gridder::grid_visibilities()
@@ -821,12 +842,14 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    bool with_cf_phase_gradients,
     std::vector<vis_cf_index_t>&& cf_indexes) const & {
 
     return
       grid_visibilities(
         host_device,
         Impl::VisDataVector(std::move(visibilities)),
+        with_cf_phase_gradients,
         std::move(cf_indexes));
   };
 
@@ -836,51 +859,7 @@ protected:
   grid_visibilities(
     Device host_device,
     Impl::VisDataVector&& visibilities,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::vector<cf_phase_screen_t>&& cf_phase_screens) const &;
-
-public:
-
-  /** grid some visibilities
-   *
-   * May invoke fence() on target.
-   *
-   * @return new GridderState after gridding task has been submitted to device
-   * queue
-   *
-   * The indexing of visibilities and all other metadata vectors must be
-   * consistent. For example the weight for the visibility value visibilities[i]
-   * must be located at weights[i].
-   *
-   * @param host_device device to use for changing array layout
-   * @param visibilities visibilities
-   * @param cf_indexes visibility convolution function indexes
-   * @param cf_phase_screens visibility CF phase screen parameters
-   *
-   * @sa Gridder::grid_visibilities()
-   */
-  template <unsigned N>
-  rval_t<GridderState>
-  grid_visibilities(
-    Device host_device,
-    std::vector<VisData<N>>&& visibilities,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::vector<cf_phase_screen_t>&& cf_phase_screens) const & {
-
-    return
-      grid_visibilities(
-        host_device,
-        Impl::VisDataVector(std::move(visibilities)),
-        std::move(cf_indexes),
-        std::move(cf_phase_screens));
-  }
-
-protected:
-
-  rval_t<GridderState>
-  grid_visibilities(
-    Device host_device,
-    Impl::VisDataVector&& visibilities,
+    bool with_cf_phase_gradients,
     std::vector<vis_cf_index_t>&& cf_indexes) &&;
 
 public:
@@ -898,6 +877,8 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
+   * @param with_cf_phase_gradients visibilities are provided with CF phase
+   * gradient values
    * @param cf_indexes visibility convolution function indexes
    *
    * @sa Gridder::grid_visibilities()
@@ -907,6 +888,7 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    bool with_cf_phase_gradients,
     std::vector<vis_cf_index_t>&& cf_indexes) && {
 
     return
@@ -914,54 +896,10 @@ public:
       .grid_visibilities(
         host_device,
         Impl::VisDataVector(std::move(visibilities)),
+        with_cf_phase_gradients,
         std::move(cf_indexes));
   }
 
-protected:
-
-  rval_t<GridderState>
-  grid_visibilities(
-    Device host_device,
-    Impl::VisDataVector&& visibilities,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::vector<cf_phase_screen_t>&& cf_phase_screens) &&;
-
-public:
-
-  /** grid some visibilities
-   *
-   * May invoke fence() on target.
-   *
-   * @return new GridderState that has overwritten the target, but after
-   * gridding task has been submitted to device queue
-   *
-   * The indexing of visibilities and all other metadata vectors must be
-   * consistent. For example the weight for the visibility value visibilities[i]
-   * must be located at weights[i].
-   *
-   * @param host_device device to use for changing array layout
-   * @param visibilities visibilities
-   * @param cf_indexes visibility convolution function indexes
-   * @param cf_phase_screens visibility CF phase screen parameters
-   *
-   * @sa Gridder::grid_visibilities()
-   */
-  template <unsigned N>
-  rval_t<GridderState>
-  grid_visibilities(
-    Device host_device,
-    std::vector<VisData<N>>&& visibilities,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::vector<cf_phase_screen_t>&& cf_phase_screens) && {
-
-    return
-      std::move(*this)
-      .grid_visibilities(
-        host_device,
-        Impl::VisDataVector(std::move(visibilities)),
-        std::move(cf_indexes),
-        std::move(cf_phase_screens));
-  }
 
   /** device execution fence
    *
@@ -1295,6 +1233,7 @@ protected:
   grid_visibilities(
     Device host_device,
     Impl::VisDataVector&& visibilities,
+    bool with_cf_phase_gradients,
     std::vector<vis_cf_index_t>&& cf_indexes);
 
 public:
@@ -1309,6 +1248,8 @@ public:
    *
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
+   * @param with_cf_phase_gradients visibilities are provided with CF phase
+   * gradient values
    * @param cf_indexes visibility convolution function indexes
    */
   template <unsigned N>
@@ -1316,56 +1257,18 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    bool with_cf_phase_gradients,
     std::vector<vis_cf_index_t>&& cf_indexes) {
 
     return
       grid_visibilities(
         host_device,
         Impl::VisDataVector(std::move(visibilities)),
+        with_cf_phase_gradients,
         std::move(cf_indexes));
   }
 
-protected:
-
-  opt_error_t
-  grid_visibilities(
-    Device host_device,
-    Impl::VisDataVector&& visibilities,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::vector<cf_phase_screen_t>&& cf_phase_screens);
-
-public:
-
-  /** grid visibilities
-   *
-   * May invoke fence() on target.
-   *
-   * The indexing of visibilities and all other metadata vectors must be
-   * consistent. For example the weight for the visibility value visibilities[i]
-   * must be located at weights[i].
-   *
-   * @param host_device device to use for changing array layout
-   * @param visibilities visibilities
-   * @param cf_indexes visibility convolution function indexes
-   * @param cf_phase_screens visibility CF phase screen parameters
-   */
-  template <unsigned N>
-  opt_error_t
-  grid_visibilities(
-    Device host_device,
-    std::vector<VisData<N>>&& visibilities,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::vector<cf_phase_screen_t>&& cf_phase_screens) {
-
-    return
-      grid_visibilities(
-        host_device,
-        Impl::VisDataVector(std::move(visibilities)),
-        std::move(cf_indexes),
-        std::move(cf_phase_screens));
-  }
-
-  /** device execution fence
+/** device execution fence
 
    *
    * Returns after all tasks on device have completed. Call is rarely explicitly

@@ -103,13 +103,11 @@ struct Impl::GridderState {
     GS&& st,
     Device host_device,
     VisDataVector&& visibilities,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::optional<std::vector<cf_phase_screen_t>>&& cf_phase_screens) {
+    bool with_cf_phase_gradients,
+    std::vector<vis_cf_index_t>&& cf_indexes) {
 
     auto len = std::move(visibilities).size();
-    if (std::move(cf_indexes).size() < len
-        || (bool(cf_phase_screens)
-            && std::move(cf_phase_screens).value().size() < len))
+    if (std::move(cf_indexes).size() < len)
       return IncompatibleVisVectorLengthError();
 
     if (host_devices().count(host_device) > 0) {
@@ -118,8 +116,8 @@ struct Impl::GridderState {
         result.impl->grid_visibilities(
           host_device,
           std::move(visibilities),
-          std::move(cf_indexes),
-          std::move(cf_phase_screens));
+          with_cf_phase_gradients,
+          std::move(cf_indexes));
       if (error)
         return std::move(error.value());
       else
@@ -485,6 +483,7 @@ rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
   Impl::VisDataVector&& visibilities,
+  bool with_cf_phase_gradients,
   std::vector<vis_cf_index_t>&& cf_indexes) const & {
 
   return
@@ -493,31 +492,15 @@ GridderState::grid_visibilities(
         *this,
         host_device,
         std::move(visibilities),
-        std::move(cf_indexes),
-        std::nullopt));
+        with_cf_phase_gradients,
+        std::move(cf_indexes)));
 }
 
 rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
   Impl::VisDataVector&& visibilities,
-  std::vector<vis_cf_index_t>&& cf_indexes,
-  std::vector<cf_phase_screen_t>&& cf_phase_screens) const & {
-
-  return
-  to_rval(
-    Impl::GridderState::grid_visibilities(
-      *this,
-      host_device,
-      std::move(visibilities),
-      std::move(cf_indexes),
-      std::move(cf_phase_screens)));
-}
-
-rval_t<GridderState>
-GridderState::grid_visibilities(
-  Device host_device,
-  Impl::VisDataVector&& visibilities,
+  bool with_cf_phase_gradients,
   std::vector<vis_cf_index_t>&& cf_indexes) && {
 
   return
@@ -526,25 +509,8 @@ GridderState::grid_visibilities(
         std::move(*this),
         std::move(host_device),
         std::move(visibilities),
-        std::move(cf_indexes),
-        std::nullopt));
-}
-
-rval_t<GridderState>
-GridderState::grid_visibilities(
-  Device host_device,
-  Impl::VisDataVector&& visibilities,
-  std::vector<vis_cf_index_t>&& cf_indexes,
-  std::vector<cf_phase_screen_t>&& cf_phase_screens) && {
-
-  return
-  to_rval(
-    Impl::GridderState::grid_visibilities(
-      std::move(*this),
-      std::move(host_device),
-      std::move(visibilities),
-      std::move(cf_indexes),
-      std::move(cf_phase_screens)));
+        with_cf_phase_gradients,
+        std::move(cf_indexes)));
 }
 
 GridderState
@@ -851,6 +817,7 @@ opt_error_t
 Gridder::grid_visibilities(
   Device host_device,
   Impl::VisDataVector&& visibilities,
+  bool with_cf_phase_gradients,
   std::vector<vis_cf_index_t>&& cf_indexes) {
 #if HPG_API >= 17
   return
@@ -859,6 +826,7 @@ Gridder::grid_visibilities(
       .grid_visibilities(
         host_device,
         std::move(visibilities),
+        with_cf_phase_gradients,
         std::move(cf_indexes)),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
@@ -874,42 +842,8 @@ Gridder::grid_visibilities(
     .grid_visibilities(
       host_device,
       std::move(visibilities),
+      with_cf_phase_gradients,
       std::move(cf_indexes));
-  return result;
-#endif // HPG_API >= 17
-}
-
-opt_error_t
-Gridder::grid_visibilities(
-  Device host_device,
-  Impl::VisDataVector&& visibilities,
-  std::vector<vis_cf_index_t>&& cf_indexes,
-  std::vector<cf_phase_screen_t>&& cf_phase_screens) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state)
-      .grid_visibilities(
-        host_device,
-        std::move(visibilities),
-        std::move(cf_indexes),
-        std::move(cf_phase_screens)),
-      [this](auto&& gs) -> std::optional<Error> {
-        this->state = std::move(gs);
-        return std::nullopt;
-      },
-      [](auto&& err) -> std::optional<Error> {
-        return std::move(err);
-      });
-#else // HPG_API < 17
-  std::unique_ptr<Error> result;
-  std::tie(result, state) =
-    std::move(state)
-    .grid_visibilities(
-      host_device,
-      std::move(visibilities),
-      std::move(cf_indexes),
-      std::move(cf_phase_screens));
   return result;
 #endif // HPG_API >= 17
 }

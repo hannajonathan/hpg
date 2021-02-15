@@ -276,13 +276,13 @@ struct CFArray final
   : public hpg::CFArray {
 
   unsigned m_oversampling;
-  std::vector<std::array<unsigned, 4>> m_extents;
+  std::vector<std::array<unsigned, 3>> m_extents;
   std::vector<std::vector<std::complex<hpg::cf_fp>>> m_values;
 
   CFArray() {}
 
   CFArray(
-    const std::vector<std::array<unsigned, 4>>& sizes,
+    const std::vector<std::array<unsigned, 3>>& sizes,
     unsigned oversampling,
     const std::vector<std::vector<std::complex<hpg::cf_fp>>>& values)
     : m_oversampling(oversampling)
@@ -291,8 +291,7 @@ struct CFArray final
     assert(sizes.size() == values.size());
 
     for (auto& sz : sizes)
-      m_extents.push_back(
-        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
+      m_extents.push_back({sz[0] * oversampling, sz[1] * oversampling, sz[2]});
   }
 
   unsigned
@@ -305,17 +304,17 @@ struct CFArray final
     return static_cast<unsigned>(m_extents.size());
   }
 
-  std::array<unsigned, 4>
+  std::array<unsigned, 3>
   extents(unsigned grp) const override {
     return m_extents[grp];
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned copol, unsigned cube, unsigned grp)
+  operator()(unsigned x, unsigned y, unsigned plane, unsigned grp)
     const override {
     auto& vals = m_values[grp];
     auto& ext = m_extents[grp];
-    return vals[((x * ext[1] + y) * ext[2] + copol) * ext[3] + cube];
+    return vals[(x * ext[1] + y) * ext[2] + plane];
   }
 };
 
@@ -328,7 +327,6 @@ struct InputData {
 
   std::vector<hpg::VisData<1>> visibilities;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
-  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 };
 
 /** create visibility data
@@ -340,7 +338,6 @@ create_input_data(
   unsigned polarizations,
   const std::vector<unsigned>& cflen,
   int oversampling,
-  bool phase_screen,
   int num_visibilities,
   bool strictly_inner,
   const Generator& generator) {
@@ -351,10 +348,10 @@ create_input_data(
   result.gsize = gsize;
   result.oversampling = oversampling;
 
-  std::vector<std::array<unsigned, 4>> cf_sizes;
+  std::vector<std::array<unsigned, 3>> cf_sizes;
   std::vector<std::vector<std::complex<hpg::cf_fp>>> cf_values;
   for (auto& cfl : cflen) {
-    cf_sizes.push_back({cfl, cfl, polarizations, 1});
+    cf_sizes.push_back({cfl, cfl, polarizations});
     cf_values.emplace_back(
       cfl * oversampling * cfl * oversampling * polarizations);
   }
@@ -376,12 +373,9 @@ create_input_data(
 
   result.visibilities.resize(num_visibilities);
   result.cf_indexes.resize(num_visibilities);
-  if (phase_screen)
-    result.cf_phase_screens.resize(num_visibilities);
 
   auto visibilities_p = result.visibilities.data();
   auto cf_indexes_p = result.cf_indexes.data();
-  auto cf_phase_screens_p = result.cf_phase_screens.data();
   auto cf_sizes_p = cf_sizes.data();
 
   const double inv_lambda = 9.75719;
@@ -422,35 +416,13 @@ create_input_data(
           {rstate.frand(-ulim, ulim),
            rstate.frand(-vlim, vlim),
            0.0},
+          {rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)},
           rstate.urand(0, gsize[3]));
-      if (phase_screen)
-        *(cf_phase_screens_p + i) =
-          {rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)};
 
       generator.free_state(rstate);
     });
   return result;
 }
-
-auto
-gridvis(hpg::GridderState&& gs, InputData&& id) {
-  if (std::move(id).cf_phase_screens.size() > 0)
-    return
-      std::move(gs)
-      .grid_visibilities(
-        hpg::Device::OpenMP,
-        std::move(id).visibilities,
-        std::move(id).cf_indexes,
-        std::move(id).cf_phase_screens);
-  else
-    return
-      std::move(gs)
-      .grid_visibilities(
-        hpg::Device::OpenMP,
-        std::move(id).visibilities,
-        std::move(id).cf_indexes);
-}
-
 
 /** gridding with hpg
  */
@@ -508,7 +480,12 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
         }
         return
           map(
-            gridvis(std::get<1>(std::move(t_gs)), std::move(id)),
+            std::get<1>(std::move(t_gs))
+            .grid_visibilities(
+              hpg::Device::OpenMP,
+              std::move(id).visibilities,
+              spec.phase_screen,
+              std::move(id).cf_indexes),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));
@@ -567,7 +544,6 @@ run_trials(
                     num_polarizations,
                     cfsize,
                     oversampling,
-                    phase_screen,
                     num_visibilities,
                     kernel == 1,
                     rand_pool_type(348842));

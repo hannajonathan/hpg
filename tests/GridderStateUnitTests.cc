@@ -83,18 +83,17 @@ struct MyCFArrayShape
   : public hpg::CFArrayShape {
 
   unsigned m_oversampling;
-  std::vector<std::array<unsigned, 4>> m_extents;
+  std::vector<std::array<unsigned, 3>> m_extents;
 
   MyCFArrayShape() {}
 
   MyCFArrayShape(
     unsigned oversampling,
-    const std::vector<std::array<unsigned, 4>>& sizes)
+    const std::vector<std::array<unsigned, 3>>& sizes)
     : m_oversampling(oversampling) {
 
     for (auto& sz : sizes)
-      m_extents.push_back(
-        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
+      m_extents.push_back({sz[0] * oversampling, sz[1] * oversampling, sz[2]});
   }
 
   unsigned
@@ -107,7 +106,7 @@ struct MyCFArrayShape
     return static_cast<unsigned>(m_extents.size());
   }
 
-  std::array<unsigned, 4>
+  std::array<unsigned, 3>
   extents(unsigned grp) const override {
     return m_extents[grp];
   }
@@ -117,21 +116,20 @@ struct MyCFArray final
   : public hpg::CFArray {
 
   unsigned m_oversampling;
-  std::vector<std::array<unsigned, 4>> m_extents;
+  std::vector<std::array<unsigned, 3>> m_extents;
   std::vector<std::vector<std::complex<hpg::cf_fp>>> m_values;
 
   MyCFArray() {}
 
   MyCFArray(
     unsigned oversampling,
-    const std::vector<std::array<unsigned, 4>>& sizes,
+    const std::vector<std::array<unsigned, 3>>& sizes,
     const std::vector<std::vector<std::complex<hpg::cf_fp>>>& values)
     : m_oversampling(oversampling)
     , m_values(values) {
 
     for (auto& sz : sizes)
-      m_extents.push_back(
-        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
+      m_extents.push_back({sz[0] * oversampling, sz[1] * oversampling, sz[2]});
   }
 
   unsigned
@@ -144,17 +142,17 @@ struct MyCFArray final
     return static_cast<unsigned>(m_extents.size());
   }
 
-  std::array<unsigned, 4>
+  std::array<unsigned, 3>
   extents(unsigned grp) const override {
     return m_extents[grp];
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned copol, unsigned cube, unsigned grp)
+  operator()(unsigned x, unsigned y, unsigned plane, unsigned grp)
     const override {
     auto& vals = m_values[grp];
     auto& ext = m_extents[grp];
-    return vals[((x * ext[1] + y) * ext[2] + copol) * ext[3] + cube];
+    return vals[(x * ext[1] + y) * ext[2] + plane];
   }
 };
 
@@ -189,14 +187,14 @@ struct ConeCFArray final
     return 1;
   }
 
-  std::array<unsigned, 4>
+  std::array<unsigned, 3>
   extents(unsigned) const override {
     unsigned w = 2 * m_oversampled_radius + 1;
-    return {w, w, 1, 1};
+    return {w, w, 1};
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned, unsigned, unsigned)
+  operator()(unsigned x, unsigned y, unsigned, unsigned)
     const override {
 
     std::complex<float> p(
@@ -211,7 +209,7 @@ struct ConeCFArray final
   std::complex<hpg::grid_value_fp>
   operator()(unsigned x, unsigned y) const {
 
-    return operator()(x, y, 0, 0, 0);
+    return operator()(x, y, 0, 0);
   }
 
   std::array<std::array<long, 2>, 3>
@@ -374,14 +372,14 @@ template <typename Generator>
 MyCFArray
 create_cf(
   unsigned oversampling,
-  const std::vector<std::array<unsigned, 4>>& sizes,
+  const std::vector<std::array<unsigned, 3>>& sizes,
   Generator& gen) {
 
   std::vector<std::vector<std::complex<hpg::cf_fp>>> values;
   for (auto& sz : sizes) {
     decltype(values)::value_type vs;
     const unsigned num_values =
-      oversampling * sz[0] * oversampling * sz[1] * sz[2] * sz[3];
+      oversampling * sz[0] * oversampling * sz[1] * sz[2];
     vs.reserve(num_values);
     std::uniform_real_distribution<hpg::cf_fp> dist(-1.0, 1.0);
     for (auto i = 0; i < num_values; ++i)
@@ -400,14 +398,12 @@ init_visibilities(
   const MyCFArray& cf,
   Generator& gen,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<hpg::vis_cf_index_t>& cf_indexes,
-  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
+  std::vector<hpg::vis_cf_index_t>& cf_indexes) {
 
   vis.clear();
   vis.reserve(num_vis);
   cf_indexes.clear();
   cf_indexes.reserve(num_vis);
-  cf_phase_screens.reserve(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -415,8 +411,8 @@ init_visibilities(
   std::uniform_int_distribution<unsigned> dist_gcopol(0, grid_size[2] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
-  std::uniform_real_distribution<hpg::cf_phase_screen_fp>
-    dist_cfscreen(-3.141, 3.141);
+  std::uniform_real_distribution<hpg::cf_phase_gradient_fp>
+    dist_cfgrad(-3.141, 3.141);
   std::uniform_int_distribution<unsigned> dist_cfgrp(0, cf.num_groups() - 1);
   auto x0 = (cf.oversampling() * (grid_size[0] - 2)) / 2;
   auto y0 = (cf.oversampling() * (grid_size[1] - 2)) / 2;
@@ -437,9 +433,9 @@ init_visibilities(
         freq,
         0.0,
         hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
+        {dist_cfgrad(gen), dist_cfgrad(gen)},
         dist_gcube(gen)));
     cf_indexes.push_back({dist_cfcube(gen), grp});
-    cf_phase_screens.push_back({dist_cfscreen(gen), dist_cfscreen(gen)});
   }
 }
 
@@ -511,10 +507,8 @@ TEST(GridderState, ConstructorArgs) {
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
   size_t batch_size = 20;
   auto padding = 2 * hpg::CFArray::padding;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{
-      {3 + padding, 3 + padding, 4, 3},
-      {2 + padding, 2 + padding, 4, 2}};
+  const std::vector<std::array<unsigned, 3>>
+    cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   hpg::GridderState gs0;
   auto gs1 =
@@ -545,10 +539,8 @@ TEST(GridderState, Copies) {
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
   size_t batch_size = 20;
   auto padding = 2 * hpg::CFArray::padding;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{
-      {3 + padding, 3 + padding, 4, 3},
-      {2 + padding, 2 + padding, 4, 2}};
+  const std::vector<std::array<unsigned, 3>>
+    cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   auto gs0 =
     hpg::get_value(
@@ -587,10 +579,8 @@ TEST(GridderState, Moves) {
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
   size_t batch_size = 30;
   auto padding = 2 * hpg::CFArray::padding;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{
-      {3 + padding, 3 + padding, 4, 3},
-      {2 + padding, 2 + padding, 4, 2}};
+  const std::vector<std::array<unsigned, 3>>
+    cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   auto gs0 =
     hpg::get_value(
@@ -625,10 +615,8 @@ TEST(GridderState, InitValues) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
   auto padding = 2 * hpg::CFArray::padding;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{
-      {3 + padding, 3 + padding, 4, 3},
-      {2 + padding, 2 + padding, 4, 2}};
+  const std::vector<std::array<unsigned, 3>>
+    cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
@@ -657,10 +645,8 @@ TEST(GridderState, CopyOrMove) {
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 10;
   auto padding = 2 * hpg::CFArray::padding;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{
-      {3 + padding, 3 + padding, 4, 3},
-      {2 + padding, 2 + padding, 4, 2}};
+  const std::vector<std::array<unsigned, 3>>
+    cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
@@ -676,13 +662,10 @@ TEST(GridderState, CopyOrMove) {
 
   std::vector<hpg::VisData<1>> vis;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
-  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
-    const std::vector<std::array<unsigned, 4>>
-      cf_sizes{
-        {3 + padding, 3 + padding, 4, 3},
-        {2 + padding, 2 + padding, 4, 2}};
+    const std::vector<std::array<unsigned, 3>>
+      cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
     MyCFArray cf = create_cf(10, cf_sizes, rng);
     auto gs1 =
       hpg::get_value(
@@ -694,15 +677,14 @@ TEST(GridderState, CopyOrMove) {
       cf,
       rng,
       vis,
-      cf_indexes,
-      cf_phase_screens);
+      cf_indexes);
     auto gs2 =
       hpg::get_value(
         gs1.grid_visibilities(
           default_host_device,
           decltype(vis)(vis),
-          decltype(cf_indexes)(cf_indexes),
-          decltype(cf_phase_screens)(cf_phase_screens)));
+          true,
+          decltype(cf_indexes)(cf_indexes)));
 
     // gridded visibilities should be in gs2, not gs1
     auto [gs3, values] = std::move(gs1).grid_values();
@@ -715,8 +697,8 @@ TEST(GridderState, CopyOrMove) {
         std::move(gs3).grid_visibilities(
           default_host_device,
           std::move(vis),
-          std::move(cf_indexes),
-          std::move(cf_phase_screens)));
+          true,
+          std::move(cf_indexes)));
 
     // gs2 and gs4 should have same grid values
     auto [gs5, values5] = std::move(gs2).grid_values();
@@ -764,10 +746,8 @@ TEST(GridderState, CFError) {
   std::array<unsigned, 4> grid_size{15, 14, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   auto padding = 2 * hpg::CFArray::padding;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{
-      {3 + padding, 3 + padding, 4, 3},
-      {2 + padding, 2 + padding, 4, 2}};
+  const std::vector<std::array<unsigned, 3>>
+    cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
@@ -782,17 +762,8 @@ TEST(GridderState, CFError) {
   std::mt19937 rng(42);
 
   {
-    // incorrect copolarization dimension size
-    const std::array<unsigned, 4> cf_size{3, 3, 1, 3};
-    auto error_or_gs =
-      gs.set_convolution_function(
-        default_host_device,
-        create_cf(10, {cf_size}, rng));
-    EXPECT_TRUE(hpg::is_error(error_or_gs));
-  }
-  {
     // X dimension too large
-    const std::array<unsigned, 4> cf_size{16, 3, 4, 3};
+    const std::array<unsigned, 3> cf_size{16, 3, 4};
     auto error_or_gs =
       gs.set_convolution_function(
         default_host_device,
@@ -801,7 +772,7 @@ TEST(GridderState, CFError) {
   }
   {
     // Y dimension too large
-    const std::array<unsigned, 4> cf_size{12, 15, 4, 3};
+    const std::array<unsigned, 3> cf_size{12, 15, 4};
     auto error_or_gs =
       gs.set_convolution_function(
         default_host_device,
@@ -810,8 +781,8 @@ TEST(GridderState, CFError) {
   }
   {
     // error in one of a list of CFs
-    const std::vector<std::array<unsigned, 4>>
-      cf_sizes{{3, 3, 4, 3}, {3, 3, 1, 3}, {2, 2, 4, 2}};
+    const std::vector<std::array<unsigned, 3>>
+      cf_sizes{{3, 3, 4}, {12, 15, 3}, {2, 2, 4}};
     auto error_or_gs =
       gs.set_convolution_function(
         default_host_device,
@@ -827,10 +798,8 @@ TEST(GridderState, Reset) {
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 10;
   auto padding = 2 * hpg::CFArray::padding;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{
-      {3 + padding, 3 + padding, 4, 3},
-      {2 + padding, 2 + padding, 4, 2}};
+  const std::vector<std::array<unsigned, 3>>
+    cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
@@ -846,10 +815,9 @@ TEST(GridderState, Reset) {
 
   std::vector<hpg::VisData<1>> vis;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
-  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
-    const std::array<unsigned, 4> cf_size{3 + padding, 3 + padding, 4, 3};
+    const std::array<unsigned, 3> cf_size{3 + padding, 3 + padding, 3};
     MyCFArray cf = create_cf(10, {cf_size}, rng);
     auto gs1 =
       hpg::get_value(
@@ -861,15 +829,14 @@ TEST(GridderState, Reset) {
       cf,
       rng,
       vis,
-      cf_indexes,
-      cf_phase_screens);
+      cf_indexes);
     auto gs2 =
       hpg::get_value(
         std::move(gs1).grid_visibilities(
           default_host_device,
           std::move(vis),
-          std::move(cf_indexes),
-          std::move(cf_phase_screens)));
+          true,
+          std::move(cf_indexes)));
 
     auto [gs3, values] = std::move(gs2).grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));
@@ -896,10 +863,8 @@ TEST(GridderState, Sequences) {
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 10;
   auto padding = 2 * hpg::CFArray::padding;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{
-      {3 + padding, 3 + padding, 4, 3},
-      {2 + padding, 2 + padding, 4, 2}};
+  const std::vector<std::array<unsigned, 3>>
+    cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
@@ -915,13 +880,10 @@ TEST(GridderState, Sequences) {
 
   std::vector<hpg::VisData<1>> vis;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
-  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
-    const std::vector<std::array<unsigned, 4>>
-      cf_sizes{
-        {3 + padding, 3 + padding, 4, 3},
-        {2 + padding, 2 + padding, 4, 2}};
+    const std::vector<std::array<unsigned, 3>>
+      cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
     MyCFArray cf = create_cf(10, cf_sizes, rng);
     auto gs1 =
       hpg::get_value(
@@ -933,22 +895,21 @@ TEST(GridderState, Sequences) {
       cf,
       rng,
       vis,
-      cf_indexes,
-      cf_phase_screens);
+      cf_indexes);
     auto gs2 =
       hpg::get_value(
         std::move(gs1).grid_visibilities(
           default_host_device,
           decltype(vis)(vis),
-          decltype(cf_indexes)(cf_indexes),
-          decltype(cf_phase_screens)(cf_phase_screens)));
+          true,
+          decltype(cf_indexes)(cf_indexes)));
 
     auto err_or_gs3 =
       std::move(gs2).grid_visibilities(
         default_host_device,
         decltype(vis)(vis),
-        decltype(cf_indexes)(cf_indexes),
-        decltype(cf_phase_screens)(cf_phase_screens));
+        true,
+        decltype(cf_indexes)(cf_indexes));
     ASSERT_TRUE(hpg::is_value(err_or_gs3));
 
     auto err_or_gs4 =
@@ -960,16 +921,16 @@ TEST(GridderState, Sequences) {
       hpg::get_value(std::move(err_or_gs4)).grid_visibilities(
         default_host_device,
         decltype(vis)(vis),
-        decltype(cf_indexes)(cf_indexes),
-        decltype(cf_phase_screens)(cf_phase_screens));
+        true,
+        decltype(cf_indexes)(cf_indexes));
     ASSERT_TRUE(hpg::is_value(err_or_gs5));
 
     auto err_or_gs6 =
       hpg::get_value(std::move(err_or_gs5)).grid_visibilities(
         default_host_device,
         decltype(vis)(vis),
-        decltype(cf_indexes)(cf_indexes),
-        decltype(cf_phase_screens)(cf_phase_screens));
+        true,
+        decltype(cf_indexes)(cf_indexes));
     ASSERT_TRUE(hpg::is_value(err_or_gs6));
   }
 }
@@ -980,10 +941,10 @@ TEST(GridderState, Serialization) {
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
 
   auto padding = 2 * hpg::CFArray::padding;
-  std::array<std::vector<std::array<unsigned, 4>>, 2>
+  std::array<std::vector<std::array<unsigned, 3>>, 2>
     cf_sizes{
-      std::vector<std::array<unsigned, 4>>{{3 + padding, 3 + padding, 4, 3}},
-      std::vector<std::array<unsigned, 4>>{{2 + padding, 2 + padding, 4, 2}}};
+      std::vector<std::array<unsigned, 3>>{{3 + padding, 3 + padding, 3}},
+      std::vector<std::array<unsigned, 3>>{{2 + padding, 2 + padding, 2}}};
 
   std::mt19937 rng(42);
 
@@ -993,7 +954,6 @@ TEST(GridderState, Serialization) {
 
   std::array<std::vector<hpg::VisData<1>>, 2> vis;
   std::array<std::vector<hpg::vis_cf_index_t>, 2> cf_indexes;
-  std::array<std::vector<hpg::cf_phase_screen_t>, 2> cf_phase_screens;
 
   const size_t num_vis = 1000;
 
@@ -1005,8 +965,7 @@ TEST(GridderState, Serialization) {
       cfs[i],
       rng,
       vis[i],
-      cf_indexes[i],
-      cf_phase_screens[i]);
+      cf_indexes[i]);
 
   // do gridding with the two sets in both orders, and check that the results
   // are identical
@@ -1039,6 +998,7 @@ TEST(GridderState, Serialization) {
               .grid_visibilities(
                 default_host_device,
                 std::move(vis[first]),
+                true,
                 std::move(cf_indexes[first]));
           })
         .and_then(
@@ -1056,6 +1016,7 @@ TEST(GridderState, Serialization) {
               .grid_visibilities(
                 default_host_device,
                 std::move(vis[second]),
+                true,
                 std::move(cf_indexes[second]));
           })
         .map(
@@ -1085,10 +1046,8 @@ TEST(GridderState, Batching) {
   std::array<unsigned, 4> grid_size{16, 15, 4, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   auto padding = 2 * hpg::CFArray::padding;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{
-      {3 + padding, 3 + padding, 4, 3},
-      {2 + padding, 2 + padding, 4, 2}};
+  const std::vector<std::array<unsigned, 3>>
+    cf_sizes{{3 + padding, 3 + padding, 3}, {2 + padding, 2 + padding, 2}};
   std::mt19937 rng(42);
   MyCFArray cf = create_cf(10, cf_sizes, rng);
   size_t num_vis = 100;
@@ -1125,7 +1084,6 @@ TEST(GridderState, Batching) {
 
   std::vector<hpg::VisData<1>> vis;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
-  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   init_visibilities(
     num_vis,
@@ -1134,8 +1092,7 @@ TEST(GridderState, Batching) {
     cf,
     rng,
     vis,
-    cf_indexes,
-    cf_phase_screens);
+    cf_indexes);
 
   auto gv_small =
     std::get<1>(
@@ -1144,8 +1101,8 @@ TEST(GridderState, Batching) {
           std::move(gs_small).grid_visibilities(
             default_host_device,
             decltype(vis)(vis),
-            decltype(cf_indexes)(cf_indexes),
-            decltype(cf_phase_screens)(cf_phase_screens))
+            true,
+            decltype(cf_indexes)(cf_indexes))
           , [](auto&& g) {
               return std::move(g).grid_values();
             })));
@@ -1157,8 +1114,8 @@ TEST(GridderState, Batching) {
           std::move(gs_large).grid_visibilities(
             default_host_device,
             decltype(vis)(vis),
-            decltype(cf_indexes)(cf_indexes),
-            decltype(cf_phase_screens)(cf_phase_screens))
+            true,
+            decltype(cf_indexes)(cf_indexes))
           , [](auto&& g) {
               return std::move(g).grid_values();
             })));
@@ -1199,6 +1156,7 @@ TEST(GridderState, Gridding) {
                 default_host_device,
                 std::vector<hpg::VisData<1>>{
                   hpg::VisData<1>({vis}, {wgt}, c, 0.0, uvw, 0)},
+                false,
                 {{0, 0}});
           })
         .map(
@@ -1258,6 +1216,7 @@ TEST(GridderState, GridOne) {
                 default_host_device,
                 std::vector<hpg::VisData<1>>{
                   hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw, 0)},
+                false,
                 {{0, 0}});
           })
         .map(

@@ -106,9 +106,6 @@ using cf_index_t = K::pair<unsigned, unsigned>;
 /** portable UVW coordinates type */
 using uvw_t = std::array<vis_uvw_fp, 3>;
 
-/** portable CF phase screen type */
-using cf_ps_t = std::array<cf_phase_screen_fp, 2>;
-
 /** visibilities plus metadata for gridding */
 template <unsigned N>
 struct VisData {
@@ -121,12 +118,14 @@ struct VisData {
     vis_frequency_fp freq, /**< frequency */
     vis_phase_fp d_phase, /**< phase angle */
     const uvw_t& uvw, /** < uvw coordinates */
-    const unsigned& grid_cube /**< grid cube index */)
+    const K::Array<cf_phase_gradient_fp, 2>& cf_phase_gradient, /**< cf phase gradient */
+    unsigned& grid_cube /**< grid cube index */)
     : m_values(values)
     , m_weights(weights)
     , m_freq(freq)
     , m_d_phase(d_phase)
     , m_uvw(uvw)
+    , m_cf_phase_gradient(cf_phase_gradient)
     , m_grid_cube(grid_cube) {
   }
 
@@ -145,6 +144,7 @@ struct VisData {
   vis_frequency_fp m_freq;
   vis_phase_fp m_d_phase;
   uvw_t m_uvw;
+  K::Array<cf_phase_gradient_fp, 2> m_cf_phase_gradient;
   unsigned m_grid_cube;
 };
 
@@ -748,7 +748,7 @@ struct HPG_EXPORT VisibilityGridder final {
 
   using scratch_phscr_view =
     K::View<
-      cf_phase_screen_fp*,
+      cf_phase_gradient_fp*,
       typename execution_space::scratch_memory_space>;
 
   // function for gridding a single visibility, without CF phase screen
@@ -901,7 +901,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const cf_view<cf_layout, memory_space>& cf,
     const K::Array<int, 2>& cf_size,
     const unsigned cf_cube,
-    const K::Array<cf_phase_screen_fp, 2>& cf_gradient,
+    const K::Array<cf_phase_gradient_fp, 2>& cf_gradient,
     const const_grid_view<grid_layout, memory_space>& model,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
@@ -1004,8 +1004,8 @@ struct HPG_EXPORT VisibilityGridder final {
     unsigned max_cf_extent_y,
     int num_visibilities,
     const K::View<const VisData<N>*, memory_space>& visibilities,
+    bool with_cf_phase_gradients,
     const K::View<const cf_index_t*, memory_space>& cf_indexes,
-    const K::View<const cf_ps_t*, memory_space>& cf_phase_screens,
     const K::Array<grid_scale_fp, 2>& grid_scale,
     const const_grid_view<grid_layout, memory_space>& model,
     const grid_view<grid_layout, memory_space>& grid,
@@ -1017,7 +1017,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const K::Array<int, 2>
       oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
 
-    if (cf_phase_screens.extent(0) == 0) {
+    if (!with_cf_phase_gradients) {
       // without CF phase screen
       auto shmem_size = scratch_wgts_view::shmem_size(1);
 
@@ -1077,11 +1077,10 @@ struct HPG_EXPORT VisibilityGridder final {
           const auto& cf = cfs[cf_grp];
           const K::Array<int, 2>
             cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
-          const K::Array<cf_phase_screen_fp, 2>
-            cf_gradient{cf_phase_screens(i)[0], cf_phase_screens(i)[1]};
           scratch_wgts_view cfw(team_member.team_scratch(0), 1);
           scratch_phscr_view
             phi_Y(team_member.team_scratch(0), max_cf_extent_y);
+          const auto& cf_gradient = visibilities(i).m_cf_phase_gradient;
 
           GridVis<N, execution_space> vis(
             visibilities(i),
@@ -1139,8 +1138,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     unsigned max_cf_extent_y,
     int num_visibilities,
     const K::View<const VisData<N>*, memory_space>& visibilities,
+    bool with_cf_phase_gradients,
     const K::View<const cf_index_t*, memory_space>& cf_indexes,
-    const K::View<const cf_ps_t*, memory_space>& cf_phase_screens,
     const K::Array<grid_scale_fp, 2>& grid_scale,
     const const_grid_view<grid_layout, memory_space>& model,
     const grid_view<grid_layout, memory_space>& grid,
@@ -1152,7 +1151,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const K::Array<int, 2>
       oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
 
-    if (cf_phase_screens.extent(0) == 0) {
+    if (!with_cf_phase_gradients) {
       // without CF phase screen
       K::parallel_for(
         "gridding",
@@ -1204,11 +1203,10 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           const auto& cf = cfs[cf_grp];
           const K::Array<int, 2>
             cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
-          const K::Array<cf_phase_screen_fp, 2>
-            cf_gradient{cf_phase_screens(i)[0], cf_phase_screens(i)[1]};
           scratch_wgts_view cfw(team_member.team_scratch(0), 1);
           scratch_phscr_view
             phi_Y(team_member.team_scratch(0), max_cf_extent_y);
+          const auto& cf_gradient = visibilities(i).m_cf_phase_gradient;
 
           GridVis<N, execution_space> vis(
             visibilities(i),
@@ -1892,8 +1890,8 @@ struct State {
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    std::vector<vis_cf_index_t>&& cf_indexes,
-    std::optional<std::vector<cf_phase_screen_t>>&& cf_phase_screens) = 0;
+    bool with_cf_phase_gradients,
+    std::vector<vis_cf_index_t>&& cf_indexes) = 0;
 
   virtual void
   fence() const = 0;
@@ -2833,7 +2831,6 @@ struct ExecSpace final {
     visdata_view<3, memory_space>,
     visdata_view<4, memory_space>> visibilities;
   K::View<cf_index_t*, memory_space> cf_indexes;
-  K::View<cf_ps_t*, memory_space> cf_phase_screens;
   std::vector<std::any> vis_state;
 
   ExecSpace(execution_space sp)
@@ -3064,8 +3061,8 @@ public:
     Device /*host_device*/,
     size_t offset,
     const vector_data<::hpg::VisData<N>>& visibilities,
-    const vector_data<vis_cf_index_t>& vis_cf_indexes,
-    const vector_data<cf_phase_screen_t>& vis_cf_phase_screens) {
+    bool with_cf_phase_gradients,
+    const vector_data<vis_cf_index_t>& vis_cf_indexes) {
 
     auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
 
@@ -3092,16 +3089,6 @@ public:
         exec_copy.space);
     exec_copy.vis_state.push_back(cf_indexes_views);
 
-    exec_copy.vis_state.emplace_back(vis_cf_phase_screens);
-    auto cf_phase_screens_views =
-      StateT<D>::copy_to_device_view<cf_ps_t>(
-        exec_copy.cf_phase_screens,
-        vis_cf_phase_screens,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(cf_phase_screens_views);
-
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     const_grid_view<typename GridLayout<D>::layout, memory_space> model
@@ -3113,8 +3100,8 @@ public:
       cf.max_cf_extent_y,
       len,
       std::get<1>(vis_views),
+      with_cf_phase_gradients,
       std::get<1>(cf_indexes_views),
-      std::get<1>(cf_phase_screens_views),
       m_grid_scale,
       model,
       m_grid,
@@ -3128,8 +3115,8 @@ public:
     Device /*host_device*/,
     size_t offset,
     const vector_data<::hpg::VisData<N>>& visibilities,
-    const vector_data<vis_cf_index_t>& vis_cf_indexes,
-    const vector_data<cf_phase_screen_t>& vis_cf_phase_screens) {
+    bool with_cf_phase_gradients,
+    const vector_data<vis_cf_index_t>& vis_cf_indexes) {
 
     auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
 
@@ -3156,16 +3143,6 @@ public:
         exec_copy.space);
     exec_copy.vis_state.push_back(cf_indexes_views);
 
-    exec_copy.vis_state.emplace_back(vis_cf_phase_screens);
-    auto cf_phase_screens_views =
-      StateT<D>::copy_to_device_view<cf_ps_t>(
-        exec_copy.cf_phase_screens,
-        vis_cf_phase_screens,
-        offset,
-        len,
-        exec_copy.space);
-    exec_copy.vis_state.push_back(cf_phase_screens_views);
-
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     const_grid_view<typename GridLayout<D>::layout, memory_space> model
@@ -3177,8 +3154,8 @@ public:
       cf.max_cf_extent_y,
       len,
       std::get<1>(vis_views),
+      with_cf_phase_gradients,
       std::get<1>(cf_indexes_views),
-      std::get<1>(cf_phase_screens_views),
       m_grid_scale,
       model,
       m_grid,
@@ -3191,8 +3168,8 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
-    std::vector<vis_cf_index_t>&& vis_cf_indexes,
-    std::optional<std::vector<cf_phase_screen_t>>&& vis_cf_phase_screens) {
+    bool with_cf_phase_gradients,
+    std::vector<vis_cf_index_t>&& vis_cf_indexes) {
 
     const auto vis =
       std::make_shared<std::vector<::hpg::VisData<N>>>(
@@ -3208,14 +3185,6 @@ public:
         return OutOfBoundsCFIndexError({cube, supp});
     }
 #endif // NDEBUG
-    std::shared_ptr<std::vector<cf_phase_screen_t>> cf_phase_screens;
-    if (vis_cf_phase_screens)
-      cf_phase_screens =
-        std::make_shared<std::vector<cf_phase_screen_t>>(
-          std::move(vis_cf_phase_screens).value());
-    else
-      cf_phase_screens =
-        std::make_shared<std::vector<cf_phase_screen_t>>();
 
     size_t num_visibilities = vis->size();
     switch (visibility_gridder_version()) {
@@ -3225,8 +3194,8 @@ public:
           host_device,
           i,
           vis,
-          cf_indexes,
-          cf_phase_screens);
+          with_cf_phase_gradients,
+          cf_indexes);
       break;
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     case 1:
@@ -3235,8 +3204,8 @@ public:
           host_device,
           i,
           vis,
-          cf_indexes,
-          cf_phase_screens);
+          with_cf_phase_gradients,
+          cf_indexes);
       break;
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     }
@@ -3247,8 +3216,8 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    std::vector<vis_cf_index_t>&& vis_cf_indexes,
-    std::optional<std::vector<cf_phase_screen_t>>&& vis_cf_phase_screens)
+    bool with_cf_phase_gradients,
+    std::vector<vis_cf_index_t>&& vis_cf_indexes)
     override {
 
     switch (visibilities.m_npol) {
@@ -3257,32 +3226,32 @@ public:
         grid_visibilities(
           host_device,
           std::move(visibilities).m_vis_data.vd1,
-          std::move(vis_cf_indexes),
-          std::move(vis_cf_phase_screens));
+          with_cf_phase_gradients,
+          std::move(vis_cf_indexes));
         break;
     case 2:
       return
         grid_visibilities(
           host_device,
           std::move(visibilities).m_vis_data.vd2,
-          std::move(vis_cf_indexes),
-          std::move(vis_cf_phase_screens));
+          with_cf_phase_gradients,
+          std::move(vis_cf_indexes));
       break;
     case 3:
       return
         grid_visibilities(
           host_device,
           std::move(visibilities).m_vis_data.vd3,
-          std::move(vis_cf_indexes),
-          std::move(vis_cf_phase_screens));
+          with_cf_phase_gradients,
+          std::move(vis_cf_indexes));
       break;
     case 4:
       return
         grid_visibilities(
           host_device,
           std::move(visibilities).m_vis_data.vd4,
-          std::move(vis_cf_indexes),
-          std::move(vis_cf_phase_screens));
+          with_cf_phase_gradients,
+          std::move(vis_cf_indexes));
       break;
     default:
       assert(false);
@@ -3460,10 +3429,6 @@ private:
           decltype(esp.cf_indexes)(
             K::ViewAllocateWithoutInitializing("cf_indexes"),
             m_max_visibility_batch_size);
-        esp.cf_phase_screens =
-          decltype(esp.cf_phase_screens)(
-            K::ViewAllocateWithoutInitializing("cf_phase_screens"),
-            m_max_visibility_batch_size);
       }
     }
 
@@ -3509,7 +3474,6 @@ private:
           },
           st_esp.visibilities);
         K::deep_copy(esp.space, esp.cf_indexes, st_esp.cf_indexes);
-        K::deep_copy(esp.space, esp.cf_phase_screens, st_esp.cf_phase_screens);
         esp.vis_state = st_esp.vis_state;
       }
       for (auto& i : ost->m_cf_indexes) {

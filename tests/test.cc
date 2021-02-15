@@ -11,20 +11,19 @@ const unsigned cf_oversampling = 10;
 struct MyCFArray final
   : public hpg::CFArray {
 
-  std::array<unsigned, 4> m_extent;
+  std::array<unsigned, 3> m_extent;
   std::vector<std::complex<hpg::cf_fp>> m_values;
 
   MyCFArray() {}
 
   MyCFArray(
-    const std::array<unsigned, 4>& size,
+    const std::array<unsigned, 3>& size,
     const std::vector<std::complex<hpg::cf_fp>>& values)
     : m_values(values) {
 
     m_extent[0] = size[0] * cf_oversampling;
     m_extent[1] = size[1] * cf_oversampling;
     m_extent[2] = size[2];
-    m_extent[3] = size[3];
   }
 
   unsigned
@@ -37,27 +36,25 @@ struct MyCFArray final
     return 1;
   }
 
-  std::array<unsigned, 4>
+  std::array<unsigned, 3>
   extents(unsigned) const override {
     return m_extent;
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned copol, unsigned cube, unsigned)
+  operator()(unsigned x, unsigned y, unsigned plane, unsigned)
     const override {
-    return
-      m_values[
-        ((x * m_extent[1] + y) * m_extent[2] + copol) * m_extent[3] + cube];
+    return m_values[(x * m_extent[1] + y) * m_extent[2] + plane];
   }
 };
 
 template <typename Generator>
 MyCFArray
-create_cf(const std::array<unsigned, 4>& size, Generator& gen) {
+create_cf(const std::array<unsigned, 3>& size, Generator& gen) {
   const unsigned num_values =
     cf_oversampling * size[0]
     * cf_oversampling * size[1]
-    * size[2] * size[3];
+    * size[2];
   std::vector<std::complex<hpg::cf_fp>> values;
   values.reserve(num_values);
   std::uniform_real_distribution<hpg::cf_fp> dist(-1.0, 1.0);
@@ -72,23 +69,21 @@ init_visibilities(
   unsigned num_vis,
   const std::array<unsigned, 4>& grid_size,
   const std::array<float, 2>& grid_scale,
-  const std::array<unsigned, 4>& cf_size,
+  const std::array<unsigned, 3>& cf_size,
   Generator& gen,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<hpg::vis_cf_index_t>& cf_indexes,
-  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
+  std::vector<hpg::vis_cf_index_t>& cf_indexes) {
 
   vis.clear();
   vis.reserve(num_vis);
   cf_indexes.clear();
   cf_indexes.reserve(num_vis);
-  cf_phase_screens.resize(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
   std::uniform_int_distribution<unsigned> dist_gcube(0, grid_size[3] - 1);
   std::uniform_int_distribution<unsigned> dist_gcopol(0, grid_size[2] - 1);
-  std::uniform_int_distribution<unsigned> dist_cfcube(0, cf_size[3] - 1);
+  std::uniform_int_distribution<unsigned> dist_cfcube(0, cf_size[2] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
   double ulim =
@@ -134,8 +129,7 @@ run_tests(
   const std::array<float, 2>& grid_scale,
   const MyCFArray& cf,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<hpg::vis_cf_index_t>& cf_indexes,
-  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
+  std::vector<hpg::vis_cf_index_t>& cf_indexes) {
 
   {
     std::cout << "GridderState " << dev_name << std::endl;
@@ -173,8 +167,8 @@ run_tests(
     g0.grid_visibilities(
       host_dev,
       std::remove_reference_t<decltype(vis)>(vis),
-      std::remove_reference_t<decltype(cf_indexes)>(cf_indexes),
-      std::remove_reference_t<decltype(cf_phase_screens)>(cf_phase_screens));
+      false,
+      std::remove_reference_t<decltype(cf_indexes)>(cf_indexes));
     std::cout << "gridded" << std::endl;
     auto weights = g0.grid_weights();
     std::cout << "weights";
@@ -216,8 +210,7 @@ dump_grids(
   const std::array<float, 2>& grid_scale,
   const MyCFArray& cf,
   std::vector<hpg::VisData<1>>& vis,
-  std::vector<hpg::vis_cf_index_t>& cf_indexes,
-  std::vector<hpg::cf_phase_screen_t>& cf_phase_screens) {
+  std::vector<hpg::vis_cf_index_t>& cf_indexes) {
 
   auto g0 =
     std::get<1>(
@@ -226,8 +219,8 @@ dump_grids(
   g0.grid_visibilities(
     host_dev,
     std::remove_reference_t<decltype(vis)>(vis),
-    std::remove_reference_t<decltype(cf_indexes)>(cf_indexes),
-    std::remove_reference_t<decltype(cf_phase_screens)>(cf_phase_screens));
+    false,
+    std::remove_reference_t<decltype(cf_indexes)>(cf_indexes));
   g0.normalize();
   auto err = g0.apply_fft();
   assert(!err);
@@ -271,13 +264,12 @@ main(int argc, char* argv[]) {
 
   std::vector<hpg::VisData<1>> vis;
   std::vector<hpg::vis_cf_index_t> cf_indexes;
-  std::vector<hpg::cf_phase_screen_t> cf_phase_screens;
 
   {
     std::mt19937 rng(42);
 
     const std::array<unsigned, 4> grid_size{1000, 2000, 2, 1};
-    const std::array<unsigned, 4> cf_size{31, 21, 2, 3};
+    const std::array<unsigned, 3> cf_size{31, 21, 3};
     const std::array<float, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);
     const unsigned num_visibilities = 1000000;
@@ -288,24 +280,23 @@ main(int argc, char* argv[]) {
       cf_size,
       rng,
       vis,
-      cf_indexes,
-      cf_phase_screens);
+      cf_indexes);
 #ifdef HPG_ENABLE_SERIAL
     run_tests<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, cf_indexes, cf_phase_screens);
+      grid_size, grid_scale, cf, vis, cf_indexes);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     run_tests<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, cf_indexes, cf_phase_screens);
+      grid_size, grid_scale, cf, vis, cf_indexes);
 #endif // HPG_ENABLE_CUDA
   }
   {
     std::mt19937 rng(42);
 
     const std::array<unsigned, 4> grid_size{5, 6, 2, 3};
-    const std::array<unsigned, 4> cf_size{3, 3, 2, 1};
+    const std::array<unsigned, 3> cf_size{3, 3, 2};
     const std::array<float, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);
     const unsigned num_visibilities = 50;
@@ -316,17 +307,16 @@ main(int argc, char* argv[]) {
       cf_size,
       rng,
       vis,
-      cf_indexes,
-      cf_phase_screens);
+      cf_indexes);
 #ifdef HPG_ENABLE_SERIAL
     dump_grids<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, cf_indexes, cf_phase_screens);
+      grid_size, grid_scale, cf, vis, cf_indexes);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     dump_grids<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, cf_indexes, cf_phase_screens);
+      grid_size, grid_scale, cf, vis, cf_indexes);
 #endif // HPG_ENABLE_CUDA
   }
 }
