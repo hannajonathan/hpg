@@ -12,13 +12,14 @@ struct DisabledDeviceError
     : Error("Requested device is not enabled", ErrorType::DisabledDevice) {}
 };
 
-struct IncompatibleVisVectorLengthError
+struct InvalidNumberMuellerIndexRowsError
   : public Error {
 
-  IncompatibleVisVectorLengthError()
+  InvalidNumberMuellerIndexRowsError()
     : Error(
-      "Incompatible visibility vector lengths",
-      ErrorType::IncompatibleVisVectorLengths) {}
+      "Number of rows of Mueller indexes does not match grid",
+      ErrorType::InvalidNumberMuellerIndexRows) {}
+
 };
 
 Error::Error(const std::string& msg, ErrorType err)
@@ -102,22 +103,21 @@ struct Impl::GridderState {
   grid_visibilities(
     GS&& st,
     Device host_device,
+    UArrayVector&& mueller_indexes,
     VisDataVector&& visibilities,
-    bool with_cf_phase_gradients,
-    std::vector<vis_cf_index_t>&& cf_indexes) {
+    bool with_cf_phase_gradients) {
 
-    auto len = std::move(visibilities).size();
-    if (std::move(cf_indexes).size() < len)
-      return IncompatibleVisVectorLengthError();
+    if (st.grid_size()[2] != mueller_indexes.size())
+      return InvalidNumberMuellerIndexRowsError();
 
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
       auto error =
         result.impl->grid_visibilities(
           host_device,
+          std::move(mueller_indexes),
           std::move(visibilities),
-          with_cf_phase_gradients,
-          std::move(cf_indexes));
+          with_cf_phase_gradients);
       if (error)
         return std::move(error.value());
       else
@@ -429,8 +429,8 @@ static std::vector<std::complex<visibility_fp>>
 extract_visibilities(const Impl::VisDataVector& vs) {
   assert(v.m_npol == 1);
   std::vector<std::complex<visibility_fp>> result;
-  result.reserve(vs.m_vis_data.vd1.size());
-  for (const auto& v : vs.m_vis_data.vd1)
+  result.reserve(vs.m_vector.n1.size());
+  for (const auto& v : vs.m_vector.n1)
     result.push_back(v.m_visibilities[0]);
   return result;
 }
@@ -440,8 +440,8 @@ static std::vector<vis_weight_fp>
 extract_weights(const Impl::VisDataVector& vs) {
   assert(v.m_npol == 1);
   std::vector<vis_weight_fp> result;
-  result.reserve(vs.m_vis_data.vd1.size());
-  for (const auto& v : vs.m_vis_data.vd1)
+  result.reserve(vs.m_vector.n1.size());
+  for (const auto& v : vs.m_vector.n1)
     result.push_back(v.m_weights[0]);
   return result;
 }
@@ -451,8 +451,8 @@ static std::vector<vis_frequency_fp>
 extract_frequencies(const Impl::VisDataVector& vs) {
   assert(v.m_npol == 1);
   std::vector<vis_frequency_fp> result;
-  result.reserve(vs.m_vis_data.vd1.size());
-  for (const auto& v : vs.m_vis_data.vd1)
+  result.reserve(vs.m_vector.n1.size());
+  for (const auto& v : vs.m_vector.n1)
     result.push_back(v.m_frequency);
   return result;
 }
@@ -462,8 +462,8 @@ static std::vector<vis_phase_fp>
 extract_phases(const Impl::VisDataVector& vs) {
   assert(v.m_npol == 1);
   std::vector<vis_phase_fp> result;
-  result.reserve(vs.m_vis_data.vd1.size());
-  for (const auto& v : vs.m_vis_data.vd1)
+  result.reserve(vs.m_vector.n1.size());
+  for (const auto& v : vs.m_vector.n1)
     result.push_back(v.m_phase);
   return result;
 }
@@ -473,8 +473,8 @@ static std::vector<vis_uvw_t>
 extract_coordinates(const Impl::VisDataVector& vs) {
   assert(v.m_npol == 1);
   std::vector<vis_uvw_t> result;
-  result.reserve(vs.m_vis_data.vd1.size());
-  for (const auto& v : vs.m_vis_data.vd1)
+  result.reserve(vs.m_vector.n1.size());
+  for (const auto& v : vs.m_vector.n1)
     result.push_back(v.m_uvw);
   return result;
 }
@@ -482,35 +482,35 @@ extract_coordinates(const Impl::VisDataVector& vs) {
 rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
+  Impl::UArrayVector&& mueller_indexes,
   Impl::VisDataVector&& visibilities,
-  bool with_cf_phase_gradients,
-  std::vector<vis_cf_index_t>&& cf_indexes) const & {
+  bool with_cf_phase_gradients) const & {
 
   return
     to_rval(
       Impl::GridderState::grid_visibilities(
         *this,
         host_device,
+        std::move(mueller_indexes),
         std::move(visibilities),
-        with_cf_phase_gradients,
-        std::move(cf_indexes)));
+        with_cf_phase_gradients));
 }
 
 rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
+  Impl::UArrayVector&& mueller_indexes,
   Impl::VisDataVector&& visibilities,
-  bool with_cf_phase_gradients,
-  std::vector<vis_cf_index_t>&& cf_indexes) && {
+  bool with_cf_phase_gradients) && {
 
   return
     to_rval(
       Impl::GridderState::grid_visibilities(
         std::move(*this),
         std::move(host_device),
+        std::move(mueller_indexes),
         std::move(visibilities),
-        with_cf_phase_gradients,
-        std::move(cf_indexes)));
+        with_cf_phase_gradients));
 }
 
 GridderState
@@ -816,18 +816,18 @@ Gridder::set_model(Device host_device, GridValueArray&& gv) {
 opt_error_t
 Gridder::grid_visibilities(
   Device host_device,
+  Impl::UArrayVector&& mueller_indexes,
   Impl::VisDataVector&& visibilities,
-  bool with_cf_phase_gradients,
-  std::vector<vis_cf_index_t>&& cf_indexes) {
+  bool with_cf_phase_gradients) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state)
       .grid_visibilities(
         host_device,
+        std::move(mueller_indexes),
         std::move(visibilities),
-        with_cf_phase_gradients,
-        std::move(cf_indexes)),
+        with_cf_phase_gradients),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
         return std::nullopt;
@@ -841,9 +841,9 @@ Gridder::grid_visibilities(
     std::move(state)
     .grid_visibilities(
       host_device,
+      std::move(mueller_indexes),
       std::move(visibilities),
-      with_cf_phase_gradients,
-      std::move(cf_indexes));
+      with_cf_phase_gradients);
   return result;
 #endif // HPG_API >= 17
 }

@@ -11,8 +11,8 @@ namespace hpg {
 enum class HPG_EXPORT ErrorType {
   DisabledDevice,
   DisabledHostDevice,
-  IncompatibleVisVectorLengths,
   OutOfBoundsCFIndex,
+  InvalidNumberMuellerIndexRows,
   InvalidCFLayout,
   InvalidModelGridSize,
   Other

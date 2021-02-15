@@ -146,12 +146,6 @@ using vis_uvw_t = std::array<vis_uvw_fp, 3>;
 /** CF phase gradient type */
 using cf_phase_gradient_t = std::array<cf_phase_gradient_fp, 2>;
 
-/** visibility CF index type
- *
- * in terms of full CFArray indexes, order is cube, grp
- */
-using vis_cf_index_t = std::pair<unsigned, unsigned>;
-
 /** type to represent a possible error */
 #if HPG_API >= 17
 using opt_error_t = std::optional<Error>;
@@ -172,10 +166,12 @@ struct VisData {
   vis_phase_fp m_phase;
   /** visibility UVW coordinates */
   vis_uvw_t m_uvw;
-  /** phase gradient */
-  cf_phase_gradient_t m_cf_phase_gradient;
   /** grid cube index */
   unsigned m_grid_cube;
+  /** cube and grp CFArray index components */
+  std::array<unsigned, 2> m_cf_index;
+  /** phase gradient */
+  cf_phase_gradient_t m_cf_phase_gradient;
 
   VisData(
     const std::array<std::complex<visibility_fp>, N>& visibilities,
@@ -183,15 +179,17 @@ struct VisData {
     const vis_frequency_fp& frequency,
     const vis_phase_fp& phase,
     const vis_uvw_t& uvw,
-    const cf_phase_gradient_t& cf_phase_gradient,
-    const unsigned& grid_cube)
+    const unsigned& grid_cube,
+    const std::array<unsigned, 2>& cf_index,
+    const cf_phase_gradient_t& cf_phase_gradient)
     : m_visibilities(visibilities)
     , m_weights(weights)
     , m_frequency(frequency)
     , m_phase(phase)
     , m_uvw(uvw)
-    , m_cf_phase_gradient(cf_phase_gradient)
-    , m_grid_cube(grid_cube) {}
+    , m_grid_cube(grid_cube)
+    , m_cf_index(cf_index)
+    , m_cf_phase_gradient(cf_phase_gradient) {}
 
   VisData(
     const std::array<std::complex<visibility_fp>, N>& visibilities,
@@ -199,13 +197,15 @@ struct VisData {
     const vis_frequency_fp& frequency,
     const vis_phase_fp& phase,
     const vis_uvw_t& uvw,
-    const unsigned& grid_cube)
+    const unsigned& grid_cube,
+    const std::array<unsigned, 2>& cf_index)
     : m_visibilities(visibilities)
     , m_weights(weights)
     , m_frequency(frequency)
     , m_phase(phase)
     , m_uvw(uvw)
-    , m_grid_cube(grid_cube) {}
+    , m_grid_cube(grid_cube)
+    , m_cf_index(cf_index) {}
 
   VisData() {}
 };
@@ -220,58 +220,59 @@ sgn(T val) {
   return (T(0) < val) - (val < T(0));
 }
 
-struct VisDataVector {
+template <template <unsigned> typename E>
+struct VectorNPol {
 
   unsigned m_npol;
 
-  union vis_data {
-    std::vector<VisData<1>> vd1;
-    std::vector<VisData<2>> vd2;
-    std::vector<VisData<3>> vd3;
-    std::vector<VisData<4>> vd4;
+  union vector {
+    std::vector<E<1>> n1;
+    std::vector<E<2>> n2;
+    std::vector<E<3>> n3;
+    std::vector<E<4>> n4;
 
-    vis_data(std::vector<VisData<1>>&& v)
-      : vd1(std::move(v)) {}
-    vis_data(std::vector<VisData<2>>&& v)
-      : vd2(std::move(v)) {}
-    vis_data(std::vector<VisData<3>>&& v)
-      : vd3(std::move(v)) {}
-    vis_data(std::vector<VisData<4>>&& v)
-      : vd4(std::move(v)) {}
+    vector(std::vector<E<1>>&& v)
+      : n1(std::move(v)) {}
+    vector(std::vector<E<2>>&& v)
+      : n2(std::move(v)) {}
+    vector(std::vector<E<3>>&& v)
+      : n3(std::move(v)) {}
+    vector(std::vector<E<4>>&& v)
+      : n4(std::move(v)) {}
 
-    ~vis_data() {}
-  } m_vis_data;
+    ~vector() {}
+  } m_vector;
 
-  VisDataVector(std::vector<VisData<1>>&& v)
+  VectorNPol(std::vector<E<1>>&& v)
     : m_npol(1)
-    , m_vis_data(vis_data(std::move(v))) {}
+    , m_vector(vector(std::move(v))) {}
 
-  VisDataVector(std::vector<VisData<2>>&& v)
+  VectorNPol(std::vector<E<2>>&& v)
     : m_npol(2)
-    , m_vis_data(vis_data(std::move(v))) {}
+    , m_vector(vector(std::move(v))) {}
 
-  VisDataVector(std::vector<VisData<3>>&& v)
+  VectorNPol(std::vector<E<3>>&& v)
     : m_npol(3)
-    , m_vis_data(vis_data(std::move(v))) {}
+    , m_vector(vector(std::move(v))) {}
 
-  VisDataVector(std::vector<VisData<4>>&& v)
+  VectorNPol(std::vector<E<4>>&& v)
     : m_npol(4)
-    , m_vis_data(vis_data(std::move(v))) {}
+    , m_vector(vector(std::move(v))) {}
 
   size_t
   size() const {
     switch (m_npol) {
     case 1:
-      return m_vis_data.vd1.size();
+      return m_vector.n1.size();
       break;
     case 2:
-      return m_vis_data.vd2.size();
+      return m_vector.n2.size();
       break;
     case 3:
-      return m_vis_data.vd3.size();
+      return m_vector.n3.size();
       break;
     case 4:
-      return m_vis_data.vd4.size();
+      return m_vector.n4.size();
       break;
     default:
       assert(false);
@@ -280,6 +281,13 @@ struct VisDataVector {
     }
   }
 };
+
+using VisDataVector = VectorNPol<VisData>;
+
+template <unsigned N>
+using uarray = std::array<unsigned, N>;
+
+using UArrayVector = VectorNPol<uarray>;
 
 } // end namespace Impl
 
@@ -299,7 +307,7 @@ enum class HPG_EXPORT Layout {
 class HPG_EXPORT CFArrayShape {
 public:
 
-  static constexpr unsigned rank = 4;
+  static constexpr unsigned rank = 5;
 
   virtual unsigned
   oversampling() const = 0;
@@ -328,7 +336,13 @@ public:
   }
 
   virtual std::complex<cf_fp>
-  operator()(unsigned x, unsigned y, unsigned plane, unsigned grp) const = 0;
+  operator()(
+    unsigned x,
+    unsigned y,
+    unsigned mueller,
+    unsigned cube,
+    unsigned grp)
+    const = 0;
 
   std::array<unsigned, 2>
   radii(unsigned grp) const {
@@ -812,9 +826,9 @@ protected:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
+    Impl::UArrayVector&& mueller_indexes,
     Impl::VisDataVector&& visibilities,
-    bool with_cf_phase_gradients,
-    std::vector<vis_cf_index_t>&& cf_indexes) const &;
+    bool with_cf_phase_gradients) const &;
 
 public:
 
@@ -830,10 +844,10 @@ public:
    * must be located at weights[i].
    *
    * @param host_device device to use for changing array layout
+   * @param mueller_indexes CFArray mueller indexes, by row
    * @param visibilities visibilities
    * @param with_cf_phase_gradients visibilities are provided with CF phase
    * gradient values
-   * @param cf_indexes visibility convolution function indexes
    *
    * @sa Gridder::grid_visibilities()
    */
@@ -841,16 +855,16 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
+    const std::vector<std::array<unsigned, N>>& mueller_indexes,
     std::vector<VisData<N>>&& visibilities,
-    bool with_cf_phase_gradients,
-    std::vector<vis_cf_index_t>&& cf_indexes) const & {
+    bool with_cf_phase_gradients) const & {
 
     return
       grid_visibilities(
         host_device,
+        Impl::UArrayVector(mueller_indexes),
         Impl::VisDataVector(std::move(visibilities)),
-        with_cf_phase_gradients,
-        std::move(cf_indexes));
+        with_cf_phase_gradients);
   };
 
 protected:
@@ -858,9 +872,9 @@ protected:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
+    Impl::UArrayVector&& mueller_indexes,
     Impl::VisDataVector&& visibilities,
-    bool with_cf_phase_gradients,
-    std::vector<vis_cf_index_t>&& cf_indexes) &&;
+    bool with_cf_phase_gradients) &&;
 
 public:
 
@@ -876,10 +890,10 @@ public:
    * must be located at weights[i].
    *
    * @param host_device device to use for changing array layout
+   * @param mueller_indexes CFArray mueller indexes, by row
    * @param visibilities visibilities
    * @param with_cf_phase_gradients visibilities are provided with CF phase
    * gradient values
-   * @param cf_indexes visibility convolution function indexes
    *
    * @sa Gridder::grid_visibilities()
    */
@@ -887,17 +901,17 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
+    const std::vector<std::array<unsigned, N>>& mueller_indexes,
     std::vector<VisData<N>>&& visibilities,
-    bool with_cf_phase_gradients,
-    std::vector<vis_cf_index_t>&& cf_indexes) && {
+    bool with_cf_phase_gradients) && {
 
     return
       std::move(*this)
       .grid_visibilities(
         host_device,
+        Impl::UArrayVector(mueller_indexes),
         Impl::VisDataVector(std::move(visibilities)),
-        with_cf_phase_gradients,
-        std::move(cf_indexes));
+        with_cf_phase_gradients);
   }
 
 
@@ -1232,9 +1246,9 @@ protected:
   opt_error_t
   grid_visibilities(
     Device host_device,
+    Impl::UArrayVector&& mueller_indexes,
     Impl::VisDataVector&& visibilities,
-    bool with_cf_phase_gradients,
-    std::vector<vis_cf_index_t>&& cf_indexes);
+    bool with_cf_phase_gradients);
 
 public:
 
@@ -1247,25 +1261,25 @@ public:
    * must be located at weights[i].
    *
    * @param host_device device to use for changing array layout
+   * @param mueller_indexes CFArray mueller indexes, by row
    * @param visibilities visibilities
    * @param with_cf_phase_gradients visibilities are provided with CF phase
    * gradient values
-   * @param cf_indexes visibility convolution function indexes
    */
   template <unsigned N>
   opt_error_t
   grid_visibilities(
     Device host_device,
+    const std::vector<std::array<unsigned, N>>&& mueller_indexes,
     std::vector<VisData<N>>&& visibilities,
-    bool with_cf_phase_gradients,
-    std::vector<vis_cf_index_t>&& cf_indexes) {
+    bool with_cf_phase_gradients) {
 
     return
       grid_visibilities(
         host_device,
+        Impl::UArrayVector(mueller_indexes),
         Impl::VisDataVector(std::move(visibilities)),
-        with_cf_phase_gradients,
-        std::move(cf_indexes));
+        with_cf_phase_gradients);
   }
 
 /** device execution fence
