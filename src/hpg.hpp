@@ -281,7 +281,7 @@ enum class HPG_EXPORT Layout {
 class HPG_EXPORT CFArrayShape {
 public:
 
-  static constexpr unsigned rank = 5;
+  static constexpr unsigned rank = 4;
 
   virtual unsigned
   oversampling() const = 0;
@@ -289,7 +289,7 @@ public:
   virtual unsigned
   num_groups() const = 0;
 
-  virtual std::array<unsigned, 4>
+  virtual std::array<unsigned, rank - 1>
   extents(unsigned grp) const = 0;
 
   virtual ~CFArrayShape() {}
@@ -310,13 +310,7 @@ public:
   }
 
   virtual std::complex<cf_fp>
-  operator()(
-    unsigned x,
-    unsigned y,
-    unsigned mrow,
-    unsigned cube,
-    unsigned grp)
-    const = 0;
+  operator()(unsigned x, unsigned y, unsigned plane, unsigned grp) const = 0;
 
   std::array<unsigned, 2>
   radii(unsigned grp) const {
@@ -370,7 +364,10 @@ public:
   create(
     const std::string& version,
     unsigned oversampling,
-    std::vector<std::tuple<std::array<unsigned, 4>, std::vector<value_type>>>&&
+    std::vector<
+      std::tuple<
+        std::array<unsigned, rank - 1>,
+        std::vector<value_type>>>&&
       arrays);
 
   virtual Device

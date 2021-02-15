@@ -290,11 +290,11 @@ using const_weight_view = K::View<const grid_value_fp**, Layout, memory_space>;
 /** View type for CF values */
 template <typename Layout, typename memory_space>
 using cf_view =
-  K::View<cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
+  K::View<cf_t*****, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
 
 template <typename Layout, typename memory_space>
 using const_cf_view =
-  K::View<const cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
+  K::View<const cf_t*****, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
 
 /** view type for unmanaged view of vector data on host */
 template <typename T>
@@ -368,26 +368,26 @@ struct CFLayout {
   /**
    * create Kokkos layout using given CFArray slice
    *
-   * logical index order: X, Y, mrow, x, y, cube
+   * logical index order: X, Y, plane, x, y
+   *
+   * @todo: verify these layouts
    */
   static layout
   dimensions(const CFArrayShape* cf, unsigned grp) {
     auto extents = cf->extents(grp);
     auto os = cf->oversampling();
-    std::array<int, 6> dims{
+    std::array<int, 5> dims{
       static_cast<int>((extents[0] + os - 1) / os),
       static_cast<int>((extents[1] + os - 1) / os),
       static_cast<int>(extents[2]),
       static_cast<int>(os),
-      static_cast<int>(os),
-      static_cast<int>(extents[3])
+      static_cast<int>(os)
     };
     if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
-      return
-        K::LayoutLeft(dims[0], dims[1], dims[2], dims[3], dims[4], dims[5]);
+      return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3], dims[4]);
     } else {
-      static const std::array<int, 6> order{1, 2, 0, 4, 3, 5};
-      return K::LayoutStride::order_dimensions(6, order.data(), dims.data());
+      static const std::array<int, 5> order{1, 2, 0, 4, 3};
+      return K::LayoutStride::order_dimensions(5, order.data(), dims.data());
     }
 #ifdef WORKAROUND_NVCC_IF_CONSTEXPR_BUG
     return layout();
@@ -798,10 +798,9 @@ struct HPG_EXPORT VisibilityGridder final {
                 cf(
                   X + vis.m_cf_major[0],
                   Y + vis.m_cf_major[1],
-                  R,
+                  R, // FIXME
                   vis.m_cf_minor[0],
-                  vis.m_cf_minor[1],
-                  cf_cube);
+                  vis.m_cf_minor[1]);
               cfv.imag() *= -vis.m_cf_im_factor;
               cfw_l.visibility[R] +=
                 cfv
@@ -857,10 +856,9 @@ struct HPG_EXPORT VisibilityGridder final {
               cf(
                 X + vis.m_cf_major[0],
                 Y + vis.m_cf_major[1],
-                R,
+                R, // FIXME
                 vis.m_cf_minor[0],
-                vis.m_cf_minor[1],
-                cf_cube);
+                vis.m_cf_minor[1]);
             cfv.imag() *= vis.m_cf_im_factor;
             pseudo_atomic_add<execution_space>(
               grid(
@@ -959,10 +957,9 @@ struct HPG_EXPORT VisibilityGridder final {
               cf(
                 X + vis.m_cf_major[0],
                 Y + vis.m_cf_major[1],
-                R,
+                R, // FIXME
                 vis.m_cf_minor[0],
-                vis.m_cf_minor[1],
-                cf_cube);
+                vis.m_cf_minor[1]);
             cfv.imag() *= vis.m_cf_im_factor;
             auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
             pseudo_atomic_add<execution_space>(
@@ -2304,18 +2301,17 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
   auto oversampling = cf.oversampling();
   K::parallel_for(
     "cf_init",
-    K::MDRangePolicy<K::Rank<4>, typename DeviceT<D>::kokkos_device>(
-      {0, 0, 0, 0},
+    K::MDRangePolicy<K::Rank<3>, typename DeviceT<D>::kokkos_device>(
+      {0, 0, 0},
       {static_cast<int>(extents[0]),
        static_cast<int>(extents[1]),
-       static_cast<int>(extents[2]),
-       static_cast<int>(extents[3])}),
-    [&](int i, int j, int mrow, int cube) {
+       static_cast<int>(extents[2])}),
+    [&](int i, int j, int plane) {
       auto X = i / oversampling;
       auto x = i % oversampling;
       auto Y = j / oversampling;
       auto y = j % oversampling;
-      cf_h(X, Y, mrow, x, y, cube) = cf(i, j, mrow, cube, grp);
+      cf_h(X, Y, plane, x, y) = cf(i, j, plane, grp);
     });
 }
 
@@ -2411,7 +2407,7 @@ public:
   /** oversampling factor */
   unsigned m_oversampling;
   /** extents by group */
-  std::vector<std::array<unsigned, 4>> m_extents;
+  std::vector<std::array<unsigned, rank - 1>> m_extents;
   /** buffers in host memory with CF values */
   std::vector<std::vector<value_type>> m_arrays;
   /** Views of host memory buffers */
@@ -2420,7 +2416,8 @@ public:
   DeviceCFArray(
     const std::string& version,
     unsigned oversampling,
-    std::vector<std::tuple<std::array<unsigned, 4>, std::vector<value_type>>>&&
+    std::vector<
+      std::tuple<std::array<unsigned, rank - 1>, std::vector<value_type>>>&&
       arrays)
     : m_version(version)
     , m_oversampling(oversampling) {
@@ -2446,7 +2443,7 @@ public:
     return m_arrays.size();
   }
 
-  std::array<unsigned, 4>
+  std::array<unsigned, rank - 1>
   extents(unsigned grp) const override {
     return m_extents[grp];
   }
@@ -2457,20 +2454,15 @@ public:
   }
 
   std::complex<cf_fp>
-  operator()(
-    unsigned x,
-    unsigned y,
-    unsigned mrow,
-    unsigned cube,
-    unsigned grp) const override {
+  operator()(unsigned x, unsigned y, unsigned plane, unsigned grp)
+    const override {
     return
       m_views[grp](
         x / m_oversampling,
         y / m_oversampling,
-        mrow,
+        plane,
         x % m_oversampling,
-        y % m_oversampling,
-        cube);
+        y % m_oversampling);
   }
 
   Device
@@ -2695,8 +2687,7 @@ struct CFPool final {
         layout.dimension[1],
         layout.dimension[2],
         layout.dimension[3],
-        layout.dimension[4],
-        layout.dimension[5]);
+        layout.dimension[4]);
     return ((alloc_sz + (sizeof(cf_t) - 1)) / sizeof(cf_t));
   }
 
@@ -2748,14 +2739,12 @@ struct CFPool final {
                 << " " << cf_init.extent(2)
                 << " " << cf_init.extent(3)
                 << " " << cf_init.extent(4)
-                << " " << cf_init.extent(5)
                 << std::endl;
       std::cout << "alloc cf str " << cf_init.stride(0)
                 << " " << cf_init.stride(1)
                 << " " << cf_init.stride(2)
                 << " " << cf_init.stride(3)
                 << " " << cf_init.stride(4)
-                << " " << cf_init.stride(5)
                 << std::endl;
 #endif // NDEBUG
 
@@ -2798,14 +2787,12 @@ struct CFPool final {
                 << " " << cf_init.extent(2)
                 << " " << cf_init.extent(3)
                 << " " << cf_init.extent(4)
-                << " " << cf_init.extent(5)
                 << std::endl;
       std::cout << "alloc cf str " << cf_init.stride(0)
                 << " " << cf_init.stride(1)
                 << " " << cf_init.stride(2)
                 << " " << cf_init.stride(3)
                 << " " << cf_init.stride(4)
-                << " " << cf_init.stride(5)
                 << std::endl;
 #endif // NDEBUG
 
@@ -3005,9 +2992,6 @@ public:
 
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       auto extents = cf_array.extents(grp);
-      if (extents[2] != m_grid_size[2])
-        return
-          Error("Unequal size of Mueller row dimension in grid and CF");
       if (extents[0] > m_grid_size[0] * cf_array.oversampling()
           || extents[1] > m_grid_size[1] * cf_array.oversampling())
         return Error("CF support size exceeds grid size");

@@ -1191,7 +1191,8 @@ rval_t<std::unique_ptr<DeviceCFArray>>
 DeviceCFArray::create(
   const std::string& layout,
   unsigned oversampling,
-  std::vector<std::tuple<std::array<unsigned, 4>, std::vector<value_type>>>&&
+  std::vector<
+    std::tuple<std::array<unsigned, rank - 1>, std::vector<value_type>>>&&
     arrays) {
 
   auto opt_vn_dev = Impl::parsed_cf_layout_version(layout);
