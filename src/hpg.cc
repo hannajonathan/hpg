@@ -103,7 +103,7 @@ struct Impl::GridderState {
   grid_visibilities(
     GS&& st,
     Device host_device,
-    UArrayVector&& mueller_indexes,
+    IArrayVector&& mueller_indexes,
     VisDataVector&& visibilities,
     bool with_cf_phase_gradients) {
 
@@ -427,10 +427,10 @@ GridderState::set_model(Device host_device, GridValueArray&& gv) && {
 // TODO: remove, shim for development
 static std::vector<std::complex<visibility_fp>>
 extract_visibilities(const Impl::VisDataVector& vs) {
-  assert(v.m_npol == 1);
+  assert(vs.m_npol == 1);
   std::vector<std::complex<visibility_fp>> result;
-  result.reserve(vs.m_vector.n1.size());
-  for (const auto& v : vs.m_vector.n1)
+  result.reserve(vs.m_v1->size());
+  for (const auto& v : *vs.m_v1)
     result.push_back(v.m_visibilities[0]);
   return result;
 }
@@ -438,10 +438,10 @@ extract_visibilities(const Impl::VisDataVector& vs) {
 // TODO: remove, shim for development
 static std::vector<vis_weight_fp>
 extract_weights(const Impl::VisDataVector& vs) {
-  assert(v.m_npol == 1);
+  assert(vs.m_npol == 1);
   std::vector<vis_weight_fp> result;
-  result.reserve(vs.m_vector.n1.size());
-  for (const auto& v : vs.m_vector.n1)
+  result.reserve(vs.m_v1->size());
+  for (const auto& v : *vs.m_v1)
     result.push_back(v.m_weights[0]);
   return result;
 }
@@ -449,10 +449,10 @@ extract_weights(const Impl::VisDataVector& vs) {
 // TODO: remove, shim for development
 static std::vector<vis_frequency_fp>
 extract_frequencies(const Impl::VisDataVector& vs) {
-  assert(v.m_npol == 1);
+  assert(vs.m_npol == 1);
   std::vector<vis_frequency_fp> result;
-  result.reserve(vs.m_vector.n1.size());
-  for (const auto& v : vs.m_vector.n1)
+  result.reserve(vs.m_v1->size());
+  for (const auto& v : *vs.m_v1)
     result.push_back(v.m_frequency);
   return result;
 }
@@ -460,10 +460,10 @@ extract_frequencies(const Impl::VisDataVector& vs) {
 // TODO: remove, shim for development
 static std::vector<vis_phase_fp>
 extract_phases(const Impl::VisDataVector& vs) {
-  assert(v.m_npol == 1);
+  assert(vs.m_npol == 1);
   std::vector<vis_phase_fp> result;
-  result.reserve(vs.m_vector.n1.size());
-  for (const auto& v : vs.m_vector.n1)
+  result.reserve(vs.m_v1->size());
+  for (const auto& v : *vs.m_v1)
     result.push_back(v.m_phase);
   return result;
 }
@@ -471,18 +471,18 @@ extract_phases(const Impl::VisDataVector& vs) {
 // TODO: remove, shim for development
 static std::vector<vis_uvw_t>
 extract_coordinates(const Impl::VisDataVector& vs) {
-  assert(v.m_npol == 1);
+  assert(vs.m_npol == 1);
   std::vector<vis_uvw_t> result;
-  result.reserve(vs.m_vector.n1.size());
-  for (const auto& v : vs.m_vector.n1)
+  result.reserve(vs.m_v1->size());
+  for (const auto& v : *vs.m_v1)
     result.push_back(v.m_uvw);
   return result;
 }
 
 rval_t<GridderState>
-GridderState::grid_visibilities(
+GridderState::grid_visibilities_impl(
   Device host_device,
-  Impl::UArrayVector&& mueller_indexes,
+  Impl::IArrayVector&& mueller_indexes,
   Impl::VisDataVector&& visibilities,
   bool with_cf_phase_gradients) const & {
 
@@ -497,9 +497,9 @@ GridderState::grid_visibilities(
 }
 
 rval_t<GridderState>
-GridderState::grid_visibilities(
+GridderState::grid_visibilities_impl(
   Device host_device,
-  Impl::UArrayVector&& mueller_indexes,
+  Impl::IArrayVector&& mueller_indexes,
   Impl::VisDataVector&& visibilities,
   bool with_cf_phase_gradients) && {
 
@@ -814,16 +814,16 @@ Gridder::set_model(Device host_device, GridValueArray&& gv) {
 }
 
 opt_error_t
-Gridder::grid_visibilities(
+Gridder::grid_visibilities_impl(
   Device host_device,
-  Impl::UArrayVector&& mueller_indexes,
+  Impl::IArrayVector&& mueller_indexes,
   Impl::VisDataVector&& visibilities,
   bool with_cf_phase_gradients) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state)
-      .grid_visibilities(
+      .grid_visibilities_impl(
         host_device,
         std::move(mueller_indexes),
         std::move(visibilities),
@@ -839,7 +839,7 @@ Gridder::grid_visibilities(
   std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state)
-    .grid_visibilities(
+    .grid_visibilities_impl(
       host_device,
       std::move(mueller_indexes),
       std::move(visibilities),

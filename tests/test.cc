@@ -11,19 +11,20 @@ const unsigned cf_oversampling = 10;
 struct MyCFArray final
   : public hpg::CFArray {
 
-  std::array<unsigned, 3> m_extent;
+  std::array<unsigned, 4> m_extent;
   std::vector<std::complex<hpg::cf_fp>> m_values;
 
   MyCFArray() {}
 
   MyCFArray(
-    const std::array<unsigned, 3>& size,
+    const std::array<unsigned, 4>& size,
     const std::vector<std::complex<hpg::cf_fp>>& values)
     : m_values(values) {
 
     m_extent[0] = size[0] * cf_oversampling;
     m_extent[1] = size[1] * cf_oversampling;
     m_extent[2] = size[2];
+    m_extent[3] = size[3];
   }
 
   unsigned
@@ -36,25 +37,27 @@ struct MyCFArray final
     return 1;
   }
 
-  std::array<unsigned, 3>
+  std::array<unsigned, 4>
   extents(unsigned) const override {
     return m_extent;
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned plane, unsigned)
+  operator()(unsigned x, unsigned y, unsigned mueller, unsigned cube, unsigned)
     const override {
-    return m_values[(x * m_extent[1] + y) * m_extent[2] + plane];
+    return
+      m_values[
+        ((x * m_extent[1] + y) * m_extent[2] + mueller) * m_extent[3] + cube];
   }
 };
 
 template <typename Generator>
 MyCFArray
-create_cf(const std::array<unsigned, 3>& size, Generator& gen) {
+create_cf(const std::array<unsigned, 4>& size, Generator& gen) {
   const unsigned num_values =
     cf_oversampling * size[0]
     * cf_oversampling * size[1]
-    * size[2];
+    * size[2] * size[4];
   std::vector<std::complex<hpg::cf_fp>> values;
   values.reserve(num_values);
   std::uniform_real_distribution<hpg::cf_fp> dist(-1.0, 1.0);
@@ -69,21 +72,17 @@ init_visibilities(
   unsigned num_vis,
   const std::array<unsigned, 4>& grid_size,
   const std::array<float, 2>& grid_scale,
-  const std::array<unsigned, 3>& cf_size,
+  const std::array<unsigned, 4>& cf_size,
   Generator& gen,
-  std::vector<hpg::VisData<1>>& vis,
-  std::vector<hpg::vis_cf_index_t>& cf_indexes) {
+  std::vector<hpg::VisData<1>>& vis) {
 
   vis.clear();
   vis.reserve(num_vis);
-  cf_indexes.clear();
-  cf_indexes.reserve(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
   std::uniform_int_distribution<unsigned> dist_gcube(0, grid_size[3] - 1);
-  std::uniform_int_distribution<unsigned> dist_gcopol(0, grid_size[2] - 1);
-  std::uniform_int_distribution<unsigned> dist_cfcube(0, cf_size[2] - 1);
+  std::uniform_int_distribution<unsigned> dist_cfcube(0, cf_size[3] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
   double ulim =
@@ -104,8 +103,8 @@ init_visibilities(
         freq,
         0.0,
         hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
-        dist_gcube(gen)));
-    cf_indexes.push_back({dist_cfcube(gen), 0});
+        dist_gcube(gen),
+        {dist_cfcube(gen), 0}));
   }
 }
 
@@ -128,8 +127,11 @@ run_tests(
   const std::array<unsigned, 4>& grid_size,
   const std::array<float, 2>& grid_scale,
   const MyCFArray& cf,
-  std::vector<hpg::VisData<1>>& vis,
-  std::vector<hpg::vis_cf_index_t>& cf_indexes) {
+  std::vector<hpg::VisData<1>>& vis) {
+
+  std::vector<std::array<int, 1>> mueller_indexes;
+  for (size_t i = 0; i < grid_size[2]; ++i)
+    mueller_indexes.push_back({0});
 
   {
     std::cout << "GridderState " << dev_name << std::endl;
@@ -166,9 +168,9 @@ run_tests(
     std::cout << "cf set" << std::endl;
     g0.grid_visibilities(
       host_dev,
+      mueller_indexes,
       std::remove_reference_t<decltype(vis)>(vis),
-      false,
-      std::remove_reference_t<decltype(cf_indexes)>(cf_indexes));
+      false);
     std::cout << "gridded" << std::endl;
     auto weights = g0.grid_weights();
     std::cout << "weights";
@@ -209,8 +211,11 @@ dump_grids(
   const std::array<unsigned, 4>& grid_size,
   const std::array<float, 2>& grid_scale,
   const MyCFArray& cf,
-  std::vector<hpg::VisData<1>>& vis,
-  std::vector<hpg::vis_cf_index_t>& cf_indexes) {
+  std::vector<hpg::VisData<1>>& vis) {
+
+  std::vector<std::array<int, 1>> mueller_indexes;
+  for (size_t i = 0; i < grid_size[2]; ++i)
+    mueller_indexes.push_back({0});
 
   auto g0 =
     std::get<1>(
@@ -218,9 +223,9 @@ dump_grids(
   g0.set_convolution_function(host_dev, MyCFArray(cf));
   g0.grid_visibilities(
     host_dev,
+    mueller_indexes,
     std::remove_reference_t<decltype(vis)>(vis),
-    false,
-    std::remove_reference_t<decltype(cf_indexes)>(cf_indexes));
+    false);
   g0.normalize();
   auto err = g0.apply_fft();
   assert(!err);
@@ -228,12 +233,12 @@ dump_grids(
     std::cout << "after fft" << std::endl;
     auto gval = g0.grid_values();
     for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
-      for (unsigned copol = 0; copol < grid_size[2]; ++copol) {
-        std::cout << "cube " << cube << ", copol " << copol << std::endl;
+      for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
+        std::cout << "cube " << cube << ", sto " << sto << std::endl;
         for (unsigned y = 0; y < grid_size[1]; ++y) {
           std::cout << "  " << y << ": ";
           for (unsigned x = 0; x < grid_size[0]; ++x)
-            std::cout << gval->operator()(x, y, copol, cube) << " ";
+            std::cout << (*gval)(x, y, sto, cube) << " ";
           std::cout << std::endl;
         }
       }
@@ -244,12 +249,12 @@ dump_grids(
     std::cout << "after rotation" << std::endl;
     auto gval = g0.grid_values();
     for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
-      for (unsigned copol = 0; copol < grid_size[2]; ++copol) {
-        std::cout << "cube " << cube << ", copol " << copol << std::endl;
+      for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
+        std::cout << "cube " << cube << ", sto " << sto << std::endl;
         for (unsigned y = 0; y < grid_size[1]; ++y) {
           std::cout << "  " << y << ": ";
           for (unsigned x = 0; x < grid_size[0]; ++x)
-            std::cout << gval->operator()(x, y, copol, cube) << " ";
+            std::cout << (*gval)(x, y, sto, cube) << " ";
           std::cout << std::endl;
         }
       }
@@ -263,13 +268,12 @@ main(int argc, char* argv[]) {
   hpg::ScopeGuard hpg;
 
   std::vector<hpg::VisData<1>> vis;
-  std::vector<hpg::vis_cf_index_t> cf_indexes;
 
   {
     std::mt19937 rng(42);
 
     const std::array<unsigned, 4> grid_size{1000, 2000, 2, 1};
-    const std::array<unsigned, 3> cf_size{31, 21, 3};
+    const std::array<unsigned, 4> cf_size{31, 21, 1, 3};
     const std::array<float, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);
     const unsigned num_visibilities = 1000000;
@@ -279,24 +283,23 @@ main(int argc, char* argv[]) {
       grid_scale,
       cf_size,
       rng,
-      vis,
-      cf_indexes);
+      vis);
 #ifdef HPG_ENABLE_SERIAL
     run_tests<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, cf_indexes);
+      grid_size, grid_scale, cf, vis);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     run_tests<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, cf_indexes);
+      grid_size, grid_scale, cf, vis);
 #endif // HPG_ENABLE_CUDA
   }
   {
     std::mt19937 rng(42);
 
     const std::array<unsigned, 4> grid_size{5, 6, 2, 3};
-    const std::array<unsigned, 3> cf_size{3, 3, 2};
+    const std::array<unsigned, 4> cf_size{3, 3, 1, 2};
     const std::array<float, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);
     const unsigned num_visibilities = 50;
@@ -306,17 +309,16 @@ main(int argc, char* argv[]) {
       grid_scale,
       cf_size,
       rng,
-      vis,
-      cf_indexes);
+      vis);
 #ifdef HPG_ENABLE_SERIAL
     dump_grids<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, cf_indexes);
+      grid_size, grid_scale, cf, vis);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     dump_grids<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis, cf_indexes);
+      grid_size, grid_scale, cf, vis);
 #endif // HPG_ENABLE_CUDA
   }
 }

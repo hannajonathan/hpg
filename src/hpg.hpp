@@ -225,58 +225,201 @@ struct VectorNPol {
 
   unsigned m_npol;
 
-  union vector {
-    std::vector<E<1>> n1;
-    std::vector<E<2>> n2;
-    std::vector<E<3>> n3;
-    std::vector<E<4>> n4;
-
-    vector(std::vector<E<1>>&& v)
-      : n1(std::move(v)) {}
-    vector(std::vector<E<2>>&& v)
-      : n2(std::move(v)) {}
-    vector(std::vector<E<3>>&& v)
-      : n3(std::move(v)) {}
-    vector(std::vector<E<4>>&& v)
-      : n4(std::move(v)) {}
-
-    ~vector() {}
-  } m_vector;
+  union {
+    std::unique_ptr<std::vector<E<1>>> m_v1;
+    std::unique_ptr<std::vector<E<2>>> m_v2;
+    std::unique_ptr<std::vector<E<3>>> m_v3;
+    std::unique_ptr<std::vector<E<4>>> m_v4;
+  };
 
   VectorNPol(std::vector<E<1>>&& v)
     : m_npol(1)
-    , m_vector(vector(std::move(v))) {}
+    , m_v1(new std::vector<E<1>>(std::move(v))) {}
+
+  VectorNPol(const std::vector<E<1>>& v)
+    : m_npol(1)
+    , m_v1(new std::vector<E<1>>(v)) {}
 
   VectorNPol(std::vector<E<2>>&& v)
     : m_npol(2)
-    , m_vector(vector(std::move(v))) {}
+    , m_v2(new std::vector<E<2>>(std::move(v))) {}
+
+  VectorNPol(const std::vector<E<2>>& v)
+    : m_npol(2)
+    , m_v2(new std::vector<E<2>>(v)) {}
 
   VectorNPol(std::vector<E<3>>&& v)
     : m_npol(3)
-    , m_vector(vector(std::move(v))) {}
+    , m_v3(new std::vector<E<3>>(std::move(v))) {}
+
+  VectorNPol(const std::vector<E<3>>& v)
+    : m_npol(3)
+    , m_v3(new std::vector<E<3>>(v)) {}
 
   VectorNPol(std::vector<E<4>>&& v)
     : m_npol(4)
-    , m_vector(vector(std::move(v))) {}
+    , m_v4(new std::vector<E<4>>(std::move(v))) {}
+
+  VectorNPol(const std::vector<E<4>>& v)
+    : m_npol(4)
+    , m_v4(new std::vector<E<4>>(v)) {}
+
+  VectorNPol(const VectorNPol& other)
+    : m_npol(other.m_npol) {
+    switch (m_npol) {
+    case 1:
+      m_v1 = new std::vector<E<1>>(*other.m_v1);
+      break;
+    case 2:
+      m_v2 = new std::vector<E<2>>(*other.m_v2);
+      break;
+    case 3:
+      m_v3 = new std::vector<E<3>>(*other.m_v3);
+      break;
+    case 4:
+      m_v4 = new std::vector<E<4>>(*other.m_v4);
+      break;
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+  VectorNPol(VectorNPol&& other)
+    : m_npol(other.m_npol) {
+    switch (m_npol) {
+    case 1:
+      m_v1 = std::move(other).m_v1;
+      break;
+    case 2:
+      m_v2 = std::move(other).m_v2;
+      break;
+    case 3:
+      m_v3 = std::move(other).m_v3;
+      break;
+    case 4:
+      m_v4 = std::move(other).m_v4;
+      break;
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+  VectorNPol&
+  operator=(const VectorNPol& rhs) {
+    VectorNPol tmp(rhs);
+    swap(tmp);
+    return *this;
+  }
+
+  VectorNPol&
+  operator=(VectorNPol&& rhs) {
+    VectorNPol tmp(std::move(rhs));
+    swap(tmp);
+    return *this;
+  }
 
   size_t
   size() const {
     switch (m_npol) {
     case 1:
-      return m_vector.n1.size();
+      return m_v1->size();
       break;
     case 2:
-      return m_vector.n2.size();
+      return m_v2->size();
       break;
     case 3:
-      return m_vector.n3.size();
+      return m_v3->size();
       break;
     case 4:
-      return m_vector.n4.size();
+      return m_v4->size();
       break;
     default:
       assert(false);
       return 0;
+      break;
+    }
+  }
+
+  ~VectorNPol() {
+    switch (m_npol) {
+    case 1:
+      m_v1.reset();
+      break;
+    case 2:
+      m_v2.reset();
+      break;
+    case 3:
+      m_v3.reset();
+      break;
+    case 4:
+      m_v4.reset();
+      break;
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+private:
+
+  void
+  takev(VectorNPol& other) {
+    switch (other.m_npol) {
+    case 1:
+      m_v1 = std::move(other.m_v1);
+      break;
+    case 2:
+      m_v2 = std::move(other.m_v2);
+      break;
+    case 3:
+      m_v3 = std::move(other.m_v3);
+      break;
+    case 4:
+      m_v4 = std::move(other.m_v4);
+      break;
+    default:
+      assert(false);
+      break;
+    }
+    m_npol = other.m_npol;
+    other.m_npol = 0;
+  }
+
+  void
+  swap(VectorNPol& other) {
+    switch (other.m_npol) {
+    case 1: {
+      auto ov1 = std::move(other).m_v1;
+      other.takev(*this);
+      m_v1 = std::move(ov1);
+      m_npol = 1;
+      break;
+    }
+    case 2: {
+      auto ov2 = std::move(other).m_v2;
+      other.takev(*this);
+      m_v2 = std::move(ov2);
+      m_npol = 2;
+      break;
+    }
+    case 3: {
+      auto ov3 = std::move(other).m_v3;
+      other.takev(*this);
+      m_v3 = std::move(ov3);
+      m_npol = 3;
+      break;
+    }
+    case 4: {
+      auto ov4 = std::move(other).m_v4;
+      other.takev(*this);
+      m_v4 = std::move(ov4);
+      m_npol = 4;
+      break;
+    }
+    default:
+      assert(false);
       break;
     }
   }
@@ -285,9 +428,9 @@ struct VectorNPol {
 using VisDataVector = VectorNPol<VisData>;
 
 template <unsigned N>
-using uarray = std::array<unsigned, N>;
+using iarray = std::array<int, N>;
 
-using UArrayVector = VectorNPol<uarray>;
+using IArrayVector = VectorNPol<iarray>;
 
 } // end namespace Impl
 
@@ -824,9 +967,9 @@ public:
 protected:
 
   rval_t<GridderState>
-  grid_visibilities(
+  grid_visibilities_impl(
     Device host_device,
-    Impl::UArrayVector&& mueller_indexes,
+    Impl::IArrayVector&& mueller_indexes,
     Impl::VisDataVector&& visibilities,
     bool with_cf_phase_gradients) const &;
 
@@ -855,14 +998,14 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    const std::vector<std::array<unsigned, N>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
     std::vector<VisData<N>>&& visibilities,
     bool with_cf_phase_gradients) const & {
 
     return
-      grid_visibilities(
+      grid_visibilities_impl(
         host_device,
-        Impl::UArrayVector(mueller_indexes),
+        Impl::IArrayVector(mueller_indexes),
         Impl::VisDataVector(std::move(visibilities)),
         with_cf_phase_gradients);
   };
@@ -870,9 +1013,9 @@ public:
 protected:
 
   rval_t<GridderState>
-  grid_visibilities(
+  grid_visibilities_impl(
     Device host_device,
-    Impl::UArrayVector&& mueller_indexes,
+    Impl::IArrayVector&& mueller_indexes,
     Impl::VisDataVector&& visibilities,
     bool with_cf_phase_gradients) &&;
 
@@ -901,15 +1044,15 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    const std::vector<std::array<unsigned, N>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
     std::vector<VisData<N>>&& visibilities,
     bool with_cf_phase_gradients) && {
 
     return
       std::move(*this)
-      .grid_visibilities(
+      .grid_visibilities_impl(
         host_device,
-        Impl::UArrayVector(mueller_indexes),
+        Impl::IArrayVector(mueller_indexes),
         Impl::VisDataVector(std::move(visibilities)),
         with_cf_phase_gradients);
   }
@@ -1244,9 +1387,9 @@ public:
 protected:
 
   opt_error_t
-  grid_visibilities(
+  grid_visibilities_impl(
     Device host_device,
-    Impl::UArrayVector&& mueller_indexes,
+    Impl::IArrayVector&& mueller_indexes,
     Impl::VisDataVector&& visibilities,
     bool with_cf_phase_gradients);
 
@@ -1270,14 +1413,14 @@ public:
   opt_error_t
   grid_visibilities(
     Device host_device,
-    const std::vector<std::array<unsigned, N>>&& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
     std::vector<VisData<N>>&& visibilities,
     bool with_cf_phase_gradients) {
 
     return
-      grid_visibilities(
+      grid_visibilities_impl(
         host_device,
-        Impl::UArrayVector(mueller_indexes),
+        Impl::IArrayVector(mueller_indexes),
         Impl::VisDataVector(std::move(visibilities)),
         with_cf_phase_gradients);
   }

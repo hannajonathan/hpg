@@ -102,7 +102,7 @@ using cf_t = K::complex<cf_fp>;
 using gv_t = K::complex<grid_value_fp>;
 
 /** portable UVW coordinates type */
-using uvw_t = std::array<vis_uvw_fp, 3>;
+using uvw_t = K::Array<vis_uvw_fp, 3>;
 
 /** visibilities plus metadata for gridding */
 template <unsigned N>
@@ -816,8 +816,8 @@ struct HPG_EXPORT VisibilityGridder final {
                 cf(
                   X + vis.m_cf_major[0],
                   Y + vis.m_cf_major[1],
-                  0,
                   R, // FIXME
+                  cf_cube,
                   vis.m_cf_minor[0],
                   vis.m_cf_minor[1]);
               cfv.imag() *= -vis.m_cf_im_factor;
@@ -875,8 +875,8 @@ struct HPG_EXPORT VisibilityGridder final {
               cf(
                 X + vis.m_cf_major[0],
                 Y + vis.m_cf_major[1],
-                0,
                 R, // FIXME
+                cf_cube,
                 vis.m_cf_minor[0],
                 vis.m_cf_minor[1]);
             cfv.imag() *= vis.m_cf_im_factor;
@@ -1024,7 +1024,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     unsigned max_cf_extent_y,
     int num_visibilities,
-    const K::View<const VisData<N>*, memory_space>& visibilities,
+    const const_visdata_view<N, memory_space>& visibilities,
     bool with_cf_phase_gradients,
     const K::Array<grid_scale_fp, 2>& grid_scale,
     const const_grid_view<grid_layout, memory_space>& model,
@@ -1035,7 +1035,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const K::Array<int, 2>
       grid_size{grid.extent_int(0), grid.extent_int(1)};
     const K::Array<int, 2>
-      oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
+      oversampling{cfs[0].extent_int(4), cfs[0].extent_int(5)};
 
     if (!with_cf_phase_gradients) {
       // without CF phase screen
@@ -1157,7 +1157,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     unsigned max_cf_extent_y,
     int num_visibilities,
-    const K::View<const VisData<N>*, memory_space>& visibilities,
+    const const_visdata_view<N, memory_space>& visibilities,
     bool with_cf_phase_gradients,
     const K::Array<grid_scale_fp, 2>& grid_scale,
     const const_grid_view<grid_layout, memory_space>& model,
@@ -1168,7 +1168,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const K::Array<int, 2>
       grid_size{grid.extent_int(0), grid.extent_int(1)};
     const K::Array<int, 2>
-      oversampling{cfs[0].extent_int(3), cfs[0].extent_int(4)};
+      oversampling{cfs[0].extent_int(4), cfs[0].extent_int(5)};
 
     if (!with_cf_phase_gradients) {
       // without CF phase screen
@@ -1908,7 +1908,7 @@ struct State {
   virtual std::optional<Error>
   grid_visibilities(
     Device host_device,
-    UArrayVector&& mueller_indexes,
+    IArrayVector&& mueller_indexes,
     VisDataVector&& visibilities,
     bool with_cf_phase_gradients) = 0;
 
@@ -2882,9 +2882,9 @@ struct ExecSpace final {
   }
 
   /** copy Mueller indexes to device */
-  template <unsigned N>
+  template <size_t N>
   void
-  copy_mueller_indexes(const vector_data<uarray<N>>& mindexes) {
+  copy_mueller_indexes(const vector_data<iarray<N>>& mindexes) {
 
     auto mueller_indexes_h = K::create_mirror_view(mueller_indexes);
     size_t mr = 0;
@@ -2897,7 +2897,7 @@ struct ExecSpace final {
         mueller_indexes_h(mr, mc) = -1;
     }
     for (; mr < mueller_indexes.extent(0); ++mr)
-      for (size_t mc; mc < mueller_indexes.extent(1); ++mc)
+      for (size_t mc = 0; mc < mueller_indexes.extent(1); ++mc)
         mueller_indexes_h(mr, mc) = -1;
     K::deep_copy(space, mueller_indexes, mueller_indexes_h);
     copy_state.push_back(mueller_indexes_h);
@@ -2908,26 +2908,31 @@ struct ExecSpace final {
   size_t
   copy_visibilities(
     size_t offset,
+    size_t batch_size,
     const vector_data<::hpg::VisData<N>>& visdata) {
 
     size_t result = 0;
     if (visdata->size() > 0) {
       copy_state.emplace_back(visdata);
-      result = std::min(visdata->size() - offset, visbuff.extent(0));
-      visibilities =
-        visdata_view<N, memory_space>(
-          reinterpret_cast<VisData<N>*>(&visbuff(0)),
-          result);
-      vector_view<const VisData<N>> hview(
-        reinterpret_cast<const VisData<N>*>(visdata->data() + offset),
+      result = std::min(visdata->size() - offset, batch_size);
+      vector_view<VisData<N>> hview(
+        reinterpret_cast<VisData<N>*>(visdata->data() + offset),
         result);
       if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
+        visibilities =
+          visdata_view<N, memory_space>(
+            reinterpret_cast<VisData<N>*>(&visbuff(0)),
+            result);
         auto dview = std::get<visdata_view<N, memory_space>>(visibilities);
         auto dv = K::subview(dview, std::pair((size_t)0, result));
         K::deep_copy(space, dv, hview);
         copy_state.push_back(hview);
         copy_state.push_back(dv);
       } else {
+        visibilities =
+          visdata_view<N, memory_space>(
+            reinterpret_cast<VisData<N>*>(&hview(0)),
+            result);
         copy_state.push_back(hview);
       }
     }
@@ -3151,14 +3156,18 @@ public:
   void
   default_grid_visibilities(
     Device /*host_device*/,
-    const vector_data<uarray<N>>& mueller_indexes,
+    const vector_data<iarray<size_t(N)>>& mueller_indexes,
     size_t offset,
     const vector_data<::hpg::VisData<N>>& visibilities,
     bool with_cf_phase_gradients) {
 
     auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
     exec_copy.copy_mueller_indexes(mueller_indexes);
-    auto len = exec_copy.copy_visibilities(offset, visibilities);
+    auto len =
+      exec_copy.copy_visibilities(
+        offset,
+        m_max_visibility_batch_size,
+        visibilities);
 
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
@@ -3183,14 +3192,18 @@ public:
   void
   alt1_grid_visibilities(
     Device /*host_device*/,
-    const vector_data<uarray<N>>& mueller_indexes,
+    const vector_data<iarray<size_t(N)>>& mueller_indexes,
     size_t offset,
     const vector_data<::hpg::VisData<N>>& visibilities,
     bool with_cf_phase_gradients) {
 
     auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
     exec_copy.copy_mueller_indexes(mueller_indexes);
-    auto len = exec_copy.copy_visibilities(offset, visibilities);
+    auto len =
+      exec_copy.copy_visibilities(
+        offset,
+        m_max_visibility_batch_size,
+        visibilities);
 
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
@@ -3213,14 +3226,15 @@ public:
 
   template <unsigned N>
   std::optional<Error>
-  grid_visibilities(
+    grid_visibilities(
     Device host_device,
-    std::vector<uarray<N>>&& mueller_indexes,
+    std::vector<iarray<size_t(N)>>&& mueller_indexes,
     std::vector<::hpg::VisData<N>>&& visibilities,
     bool with_cf_phase_gradients) {
 
     const auto mindexes =
-      std::make_shared<std::vector<uarray<N>>>(std::move(mueller_indexes));
+      std::make_shared<std::vector<iarray<size_t(N)>>>(
+        std::move(mueller_indexes));
 
     const auto vis =
       std::make_shared<std::vector<::hpg::VisData<N>>>(
@@ -3263,7 +3277,7 @@ public:
   std::optional<Error>
   grid_visibilities(
     Device host_device,
-    UArrayVector&& mueller_indexes,
+    IArrayVector&& mueller_indexes,
     VisDataVector&& visibilities,
     bool with_cf_phase_gradients)
     override {
@@ -3273,32 +3287,32 @@ public:
       return
         grid_visibilities(
           host_device,
-          std::move(mueller_indexes).m_vector.n1,
-          std::move(visibilities).m_vector.n1,
+          std::move(*mueller_indexes.m_v1),
+          std::move(*visibilities.m_v1),
           with_cf_phase_gradients);
         break;
     case 2:
       return
         grid_visibilities(
           host_device,
-          std::move(mueller_indexes).m_vector.n2,
-          std::move(visibilities).m_vector.n2,
+          std::move(*mueller_indexes.m_v2),
+          std::move(*visibilities.m_v2),
           with_cf_phase_gradients);
       break;
     case 3:
       return
         grid_visibilities(
           host_device,
-          std::move(mueller_indexes).m_vector.n3,
-          std::move(visibilities).m_vector.n3,
+          std::move(*mueller_indexes.m_v3),
+          std::move(*visibilities.m_v3),
           with_cf_phase_gradients);
       break;
     case 4:
       return
         grid_visibilities(
           host_device,
-          std::move(mueller_indexes).m_vector.n4,
-          std::move(visibilities).m_vector.n4,
+          std::move(*mueller_indexes.m_v4),
+          std::move(*visibilities.m_v4),
           with_cf_phase_gradients);
       break;
     default:
@@ -3492,34 +3506,51 @@ private:
         m_exec_space_indexes.push_back(i);
         auto& st_esp = ost->m_exec_spaces[i];
         K::deep_copy(esp.space, esp.visbuff, st_esp.visbuff);
-        std::visit(
-          overloaded {
-            [&esp](const visdata_view<1, memory_space>& v) {
-              esp.visibilities =
-                visdata_view<1, memory_space>(
-                  reinterpret_cast<VisData<1>*>(&esp.visbuff(0)),
-                  v.extent(0));
+        if constexpr (std::is_same_v<K::HostSpace, memory_space>) {
+          std::visit(
+            overloaded {
+              [&esp](const visdata_view<1, memory_space>& v) {
+                esp.visibilities = v;
+              },
+              [&esp](const visdata_view<2, memory_space>& v) {
+                esp.visibilities = v;
+              },
+              [&esp](const visdata_view<3, memory_space>& v) {
+                esp.visibilities = v;
+              },
+              [&esp](const visdata_view<4, memory_space>& v) {
+                esp.visibilities = v;
+              }
             },
-            [&esp](const visdata_view<2, memory_space>& v) {
-              esp.visibilities =
-                visdata_view<2, memory_space>(
-                  reinterpret_cast<VisData<2>*>(&esp.visbuff(0)),
-                  v.extent(0));
-            },
-            [&esp](const visdata_view<3, memory_space>& v) {
-              esp.visibilities =
+            st_esp.visibilities);
+        } else {
+          std::visit(
+            overloaded {
+              [&esp](const visdata_view<1, memory_space>& v) {
+                esp.visibilities =
+                  visdata_view<1, memory_space>(
+                    reinterpret_cast<VisData<1>*>(&esp.visbuff(0)),
+                    v.extent(0));
+              },
+              [&esp](const visdata_view<2, memory_space>& v) {
+                esp.visibilities =
+                  visdata_view<2, memory_space>(
+                    reinterpret_cast<VisData<2>*>(&esp.visbuff(0)),
+                    v.extent(0));
+              },
+              [&esp](const visdata_view<3, memory_space>& v) {
                 visdata_view<3, memory_space>(
                   reinterpret_cast<VisData<3>*>(&esp.visbuff(0)),
                   v.extent(0));
-            },
-            [&esp](const visdata_view<4, memory_space>& v) {
-              esp.visibilities =
+              },
+              [&esp](const visdata_view<4, memory_space>& v) {
                 visdata_view<4, memory_space>(
                   reinterpret_cast<VisData<4>*>(&esp.visbuff(0)),
                   v.extent(0));
-           }
-          },
-          st_esp.visibilities);
+              }
+            },
+            st_esp.visibilities);
+        }
         K::deep_copy(esp.space, esp.mueller_indexes, st_esp.mueller_indexes);
         esp.copy_state = st_esp.copy_state;
       }
