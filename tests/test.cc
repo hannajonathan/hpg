@@ -169,8 +169,7 @@ run_tests(
     g0.grid_visibilities(
       host_dev,
       mueller_indexes,
-      std::remove_reference_t<decltype(vis)>(vis),
-      false);
+      std::remove_reference_t<decltype(vis)>(vis));
     std::cout << "gridded" << std::endl;
     auto weights = g0.grid_weights();
     std::cout << "weights";
@@ -224,8 +223,7 @@ dump_grids(
   g0.grid_visibilities(
     host_dev,
     mueller_indexes,
-    std::remove_reference_t<decltype(vis)>(vis),
-    false);
+    std::remove_reference_t<decltype(vis)>(vis));
   g0.normalize();
   auto err = g0.apply_fft();
   assert(!err);
