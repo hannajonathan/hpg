@@ -473,6 +473,11 @@ public:
 
   static constexpr unsigned padding = 2;
 
+  /** ordered index axis names */
+  // note: changes in this must be coordinated with changes in the element
+  // access operators
+  enum Axis {x, y, mueller, cube, group};
+
   virtual const char*
   layout() const {
     return cf_layout_unspecified_version;
@@ -484,7 +489,7 @@ public:
     unsigned y,
     unsigned mueller,
     unsigned cube,
-    unsigned grp)
+    unsigned group)
     const = 0;
 
   std::array<unsigned, 2>
@@ -562,6 +567,11 @@ public:
 
   using value_type = std::complex<grid_value_fp>;
 
+  /** ordered index axis names */
+  // note: changes in this must be coordinated with changes in the element
+  // access operators
+  enum Axis {x, y, mrow, cube};
+
   virtual unsigned
   extent(unsigned dim) const = 0;
 
@@ -635,6 +645,11 @@ public:
   static constexpr unsigned rank = 2;
 
   using value_type = grid_value_fp;
+
+  /** ordered index axis names */
+  // note: changes in this must be coordinated with changes in the element
+  // access operators
+  enum Axis {mrow, cube};
 
   virtual unsigned
   extent(unsigned dim) const = 0;

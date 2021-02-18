@@ -912,6 +912,13 @@ Gridder::shift_grid() {
 opt_error_t
 GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
+
+  static_assert(
+    static_cast<int>(Impl::GridAxis::x) == GridValueArray::Axis::x
+    && static_cast<int>(Impl::GridAxis::y) == GridValueArray::Axis::y
+    && static_cast<int>(Impl::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && static_cast<int>(Impl::GridAxis::cube) == GridValueArray::Axis::cube);
+
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
     return DisabledHostDeviceError();
@@ -928,6 +935,13 @@ GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
 opt_error_t
 GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
+
+  static_assert(
+    static_cast<int>(Impl::GridAxis::x) == GridValueArray::Axis::x
+    && static_cast<int>(Impl::GridAxis::y) == GridValueArray::Axis::y
+    && static_cast<int>(Impl::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && static_cast<int>(Impl::GridAxis::cube) == GridValueArray::Axis::cube);
+
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
     return DisabledHostDeviceError();

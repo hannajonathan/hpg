@@ -304,9 +304,6 @@ using vector_view = K::View<T*, K::HostSpace, K::MemoryTraits<K::Unmanaged>>;
 template <typename T>
 using vector_data = std::shared_ptr<std::vector<T>>;
 
-/** device-specific grid layout */
-static const std::array<int, 4> strided_grid_layout_order{1, 2, 0, 3};
-
 /** view for VisData<N> */
 template <unsigned N, typename memory_space>
 using visdata_view =
@@ -327,6 +324,21 @@ using mindex_view = K::View<int[4][4], memory_space>;
 template <typename memory_space>
 using const_mindex_view = K::View<const int[4][4], memory_space>;
 
+/** ordered Grid array axes */
+enum class GridAxis {
+  x,
+  y,
+  mrow,
+  cube
+};
+
+/** axis order for strided grid layout */
+static const std::array<int, 4> strided_grid_layout_order{
+  static_cast<int>(GridAxis::y),
+  static_cast<int>(GridAxis::mrow),
+  static_cast<int>(GridAxis::x),
+  static_cast<int>(GridAxis::cube)};
+
 /** device-specific grid array layout */
 template <Device D>
 struct GridLayout {
@@ -342,7 +354,7 @@ struct GridLayout {
 
   /** create Kokkos layout using given grid dimensions
    *
-   * logical index order: X, Y, mrow, cube
+   * logical index order matches GridAxis definition
    */
   static layout
   dimensions(const std::array<int, 4>& dims) {
@@ -368,6 +380,25 @@ struct GridLayout {
  */
 static constexpr unsigned cf_layout_version_number = 0;
 
+/** ordered CF array axes */
+enum class CFAxis {
+  x_major,
+  y_major,
+  mueller,
+  cube,
+  x_minor,
+  y_minor
+};
+
+/** axis order for strided CF array layout */
+static const std::array<int, 6> strided_cf_layout_order{
+  static_cast<int>(CFAxis::y_major),
+  static_cast<int>(CFAxis::x_major),
+  static_cast<int>(CFAxis::mueller),
+  static_cast<int>(CFAxis::cube),
+  static_cast<int>(CFAxis::x_minor),
+  static_cast<int>(CFAxis::y_minor)};
+
 /** device-specific constant-support CF array layout */
 template <Device D>
 struct CFLayout {
@@ -384,7 +415,7 @@ struct CFLayout {
   /**
    * create Kokkos layout using given CFArray slice
    *
-   * logical index order: X, Y, mueller, cube, x, y
+   * logical index order matches CFAxis definition
    *
    * @todo: verify these layouts
    */
@@ -393,10 +424,10 @@ struct CFLayout {
     auto extents = cf->extents(grp);
     auto os = cf->oversampling();
     std::array<int, 6> dims{
-      static_cast<int>((extents[0] + os - 1) / os),
-      static_cast<int>((extents[1] + os - 1) / os),
-      static_cast<int>(extents[2]),
-      static_cast<int>(extents[3]),
+      static_cast<int>((extents[CFArray::Axis::x] + os - 1) / os),
+      static_cast<int>((extents[CFArray::Axis::y] + os - 1) / os),
+      static_cast<int>(extents[CFArray::Axis::mueller]),
+      static_cast<int>(extents[CFArray::Axis::cube]),
       static_cast<int>(os),
       static_cast<int>(os)
     };
@@ -404,8 +435,11 @@ struct CFLayout {
       return
         K::LayoutLeft(dims[0], dims[1], dims[2], dims[3], dims[4], dims[5]);
     } else {
-      static const std::array<int, 6> order{1, 0, 2, 3, 4, 5};
-      return K::LayoutStride::order_dimensions(6, order.data(), dims.data());
+      return
+        K::LayoutStride::order_dimensions(
+          6,
+          strided_cf_layout_order.data(),
+          dims.data());
     }
 #ifdef WORKAROUND_NVCC_IF_CONSTEXPR_BUG
     return layout();
@@ -788,9 +822,9 @@ struct HPG_EXPORT VisibilityGridder final {
       weights,
     const scratch_wgts_view& cfw) {
 
-    const int N_X = cf_size[0];
-    const int N_Y = cf_size[1];
-    const int N_R = cf.extent_int(2);
+    const int N_X = cf_size[static_cast<int>(CFAxis::x_major)];
+    const int N_Y = cf_size[static_cast<int>(CFAxis::y_major)];
+    const int N_R = cf.extent_int(static_cast<int>(CFAxis::mueller));
 
     if (model.is_allocated()) {
       // initialize weights
@@ -929,9 +963,9 @@ struct HPG_EXPORT VisibilityGridder final {
     const scratch_wgts_view& cfw,
     const scratch_phscr_view& phi_Y) {
 
-    const int N_X = cf_size[0];
-    const int N_Y = cf_size[1];
-    const int N_R = cf.extent_int(2);
+    const int N_X = cf_size[static_cast<int>(CFAxis::x_major)];
+    const int N_Y = cf_size[static_cast<int>(CFAxis::y_major)];
+    const int N_R = cf.extent_int(static_cast<int>(CFAxis::mueller));
 
     // accumulate weights in scratch memory for this visibility
     K::parallel_for(
@@ -1033,9 +1067,13 @@ struct HPG_EXPORT VisibilityGridder final {
       weights) {
 
     const K::Array<int, 2>
-      grid_size{grid.extent_int(0), grid.extent_int(1)};
+      grid_size{
+        grid.extent_int(static_cast<int>(GridAxis::x)),
+        grid.extent_int(static_cast<int>(GridAxis::y))};
     const K::Array<int, 2>
-      oversampling{cfs[0].extent_int(4), cfs[0].extent_int(5)};
+      oversampling{
+        cfs[0].extent_int(static_cast<int>(CFAxis::x_minor)),
+        cfs[0].extent_int(static_cast<int>(CFAxis::y_minor))};
 
     if (!with_cf_phase_gradients) {
       // without CF phase screen
@@ -1063,10 +1101,12 @@ struct HPG_EXPORT VisibilityGridder final {
             grid_scale);
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
-          if (0 <= vis.m_grid_coord[0]
-              && vis.m_grid_coord[0] + cf_size[0] <= grid.extent_int(0)
-              && 0 <= vis.m_grid_coord[1]
-              && vis.m_grid_coord[1] + cf_size[1] <= grid.extent_int(1))
+          if ((0 <= vis.m_grid_coord[0])
+              && (vis.m_grid_coord[0] + cf_size[0]
+                  <= grid.extent_int(static_cast<int>(GridAxis::x)))
+              && (0 <= vis.m_grid_coord[1])
+              && (vis.m_grid_coord[1] + cf_size[1]
+                  <= grid.extent_int(static_cast<int>(GridAxis::y))))
             grid_vis(
               team_member,
               vis,
@@ -1110,10 +1150,12 @@ struct HPG_EXPORT VisibilityGridder final {
             grid_scale);
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
-          if (0 <= vis.m_grid_coord[0]
-              && vis.m_grid_coord[0] + cf_size[0] <= grid.extent_int(0)
-              && 0 <= vis.m_grid_coord[1]
-              && vis.m_grid_coord[1] + cf_size[1] <= grid.extent_int(1))
+          if ((0 <= vis.m_grid_coord[0])
+              && (vis.m_grid_coord[0] + cf_size[0]
+                  <= grid.extent_int(static_cast<int>(GridAxis::x)))
+              && (0 <= vis.m_grid_coord[1])
+              && (vis.m_grid_coord[1] + cf_size[1]
+                  <= grid.extent_int(static_cast<int>(GridAxis::y))))
             grid_vis(
               team_member,
               vis,
@@ -1166,9 +1208,13 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     weights) {
 
     const K::Array<int, 2>
-      grid_size{grid.extent_int(0), grid.extent_int(1)};
+      grid_size{
+        grid.extent_int(static_cast<int>(GridAxis::x)),
+        grid.extent_int(static_cast<int>(GridAxis::y))};
     const K::Array<int, 2>
-      oversampling{cfs[0].extent_int(4), cfs[0].extent_int(5)};
+      oversampling{
+        cfs[0].extent_int(static_cast<int>(CFAxis::x_minor)),
+        cfs[0].extent_int(static_cast<int>(CFAxis::y_minor))};
 
     if (!with_cf_phase_gradients) {
       // without CF phase screen
@@ -1266,15 +1312,23 @@ struct HPG_EXPORT GridNormalizer final {
       typename execution_space::array_layout, memory_space>& weights,
     const grid_value_fp& wfactor) {
 
+    static_assert(
+      static_cast<int>(GridAxis::x) == 0
+      && static_cast<int>(GridAxis::y) == 1
+      && static_cast<int>(GridAxis::mrow) == 2
+      && static_cast<int>(GridAxis::cube) == 3);
+    static_assert(
+      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::cube == 1);
+
     K::parallel_for(
       "normalization",
       K::MDRangePolicy<K::Rank<4>, execution_space>(
         exec,
         {0, 0, 0, 0},
-        {grid.extent_int(0),
-         grid.extent_int(1),
-         grid.extent_int(2),
-         grid.extent_int(3)}),
+        {grid.extent_int(static_cast<int>(GridAxis::x)),
+         grid.extent_int(static_cast<int>(GridAxis::y)),
+         grid.extent_int(static_cast<int>(GridAxis::mrow)),
+         grid.extent_int(static_cast<int>(GridAxis::cube))}),
       KOKKOS_LAMBDA(int x, int y, int mrow, int cube) {
         grid(x, y, mrow, cube) /= (wfactor * weights(mrow, cube));
       });
@@ -1446,6 +1500,11 @@ struct HPG_EXPORT FFT final {
     assert(igrid.span() ==
            igrid.extent(0) * igrid.extent(1)
            * igrid.extent(2) * igrid.extent(3));
+    static_assert(
+      static_cast<int>(GridAxis::x) == 0
+      && static_cast<int>(GridAxis::y) == 1
+      && static_cast<int>(GridAxis::mrow) == 2
+      && static_cast<int>(GridAxis::cube) == 3);
     int n[2]{igrid.extent_int(0), igrid.extent_int(1)};
     int stride = 1;
     int dist = igrid.extent_int(0) * igrid.extent_int(1) * igrid.extent_int(2);
@@ -1598,6 +1657,11 @@ struct HPG_EXPORT FFT<K::Cuda, 0> final {
     // this assumes there is no padding in grid
     assert(grid.span() ==
            grid.extent(0) * grid.extent(1) * grid.extent(2) * grid.extent(3));
+    static_assert(
+      static_cast<int>(GridAxis::x) == 0
+      && static_cast<int>(GridAxis::y) == 1
+      && static_cast<int>(GridAxis::mrow) == 2
+      && static_cast<int>(GridAxis::cube) == 3);
     int n[2]{grid.extent_int(1), grid.extent_int(0)};
     cufftHandle result;
     auto rc =
@@ -1706,6 +1770,12 @@ struct HPG_EXPORT GridShifter final {
 
     using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
+    // TODO: is this kernel valid for all possible GridAxis definitions?
+    static_assert(
+      static_cast<int>(GridAxis::x) == 0
+      && static_cast<int>(GridAxis::y) == 1
+      && static_cast<int>(GridAxis::mrow) == 2
+      && static_cast<int>(GridAxis::cube) == 3);
     int n_x = grid.extent_int(0);
     int n_y = grid.extent_int(1);
     int n_mrow = grid.extent_int(2);
@@ -1961,16 +2031,32 @@ public:
     return grid.extent(dim);
   }
 
+  static_assert(
+    GridValueArray::Axis::x == 0
+    && GridValueArray::Axis::y == 1
+    && GridValueArray::Axis::mrow == 2
+    && GridValueArray::Axis::cube == 3);
+
   const value_type&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube)
     const override {
 
+    static_assert(
+      static_cast<int>(GridAxis::x) == 0
+      && static_cast<int>(GridAxis::y) == 1
+      && static_cast<int>(GridAxis::mrow) == 2
+      && static_cast<int>(GridAxis::cube) == 3);
     return reinterpret_cast<const value_type&>(grid(x, y, mrow, cube));
   }
 
   value_type&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) override {
 
+    static_assert(
+      static_cast<int>(GridAxis::x) == 0
+      && static_cast<int>(GridAxis::y) == 1
+      && static_cast<int>(GridAxis::mrow) == 2
+      && static_cast<int>(GridAxis::cube) == 3);
     return reinterpret_cast<value_type&>(grid(x, y, mrow, cube));
   }
 
@@ -2230,11 +2316,6 @@ public:
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
-    // std::array<int, rank> iext{
-    //   static_cast<int>(extents[0]),
-    //   static_cast<int>(extents[1]),
-    //   static_cast<int>(extents[2]),
-    //   static_cast<int>(extents[3])};
     weight_t weight(
       K::ViewAllocateWithoutInitializing(name),
       layout(extents[0], extents[1]));
@@ -2313,6 +2394,19 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
       typename DeviceT<D>::kokkos_device::memory_space,
       K::HostSpace>
     ::accessible);
+  static_assert(
+    static_cast<int>(CFAxis::x_major) == 0
+    && static_cast<int>(CFAxis::y_major) == 1
+    && static_cast<int>(CFAxis::mueller) == 2
+    && static_cast<int>(CFAxis::cube) == 3
+    && static_cast<int>(CFAxis::x_minor) == 4
+    && static_cast<int>(CFAxis::y_minor) == 5);
+  static_assert(
+    CFArray::Axis::x == 0
+    && CFArray::Axis::y == 1
+    && CFArray::Axis::mueller == 2
+    && CFArray::Axis::cube == 3
+    && CFArray::Axis::group == 4);
 
   auto extents = cf.extents(grp);
   auto oversampling = cf.oversampling();
@@ -2471,6 +2565,13 @@ public:
     return m_version.c_str();
   }
 
+  static_assert(
+    CFArray::Axis::x == 0
+    && CFArray::Axis::y == 1
+    && CFArray::Axis::mueller == 2
+    && CFArray::Axis::cube == 3
+    && CFArray::Axis::group == 4);
+
   std::complex<cf_fp>
   operator()(
     unsigned x,
@@ -2480,6 +2581,13 @@ public:
     unsigned grp)
     const override {
 
+    static_assert(
+      static_cast<int>(CFAxis::x_major) == 0
+      && static_cast<int>(CFAxis::y_major) == 1
+      && static_cast<int>(CFAxis::mueller) == 2
+      && static_cast<int>(CFAxis::cube) == 3
+      && static_cast<int>(CFAxis::x_minor) == 4
+      && static_cast<int>(CFAxis::y_minor) == 5);
     return
       m_views[grp](
         x / m_oversampling,
@@ -2535,6 +2643,16 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
       typename DeviceT<D>::kokkos_device::memory_space,
       K::HostSpace>
     ::accessible);
+  static_assert(
+    static_cast<int>(GridAxis::x) == 0
+    && static_cast<int>(GridAxis::y) == 1
+    && static_cast<int>(GridAxis::mrow) == 2
+    && static_cast<int>(GridAxis::cube) == 3);
+  static_assert(
+    GridValueArray::Axis::x == 0
+    && GridValueArray::Axis::y == 1
+    && GridValueArray::Axis::mrow == 2
+    && GridValueArray::Axis::cube == 3);
 
   K::parallel_for(
     "init_model",
@@ -2748,7 +2866,9 @@ struct CFPool final {
       {static_cast<int>(radii[0]), static_cast<int>(radii[1])};
     ++num_cf_groups;
     max_cf_extent_y =
-      std::max(max_cf_extent_y, static_cast<unsigned>(cfd.extent(1)));
+      std::max(
+        max_cf_extent_y,
+        static_cast<unsigned>(cfd.extent(static_cast<int>(CFAxis::y_major))));
   }
 
   void
@@ -3086,8 +3206,12 @@ public:
 
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       auto extents = cf_array.extents(grp);
-      if (extents[0] > m_grid_size[0] * cf_array.oversampling()
-          || extents[1] > m_grid_size[1] * cf_array.oversampling())
+      if ((extents[CFArray::Axis::x] >
+           m_grid_size[static_cast<int>(GridAxis::x)]
+           * cf_array.oversampling())
+          || (extents[CFArray::Axis::y] >
+              m_grid_size[static_cast<int>(GridAxis::y)]
+              * cf_array.oversampling()))
         return Error("CF support size exceeds grid size");
     }
 
@@ -3539,14 +3663,16 @@ private:
                     v.extent(0));
               },
               [&esp](const visdata_view<3, memory_space>& v) {
-                visdata_view<3, memory_space>(
-                  reinterpret_cast<VisData<3>*>(&esp.visbuff(0)),
-                  v.extent(0));
+                esp.visibilities =
+                  visdata_view<3, memory_space>(
+                    reinterpret_cast<VisData<3>*>(&esp.visbuff(0)),
+                    v.extent(0));
               },
               [&esp](const visdata_view<4, memory_space>& v) {
-                visdata_view<4, memory_space>(
-                  reinterpret_cast<VisData<4>*>(&esp.visbuff(0)),
-                  v.extent(0));
+                esp.visibilities =
+                  visdata_view<4, memory_space>(
+                    reinterpret_cast<VisData<4>*>(&esp.visbuff(0)),
+                    v.extent(0));
               }
             },
             st_esp.visibilities);
@@ -3658,21 +3784,23 @@ private:
               << std::endl;
 #endif // NDEBUG
 
+    static_assert(
+      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::cube == 1);
     if (also_weights) {
       if (create_without_init)
         m_weights =
           decltype(m_weights)(
             K::ViewAllocateWithoutInitializing("weights"),
-            static_cast<int>(m_grid_size[2]),
-            static_cast<int>(m_grid_size[3]));
+            static_cast<int>(m_grid_size[static_cast<int>(GridAxis::mrow)]),
+            static_cast<int>(m_grid_size[static_cast<int>(GridAxis::cube)]));
       else
         m_weights =
           decltype(m_weights)(
             K::view_alloc(
               "weights",
               m_exec_spaces[next_exec_space(StreamPhase::COPY)].space),
-            static_cast<int>(m_grid_size[2]),
-            static_cast<int>(m_grid_size[3]));
+            static_cast<int>(m_grid_size[static_cast<int>(GridAxis::mrow)]),
+            static_cast<int>(m_grid_size[static_cast<int>(GridAxis::cube)]));
     }
     if (std::holds_alternative<const StateT*>(source)) {
       auto st = std::get<const StateT*>(source);
@@ -3694,6 +3822,12 @@ GridValueArray::copy_from(
   value_type* src,
   const std::array<unsigned, GridValueArray::rank>& extents,
   Layout layout) {
+
+  static_assert(
+    static_cast<int>(GridAxis::x) == GridValueArray::Axis::x
+    && static_cast<int>(GridAxis::y) == GridValueArray::Axis::y
+    && static_cast<int>(GridAxis::mrow) == GridValueArray::Axis::mrow
+    && static_cast<int>(GridAxis::cube) == GridValueArray::Axis::cube);
 
   switch (target_device) {
 #ifdef HPG_ENABLE_SERIAL
