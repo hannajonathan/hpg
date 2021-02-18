@@ -597,8 +597,7 @@ TEST(GridArrays, CompareLayouts) {
           .grid_visibilities(
             default_host_device,
             mueller_indexes,
-            std::move(vis),
-            true);
+            std::move(vis));
       })
     .map(
       [](auto&& gs) {

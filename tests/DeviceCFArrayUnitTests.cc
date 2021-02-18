@@ -361,8 +361,7 @@ TEST(DeviceCFArray, Gridding) {
           .grid_visibilities(
             default_host_device,
             mueller_indexes,
-            decltype(vis)(vis),
-            true);
+            decltype(vis)(vis));
       })
     .map(
       [](auto&& gs) {

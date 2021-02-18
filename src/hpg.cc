@@ -104,8 +104,7 @@ struct Impl::GridderState {
     GS&& st,
     Device host_device,
     IArrayVector&& mueller_indexes,
-    VisDataVector&& visibilities,
-    bool with_cf_phase_gradients) {
+    VisDataVector&& visibilities) {
 
     if (st.grid_size()[2] != mueller_indexes.size())
       return InvalidNumberMuellerIndexRowsError();
@@ -116,8 +115,7 @@ struct Impl::GridderState {
         result.impl->grid_visibilities(
           host_device,
           std::move(mueller_indexes),
-          std::move(visibilities),
-          with_cf_phase_gradients);
+          std::move(visibilities));
       if (error)
         return std::move(error.value());
       else
@@ -483,8 +481,7 @@ rval_t<GridderState>
 GridderState::grid_visibilities_impl(
   Device host_device,
   Impl::IArrayVector&& mueller_indexes,
-  Impl::VisDataVector&& visibilities,
-  bool with_cf_phase_gradients) const & {
+  Impl::VisDataVector&& visibilities) const & {
 
   return
     to_rval(
@@ -492,16 +489,14 @@ GridderState::grid_visibilities_impl(
         *this,
         host_device,
         std::move(mueller_indexes),
-        std::move(visibilities),
-        with_cf_phase_gradients));
+        std::move(visibilities)));
 }
 
 rval_t<GridderState>
 GridderState::grid_visibilities_impl(
   Device host_device,
   Impl::IArrayVector&& mueller_indexes,
-  Impl::VisDataVector&& visibilities,
-  bool with_cf_phase_gradients) && {
+  Impl::VisDataVector&& visibilities) && {
 
   return
     to_rval(
@@ -509,8 +504,7 @@ GridderState::grid_visibilities_impl(
         std::move(*this),
         std::move(host_device),
         std::move(mueller_indexes),
-        std::move(visibilities),
-        with_cf_phase_gradients));
+        std::move(visibilities)));
 }
 
 GridderState
@@ -817,8 +811,7 @@ opt_error_t
 Gridder::grid_visibilities_impl(
   Device host_device,
   Impl::IArrayVector&& mueller_indexes,
-  Impl::VisDataVector&& visibilities,
-  bool with_cf_phase_gradients) {
+  Impl::VisDataVector&& visibilities) {
 #if HPG_API >= 17
   return
     fold(
@@ -826,8 +819,7 @@ Gridder::grid_visibilities_impl(
       .grid_visibilities_impl(
         host_device,
         std::move(mueller_indexes),
-        std::move(visibilities),
-        with_cf_phase_gradients),
+        std::move(visibilities)),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
         return std::nullopt;
@@ -842,8 +834,7 @@ Gridder::grid_visibilities_impl(
     .grid_visibilities_impl(
       host_device,
       std::move(mueller_indexes),
-      std::move(visibilities),
-      with_cf_phase_gradients);
+      std::move(visibilities));
   return result;
 #endif // HPG_API >= 17
 }

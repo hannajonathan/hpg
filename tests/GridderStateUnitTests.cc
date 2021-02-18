@@ -681,8 +681,7 @@ TEST(GridderState, CopyOrMove) {
         gs1.grid_visibilities(
           default_host_device,
           {{0}},
-          decltype(vis)(vis),
-          true));
+          decltype(vis)(vis)));
 
     // gridded visibilities should be in gs2, not gs1
     auto [gs3, values] = std::move(gs1).grid_values();
@@ -695,8 +694,7 @@ TEST(GridderState, CopyOrMove) {
         std::move(gs3).grid_visibilities(
           default_host_device,
           {{0}},
-          std::move(vis),
-          true));
+          std::move(vis)));
 
     // gs2 and gs4 should have same grid values
     auto [gs5, values5] = std::move(gs2).grid_values();
@@ -825,8 +823,7 @@ TEST(GridderState, Reset) {
         std::move(gs1).grid_visibilities(
           default_host_device,
           {{0}},
-          std::move(vis),
-          true));
+          std::move(vis)));
 
     auto [gs3, values] = std::move(gs2).grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));
@@ -880,15 +877,13 @@ TEST(GridderState, Sequences) {
         std::move(gs1).grid_visibilities(
           default_host_device,
           {{0}},
-          decltype(vis)(vis),
-          true));
+          decltype(vis)(vis)));
 
     auto err_or_gs3 =
       std::move(gs2).grid_visibilities(
         default_host_device,
         {{0}},
-        decltype(vis)(vis),
-        true);
+        decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_value(err_or_gs3));
 
     auto err_or_gs4 =
@@ -900,16 +895,14 @@ TEST(GridderState, Sequences) {
       hpg::get_value(std::move(err_or_gs4)).grid_visibilities(
         default_host_device,
         {{0}},
-        decltype(vis)(vis),
-        true);
+        decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_value(err_or_gs5));
 
     auto err_or_gs6 =
       hpg::get_value(std::move(err_or_gs5)).grid_visibilities(
         default_host_device,
         {{0}},
-        decltype(vis)(vis),
-        true);
+        decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_value(err_or_gs6));
   }
 }
@@ -967,8 +960,7 @@ TEST(GridderState, Serialization) {
               .grid_visibilities(
                 default_host_device,
                 {{0}},
-                std::move(vis[first]),
-                true);
+                std::move(vis[first]));
           })
         .and_then(
           [=](auto&& gs) mutable {
@@ -985,8 +977,7 @@ TEST(GridderState, Serialization) {
               .grid_visibilities(
                 default_host_device,
                 {{0}},
-                std::move(vis[second]),
-                true);
+                std::move(vis[second]));
           })
         .map(
           [](auto&& gs) {
@@ -1061,8 +1052,7 @@ TEST(GridderState, Batching) {
           std::move(gs_small).grid_visibilities(
             default_host_device,
             {{0}},
-            decltype(vis)(vis),
-            true)
+            decltype(vis)(vis))
           , [](auto&& g) {
               return std::move(g).grid_values();
             })));
@@ -1074,8 +1064,7 @@ TEST(GridderState, Batching) {
           std::move(gs_large).grid_visibilities(
             default_host_device,
             {{0}},
-            decltype(vis)(vis),
-            true)
+            decltype(vis)(vis))
           , [](auto&& g) {
               return std::move(g).grid_values();
             })));
@@ -1116,8 +1105,7 @@ TEST(GridderState, Gridding) {
                 default_host_device,
                 {{0}},
                 std::vector<hpg::VisData<1>>{
-                  hpg::VisData<1>({vis}, {wgt}, c, 0.0, uvw, 0, {0, 0})},
-                false);
+                  hpg::VisData<1>({vis}, {wgt}, c, 0.0, uvw, 0, {0, 0})});
           })
         .map(
           [](auto&& gs) {
@@ -1175,8 +1163,7 @@ TEST(GridderState, GridOne) {
                 default_host_device,
                 {{0}},
                 std::vector<hpg::VisData<1>>{
-                  hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw, 0, {0, 0})},
-                false);
+                  hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw, 0, {0, 0})});
           })
         .map(
           [](auto&& gs) {
