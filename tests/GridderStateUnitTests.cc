@@ -379,6 +379,43 @@ struct ConeCFArray final
   }
 };
 
+class AnyGridValueArray
+  : public hpg::GridValueArray {
+public:
+
+  std::array<unsigned, rank> m_extents;
+  value_type m_value;
+
+  AnyGridValueArray(const std::array<unsigned, rank>& extents)
+    : m_extents(extents)
+    , m_value(0) {}
+
+  unsigned
+  extent(unsigned dim) const override {
+    return m_extents[dim];
+  }
+
+  const value_type&
+  operator()(unsigned, unsigned, unsigned, unsigned) const override {
+    return m_value;
+  }
+
+  value_type&
+  operator()(unsigned, unsigned, unsigned, unsigned) override {
+    return m_value;
+  }
+
+  ~AnyGridValueArray() {}
+
+protected:
+
+  void
+  unsafe_copy_to(hpg::Device, value_type* dst, hpg::Layout) const override {
+    for (size_t i = 0; i < min_buffer_size(); ++i)
+      *dst++ = m_value;
+  }
+};
+
 template <typename Generator>
 MyCFArray
 create_cf(
@@ -689,6 +726,45 @@ TEST(GridderState, InitValues) {
   for (size_t i = 2; i < 4; ++i)
     EXPECT_EQ(weights->extent(i - 2), grid_size[i]);
   EXPECT_FALSE(has_non_zero(weights.get()));
+}
+
+// test that model setting works properly
+TEST(GridderState, SetModel) {
+  std::array<unsigned, 4> grid_size{6, 5, 4, 3};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
+  auto padding = 2 * hpg::CFArray::padding;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3 + padding, 3 + padding, 3, 3}, {2 + padding, 2 + padding, 2, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
+  auto gs =
+    hpg::get_value(
+      hpg::GridderState::create<1>(
+        default_device,
+        0,
+        15,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0}, {0}, {0}, {0}},
+        {{0}, {0}, {0}, {0}}));
+
+  // easiest way to create a model is to get a copy of the grid
+  auto [gs1, values] = std::move(gs).grid_values();
+  auto gs2_or_err =
+    std::move(gs1).set_model(default_host_device, std::move(*values));
+  EXPECT_TRUE(hpg::is_value(gs2_or_err));
+  auto gs2 = hpg::get_value(gs2_or_err);
+
+  // create an AnyGridValueArray of the wrong size
+  auto bad_grid_size = grid_size;
+  bad_grid_size[0]--;
+  AnyGridValueArray bad_grid(bad_grid_size);
+  auto gs3_or_err =
+    std::move(gs2).set_model(default_host_device, std::move(bad_grid));
+  ASSERT_TRUE(hpg::is_error(gs3_or_err));
+  EXPECT_EQ(
+    hpg::get_error(gs3_or_err).type(),
+    hpg::ErrorType::InvalidModelGridSize);
 }
 
 // test that GridderState methods have correct copy and move semantics
