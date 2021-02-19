@@ -137,13 +137,14 @@ run_tests(
     std::cout << "GridderState " << dev_name << std::endl;
     auto st0 =
       std::get<1>(
-        hpg::GridderState::create(
+        hpg::GridderState::create<1>(
           D,
           2,
           vis.size(),
           &cf,
           grid_size,
-          grid_scale));
+          grid_scale,
+          mueller_indexes));
     auto st1 = st0.fence();
     auto st2 = std::move(st0).fence();
     auto st3 =
@@ -162,14 +163,19 @@ run_tests(
     std::cout << "Gridder " << dev_name << std::endl;
     auto g0 =
       std::get<1>(
-        hpg::Gridder::create(D, 2, vis.size(), &cf, grid_size, grid_scale));
+        hpg::Gridder
+        ::create<1>(
+          D,
+          2,
+          vis.size(),
+          &cf,
+          grid_size,
+          grid_scale,
+          mueller_indexes));
     std::cout << "constructed" << std::endl;
     g0.set_convolution_function(host_dev, MyCFArray(cf));
     std::cout << "cf set" << std::endl;
-    g0.grid_visibilities(
-      host_dev,
-      mueller_indexes,
-      std::remove_reference_t<decltype(vis)>(vis));
+    g0.grid_visibilities(host_dev, std::remove_reference_t<decltype(vis)>(vis));
     std::cout << "gridded" << std::endl;
     auto weights = g0.grid_weights();
     std::cout << "weights";
@@ -218,11 +224,18 @@ dump_grids(
 
   auto g0 =
     std::get<1>(
-      hpg::Gridder::create(D, 2, vis.size(), &cf, grid_size, grid_scale));
+      hpg::Gridder
+      ::create<1>(
+        D,
+        2,
+        vis.size(),
+        &cf,
+        grid_size,
+        grid_scale,
+        mueller_indexes));
   g0.set_convolution_function(host_dev, MyCFArray(cf));
   g0.grid_visibilities(
     host_dev,
-    mueller_indexes,
     std::remove_reference_t<decltype(vis)>(vis));
   g0.normalize();
   auto err = g0.apply_fft();

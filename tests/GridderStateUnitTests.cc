@@ -17,16 +17,15 @@ hpg::Device default_host_device = hpg::Device::Serial;
 # error "At least one host device needs to be enabled"
 #endif
 
-// #if defined(HPG_ENABLE_CUDA)
-// hpg::Device default_device = hpg::Device::Cuda;
-// #elif defined(HPG_ENABLE_OPENMP)
-// hpg::Device default_device = hpg::Device::OpenMP;
-// #elif defined(HPG_ENABLE_SERIAL)
-// hpg::Device default_device = hpg::Device::Serial;
-// #else
-// # error "At least one device needs to be enabled"
-// #endif
+#if defined(HPG_ENABLE_CUDA)
+hpg::Device default_device = hpg::Device::Cuda;
+#elif defined(HPG_ENABLE_OPENMP)
+hpg::Device default_device = hpg::Device::OpenMP;
+#elif defined(HPG_ENABLE_SERIAL)
 hpg::Device default_device = hpg::Device::Serial;
+#else
+# error "At least one device needs to be enabled"
+#endif
 
 using namespace std::complex_literals;
 
@@ -520,26 +519,43 @@ TEST(GridderState, ConstructorArgs) {
     cf_sizes{{3 + padding, 3 + padding, 3, 3}, {2 + padding, 2 + padding, 2, 2}};
   MyCFArrayShape cf(10, cf_sizes);
   hpg::GridderState gs0;
-  auto gs1 =
-    hpg::get_value(
-      hpg::GridderState::create(
-        default_device,
-        0,
-        batch_size,
-        &cf,
-        grid_size,
-        grid_scale));
+  auto gs1_or_err =
+    hpg::GridderState::create<1>(
+      default_device,
+      0,
+      batch_size,
+      &cf,
+      grid_size,
+      grid_scale,
+      {{0}, {0}, {0}, {0}});
+  ASSERT_TRUE(hpg::is_value(gs1_or_err));
+  auto gs1 = hpg::get_value(gs1_or_err);
 
   EXPECT_TRUE(gs0.is_null());
   EXPECT_FALSE(gs1.is_null());
   EXPECT_EQ(gs1.device(), default_device);
   EXPECT_EQ(gs1.grid_size(), grid_size);
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
+  EXPECT_EQ(gs1.num_polarizations(), 1);
   EXPECT_EQ(gs1.max_added_tasks(), 0);
   EXPECT_EQ(gs1.max_visibility_batch_size(), batch_size);
   EXPECT_EQ(
     gs1.convolution_function_region_size(nullptr),
     gs1.convolution_function_region_size(&cf));
+
+  auto gs2_or_err =
+    hpg::GridderState::create<1>(
+      default_device,
+      0,
+      batch_size,
+      &cf,
+      grid_size,
+      grid_scale,
+      {{0}, {0}, {0}});
+  EXPECT_TRUE(hpg::is_error(gs2_or_err));
+  EXPECT_EQ(
+    hpg::get_error(gs2_or_err).type(),
+    hpg::ErrorType::InvalidNumberMuellerIndexRows);
 }
 
 // test that GridderState copies have correct parameters
@@ -553,19 +569,21 @@ TEST(GridderState, Copies) {
   MyCFArrayShape cf(10, cf_sizes);
   auto gs0 =
     hpg::get_value(
-      hpg::GridderState::create(
+      hpg::GridderState::create<1>(
         default_device,
         0,
         batch_size,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}, {0}, {0}, {0}}));
   hpg::GridderState gs1 = gs0;
 
   EXPECT_FALSE(gs0.is_null());
   EXPECT_EQ(gs1.device(), default_device);
   EXPECT_EQ(gs1.grid_size(), grid_size);
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
+  EXPECT_EQ(gs1.num_polarizations(), 1);
   EXPECT_EQ(gs1.max_visibility_batch_size(), batch_size);
   EXPECT_EQ(
     gs0.convolution_function_region_size(nullptr),
@@ -576,6 +594,7 @@ TEST(GridderState, Copies) {
   EXPECT_EQ(gs2.device(), default_device);
   EXPECT_EQ(gs2.grid_size(), grid_size);
   EXPECT_EQ(gs2.grid_scale(), grid_scale);
+  EXPECT_EQ(gs2.num_polarizations(), 1);
   EXPECT_EQ(gs2.max_visibility_batch_size(), batch_size);
   EXPECT_EQ(
     gs0.convolution_function_region_size(nullptr),
@@ -593,13 +612,14 @@ TEST(GridderState, Moves) {
   MyCFArrayShape cf(10, cf_sizes);
   auto gs0 =
     hpg::get_value(
-      hpg::GridderState::create(
+      hpg::GridderState::create<1>(
         default_device,
         0,
         batch_size,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}, {0}, {0}, {0}}));
   auto cf_region_size = gs0.convolution_function_region_size(nullptr);
   hpg::GridderState gs1 = std::move(gs0);
 
@@ -607,6 +627,7 @@ TEST(GridderState, Moves) {
   EXPECT_EQ(gs1.device(), default_device);
   EXPECT_EQ(gs1.grid_size(), grid_size);
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
+  EXPECT_EQ(gs1.num_polarizations(), 1);
   EXPECT_EQ(gs1.max_visibility_batch_size(), batch_size);
   EXPECT_EQ(gs1.convolution_function_region_size(nullptr), cf_region_size);
 
@@ -615,6 +636,7 @@ TEST(GridderState, Moves) {
   EXPECT_EQ(gs2.device(), default_device);
   EXPECT_EQ(gs2.grid_size(), grid_size);
   EXPECT_EQ(gs2.grid_scale(), grid_scale);
+  EXPECT_EQ(gs2.num_polarizations(), 1);
   EXPECT_EQ(gs2.max_visibility_batch_size(), batch_size);
   EXPECT_EQ(gs2.convolution_function_region_size(nullptr), cf_region_size);
 }
@@ -629,13 +651,14 @@ TEST(GridderState, InitValues) {
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
-      hpg::GridderState::create(
+      hpg::GridderState::create<1>(
         default_device,
         0,
         15,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}, {0}, {0}, {0}}));
 
   auto [gs1, values] = std::move(gs).grid_values();
   for (size_t i = 0; i < 4; ++i)
@@ -659,13 +682,14 @@ TEST(GridderState, CopyOrMove) {
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
-      hpg::GridderState::create(
+      hpg::GridderState::create<1>(
         default_device,
         0,
         num_vis,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}}));
 
   std::mt19937 rng(42);
   std::vector<hpg::VisData<1>> vis;
@@ -678,10 +702,7 @@ TEST(GridderState, CopyOrMove) {
     init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
     auto gs2 =
       hpg::get_value(
-        gs1.grid_visibilities(
-          default_host_device,
-          {{0}},
-          decltype(vis)(vis)));
+        gs1.grid_visibilities(default_host_device, decltype(vis)(vis)));
 
     // gridded visibilities should be in gs2, not gs1
     auto [gs3, values] = std::move(gs1).grid_values();
@@ -691,10 +712,7 @@ TEST(GridderState, CopyOrMove) {
 
     auto gs4 =
       hpg::get_value(
-        std::move(gs3).grid_visibilities(
-          default_host_device,
-          {{0}},
-          std::move(vis)));
+        std::move(gs3).grid_visibilities(default_host_device, std::move(vis)));
 
     // gs2 and gs4 should have same grid values
     auto [gs5, values5] = std::move(gs2).grid_values();
@@ -747,13 +765,14 @@ TEST(GridderState, CFError) {
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
-      hpg::GridderState::create(
+      hpg::GridderState::create<1>(
         default_device,
         0,
         10,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}, {0}, {0}, {0}}));
 
   std::mt19937 rng(42);
 
@@ -799,13 +818,14 @@ TEST(GridderState, Reset) {
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
-      hpg::GridderState::create(
+      hpg::GridderState::create<1>(
         default_device,
         0,
         num_vis,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}}));
 
   std::mt19937 rng(42);
   std::vector<hpg::VisData<1>> vis;
@@ -820,10 +840,7 @@ TEST(GridderState, Reset) {
 
     auto gs2 =
       hpg::get_value(
-        std::move(gs1).grid_visibilities(
-          default_host_device,
-          {{0}},
-          std::move(vis)));
+        std::move(gs1).grid_visibilities(default_host_device, std::move(vis)));
 
     auto [gs3, values] = std::move(gs2).grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));
@@ -855,13 +872,14 @@ TEST(GridderState, Sequences) {
   MyCFArrayShape cf(10, cf_sizes);
   auto gs =
     hpg::get_value(
-      hpg::GridderState::create(
+      hpg::GridderState::create<1>(
         default_device,
         1,
         num_vis,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}}));
 
   std::mt19937 rng(42);
   std::vector<hpg::VisData<1>> vis;
@@ -876,14 +894,10 @@ TEST(GridderState, Sequences) {
       hpg::get_value(
         std::move(gs1).grid_visibilities(
           default_host_device,
-          {{0}},
           decltype(vis)(vis)));
 
     auto err_or_gs3 =
-      std::move(gs2).grid_visibilities(
-        default_host_device,
-        {{0}},
-        decltype(vis)(vis));
+      std::move(gs2).grid_visibilities(default_host_device, decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_value(err_or_gs3));
 
     auto err_or_gs4 =
@@ -894,14 +908,12 @@ TEST(GridderState, Sequences) {
     auto err_or_gs5 =
       hpg::get_value(std::move(err_or_gs4)).grid_visibilities(
         default_host_device,
-        {{0}},
         decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_value(err_or_gs5));
 
     auto err_or_gs6 =
       hpg::get_value(std::move(err_or_gs5)).grid_visibilities(
         default_host_device,
-        {{0}},
         decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_value(err_or_gs6));
   }
@@ -937,13 +949,14 @@ TEST(GridderState, Serialization) {
         hpg::RvalM<const size_t&, hpg::GridderState>::pure(
           [=](size_t i) {
             return
-              hpg::GridderState::create(
+              hpg::GridderState::create<1>(
                 default_device,
                 0,
                 num_vis,
                 static_cast<const hpg::CFArray*>(&cfs[i]),
                 grid_size,
-                grid_scale);
+                grid_scale,
+                {{0}});
           })
         .and_then(
           [=](auto&& gs) mutable {
@@ -957,10 +970,7 @@ TEST(GridderState, Serialization) {
           [=](auto&& gs) mutable {
             return
               std::move(gs)
-              .grid_visibilities(
-                default_host_device,
-                {{0}},
-                std::move(vis[first]));
+              .grid_visibilities(default_host_device, std::move(vis[first]));
           })
         .and_then(
           [=](auto&& gs) mutable {
@@ -974,10 +984,7 @@ TEST(GridderState, Serialization) {
           [=](auto&& gs) mutable {
             return
               std::move(gs)
-              .grid_visibilities(
-                default_host_device,
-                {{0}},
-                std::move(vis[second]));
+              .grid_visibilities(default_host_device, std::move(vis[second]));
           })
         .map(
           [](auto&& gs) {
@@ -1014,13 +1021,14 @@ TEST(GridderState, Batching) {
   auto gs_small =
     hpg::get_value(
       hpg::flatmap(
-        hpg::GridderState::create(
+        hpg::GridderState::create<1>(
           default_device,
           1,
           num_vis / 11,
           static_cast<const hpg::CFArray*>(&cf),
           grid_size,
-          grid_scale)
+          grid_scale,
+          {{0}})
         , [&](auto&& g) {
             return
               std::move(g)
@@ -1029,13 +1037,14 @@ TEST(GridderState, Batching) {
   auto gs_large =
     hpg::get_value(
       hpg::flatmap(
-        hpg::GridderState::create(
+        hpg::GridderState::create<1>(
           default_device,
           1,
           num_vis,
           static_cast<const hpg::CFArray*>(&cf),
           grid_size,
-          grid_scale)
+          grid_scale,
+          {{0}})
         , [&](auto&& g) {
             return
               std::move(g)
@@ -1051,7 +1060,6 @@ TEST(GridderState, Batching) {
         hpg::map(
           std::move(gs_small).grid_visibilities(
             default_host_device,
-            {{0}},
             decltype(vis)(vis))
           , [](auto&& g) {
               return std::move(g).grid_values();
@@ -1063,7 +1071,6 @@ TEST(GridderState, Batching) {
         hpg::map(
           std::move(gs_large).grid_visibilities(
             default_host_device,
-            {{0}},
             decltype(vis)(vis))
           , [](auto&& g) {
               return std::move(g).grid_values();
@@ -1089,7 +1096,14 @@ TEST(GridderState, Gridding) {
           [=]() {
             return
               hpg::GridderState
-              ::create(default_device, 0, 1, &cf, grid_size, grid_scale);
+              ::create<1>(
+                default_device,
+                0,
+                1,
+                &cf,
+                grid_size,
+                grid_scale,
+                {{0}});
           })
         .and_then(
           [=](auto&& gs) {
@@ -1103,7 +1117,6 @@ TEST(GridderState, Gridding) {
               std::move(gs)
               .grid_visibilities(
                 default_host_device,
-                {{0}},
                 std::vector<hpg::VisData<1>>{
                   hpg::VisData<1>({vis}, {wgt}, c, 0.0, uvw, 0, {0, 0})});
           })
@@ -1147,7 +1160,14 @@ TEST(GridderState, GridOne) {
           [=]() {
             return
               hpg::GridderState
-              ::create(default_device, 0, 1, &cf, grid_size, grid_scale);
+              ::create<1>(
+                default_device,
+                0,
+                1,
+                &cf,
+                grid_size,
+                grid_scale,
+                {{0}});
           })
         .and_then(
           [=](auto&& gs) {
@@ -1161,7 +1181,6 @@ TEST(GridderState, GridOne) {
               std::move(gs)
               .grid_visibilities(
                 default_host_device,
-                {{0}},
                 std::vector<hpg::VisData<1>>{
                   hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw, 0, {0, 0})});
           })

@@ -268,13 +268,14 @@ TEST(GridArrays, GridValueReadWrite) {
   MyCFArray cf = create_cf(10, cf_sizes, rng);
 
   auto gs_or_err =
-    hpg::GridderState::create(
+    hpg::GridderState::create<1>(
       default_device,
       0,
       4,
       &cf,
       grid_size,
-      grid_scale);
+      grid_scale,
+      {{0},{0}});
   ASSERT_TRUE(hpg::is_value(gs_or_err));
   auto gs = hpg::get_value(std::move(gs_or_err));
   auto gvals = std::get<1>(gs.grid_values());
@@ -308,13 +309,14 @@ TEST(GridArrays, CopyToValuesLayouts) {
   MyCFArray cf = create_cf(10, cf_sizes, rng);
 
   auto gs_or_err =
-    hpg::GridderState::create(
+    hpg::GridderState::create<1>(
       default_device,
       0,
       4,
       &cf,
       grid_size,
-      grid_scale);
+      grid_scale,
+      {{0}, {0}});
   ASSERT_TRUE(hpg::is_value(gs_or_err));
   auto gs = hpg::get_value(std::move(gs_or_err));
   auto gvals = std::get<1>(gs.grid_values());
@@ -501,13 +503,14 @@ TEST(GridArrays, CopyToWeightsLayouts) {
   MyCFArray cf = create_cf(10, cf_sizes, rng);
 
   auto gs_or_err =
-    hpg::GridderState::create(
+    hpg::GridderState::create<1>(
       default_device,
       0,
       4,
       &cf,
       grid_size,
-      grid_scale);
+      grid_scale,
+      {{0}, {0}});
   ASSERT_TRUE(hpg::is_value(gs_or_err));
   auto gs = hpg::get_value(std::move(gs_or_err));
   auto gwgts = std::get<1>(gs.grid_weights());
@@ -576,13 +579,14 @@ TEST(GridArrays, CompareLayouts) {
     hpg::RvalM<void, hpg::GridderState>::pure(
       [&]() {
         return
-          hpg::GridderState::create(
+          hpg::GridderState::create<1>(
             default_device,
             0,
             num_vis,
             &cf,
             grid_size,
-            grid_scale);
+            grid_scale,
+            {{0}});
       })
     .and_then(
       [&](auto&& gs) mutable {
@@ -593,11 +597,7 @@ TEST(GridArrays, CompareLayouts) {
     .and_then(
       [&](auto&& gs) mutable {
         return
-          std::move(gs)
-          .grid_visibilities(
-            default_host_device,
-            mueller_indexes,
-            std::move(vis));
+          std::move(gs).grid_visibilities(default_host_device, std::move(vis));
       })
     .map(
       [](auto&& gs) {

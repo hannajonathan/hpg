@@ -1758,6 +1758,7 @@ struct State {
                                          sent to gridding kernel at once */
   std::array<unsigned, 4> m_grid_size; /**< grid size */
   K::Array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
+  unsigned m_num_polarizations; /**< number of visibility polarizations */
   std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
 
   State(Device device)
@@ -1769,12 +1770,14 @@ struct State {
     size_t max_visibility_batch_size,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
+    unsigned num_polarizations,
     const std::array<unsigned, 4>& implementation_versions)
     : m_device(device)
     , m_max_active_tasks(max_active_tasks)
     , m_max_visibility_batch_size(max_visibility_batch_size)
     , m_grid_size(grid_size)
     , m_grid_scale({grid_scale[0], grid_scale[1]})
+    , m_num_polarizations(num_polarizations)
     , m_implementation_versions(implementation_versions) {}
 
   static size_t
@@ -1819,10 +1822,7 @@ struct State {
   set_model(Device host_device, GridValueArray&& gv) = 0;
 
   virtual std::optional<Error>
-  grid_visibilities(
-    Device host_device,
-    IArrayVector&& mueller_indexes,
-    VisDataVector&& visibilities) = 0;
+  grid_visibilities(Device host_device, VisDataVector&& visibilities) = 0;
 
   virtual void
   fence() const = 0;
@@ -2826,7 +2826,6 @@ struct ExecSpace final {
     visdata_view<3, memory_space>,
     visdata_view<4, memory_space>> visibilities;
   std::vector<std::any> copy_state;
-  mindex_view<memory_space> mueller_indexes;
 
   ExecSpace(execution_space sp)
     : space(sp) {
@@ -2841,28 +2840,6 @@ struct ExecSpace final {
   constexpr const_visdata_view<N, memory_space>
   visdata() const {
     return std::get<visdata_view<N, memory_space>>(visibilities);
-  }
-
-  /** copy Mueller indexes to device */
-  template <size_t N>
-  void
-  copy_mueller_indexes(const vector_data<iarray<N>>& mindexes) {
-
-    auto mueller_indexes_h = K::create_mirror_view(mueller_indexes);
-    size_t mr = 0;
-    for (; mr < mindexes->size(); ++mr) {
-      auto& mi_row = (*mindexes)[mr];
-      size_t mc = 0;
-      for (; mc < N; ++mc)
-        mueller_indexes_h(mr, mc) = static_cast<int>(mi_row[mc]);
-      for (; mc < mueller_indexes.extent(1); ++mc)
-        mueller_indexes_h(mr, mc) = -1;
-    }
-    for (; mr < mueller_indexes.extent(0); ++mr)
-      for (size_t mc = 0; mc < mueller_indexes.extent(1); ++mc)
-        mueller_indexes_h(mr, mc) = -1;
-    K::deep_copy(space, mueller_indexes, mueller_indexes_h);
-    copy_state.push_back(mueller_indexes_h);
   }
 
   /** copy visibilities to device */
@@ -2916,6 +2893,7 @@ public:
   grid_view<typename GridLayout<D>::layout, memory_space> m_grid;
   weight_view<typename execution_space::array_layout, memory_space> m_weights;
   grid_view<typename GridLayout<D>::layout, memory_space> m_model;
+  const_mindex_view<memory_space> m_mueller_indexes;
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
@@ -2933,6 +2911,7 @@ public:
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4> grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
+    const IArrayVector& mueller_indexes,
     const std::array<unsigned, 4>& implementation_versions)
     : State(
       D,
@@ -2940,9 +2919,11 @@ public:
       max_visibility_batch_size,
       grid_size,
       grid_scale,
+      mueller_indexes.m_npol,
       implementation_versions) {
 
     init_state(init_cf_shape);
+    m_mueller_indexes = init_mueller("mueller_indexes", mueller_indexes);
     new_grid(true, true);
   }
 
@@ -2953,10 +2934,12 @@ public:
       st.m_max_visibility_batch_size,
       st.m_grid_size,
       {st.m_grid_scale[0], st.m_grid_scale[1]},
+      st.m_num_polarizations,
       st.m_implementation_versions) {
 
     st.fence();
     init_state(&st);
+    m_mueller_indexes = st.m_mueller_indexes;
     new_grid(&st, true);
   }
 
@@ -2967,11 +2950,13 @@ public:
     m_max_visibility_batch_size = std::move(st).m_max_visibility_batch_size;
     m_grid_size = std::move(st).m_grid_size;
     m_grid_scale = std::move(st).m_grid_scale;
+    m_num_polarizations = std::move(st).m_num_polarizations;
     m_implementation_versions = std::move(st).m_implementation_versions;
 
     m_grid = std::move(st).m_grid;
     m_weights = std::move(st).m_weights;
     m_model = std::move(st).m_model;
+    m_mueller_indexes = std::move(st).m_mueller_indexes;
     m_streams = std::move(st).m_streams;
     m_exec_spaces = std::move(st).m_exec_spaces;
     m_exec_space_indexes = std::move(st).m_exec_space_indexes;
@@ -2994,6 +2979,7 @@ public:
     m_grid = decltype(m_grid)();
     m_weights = decltype(m_weights)();
     m_model = decltype(m_model)();
+    m_mueller_indexes = decltype(m_mueller_indexes)();
     for (auto& [cf, last] : m_cfs)
       cf.reset();
     m_exec_spaces.clear();
@@ -3122,12 +3108,10 @@ public:
   void
   default_grid_visibilities(
     Device /*host_device*/,
-    const vector_data<iarray<size_t(N)>>& mueller_indexes,
     size_t offset,
     const vector_data<::hpg::VisData<N>>& visibilities) {
 
     auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
-    exec_copy.copy_mueller_indexes(mueller_indexes);
     auto len =
       exec_copy.copy_visibilities(
         offset,
@@ -3138,13 +3122,12 @@ public:
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     const_grid_view<typename GridLayout<D>::layout, memory_space> model
       = m_model;
-    const_mindex_view<memory_space> mindexes = exec_compute.mueller_indexes;
     Core::VisibilityGridder<N, execution_space, 0>::kernel(
       exec_compute.space,
       cf.cf_d,
       cf.cf_radii,
       cf.max_cf_extent_y,
-      mindexes,
+      m_mueller_indexes,
       len,
       exec_compute.template visdata<N>(),
       m_grid_scale,
@@ -3158,12 +3141,10 @@ public:
   void
   alt1_grid_visibilities(
     Device /*host_device*/,
-    const vector_data<iarray<size_t(N)>>& mueller_indexes,
     size_t offset,
     const vector_data<::hpg::VisData<N>>& visibilities) {
 
     auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
-    exec_copy.copy_mueller_indexes(mueller_indexes);
     auto len =
       exec_copy.copy_visibilities(
         offset,
@@ -3174,13 +3155,12 @@ public:
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     const_grid_view<typename GridLayout<D>::layout, memory_space> model
       = m_model;
-    const_mindex_view<memory_space> mindexes = exec_compute.mueller_indexes;
     Core::VisibilityGridder<N, execution_space, 1>::kernel(
       exec_compute.space,
       cf.cf_d,
       cf.cf_radii,
       cf.max_cf_extent_y,
-      mindexes,
+      m_mueller_indexes,
       len,
       exec_compute.template visdata<N>(),
       m_grid_scale,
@@ -3194,12 +3174,7 @@ public:
   std::optional<Error>
     grid_visibilities(
     Device host_device,
-    std::vector<iarray<size_t(N)>>&& mueller_indexes,
     std::vector<::hpg::VisData<N>>&& visibilities) {
-
-    const auto mindexes =
-      std::make_shared<std::vector<iarray<size_t(N)>>>(
-        std::move(mueller_indexes));
 
     const auto vis =
       std::make_shared<std::vector<::hpg::VisData<N>>>(
@@ -3217,12 +3192,12 @@ public:
     switch (visibility_gridder_version()) {
     case 0:
       for (size_t i = 0; i < num_visibilities; i += m_max_visibility_batch_size)
-        default_grid_visibilities(host_device, mindexes, i, vis);
+        default_grid_visibilities(host_device, i, vis);
       break;
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     case 1:
       for (size_t i = 0; i < num_visibilities; i += m_max_visibility_batch_size)
-        alt1_grid_visibilities(host_device, mindexes, i, vis);
+        alt1_grid_visibilities(host_device, i, vis);
       break;
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     }
@@ -3230,40 +3205,25 @@ public:
   }
 
   std::optional<Error>
-  grid_visibilities(
-    Device host_device,
-    IArrayVector&& mueller_indexes,
-    VisDataVector&& visibilities)
+  grid_visibilities(Device host_device, VisDataVector&& visibilities)
     override {
 
     switch (visibilities.m_npol) {
     case 1:
       return
-        grid_visibilities(
-          host_device,
-          std::move(*mueller_indexes.m_v1),
-          std::move(*visibilities.m_v1));
+        grid_visibilities(host_device, std::move(*visibilities.m_v1));
         break;
     case 2:
       return
-        grid_visibilities(
-          host_device,
-          std::move(*mueller_indexes.m_v2),
-          std::move(*visibilities.m_v2));
+        grid_visibilities(host_device, std::move(*visibilities.m_v2));
       break;
     case 3:
       return
-        grid_visibilities(
-          host_device,
-          std::move(*mueller_indexes.m_v3),
-          std::move(*visibilities.m_v3));
+        grid_visibilities(host_device, std::move(*visibilities.m_v3));
       break;
     case 4:
       return
-        grid_visibilities(
-          host_device,
-          std::move(*mueller_indexes.m_v4),
-          std::move(*visibilities.m_v4));
+        grid_visibilities(host_device, std::move(*visibilities.m_v4));
       break;
     default:
       assert(false);
@@ -3396,6 +3356,7 @@ private:
     std::swap(m_grid, other.m_grid);
     std::swap(m_weights, other.m_weights);
     std::swap(m_model, other.m_model);
+    std::swap(m_mueller_indexes, other.m_mueller_indexes);
     std::swap(m_streams, other.m_streams);
     std::swap(m_exec_spaces, other.m_exec_spaces);
     std::swap(m_exec_space_indexes, other.m_exec_space_indexes);
@@ -3437,9 +3398,6 @@ private:
           decltype(esp.visbuff)(
             K::ViewAllocateWithoutInitializing("visibility_buffer"),
             m_max_visibility_batch_size);
-      esp.mueller_indexes =
-        decltype(esp.mueller_indexes)(
-          K::ViewAllocateWithoutInitializing("mueller_indexes"));
     }
 
     if (std::holds_alternative<const CFArrayShape*>(init)) {
@@ -3503,7 +3461,6 @@ private:
             },
             st_esp.visibilities);
         }
-        K::deep_copy(esp.space, esp.mueller_indexes, st_esp.mueller_indexes);
         esp.copy_state = st_esp.copy_state;
       }
       for (auto& i : ost->m_cf_indexes) {
@@ -3526,6 +3483,56 @@ private:
       }
     }
     m_current = StreamPhase::COPY;
+  }
+
+  /** copy Mueller indexes to device */
+  template <size_t N>
+  mindex_view<memory_space>
+  copy_mueller_indexes(
+    const std::string& name,
+    const std::vector<iarray<N>>& mindexes) {
+
+    auto esp = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
+    mindex_view<memory_space> result(name);
+    auto mueller_indexes_h = K::create_mirror_view(result);
+    size_t mr = 0;
+    for (; mr < mindexes.size(); ++mr) {
+      auto& mi_row = mindexes[mr];
+      size_t mc = 0;
+      for (; mc < N; ++mc)
+        mueller_indexes_h(mr, mc) = static_cast<int>(mi_row[mc]);
+      for (; mc < result.extent(1); ++mc)
+        mueller_indexes_h(mr, mc) = -1;
+    }
+    for (; mr < result.extent(0); ++mr)
+      for (size_t mc = 0; mc < result.extent(1); ++mc)
+        mueller_indexes_h(mr, mc) = -1;
+    K::deep_copy(esp.space, result, mueller_indexes_h);
+    esp.fence();
+    return result;
+  }
+
+  mindex_view<memory_space>
+  init_mueller(const std::string& name, const IArrayVector& mueller_indexes) {
+
+    switch (mueller_indexes.m_npol) {
+    case 1:
+      return copy_mueller_indexes(name, *mueller_indexes.m_v1);
+      break;
+    case 2:
+      return copy_mueller_indexes(name, *mueller_indexes.m_v2);
+      break;
+    case 3:
+      return copy_mueller_indexes(name, *mueller_indexes.m_v3);
+      break;
+    case 4:
+      return copy_mueller_indexes(name, *mueller_indexes.m_v4);
+      break;
+    default:
+      assert(false);
+      return mindex_view<memory_space>(name);
+      break;
+    }
   }
 
 protected:

@@ -100,22 +100,12 @@ struct Impl::GridderState {
 
   template <typename GS>
   static std::variant<Error, ::hpg::GridderState>
-  grid_visibilities(
-    GS&& st,
-    Device host_device,
-    IArrayVector&& mueller_indexes,
-    VisDataVector&& visibilities) {
-
-    if (st.grid_size()[2] != mueller_indexes.size())
-      return InvalidNumberMuellerIndexRowsError();
+  grid_visibilities(GS&& st, Device host_device, VisDataVector&& visibilities) {
 
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
       auto error =
-        result.impl->grid_visibilities(
-          host_device,
-          std::move(mueller_indexes),
-          std::move(visibilities));
+        result.impl->grid_visibilities(host_device, std::move(visibilities));
       if (error)
         return std::move(error.value());
       else
@@ -156,7 +146,8 @@ GridderState::GridderState(
   size_t max_visibility_batch_size,
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale
+  const std::array<grid_scale_fp, 2>& grid_scale,
+  const Impl::IArrayVector& mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   , const std::array<unsigned, 4>& implementation_versions
 #endif
@@ -178,6 +169,7 @@ GridderState::GridderState(
         init_cf_shape,
         grid_size,
         grid_scale,
+        mueller_indexes,
         implementation_versions);
 #else
     assert(false);
@@ -192,6 +184,7 @@ GridderState::GridderState(
         init_cf_shape,
         grid_size,
         grid_scale,
+        mueller_indexes,
         implementation_versions);
 #else
     assert(false);
@@ -206,6 +199,7 @@ GridderState::GridderState(
         init_cf_shape,
         grid_size,
         grid_scale,
+        mueller_indexes,
         implementation_versions);
 #else
     assert(false);
@@ -220,6 +214,7 @@ GridderState::GridderState(
         init_cf_shape,
         grid_size,
         grid_scale,
+        mueller_indexes,
         implementation_versions);
 #else
     assert(false);
@@ -232,17 +227,21 @@ GridderState::GridderState(
 }
 
 rval_t<GridderState>
-GridderState::create(
+GridderState::create_impl(
   Device device,
   unsigned max_added_tasks,
   size_t max_visibility_batch_size,
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale
+  const std::array<grid_scale_fp, 2>& grid_scale,
+  Impl::IArrayVector&& mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   , const std::array<unsigned, 4>& versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   ) noexcept {
+
+  if (grid_size[2] != mueller_indexes.size())
+    return rval<GridderState>(InvalidNumberMuellerIndexRowsError());
 
   if (devices().count(device) > 0)
     return
@@ -253,14 +252,14 @@ GridderState::create(
           max_visibility_batch_size,
           init_cf_shape,
           grid_size,
-          grid_scale
+          grid_scale,
+          mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
           , versions
 #endif
           ));
   else
-    return
-      rval<GridderState>(DisabledDeviceError());
+    return rval<GridderState>(DisabledDeviceError());
 
 }
 
@@ -353,6 +352,11 @@ GridderState::grid_size() const noexcept {
 std::array<grid_scale_fp, 2>
 GridderState::grid_scale() const noexcept {
   return {impl->m_grid_scale[0], impl->m_grid_scale[1]};
+}
+
+unsigned
+GridderState::num_polarizations() const noexcept {
+  return impl->m_num_polarizations;
 }
 
 bool
@@ -480,7 +484,6 @@ extract_coordinates(const Impl::VisDataVector& vs) {
 rval_t<GridderState>
 GridderState::grid_visibilities_impl(
   Device host_device,
-  Impl::IArrayVector&& mueller_indexes,
   Impl::VisDataVector&& visibilities) const & {
 
   return
@@ -488,14 +491,12 @@ GridderState::grid_visibilities_impl(
       Impl::GridderState::grid_visibilities(
         *this,
         host_device,
-        std::move(mueller_indexes),
         std::move(visibilities)));
 }
 
 rval_t<GridderState>
 GridderState::grid_visibilities_impl(
   Device host_device,
-  Impl::IArrayVector&& mueller_indexes,
   Impl::VisDataVector&& visibilities) && {
 
   return
@@ -503,7 +504,6 @@ GridderState::grid_visibilities_impl(
       Impl::GridderState::grid_visibilities(
         std::move(*this),
         std::move(host_device),
-        std::move(mueller_indexes),
         std::move(visibilities)));
 }
 
@@ -641,7 +641,8 @@ Gridder::Gridder(
   size_t max_visibility_batch_size,
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale)
+  const std::array<grid_scale_fp, 2>& grid_scale,
+  Impl::IArrayVector&& mueller_indexes)
   : state(
     GridderState(
       device,
@@ -649,7 +650,8 @@ Gridder::Gridder(
       max_visibility_batch_size,
       init_cf_shape,
       grid_size,
-      grid_scale)) {}
+      grid_scale,
+      std::move(mueller_indexes))) {}
 
 Gridder::Gridder(const Gridder& other)
   : state(other.state) {}
@@ -663,26 +665,28 @@ Gridder::Gridder(GridderState&& st)
 Gridder::~Gridder() {}
 
 rval_t<Gridder>
-Gridder::create(
+Gridder::create_impl(
   Device device,
   unsigned max_added_tasks,
   size_t max_visibility_batch_size,
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale
+  const std::array<grid_scale_fp, 2>& grid_scale,
+  Impl::IArrayVector&& mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   , const std::array<unsigned, 4>& implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   ) noexcept {
 
   auto err_or_gs =
-    GridderState::create(
+    GridderState::create_impl(
       device,
       max_added_tasks,
       max_visibility_batch_size,
       init_cf_shape,
       grid_size,
-      grid_scale
+      grid_scale,
+      std::move(mueller_indexes)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
       , implementation_versions
 #endif
@@ -735,6 +739,11 @@ Gridder::grid_scale() const noexcept {
 bool
 Gridder::is_null() const noexcept {
   return state.is_null();
+}
+
+unsigned
+Gridder::num_polarizations() const noexcept {
+  return state.num_polarizations();
 }
 
 size_t
@@ -810,7 +819,6 @@ Gridder::set_model(Device host_device, GridValueArray&& gv) {
 opt_error_t
 Gridder::grid_visibilities_impl(
   Device host_device,
-  Impl::IArrayVector&& mueller_indexes,
   Impl::VisDataVector&& visibilities) {
 #if HPG_API >= 17
   return
@@ -818,7 +826,6 @@ Gridder::grid_visibilities_impl(
       std::move(state)
       .grid_visibilities_impl(
         host_device,
-        std::move(mueller_indexes),
         std::move(visibilities)),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
@@ -833,7 +840,6 @@ Gridder::grid_visibilities_impl(
     std::move(state)
     .grid_visibilities_impl(
       host_device,
-      std::move(mueller_indexes),
       std::move(visibilities));
   return result;
 #endif // HPG_API >= 17

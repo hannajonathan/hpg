@@ -225,13 +225,14 @@ TEST(Gridder, ConstructorArgs) {
   hpg::Gridder g0;
   auto g1 =
     std::get<1>(
-      hpg::Gridder::create(
+      hpg::Gridder::create<1>(
         default_device,
         0,
         batch_size,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}, {0}, {0}, {0}}));
 
   EXPECT_TRUE(g0.is_null());
   EXPECT_FALSE(g1.is_null());
@@ -255,13 +256,14 @@ TEST(Gridder, Copies) {
   MyCFArrayShape cf(10, cf_sizes);
   auto g0 =
     std::get<1>(
-      hpg::Gridder::create(
+      hpg::Gridder::create<1>(
         default_device,
         0,
         batch_size,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}, {0}, {0}, {0}}));
   hpg::Gridder g1 = g0;
 
   EXPECT_FALSE(g0.is_null());
@@ -294,13 +296,14 @@ TEST(Gridder, Moves) {
   MyCFArrayShape cf(10, cf_sizes);
   auto g0 =
     std::get<1>(
-      hpg::Gridder::create(
+      hpg::Gridder::create<1>(
         default_device,
         0,
         batch_size,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}, {0}, {0}, {0}}));
   auto cf_region_sz = g0.convolution_function_region_size(nullptr);
   hpg::Gridder g1 = std::move(g0);
 
@@ -333,7 +336,14 @@ TEST(Gridder, InitValues) {
   MyCFArrayShape cf(10, cf_sizes);
   auto g =
     std::get<1>(
-      hpg::Gridder::create(default_device, 0, 10, &cf, grid_size, grid_scale));
+      hpg::Gridder::create<1>(
+        default_device,
+        0,
+        10,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0}, {0}, {0}, {0}}));
 
   auto values = g.grid_values();
   for (size_t i = 0; i < 4; ++i)
@@ -355,7 +365,14 @@ TEST(Gridder, CF) {
   MyCFArrayShape cf(10, cf_sizes);
   auto g =
     std::get<1>(
-      hpg::Gridder::create(default_device, 0, 22, &cf, grid_size, grid_scale));
+      hpg::Gridder::create<1>(
+        default_device,
+        0,
+        22,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0}, {0}, {0}, {0}}));
 
   std::mt19937 rng(42);
 
@@ -410,13 +427,14 @@ TEST(Gridder, Reset) {
   MyCFArrayShape cf(10, cf_sizes);
   auto g =
     std::get<1>(
-      hpg::Gridder::create(
+      hpg::Gridder::create<1>(
         default_device,
         0,
         num_vis,
         &cf,
         grid_size,
-        grid_scale));
+        grid_scale,
+        {{0}}));
 
   std::mt19937 rng(42);
   std::vector<hpg::VisData<1>> vis;
@@ -426,7 +444,7 @@ TEST(Gridder, Reset) {
     MyCFArray cf = create_cf(10, {cf_size}, rng);
     g.set_convolution_function(default_host_device, MyCFArray(cf));
     init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
-    g.grid_visibilities(default_host_device, {{0}}, std::move(vis));
+    g.grid_visibilities(default_host_device, std::move(vis));
 
     auto values = g.grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));

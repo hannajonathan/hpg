@@ -319,13 +319,14 @@ TEST(DeviceCFArray, Gridding) {
   auto gs_cf =
     hpg::get_value(
       hpg::flatmap(
-        hpg::GridderState::create(
+        hpg::GridderState::create<1>(
           default_device,
           0,
           num_vis,
           &cf,
           grid_size,
-          grid_scale),
+          grid_scale,
+          {{0}}),
         [&cf](auto&& gs) {
           return
             std::move(gs)
@@ -336,13 +337,14 @@ TEST(DeviceCFArray, Gridding) {
   auto gs_devcf =
     hpg::get_value(
       hpg::flatmap(
-        hpg::GridderState::create(
+        hpg::GridderState::create<1>(
           default_device,
           0,
           num_vis,
           devcf.get(),
           grid_size,
-          grid_scale),
+          grid_scale,
+          {{0}}),
         [&devcf](auto&& gs) {
           return
             std::move(gs)
@@ -356,12 +358,7 @@ TEST(DeviceCFArray, Gridding) {
   auto gridding =
     hpg::RvalM<const hpg::GridderState&, hpg::GridderState>::pure(
       [&](const hpg::GridderState& gs) {
-        return
-          gs
-          .grid_visibilities(
-            default_host_device,
-            mueller_indexes,
-            decltype(vis)(vis));
+        return gs.grid_visibilities(default_host_device, decltype(vis)(vis));
       })
     .map(
       [](auto&& gs) {

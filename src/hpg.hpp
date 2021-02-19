@@ -790,6 +790,7 @@ protected:
    * task)
    * @param grid_size, in logical axis order: X, Y, mrow, cube
    * @param grid_scale, in X, Y order
+   * @param mueller_indexes CFArray mueller indexes, by mrow
    *
    * max_added_tasks may be used to control the level of concurrency available
    * to the GridderState instance. In all cases, at least one task is
@@ -809,11 +810,26 @@ protected:
     size_t max_visibility_batch_size,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const Impl::IArrayVector& mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     );
+
+  static rval_t<GridderState>
+  create_impl(
+    Device device,
+    unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    Impl::IArrayVector&& mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ) noexcept;
 
 public:
 
@@ -821,6 +837,7 @@ public:
    *
    * does not throw an exception if device argument names an unsupported device
    */
+  template <unsigned N>
   static rval_t<GridderState>
   create(
     Device device,
@@ -828,11 +845,27 @@ public:
     size_t max_visibility_batch_size,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept;
+    ) noexcept {
+
+    return
+      create_impl(
+        device,
+        max_added_tasks,
+        max_visibility_batch_size,
+        init_cf_shape,
+        grid_size,
+        grid_scale,
+        Impl::IArrayVector(mueller_indexes)
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        , implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        );
+  }
 
   /** copy constructor
    *
@@ -883,6 +916,10 @@ public:
   /** grid scale */
   std::array<grid_scale_fp, 2>
   grid_scale() const noexcept;
+
+  /** number of visibility polarizations */
+  unsigned
+  num_polarizations() const noexcept;
 
   /** null state query */
   bool
@@ -985,7 +1022,6 @@ protected:
   rval_t<GridderState>
   grid_visibilities_impl(
     Device host_device,
-    Impl::IArrayVector&& mueller_indexes,
     Impl::VisDataVector&& visibilities) const &;
 
 public:
@@ -1002,7 +1038,6 @@ public:
    * must be located at weights[i].
    *
    * @param host_device device to use for changing array layout
-   * @param mueller_indexes CFArray mueller indexes, by row
    * @param visibilities visibilities
    *
    * @sa Gridder::grid_visibilities()
@@ -1011,13 +1046,11 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
     std::vector<VisData<N>>&& visibilities) const & {
 
     return
       grid_visibilities_impl(
         host_device,
-        Impl::IArrayVector(mueller_indexes),
         Impl::VisDataVector(std::move(visibilities)));
   };
 
@@ -1026,7 +1059,6 @@ protected:
   rval_t<GridderState>
   grid_visibilities_impl(
     Device host_device,
-    Impl::IArrayVector&& mueller_indexes,
     Impl::VisDataVector&& visibilities) &&;
 
 public:
@@ -1043,7 +1075,6 @@ public:
    * must be located at weights[i].
    *
    * @param host_device device to use for changing array layout
-   * @param mueller_indexes CFArray mueller indexes, by row
    * @param visibilities visibilities
    *
    * @sa Gridder::grid_visibilities()
@@ -1052,14 +1083,12 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
     std::vector<VisData<N>>&& visibilities) && {
 
     return
       std::move(*this)
       .grid_visibilities_impl(
         host_device,
-        Impl::IArrayVector(mueller_indexes),
         Impl::VisDataVector(std::move(visibilities)));
   }
 
@@ -1268,7 +1297,22 @@ protected:
     size_t max_visibility_batch_size,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale);
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    Impl::IArrayVector&& mueller_indexes);
+
+  static rval_t<Gridder>
+  create_impl(
+    Device device,
+    unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    Impl::IArrayVector&& mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ) noexcept;
 
 public:
 
@@ -1276,6 +1320,7 @@ public:
    *
    * does not throw an exception if device argument names an unsupported device
    */
+  template <unsigned N>
   static rval_t<Gridder>
   create(
     Device device,
@@ -1283,11 +1328,27 @@ public:
     size_t max_visibility_batch_size,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept;
+    ) noexcept {
+
+    return
+      create_impl(
+        device,
+        max_added_tasks,
+        max_visibility_batch_size,
+        init_cf_shape,
+        grid_size,
+        grid_scale,
+        Impl::IArrayVector(mueller_indexes)
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        , implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+      );
+  }
 
   /** copy constructor
    *
@@ -1333,6 +1394,10 @@ public:
   /** grid scale */
   std::array<grid_scale_fp, 2>
   grid_scale() const noexcept;
+
+  /** number of visibility polarizations */
+  unsigned
+  num_polarizations() const noexcept;
 
   /** null state query */
   bool
@@ -1395,7 +1460,6 @@ protected:
   opt_error_t
   grid_visibilities_impl(
     Device host_device,
-    Impl::IArrayVector&& mueller_indexes,
     Impl::VisDataVector&& visibilities);
 
 public:
@@ -1409,20 +1473,17 @@ public:
    * must be located at weights[i].
    *
    * @param host_device device to use for changing array layout
-   * @param mueller_indexes CFArray mueller indexes, by row
    * @param visibilities visibilities
    */
   template <unsigned N>
   opt_error_t
   grid_visibilities(
     Device host_device,
-    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
     std::vector<VisData<N>>&& visibilities) {
 
     return
       grid_visibilities_impl(
         host_device,
-        Impl::IArrayVector(mueller_indexes),
         Impl::VisDataVector(std::move(visibilities)));
   }
 
