@@ -871,6 +871,12 @@ struct HPG_EXPORT VisibilityGridder final {
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
               auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
+              auto& mv =
+                model(
+                  X + vis.m_grid_coord[0],
+                  Y + vis.m_grid_coord[1],
+                  R,
+                  vis.m_grid_cube);
               // loop over visibility polarizations
               for (int C = 0; C < N; ++C) {
                 if (mueller_indexes(R, C) >= 0) {
@@ -883,14 +889,7 @@ struct HPG_EXPORT VisibilityGridder final {
                       vis.m_cf_minor[0],
                       vis.m_cf_minor[1]);
                   cfv.imag() *= -vis.m_cf_im_factor;
-                  cfwv_l.visibility[C] +=
-                    cfv
-                    * screen
-                    * model(
-                      X + vis.m_grid_coord[0],
-                      Y + vis.m_grid_coord[1],
-                      R,
-                      vis.m_grid_cube);
+                  cfwv_l.visibility[C] += cfv * screen * mv;
                   cfwv_l.wgts[C] += cfv;
                 }
               }
@@ -938,7 +937,7 @@ struct HPG_EXPORT VisibilityGridder final {
           // loop over grid Y
           for (int Y = 0; Y < N_Y; ++Y) {
             auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
-            gv_t g = 0;
+            gv_t gv(0);
             // loop over visibility polarizations
             for (int C = 0; C < N; ++C) {
               if (mueller_indexes(R, C) >= 0) {
@@ -951,7 +950,7 @@ struct HPG_EXPORT VisibilityGridder final {
                     vis.m_cf_minor[0],
                     vis.m_cf_minor[1]);
                 cfv.imag() *= vis.m_cf_im_factor;
-                g += gv_t(cfv * screen * cfwv(0).visibility[C]);
+                gv += gv_t(cfv * screen * cfwv(0).visibility[C]);
                 cfwv_l.wgts[C] += cfv;
               }
             }
@@ -961,7 +960,7 @@ struct HPG_EXPORT VisibilityGridder final {
                 Y + vis.m_grid_coord[1],
                 R,
                 vis.m_grid_cube),
-              g);
+              gv);
           }
         },
         SumCFWgtVis<execution_space>(cfwv(0)));
@@ -1030,13 +1029,8 @@ struct HPG_EXPORT VisibilityGridder final {
         scratch_phscr_view phi_Y(team_member.team_scratch(0), max_cf_extent_y);
         const auto& cf_gradient = visibilities(i).m_cf_phase_gradient;
 
-        GridVis<N, execution_space> vis(
-          visibilities(i),
-          grid_size,
-          oversampling,
-          cf_size,
-          grid_scale);
-
+        GridVis<N, execution_space>
+          vis(visibilities(i), grid_size, oversampling, cf_size, grid_scale);
         // skip this visibility if all of the updated grid points are not
         // within grid bounds
         if ((0 <= vis.m_grid_coord[0])
@@ -1126,12 +1120,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           phi_Y(team_member.team_scratch(0), max_cf_extent_y);
         const auto& cf_gradient = visibilities(i).m_cf_phase_gradient;
 
-        GridVis<N, execution_space> vis(
-          visibilities(i),
-          grid_size,
-          oversampling,
-          cf_size,
-          grid_scale);
+        GridVis<N, execution_space>
+          vis(visibilities(i), grid_size, oversampling, cf_size, grid_scale);
         VisibilityGridder<N, execution_space, 0>::grid_vis(
           team_member,
           vis,
