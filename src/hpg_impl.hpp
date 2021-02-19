@@ -905,7 +905,9 @@ struct HPG_EXPORT VisibilityGridder final {
         [&]() {
           for (int C = 0; C < N; ++C) {
             cfwv(0).wgts[C] = 0;
-            cfwv(0).visibility[C] *= vis.m_weights[C] * vis.m_phasor;
+            cfwv(0).visibility[C] =
+              (vis.m_values[C] - cfwv(0).visibility[C])
+              * vis.m_weights[C] * vis.m_phasor;
           }
         });
       team_member.team_barrier();
