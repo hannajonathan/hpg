@@ -147,7 +147,8 @@ GridderState::GridderState(
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
-  const Impl::IArrayVector& mueller_indexes
+  const Impl::IArrayVector& mueller_indexes,
+  const Impl::IArrayVector& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   , const std::array<unsigned, 4>& implementation_versions
 #endif
@@ -170,6 +171,7 @@ GridderState::GridderState(
         grid_size,
         grid_scale,
         mueller_indexes,
+        conjugate_mueller_indexes,
         implementation_versions);
 #else
     assert(false);
@@ -185,6 +187,7 @@ GridderState::GridderState(
         grid_size,
         grid_scale,
         mueller_indexes,
+        conjugate_mueller_indexes,
         implementation_versions);
 #else
     assert(false);
@@ -200,6 +203,7 @@ GridderState::GridderState(
         grid_size,
         grid_scale,
         mueller_indexes,
+        conjugate_mueller_indexes,
         implementation_versions);
 #else
     assert(false);
@@ -215,6 +219,7 @@ GridderState::GridderState(
         grid_size,
         grid_scale,
         mueller_indexes,
+        conjugate_mueller_indexes,
         implementation_versions);
 #else
     assert(false);
@@ -234,13 +239,15 @@ GridderState::create_impl(
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
-  Impl::IArrayVector&& mueller_indexes
+  Impl::IArrayVector&& mueller_indexes,
+  Impl::IArrayVector&& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   , const std::array<unsigned, 4>& versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   ) noexcept {
 
-  if (grid_size[2] != mueller_indexes.size())
+  if (grid_size[2] != mueller_indexes.size()
+      || grid_size[2] != conjugate_mueller_indexes.size())
     return rval<GridderState>(InvalidNumberMuellerIndexRowsError());
 
   if (devices().count(device) > 0)
@@ -253,7 +260,8 @@ GridderState::create_impl(
           init_cf_shape,
           grid_size,
           grid_scale,
-          mueller_indexes
+          mueller_indexes,
+          conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
           , versions
 #endif
@@ -642,7 +650,8 @@ Gridder::Gridder(
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
-  Impl::IArrayVector&& mueller_indexes)
+  Impl::IArrayVector&& mueller_indexes,
+  Impl::IArrayVector&& conjugate_mueller_indexes)
   : state(
     GridderState(
       device,
@@ -651,7 +660,8 @@ Gridder::Gridder(
       init_cf_shape,
       grid_size,
       grid_scale,
-      std::move(mueller_indexes))) {}
+      std::move(mueller_indexes),
+      std::move(conjugate_mueller_indexes))) {}
 
 Gridder::Gridder(const Gridder& other)
   : state(other.state) {}
@@ -672,7 +682,8 @@ Gridder::create_impl(
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
-  Impl::IArrayVector&& mueller_indexes
+  Impl::IArrayVector&& mueller_indexes,
+  Impl::IArrayVector&& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   , const std::array<unsigned, 4>& implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -686,7 +697,8 @@ Gridder::create_impl(
       init_cf_shape,
       grid_size,
       grid_scale,
-      std::move(mueller_indexes)
+      std::move(mueller_indexes),
+      std::move(conjugate_mueller_indexes)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
       , implementation_versions
 #endif

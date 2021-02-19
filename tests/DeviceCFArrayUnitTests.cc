@@ -326,6 +326,7 @@ TEST(DeviceCFArray, Gridding) {
           &cf,
           grid_size,
           grid_scale,
+          {{0}},
           {{0}}),
         [&cf](auto&& gs) {
           return
@@ -344,6 +345,7 @@ TEST(DeviceCFArray, Gridding) {
           devcf.get(),
           grid_size,
           grid_scale,
+          {{0}},
           {{0}}),
         [&devcf](auto&& gs) {
           return

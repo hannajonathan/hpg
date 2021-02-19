@@ -144,6 +144,7 @@ run_tests(
           &cf,
           grid_size,
           grid_scale,
+          mueller_indexes,
           mueller_indexes));
     auto st1 = st0.fence();
     auto st2 = std::move(st0).fence();
@@ -171,6 +172,7 @@ run_tests(
           &cf,
           grid_size,
           grid_scale,
+          mueller_indexes,
           mueller_indexes));
     std::cout << "constructed" << std::endl;
     g0.set_convolution_function(host_dev, MyCFArray(cf));
@@ -232,6 +234,7 @@ dump_grids(
         &cf,
         grid_size,
         grid_scale,
+        mueller_indexes,
         mueller_indexes));
   g0.set_convolution_function(host_dev, MyCFArray(cf));
   g0.grid_visibilities(

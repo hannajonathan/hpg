@@ -232,6 +232,7 @@ TEST(Gridder, ConstructorArgs) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
 
   EXPECT_TRUE(g0.is_null());
@@ -263,6 +264,7 @@ TEST(Gridder, Copies) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
   hpg::Gridder g1 = g0;
 
@@ -303,6 +305,7 @@ TEST(Gridder, Moves) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
   auto cf_region_sz = g0.convolution_function_region_size(nullptr);
   hpg::Gridder g1 = std::move(g0);
@@ -343,6 +346,7 @@ TEST(Gridder, InitValues) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
 
   auto values = g.grid_values();
@@ -372,6 +376,7 @@ TEST(Gridder, CF) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
 
   std::mt19937 rng(42);
@@ -434,6 +439,7 @@ TEST(Gridder, Reset) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}},
         {{0}}));
 
   std::mt19937 rng(42);

@@ -275,6 +275,7 @@ TEST(GridArrays, GridValueReadWrite) {
       &cf,
       grid_size,
       grid_scale,
+      {{0},{0}},
       {{0},{0}});
   ASSERT_TRUE(hpg::is_value(gs_or_err));
   auto gs = hpg::get_value(std::move(gs_or_err));
@@ -316,6 +317,7 @@ TEST(GridArrays, CopyToValuesLayouts) {
       &cf,
       grid_size,
       grid_scale,
+      {{0}, {0}},
       {{0}, {0}});
   ASSERT_TRUE(hpg::is_value(gs_or_err));
   auto gs = hpg::get_value(std::move(gs_or_err));
@@ -510,6 +512,7 @@ TEST(GridArrays, CopyToWeightsLayouts) {
       &cf,
       grid_size,
       grid_scale,
+      {{0}, {0}},
       {{0}, {0}});
   ASSERT_TRUE(hpg::is_value(gs_or_err));
   auto gs = hpg::get_value(std::move(gs_or_err));
@@ -586,6 +589,7 @@ TEST(GridArrays, CompareLayouts) {
             &cf,
             grid_size,
             grid_scale,
+            {{0}},
             {{0}});
       })
     .and_then(

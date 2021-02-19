@@ -811,7 +811,8 @@ protected:
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    const Impl::IArrayVector& mueller_indexes
+    const Impl::IArrayVector& mueller_indexes,
+    const Impl::IArrayVector& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -825,7 +826,8 @@ protected:
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    Impl::IArrayVector&& mueller_indexes
+    Impl::IArrayVector&& mueller_indexes,
+    Impl::IArrayVector&& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -846,7 +848,8 @@ public:
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    const std::vector<std::array<int, size_t(N)>>& mueller_indexes
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -860,7 +863,8 @@ public:
         init_cf_shape,
         grid_size,
         grid_scale,
-        Impl::IArrayVector(mueller_indexes)
+        Impl::IArrayVector(mueller_indexes),
+        Impl::IArrayVector(conjugate_mueller_indexes)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         , implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -1298,7 +1302,8 @@ protected:
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    Impl::IArrayVector&& mueller_indexes);
+    Impl::IArrayVector&& mueller_indexes,
+    Impl::IArrayVector&& conjugate_mueller_indexes);
 
   static rval_t<Gridder>
   create_impl(
@@ -1308,7 +1313,8 @@ protected:
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    Impl::IArrayVector&& mueller_indexes
+    Impl::IArrayVector&& mueller_indexes,
+    Impl::IArrayVector&& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -1329,7 +1335,8 @@ public:
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    const std::vector<std::array<int, size_t(N)>>& mueller_indexes
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -1343,7 +1350,8 @@ public:
         init_cf_shape,
         grid_size,
         grid_scale,
-        Impl::IArrayVector(mueller_indexes)
+        Impl::IArrayVector(mueller_indexes),
+        Impl::IArrayVector(conjugate_mueller_indexes)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         , implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS

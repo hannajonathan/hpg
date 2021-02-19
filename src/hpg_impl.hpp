@@ -816,6 +816,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const unsigned cf_cube,
     const K::Array<cf_phase_gradient_fp, 2>& cf_gradient,
     const const_mindex_view<memory_space>& mueller_indexes,
+    const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const const_grid_view<grid_layout, memory_space>& model,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
@@ -992,6 +993,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     unsigned max_cf_extent_y,
     const_mindex_view<memory_space> mueller_indexes,
+    const_mindex_view<memory_space> conjugate_mueller_indexes,
     int num_visibilities,
     const const_visdata_view<N, memory_space>& visibilities,
     const K::Array<grid_scale_fp, 2>& grid_scale,
@@ -1048,6 +1050,7 @@ struct HPG_EXPORT VisibilityGridder final {
             cf_cube,
             cf_gradient,
             mueller_indexes,
+            conjugate_mueller_indexes,
             model,
             grid,
             weights,
@@ -1082,6 +1085,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     unsigned max_cf_extent_y,
     const_mindex_view<memory_space> mueller_indexes,
+    const_mindex_view<memory_space> conjugate_mueller_indexes,
     int num_visibilities,
     const const_visdata_view<N, memory_space>& visibilities,
     const K::Array<grid_scale_fp, 2>& grid_scale,
@@ -1131,6 +1135,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           cf_cube,
           cf_gradient,
           mueller_indexes,
+          conjugate_mueller_indexes,
           model,
           grid,
           weights,
@@ -2894,6 +2899,7 @@ public:
   weight_view<typename execution_space::array_layout, memory_space> m_weights;
   grid_view<typename GridLayout<D>::layout, memory_space> m_model;
   const_mindex_view<memory_space> m_mueller_indexes;
+  const_mindex_view<memory_space> m_conjugate_mueller_indexes;
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
@@ -2912,6 +2918,7 @@ public:
     const std::array<unsigned, 4> grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const IArrayVector& mueller_indexes,
+    const IArrayVector& conjugate_mueller_indexes,
     const std::array<unsigned, 4>& implementation_versions)
     : State(
       D,
@@ -2923,7 +2930,10 @@ public:
       implementation_versions) {
 
     init_state(init_cf_shape);
-    m_mueller_indexes = init_mueller("mueller_indexes", mueller_indexes);
+    m_mueller_indexes =
+      init_mueller("mueller_indexes", mueller_indexes);
+    m_conjugate_mueller_indexes =
+      init_mueller("conjugte_mueller_indexes", conjugate_mueller_indexes);
     new_grid(true, true);
   }
 
@@ -2940,6 +2950,7 @@ public:
     st.fence();
     init_state(&st);
     m_mueller_indexes = st.m_mueller_indexes;
+    m_conjugate_mueller_indexes = st.m_conjugate_mueller_indexes;
     new_grid(&st, true);
   }
 
@@ -2957,6 +2968,7 @@ public:
     m_weights = std::move(st).m_weights;
     m_model = std::move(st).m_model;
     m_mueller_indexes = std::move(st).m_mueller_indexes;
+    m_conjugate_mueller_indexes = std::move(st).m_conjugate_mueller_indexes;
     m_streams = std::move(st).m_streams;
     m_exec_spaces = std::move(st).m_exec_spaces;
     m_exec_space_indexes = std::move(st).m_exec_space_indexes;
@@ -2980,6 +2992,7 @@ public:
     m_weights = decltype(m_weights)();
     m_model = decltype(m_model)();
     m_mueller_indexes = decltype(m_mueller_indexes)();
+    m_conjugate_mueller_indexes = decltype(m_conjugate_mueller_indexes)();
     for (auto& [cf, last] : m_cfs)
       cf.reset();
     m_exec_spaces.clear();
@@ -3128,6 +3141,7 @@ public:
       cf.cf_radii,
       cf.max_cf_extent_y,
       m_mueller_indexes,
+      m_conjugate_mueller_indexes,
       len,
       exec_compute.template visdata<N>(),
       m_grid_scale,
@@ -3161,6 +3175,7 @@ public:
       cf.cf_radii,
       cf.max_cf_extent_y,
       m_mueller_indexes,
+      m_conjugate_mueller_indexes,
       len,
       exec_compute.template visdata<N>(),
       m_grid_scale,
@@ -3357,6 +3372,7 @@ private:
     std::swap(m_weights, other.m_weights);
     std::swap(m_model, other.m_model);
     std::swap(m_mueller_indexes, other.m_mueller_indexes);
+    std::swap(m_conjugate_mueller_indexes, other.m_conjugate_mueller_indexes);
     std::swap(m_streams, other.m_streams);
     std::swap(m_exec_spaces, other.m_exec_spaces);
     std::swap(m_exec_space_indexes, other.m_exec_space_indexes);

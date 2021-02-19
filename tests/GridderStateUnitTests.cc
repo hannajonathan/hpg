@@ -527,6 +527,7 @@ TEST(GridderState, ConstructorArgs) {
       &cf,
       grid_size,
       grid_scale,
+      {{0}, {0}, {0}, {0}},
       {{0}, {0}, {0}, {0}});
   ASSERT_TRUE(hpg::is_value(gs1_or_err));
   auto gs1 = hpg::get_value(gs1_or_err);
@@ -551,10 +552,26 @@ TEST(GridderState, ConstructorArgs) {
       &cf,
       grid_size,
       grid_scale,
-      {{0}, {0}, {0}});
+      {{0}, {0}, {0}},
+      {{0}, {0}, {0}, {0}});
   EXPECT_TRUE(hpg::is_error(gs2_or_err));
   EXPECT_EQ(
     hpg::get_error(gs2_or_err).type(),
+    hpg::ErrorType::InvalidNumberMuellerIndexRows);
+
+  auto gs3_or_err =
+    hpg::GridderState::create<1>(
+      default_device,
+      0,
+      batch_size,
+      &cf,
+      grid_size,
+      grid_scale,
+      {{0}, {0}, {0}, {0}},
+      {{0}, {0}, {0}});
+  EXPECT_TRUE(hpg::is_error(gs3_or_err));
+  EXPECT_EQ(
+    hpg::get_error(gs3_or_err).type(),
     hpg::ErrorType::InvalidNumberMuellerIndexRows);
 }
 
@@ -576,6 +593,7 @@ TEST(GridderState, Copies) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
   hpg::GridderState gs1 = gs0;
 
@@ -619,6 +637,7 @@ TEST(GridderState, Moves) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
   auto cf_region_size = gs0.convolution_function_region_size(nullptr);
   hpg::GridderState gs1 = std::move(gs0);
@@ -658,6 +677,7 @@ TEST(GridderState, InitValues) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
 
   auto [gs1, values] = std::move(gs).grid_values();
@@ -689,6 +709,7 @@ TEST(GridderState, CopyOrMove) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}},
         {{0}}));
 
   std::mt19937 rng(42);
@@ -772,6 +793,7 @@ TEST(GridderState, CFError) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
 
   std::mt19937 rng(42);
@@ -825,6 +847,7 @@ TEST(GridderState, Reset) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}},
         {{0}}));
 
   std::mt19937 rng(42);
@@ -879,6 +902,7 @@ TEST(GridderState, Sequences) {
         &cf,
         grid_size,
         grid_scale,
+        {{0}},
         {{0}}));
 
   std::mt19937 rng(42);
@@ -956,6 +980,7 @@ TEST(GridderState, Serialization) {
                 static_cast<const hpg::CFArray*>(&cfs[i]),
                 grid_size,
                 grid_scale,
+                {{0}},
                 {{0}});
           })
         .and_then(
@@ -1028,6 +1053,7 @@ TEST(GridderState, Batching) {
           static_cast<const hpg::CFArray*>(&cf),
           grid_size,
           grid_scale,
+          {{0}},
           {{0}})
         , [&](auto&& g) {
             return
@@ -1044,6 +1070,7 @@ TEST(GridderState, Batching) {
           static_cast<const hpg::CFArray*>(&cf),
           grid_size,
           grid_scale,
+          {{0}},
           {{0}})
         , [&](auto&& g) {
             return
@@ -1103,6 +1130,7 @@ TEST(GridderState, Gridding) {
                 &cf,
                 grid_size,
                 grid_scale,
+                {{0}},
                 {{0}});
           })
         .and_then(
@@ -1167,6 +1195,7 @@ TEST(GridderState, GridOne) {
                 &cf,
                 grid_size,
                 grid_scale,
+                {{0}},
                 {{0}});
           })
         .and_then(
