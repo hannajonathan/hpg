@@ -322,7 +322,8 @@ template <typename memory_space>
 using mindex_view = K::View<int[4][4], memory_space>;
 
 template <typename memory_space>
-using const_mindex_view = K::View<const int[4][4], memory_space>;
+using const_mindex_view =
+  K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
 
 /** ordered Grid array axes */
 enum class GridAxis {
@@ -889,7 +890,7 @@ struct HPG_EXPORT VisibilityGridder final {
             for (int Y = 0; Y < N_Y; ++Y) {
               auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
               screen.imag() *= -1;
-              auto& mv =
+              auto mv =
                 model(
                   X + vis.m_grid_coord[0],
                   Y + vis.m_grid_coord[1],
@@ -897,12 +898,13 @@ struct HPG_EXPORT VisibilityGridder final {
                   vis.m_grid_cube);
               // loop over visibility polarizations
               for (int C = 0; C < N; ++C) {
-                if (degridding_mindex(R, C) >= 0) {
+                auto mindex = degridding_mindex(R, C);
+                if (mindex >= 0) {
                   cf_t cfv =
                     cf(
                       X + vis.m_cf_major[0],
                       Y + vis.m_cf_major[1],
-                      degridding_mindex(R, C),
+                      mindex,
                       cf_cube,
                       vis.m_cf_minor[0],
                       vis.m_cf_minor[1]);
@@ -958,12 +960,13 @@ struct HPG_EXPORT VisibilityGridder final {
             gv_t gv(0);
             // loop over visibility polarizations
             for (int C = 0; C < N; ++C) {
-              if (gridding_mindex(R, C) >= 0) {
+              auto mindex = gridding_mindex(R, C);
+              if (mindex >= 0) {
                 cf_t cfv =
                   cf(
                     X + vis.m_cf_major[0],
                     Y + vis.m_cf_major[1],
-                    gridding_mindex(R, C),
+                    mindex,
                     cf_cube,
                     vis.m_cf_minor[0],
                     vis.m_cf_minor[1]);
