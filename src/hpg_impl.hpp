@@ -2885,7 +2885,7 @@ struct ExecSpace final {
       if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
         visibilities =
           visdata_view<N, memory_space>(
-            reinterpret_cast<VisData<N>*>(&visbuff(0)),
+            reinterpret_cast<VisData<N>*>(visbuff.data()),
             result);
         auto dview = std::get<visdata_view<N, memory_space>>(visibilities);
         auto dv = K::subview(dview, std::pair((size_t)0, result));
@@ -3473,25 +3473,25 @@ private:
               [&esp](const visdata_view<1, memory_space>& v) {
                 esp.visibilities =
                   visdata_view<1, memory_space>(
-                    reinterpret_cast<VisData<1>*>(&esp.visbuff(0)),
+                    reinterpret_cast<VisData<1>*>(esp.visbuff.data()),
                     v.extent(0));
               },
               [&esp](const visdata_view<2, memory_space>& v) {
                 esp.visibilities =
                   visdata_view<2, memory_space>(
-                    reinterpret_cast<VisData<2>*>(&esp.visbuff(0)),
+                    reinterpret_cast<VisData<2>*>(esp.visbuff.data()),
                     v.extent(0));
               },
               [&esp](const visdata_view<3, memory_space>& v) {
                 esp.visibilities =
                   visdata_view<3, memory_space>(
-                    reinterpret_cast<VisData<3>*>(&esp.visbuff(0)),
+                    reinterpret_cast<VisData<3>*>(esp.visbuff.data()),
                     v.extent(0));
               },
               [&esp](const visdata_view<4, memory_space>& v) {
                 esp.visibilities =
                   visdata_view<4, memory_space>(
-                    reinterpret_cast<VisData<4>*>(&esp.visbuff(0)),
+                    reinterpret_cast<VisData<4>*>(esp.visbuff.data()),
                     v.extent(0));
               }
             },
