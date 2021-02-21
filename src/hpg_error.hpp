@@ -13,6 +13,7 @@ enum class HPG_EXPORT ErrorType {
   DisabledHostDevice,
   OutOfBoundsCFIndex,
   InvalidNumberMuellerIndexRows,
+  InvalidNumberPolarizations,
   InvalidCFLayout,
   InvalidModelGridSize,
   Other

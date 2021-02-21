@@ -1019,6 +1019,45 @@ TEST(GridderState, Sequences) {
   }
 }
 
+// test error conditions in grid_visibilities()
+TEST(GridderState, GriddingError) {
+  std::array<unsigned, 4> grid_size{16, 15, 2, 3};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
+  size_t num_vis = 10;
+  auto padding = 2 * hpg::CFArray::padding;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3 + padding, 3 + padding, 2, 3}, {2 + padding, 2 + padding, 2, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
+  auto gs =
+    hpg::get_value(
+      hpg::GridderState::create<2>(
+        default_device,
+        1,
+        num_vis,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0, -1}, {-1, 1}},
+        {{0, -1}, {-1, 1}}));
+
+  std::mt19937 rng(42);
+  std::vector<hpg::VisData<1>> vis;
+
+  {
+    MyCFArray cf = create_cf(10, cf_sizes, rng);
+    auto gs1 =
+      hpg::get_value(
+        gs.set_convolution_function(default_host_device, MyCFArray(cf)));
+    init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
+    auto gs2_or_err =
+      gs1.grid_visibilities(default_host_device, decltype(vis)(vis));
+    ASSERT_TRUE(hpg::is_error(gs2_or_err));
+    EXPECT_EQ(
+      hpg::get_error(gs2_or_err).type(),
+      hpg::ErrorType::InvalidNumberPolarizations);
+  }
+}
+
 // test that GridderState correctly serializes CF changes with gridding
 TEST(GridderState, Serialization) {
   std::array<unsigned, 4> grid_size{16, 15, 1, 3};

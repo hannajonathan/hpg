@@ -22,6 +22,16 @@ struct InvalidNumberMuellerIndexRowsError
 
 };
 
+struct InvalidNumberPolarizationsError
+  : public Error {
+
+  InvalidNumberPolarizationsError()
+    : Error(
+      "Number of visibility polarizations does not match Mueller matrix",
+      ErrorType::InvalidNumberPolarizations) {}
+
+};
+
 Error::Error(const std::string& msg, ErrorType err)
   : m_type(err)
   , m_msg(msg) {}
@@ -103,13 +113,17 @@ struct Impl::GridderState {
   grid_visibilities(GS&& st, Device host_device, VisDataVector&& visibilities) {
 
     if (host_devices().count(host_device) > 0) {
-      ::hpg::GridderState result(std::forward<GS>(st));
-      auto error =
-        result.impl->grid_visibilities(host_device, std::move(visibilities));
-      if (error)
-        return std::move(error.value());
-      else
-        return std::move(result);
+      if (visibilities.m_npol == st.impl->m_num_polarizations) {
+        ::hpg::GridderState result(std::forward<GS>(st));
+        auto error =
+          result.impl->grid_visibilities(host_device, std::move(visibilities));
+        if (error)
+          return std::move(error.value());
+        else
+          return std::move(result);
+      } else {
+        return InvalidNumberPolarizationsError();
+      }
     } else {
       return DisabledHostDeviceError();
     }
