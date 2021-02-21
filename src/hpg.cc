@@ -434,61 +434,6 @@ GridderState::set_model(Device host_device, GridValueArray&& gv) && {
       ::set_model(std::move(*this), host_device, std::move(gv)));
 }
 
-// TODO: remove, shim for development
-static std::vector<std::complex<visibility_fp>>
-extract_visibilities(const Impl::VisDataVector& vs) {
-  assert(vs.m_npol == 1);
-  std::vector<std::complex<visibility_fp>> result;
-  result.reserve(vs.m_v1->size());
-  for (const auto& v : *vs.m_v1)
-    result.push_back(v.m_visibilities[0]);
-  return result;
-}
-
-// TODO: remove, shim for development
-static std::vector<vis_weight_fp>
-extract_weights(const Impl::VisDataVector& vs) {
-  assert(vs.m_npol == 1);
-  std::vector<vis_weight_fp> result;
-  result.reserve(vs.m_v1->size());
-  for (const auto& v : *vs.m_v1)
-    result.push_back(v.m_weights[0]);
-  return result;
-}
-
-// TODO: remove, shim for development
-static std::vector<vis_frequency_fp>
-extract_frequencies(const Impl::VisDataVector& vs) {
-  assert(vs.m_npol == 1);
-  std::vector<vis_frequency_fp> result;
-  result.reserve(vs.m_v1->size());
-  for (const auto& v : *vs.m_v1)
-    result.push_back(v.m_frequency);
-  return result;
-}
-
-// TODO: remove, shim for development
-static std::vector<vis_phase_fp>
-extract_phases(const Impl::VisDataVector& vs) {
-  assert(vs.m_npol == 1);
-  std::vector<vis_phase_fp> result;
-  result.reserve(vs.m_v1->size());
-  for (const auto& v : *vs.m_v1)
-    result.push_back(v.m_phase);
-  return result;
-}
-
-// TODO: remove, shim for development
-static std::vector<vis_uvw_t>
-extract_coordinates(const Impl::VisDataVector& vs) {
-  assert(vs.m_npol == 1);
-  std::vector<vis_uvw_t> result;
-  result.reserve(vs.m_v1->size());
-  for (const auto& v : *vs.m_v1)
-    result.push_back(v.m_uvw);
-  return result;
-}
-
 rval_t<GridderState>
 GridderState::grid_visibilities_impl(
   Device host_device,
