@@ -35,21 +35,32 @@ struct argwrap {
   T val;
 };
 
-/** split string into "sep"-delimited component strings
+/** split string into "sep"-delimited component strings, without splitting
+ * within bracketed terms
  */
 std::vector<std::string>
 split_arg(const std::string& s, char sep = ',') {
 
   std::vector<std::string> result;
-  size_t pos = 0;
-  do {
-    auto cm = s.find(sep, pos);
-    if (cm != std::string::npos)
-      cm -= pos;
-    auto t = s.substr(pos, cm);
-    result.push_back(t);
-    pos += t.size() + 1;
-  } while (pos < s.size());
+  unsigned depth = 0;
+  size_t start = 0;
+  for (size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == '{') {
+      ++depth;
+    } else if (s[i] == '}') {
+      --depth;
+    } else if (depth == 0) {
+      if (s[i] == sep) {
+        auto t = s.substr(start, i - start);
+        result.push_back(t);
+        start = i + 1;
+      }
+    }
+  }
+  if (depth != 0)
+    throw std::runtime_error("argument has unbalanced braces");
+  auto t = s.substr(start, s.size() - start);
+  result.push_back(t);
   return result;
 }
 
@@ -107,6 +118,46 @@ parse_devices(const std::string& s) {
   return parse_enumerated(s, "device", device_codes, all);
 }
 
+std::vector<std::vector<std::vector<int>>>
+parse_mueller_indexes(const std::string& s) {
+  std::vector<std::vector<std::vector<int>>> result;
+  for (auto& a : split_arg(s)) {
+    if (a.front() == 'I') {
+      auto n = std::stoul(a.substr(1));
+      if (n == 1)
+        result.push_back({{0}});
+      else if (n == 2)
+        result.push_back({{0, -1}, {-1, 1}});
+      else if (n == 3)
+        result.push_back({{0, -1, -1}, {-1, 1, -1}, {-1, -1, 2}});
+      else if (n == 4)
+        result.push_back({
+          {0, -1, -1, -1},
+          {-1, 1, -1, -1},
+          {-1, -1, 2, -1},
+          {-1, -1, -1, 3}});
+      else
+        throw std::runtime_error("invalid diagonal mueller size");
+    } else if (a.front() == '{' && a.back() == '}') {
+      std::vector<std::vector<int>> m;
+      for (auto& mr : split_arg(a.substr(1, a.size() - 2))) {
+        std::vector<int> mrow;
+        if (mr.front() == '{' && mr.back() == '}') {
+          for (auto& mc : split_arg(mr.substr(1, mr.size() - 2)))
+            mrow.push_back(std::stoi(mc));
+          m.push_back(std::move(mrow));
+        } else {
+          abort();
+        }
+      }
+      result.push_back(std::move(m));
+    } else {
+      abort();
+    }
+  }
+  return result;
+}
+
 /** parse a list unsigned-value vectors
  *
  * ex: a-b,c-d-e,f is three vectors [a, b], [c, d, e], [f]
@@ -133,6 +184,7 @@ struct TrialSpec {
     const hpg::Device& device_,
     const int& streams_,
     const unsigned& batch_size_,
+    const std::vector<std::vector<int>>& mueller_indexes_,
     const int& gsize_,
     const std::vector<unsigned>& cfsize_,
     const int& oversampling_,
@@ -146,6 +198,7 @@ struct TrialSpec {
     : device(device_)
     , streams(streams_)
     , batch_size(batch_size_)
+    , mueller_indexes(mueller_indexes_)
     , gsize(gsize_)
     , oversampling(oversampling_)
     , phase_screen(phase_screen_)
@@ -162,6 +215,7 @@ struct TrialSpec {
   hpg::Device device;
   int streams;
   unsigned batch_size;
+  std::vector<std::vector<int>> mueller_indexes;
   int gsize;
   std::vector<int> cfsize;
   int oversampling;
@@ -183,6 +237,7 @@ struct TrialSpec {
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
    "vsn",
 #endif
+   "mueller",
    "grid",
    "cf",
    "osmp",
@@ -204,6 +259,21 @@ struct TrialSpec {
     for (; i < sizeof(id_names) / sizeof(id_names[0]) - 1; ++i)
       oss << pad_right(id_names[i]);
     oss << id_names[i];
+    return oss.str();
+  }
+
+  std::string
+  mueller() const {
+    std::ostringstream oss;
+    std::string sep = "";
+    for (size_t mr = 0; mr < mueller_indexes.size(); ++mr) {
+      auto& mrow = mueller_indexes[mr];
+      for (size_t mc = 0; mc < mrow.size(); ++mc) {
+        oss << sep << mrow[mc];
+        sep = ",";
+      }
+      sep = ";";
+    }
     return oss.str();
   }
 
@@ -232,6 +302,7 @@ struct TrialSpec {
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         << pad_right(vsns.str())
 #endif
+        << pad_right(mueller())
         << pad_right(std::to_string(gsize))
         << pad_right(cfsz.str())
         << pad_right(std::to_string(oversampling))
@@ -276,13 +347,13 @@ struct CFArray final
   : public hpg::CFArray {
 
   unsigned m_oversampling;
-  std::vector<std::array<unsigned, 3>> m_extents;
+  std::vector<std::array<unsigned, rank - 1>> m_extents;
   std::vector<std::vector<std::complex<hpg::cf_fp>>> m_values;
 
   CFArray() {}
 
   CFArray(
-    const std::vector<std::array<unsigned, 3>>& sizes,
+    const std::vector<std::array<unsigned, rank - 1>>& sizes,
     unsigned oversampling,
     const std::vector<std::vector<std::complex<hpg::cf_fp>>>& values)
     : m_oversampling(oversampling)
@@ -291,7 +362,8 @@ struct CFArray final
     assert(sizes.size() == values.size());
 
     for (auto& sz : sizes)
-      m_extents.push_back({sz[0] * oversampling, sz[1] * oversampling, sz[2]});
+      m_extents.push_back(
+        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
   }
 
   unsigned
@@ -304,17 +376,29 @@ struct CFArray final
     return static_cast<unsigned>(m_extents.size());
   }
 
-  std::array<unsigned, 3>
+  std::array<unsigned, rank - 1>
   extents(unsigned grp) const override {
     return m_extents[grp];
   }
 
+  static_assert(
+    CFArray::Axis::x == 0
+    && CFArray::Axis::y == 1
+    && CFArray::Axis::mueller == 2
+    && CFArray::Axis::cube == 3
+    && CFArray::Axis::group == 4);
+
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned plane, unsigned grp)
+  operator()(
+    unsigned x,
+    unsigned y,
+    unsigned mueller,
+    unsigned cube,
+    unsigned grp)
     const override {
     auto& vals = m_values[grp];
     auto& ext = m_extents[grp];
-    return vals[(x * ext[1] + y) * ext[2] + plane];
+    return vals[((x * ext[1] + y) * ext[2] + mueller) * ext[3] + cube];
   }
 };
 
@@ -325,35 +409,132 @@ struct InputData {
   std::array<unsigned, 4> gsize;
   int oversampling;
 
-  std::vector<hpg::VisData<1>> visibilities;
-  std::vector<hpg::vis_cf_index_t> cf_indexes;
+  hpg::VisDataVector visibilities;
+  hpg::IArrayVector mueller_indexes;
 };
+
+template <unsigned N, typename Generator>
+static void
+init_visibilities(
+  const std::vector<std::array<unsigned, 4>>& cf_sizes,
+  int num_visibilities,
+  bool phase_screen,
+  bool strictly_inner,
+  const Generator& generator,
+  InputData& input_data) {
+
+  std::vector<hpg::VisData<N>> visdata(num_visibilities);
+  auto visdata_p = visdata.data();
+  auto cf_sizes_p = cf_sizes.data();
+  unsigned ngrp = cf_sizes.size();
+
+  const double inv_lambda = 9.75719;
+  const double freq = 299792458.0 * inv_lambda;
+  const double uscale = default_scale[0] * input_data.oversampling * inv_lambda;
+  const double vscale = default_scale[1] * input_data.oversampling * inv_lambda;
+  const auto x0 = (input_data.oversampling * (input_data.gsize[0] - 2)) / 2;
+  const auto y0 = (input_data.oversampling * (input_data.gsize[1] - 2)) / 2;
+  K::parallel_for(
+    "init_vis",
+    K::RangePolicy<K::OpenMP>(0, (num_visibilities + N - 1) / N),
+    KOKKOS_LAMBDA(const int i) {
+
+      auto rstate = generator.get_state();
+      auto grp = rstate.urand(0, ngrp);
+      auto& cfsz = *(cf_sizes_p + grp);
+      std::array<unsigned, 2> cf_index = {rstate.urand(0, cfsz[3]), grp};
+
+      std::array<unsigned, 2> border;
+      if (strictly_inner) {
+        border[0] = (input_data.oversampling * cfsz[0]) / 2;
+        border[1] = (input_data.oversampling * cfsz[1]) / 2;
+      } else {
+        border[0] = 0;
+        border[1] = 0;
+      }
+      float ulim = (x0 - border[0]) / uscale;
+      float vlim = (y0 - border[1]) / vscale;
+
+      std::array<std::complex<hpg::visibility_fp>, N> visibilities;
+      std::array<hpg::vis_weight_fp, N> weights;
+      for (size_t i = 0; i < N; ++i) {
+        visibilities[i] =
+          std::complex<hpg::visibility_fp>(
+            rstate.frand(-1, 1),
+            rstate.frand(-1, 1));
+        weights[i] = rstate.frand(0, 1);
+      }
+      hpg::cf_phase_gradient_t grad{0, 0};
+      if (phase_screen)
+        grad = {rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)};
+      *(visdata_p + i) =
+        hpg::VisData<N>(
+          visibilities,
+          weights,
+          freq,
+          rstate.frand(-3.14, 3.14),
+          {rstate.frand(-ulim, ulim),
+           rstate.frand(-vlim, vlim),
+           0.0},
+          rstate.urand(0, input_data.gsize[3]),
+          cf_index,
+          grad);
+
+      generator.free_state(rstate);
+    });
+
+  input_data.visibilities = hpg::VisDataVector(visdata);
+}
+
+template <unsigned N>
+hpg::IArrayVector
+init_mueller_indexes(const std::vector<std::vector<int>>& mueller_indexes) {
+
+  std::vector<std::array<int, N>> result;
+  for (size_t mrow = 0; mrow < mueller_indexes.size(); ++mrow) {
+    auto& mi_mrow = mueller_indexes[mrow];
+    assert(mi_mrow.size() == 1);
+    std::array<int, N> mindexes;
+    for (size_t mcol = 0; mcol < N; ++mcol)
+      mindexes[mcol] = mi_mrow[mcol];
+    result.push_back(mindexes);
+  }
+  return hpg::IArrayVector(result);
+}
 
 /** create visibility data
  */
 template <typename Generator>
 InputData
 create_input_data(
+  const std::vector<std::vector<int>>& mueller_indexes,
   unsigned glen,
-  unsigned polarizations,
   const std::vector<unsigned>& cflen,
+  bool phase_screen,
   int oversampling,
   int num_visibilities,
   bool strictly_inner,
   const Generator& generator) {
 
-  std::array<unsigned, 4> gsize{glen, glen, polarizations, 1};
+  std::array<unsigned, 4>
+    gsize{glen, glen, static_cast<unsigned>(mueller_indexes.size()), 1};
 
   InputData result;
   result.gsize = gsize;
   result.oversampling = oversampling;
 
-  std::vector<std::array<unsigned, 3>> cf_sizes;
+  int max_mindex = -1;
+  for (const auto& mi_row : mueller_indexes)
+    for (const auto& mi_col : mi_row)
+      max_mindex = std::max(max_mindex, mi_col);
+  assert(max_mindex >= 0);
+
+  std::vector<std::array<unsigned, 4>> cf_sizes;
   std::vector<std::vector<std::complex<hpg::cf_fp>>> cf_values;
   for (auto& cfl : cflen) {
-    cf_sizes.push_back({cfl, cfl, polarizations});
+    cf_sizes.push_back({cfl, cfl, static_cast<unsigned>(max_mindex + 1), 1});
     cf_values.emplace_back(
-      cfl * oversampling * cfl * oversampling * polarizations);
+      cfl * oversampling * cfl * oversampling * (max_mindex + 1));
   }
 
   auto const ngrp = cf_sizes.size();
@@ -371,56 +552,51 @@ create_input_data(
   }
   result.cf = CFArray(cf_sizes, oversampling, cf_values);
 
-  result.visibilities.resize(num_visibilities);
-  result.cf_indexes.resize(num_visibilities);
-
-  auto visibilities_p = result.visibilities.data();
-  auto cf_indexes_p = result.cf_indexes.data();
-  auto cf_sizes_p = cf_sizes.data();
-
-  const double inv_lambda = 9.75719;
-  const double freq = 299792458.0 * inv_lambda;
-  const double uscale = default_scale[0] * oversampling * inv_lambda;
-  const double vscale = default_scale[1] * oversampling * inv_lambda;
-  const auto x0 = (oversampling * (gsize[0] - 2)) / 2;
-  const auto y0 = (oversampling * (gsize[1] - 2)) / 2;
-  K::parallel_for(
-    "init_vis",
-    K::RangePolicy<K::OpenMP>(0, num_visibilities),
-    KOKKOS_LAMBDA(const int i) {
-
-      auto rstate = generator.get_state();
-      auto grp = rstate.urand(0, ngrp);
-      auto& cfsz = *(cf_sizes_p + grp);
-      *(cf_indexes_p + i) = {rstate.urand(0, cfsz[3]), grp};
-
-      std::array<unsigned, 2> border;
-      if (strictly_inner) {
-        border[0] = (oversampling * cfsz[0]) / 2;
-        border[1] = (oversampling * cfsz[1]) / 2;
-      } else {
-        border[0] = 0;
-        border[1] = 0;
-      }
-      float ulim = (x0 - border[0]) / uscale;
-      float vlim = (y0 - border[1]) / vscale;
-
-      *(visibilities_p + i) =
-        hpg::VisData<1>(
-          {std::complex<hpg::visibility_fp>(
-              rstate.frand(-1, 1),
-              rstate.frand(-1, 1))},
-          {rstate.frand(0, 1)},
-          freq,
-          rstate.frand(-3.14, 3.14),
-          {rstate.frand(-ulim, ulim),
-           rstate.frand(-vlim, vlim),
-           0.0},
-          {rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)},
-          rstate.urand(0, gsize[3]));
-
-      generator.free_state(rstate);
-    });
+  switch (mueller_indexes[0].size()) {
+  case 1:
+    init_visibilities<1>(
+      cf_sizes,
+      num_visibilities,
+      phase_screen,
+      strictly_inner,
+      generator,
+      result);
+    result.mueller_indexes = init_mueller_indexes<1>(mueller_indexes);
+    break;
+  case 2:
+    init_visibilities<2>(
+      cf_sizes,
+      num_visibilities,
+      phase_screen,
+      strictly_inner,
+      generator,
+      result);
+    result.mueller_indexes = init_mueller_indexes<2>(mueller_indexes);
+    break;
+  case 3:
+    init_visibilities<3>(
+      cf_sizes,
+      num_visibilities,
+      phase_screen,
+      strictly_inner,
+      generator,
+      result);
+    result.mueller_indexes = init_mueller_indexes<3>(mueller_indexes);
+    break;
+  case 4:
+    init_visibilities<4>(
+      cf_sizes,
+      num_visibilities,
+      phase_screen,
+      strictly_inner,
+      generator,
+      result);
+    result.mueller_indexes = init_mueller_indexes<4>(mueller_indexes);
+    break;
+  default:
+    assert(false);
+    break;
+  }
   return result;
 }
 
@@ -444,7 +620,9 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
             spec.batch_size,
             &input_data.cf,
             input_data.gsize,
-            default_scale
+            default_scale,
+            hpg::IArrayVector(input_data.mueller_indexes),
+            hpg::IArrayVector(input_data.mueller_indexes)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
             , spec.versions
 #endif
@@ -481,11 +659,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
         return
           map(
             std::get<1>(std::move(t_gs))
-            .grid_visibilities(
-              hpg::Device::OpenMP,
-              std::move(id).visibilities,
-              spec.phase_screen,
-              std::move(id).cf_indexes),
+            .grid_visibilities(hpg::Device::OpenMP, std::move(id).visibilities),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));
@@ -516,8 +690,8 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
  */
 void
 run_trials(
+  const std::vector<std::vector<std::vector<int>>>& mueller_indexes,
   const std::vector<unsigned>& gsizes,
-  const std::vector<unsigned>& polarizations,
   const std::vector<std::vector<unsigned>>& cfsizes,
   const std::vector<unsigned>& oversamplings,
   const std::vector<unsigned>& visibilities,
@@ -534,26 +708,28 @@ run_trials(
   for (auto& num_repeats : repeats) {
     for (auto& num_visibilities : visibilities) {
       for (auto& gsize : gsizes) {
-        for (auto& num_polarizations : polarizations) {
+        for (auto& mindexes : mueller_indexes) {
           for (auto& cfsize : cfsizes) {
             for (auto& oversampling : oversamplings) {
               for (auto& kernel : kernels) {
                 const auto input_data =
                   create_input_data(
+                    mindexes,
                     gsize,
-                    num_polarizations,
                     cfsize,
+                    phase_screen,
                     oversampling,
                     num_visibilities,
                     kernel == 1,
                     rand_pool_type(348842));
                 for (auto& device : devices) {
                   for (auto& stream : streams) {
-                    for (auto& bsz : batch){
+                    for (auto& bsz : batch) {
                       TrialSpec spec(
                         device,
                         std::max(stream, 1u),
                         std::max(bsz, 1u),
+                        mindexes,
                         gsize,
                         cfsize,
                         oversampling,
@@ -666,13 +842,11 @@ main(int argc, char* argv[]) {
       .action(parse_unsigned_args);
   }
   {
-    unsigned dflt = 1;
+    std::string dflt = "I1";
     args
-      .add_argument("-p", "--polarizations")
-      .default_value(argwrap<std::vector<unsigned>>({dflt}))
-      .help(
-        "number of image polarizations ["s + std::to_string(dflt) + "]")
-      .action(parse_unsigned_args);
+      .add_argument("-m", "--mueller")
+      .default_value(dflt)
+      .help("Mueller matrix indexes ["s + dflt + "]");
   }
   args
     .add_argument("-f", "--phasescreen")
@@ -690,8 +864,6 @@ main(int argc, char* argv[]) {
 
   /* get the command line arguments */
   auto gsize = args.get<argwrap<std::vector<unsigned>>>("--gsize").val;
-  auto polarizations =
-    args.get<argwrap<std::vector<unsigned>>>("--polarizations").val;
   auto cfsizes =
     args.get<argwrap<std::vector<std::vector<unsigned>>>>("--cfsizes").val;
   auto oversampling =
@@ -705,12 +877,14 @@ main(int argc, char* argv[]) {
   auto streams = args.get<argwrap<std::vector<unsigned>>>("--streams").val;
   auto batch = args.get<argwrap<std::vector<unsigned>>>("--batch").val;
   auto phase_screen = args.get<bool>("--phasescreen");
+  auto mueller_indexes =
+    parse_mueller_indexes(args.get<std::string>("--mueller"));
 
   hpg::ScopeGuard hpg;
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)
     run_trials(
+      mueller_indexes,
       gsize,
-      polarizations,
       cfsizes,
       oversampling,
       visibilities,
