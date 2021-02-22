@@ -235,7 +235,8 @@ struct VectorNPol {
   };
 
   VectorNPol()
-    : m_npol(0) {}
+    : m_npol(0)
+    , m_v1() {}
 
   VectorNPol(std::vector<E<1>>&& v)
     : m_npol(1)
@@ -270,8 +271,11 @@ struct VectorNPol {
     , m_v4(new std::vector<E<4>>(v)) {}
 
   VectorNPol(const VectorNPol& other)
-    : m_npol(other.m_npol) {
+    : m_npol(other.m_npol)
+    , m_v1() {
     switch (m_npol) {
+    case 0:
+      break;
     case 1:
       m_v1 =
         std::unique_ptr<std::vector<E<1>>>(new std::vector<E<1>>(*other.m_v1));
@@ -295,8 +299,11 @@ struct VectorNPol {
   }
 
   VectorNPol(VectorNPol&& other)
-    : m_npol(other.m_npol) {
+    : m_npol(other.m_npol)
+    , m_v1() {
     switch (m_npol) {
+    case 0:
+      break;
     case 1:
       m_v1 = std::move(other).m_v1;
       break;
@@ -332,6 +339,9 @@ struct VectorNPol {
   size_t
   size() const {
     switch (m_npol) {
+    case 0:
+      return 0;
+      break;
     case 1:
       return m_v1->size();
       break;
@@ -353,6 +363,7 @@ struct VectorNPol {
 
   ~VectorNPol() {
     switch (m_npol) {
+    case 0:
     case 1:
       m_v1.reset();
       break;
@@ -376,6 +387,7 @@ private:
   void
   takev(VectorNPol& other) {
     switch (other.m_npol) {
+    case 0:
     case 1:
       m_v1 = std::move(other.m_v1);
       break;
@@ -399,6 +411,13 @@ private:
   void
   swap(VectorNPol& other) {
     switch (other.m_npol) {
+    case 0: {
+      auto ov1 = std::move(other).m_v1;
+      other.takev(*this);
+      m_v1 = std::move(ov1);
+      m_npol = 0;
+      break;
+    }
     case 1: {
       auto ov1 = std::move(other).m_v1;
       other.takev(*this);
