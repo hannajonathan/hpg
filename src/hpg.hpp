@@ -220,6 +220,7 @@ inline constexpr int
 sgn(T val) {
   return (T(0) < val) - (val < T(0));
 }
+} // end namespace Impl
 
 template <template <unsigned> typename E>
 struct VectorNPol {
@@ -232,6 +233,9 @@ struct VectorNPol {
     std::unique_ptr<std::vector<E<3>>> m_v3;
     std::unique_ptr<std::vector<E<4>>> m_v4;
   };
+
+  VectorNPol()
+    : m_npol(0) {}
 
   VectorNPol(std::vector<E<1>>&& v)
     : m_npol(1)
@@ -269,16 +273,20 @@ struct VectorNPol {
     : m_npol(other.m_npol) {
     switch (m_npol) {
     case 1:
-      m_v1 = new std::vector<E<1>>(*other.m_v1);
+      m_v1 =
+        std::unique_ptr<std::vector<E<1>>>(new std::vector<E<1>>(*other.m_v1));
       break;
     case 2:
-      m_v2 = new std::vector<E<2>>(*other.m_v2);
+      m_v2 =
+        std::unique_ptr<std::vector<E<2>>>(new std::vector<E<2>>(*other.m_v2));
       break;
     case 3:
-      m_v3 = new std::vector<E<3>>(*other.m_v3);
+      m_v3 =
+        std::unique_ptr<std::vector<E<3>>>(new std::vector<E<3>>(*other.m_v3));
       break;
     case 4:
-      m_v4 = new std::vector<E<4>>(*other.m_v4);
+      m_v4 =
+        std::unique_ptr<std::vector<E<4>>>(new std::vector<E<4>>(*other.m_v4));
       break;
     default:
       assert(false);
@@ -432,8 +440,6 @@ template <unsigned N>
 using iarray = std::array<int, N>;
 
 using IArrayVector = VectorNPol<iarray>;
-
-} // end namespace Impl
 
 /** array layout enumeration */
 enum class HPG_EXPORT Layout {
@@ -811,29 +817,29 @@ protected:
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    const Impl::IArrayVector& mueller_indexes,
-    const Impl::IArrayVector& conjugate_mueller_indexes
+    const IArrayVector& mueller_indexes,
+    const IArrayVector& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     );
 
+public:
+
   static rval_t<GridderState>
-  create_impl(
+  create(
     Device device,
     unsigned max_added_tasks,
     size_t max_visibility_batch_size,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    Impl::IArrayVector&& mueller_indexes,
-    Impl::IArrayVector&& conjugate_mueller_indexes
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     ) noexcept;
-
-public:
 
   /** GridderState factory method
    *
@@ -856,15 +862,15 @@ public:
     ) noexcept {
 
     return
-      create_impl(
+      create(
         device,
         max_added_tasks,
         max_visibility_batch_size,
         init_cf_shape,
         grid_size,
         grid_scale,
-        Impl::IArrayVector(mueller_indexes),
-        Impl::IArrayVector(conjugate_mueller_indexes)
+        IArrayVector(mueller_indexes),
+        IArrayVector(conjugate_mueller_indexes)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         , implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -1021,14 +1027,8 @@ public:
   rval_t<GridderState>
   set_model(Device host_device, GridValueArray&& gv) &&;
 
-protected:
-
   rval_t<GridderState>
-  grid_visibilities_impl(
-    Device host_device,
-    Impl::VisDataVector&& visibilities) const &;
-
-public:
+  grid_visibilities(Device host_device, VisDataVector&& visibilities) const &;
 
   /** grid some visibilities
    *
@@ -1053,19 +1053,11 @@ public:
     std::vector<VisData<N>>&& visibilities) const & {
 
     return
-      grid_visibilities_impl(
-        host_device,
-        Impl::VisDataVector(std::move(visibilities)));
+      grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
   };
 
-protected:
-
   rval_t<GridderState>
-  grid_visibilities_impl(
-    Device host_device,
-    Impl::VisDataVector&& visibilities) &&;
-
-public:
+  grid_visibilities(Device host_device, VisDataVector&& visibilities) &&;
 
   /** grid some visibilities
    *
@@ -1091,9 +1083,7 @@ public:
 
     return
       std::move(*this)
-      .grid_visibilities_impl(
-        host_device,
-        Impl::VisDataVector(std::move(visibilities)));
+      .grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
   }
 
 
@@ -1302,25 +1292,25 @@ protected:
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    Impl::IArrayVector&& mueller_indexes,
-    Impl::IArrayVector&& conjugate_mueller_indexes);
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes);
+
+public:
 
   static rval_t<Gridder>
-  create_impl(
+  create(
     Device device,
     unsigned max_added_tasks,
     size_t max_visibility_batch_size,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
-    Impl::IArrayVector&& mueller_indexes,
-    Impl::IArrayVector&& conjugate_mueller_indexes
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     , const std::array<unsigned, 4>& implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     ) noexcept;
-
-public:
 
   /** Gridder factory method
    *
@@ -1343,15 +1333,15 @@ public:
     ) noexcept {
 
     return
-      create_impl(
+      create(
         device,
         max_added_tasks,
         max_visibility_batch_size,
         init_cf_shape,
         grid_size,
         grid_scale,
-        Impl::IArrayVector(mueller_indexes),
-        Impl::IArrayVector(conjugate_mueller_indexes)
+        IArrayVector(mueller_indexes),
+        IArrayVector(conjugate_mueller_indexes)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         , implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -1463,14 +1453,8 @@ public:
   opt_error_t
   set_model(Device host_device, GridValueArray&& gv);
 
-protected:
-
   opt_error_t
-  grid_visibilities_impl(
-    Device host_device,
-    Impl::VisDataVector&& visibilities);
-
-public:
+  grid_visibilities(Device host_device, VisDataVector&& visibilities);
 
   /** grid visibilities
    *
@@ -1490,9 +1474,7 @@ public:
     std::vector<VisData<N>>&& visibilities) {
 
     return
-      grid_visibilities_impl(
-        host_device,
-        Impl::VisDataVector(std::move(visibilities)));
+      grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
   }
 
 /** device execution fence
