@@ -811,11 +811,11 @@ struct HPG_EXPORT VisibilityGridder final {
     // phase screen constants at this visibility's location
     const auto phi_X0 =
       -cf_gradient[0]
-      * ((cf_size[0] * oversampling[0]) / 2 - vis.fine_offset[0]);
+      * ((cf_size[0] / 2) * oversampling[0] - vis.fine_offset[0]);
     const auto dphi_X = cf_gradient[0] * oversampling[0];
     const auto phi_Y0 =
       -cf_gradient[1]
-      * ((cf_size[1] * oversampling[1]) / 2 - vis.fine_offset[1]);
+      * ((cf_size[1] / 2) * oversampling[1] - vis.fine_offset[1]);
     const auto dphi_Y = cf_gradient[1] * oversampling[1];
 
     // compute the values of the phase screen along the Y axis now and store the
