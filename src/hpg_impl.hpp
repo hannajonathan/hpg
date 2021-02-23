@@ -718,14 +718,14 @@ struct HPG_EXPORT VisibilityGridder final {
     const unsigned cf_cube,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
-      weights) {
+      weights,
+    const scratch_wgts_view& cfw) {
 
     const int N_X = cf_size[0];
     const int N_Y = cf_size[1];
     const int N_R = cf.extent_int(2);
 
     // accumulate weights in scratch memory for this visibility
-    scratch_wgts_view cfw(team_member.team_scratch(0), 1);
     K::parallel_for(
       K::TeamVectorRange(team_member, N_R),
       [=](const int R) {
@@ -793,14 +793,15 @@ struct HPG_EXPORT VisibilityGridder final {
     const K::Array<cf_phase_screen_fp, 2>& cf_gradient,
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
-      weights) {
+      weights,
+    const scratch_wgts_view& cfw,
+    const scratch_phscr_view& phi_Y) {
 
     const int N_X = cf_size[0];
     const int N_Y = cf_size[1];
     const int N_R = cf.extent_int(2);
 
     // accumulate weights in scratch memory for this visibility
-    scratch_wgts_view cfw(team_member.team_scratch(0), 1);
     K::parallel_for(
       K::TeamVectorRange(team_member, N_R),
       [=](const int R) {
@@ -820,7 +821,6 @@ struct HPG_EXPORT VisibilityGridder final {
     // compute the values of the phase screen along the Y axis now and store the
     // results in scratch memory because gridding on the Y axis accesses the
     // phase screen values for every row of the Mueller matrix column
-    scratch_phscr_view phi_Y(team_member.team_scratch(0), N_Y);
     K::parallel_for(
       K::TeamVectorRange(team_member, N_Y),
       [=](const int Y) {
@@ -920,8 +920,9 @@ struct HPG_EXPORT VisibilityGridder final {
           const unsigned& cf_cube = cf_indexes(i).first;
           const unsigned& cf_grp = cf_indexes(i).second;
           const auto& cf = cfs[cf_grp];
-          K::Array<int, 2>
+          const K::Array<int, 2>
             cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
+          scratch_wgts_view cfw(team_member.team_scratch(0), 1);
 
           GridVis<execution_space> vis(
             Visibility(
@@ -949,7 +950,8 @@ struct HPG_EXPORT VisibilityGridder final {
               cf_size,
               cf_cube,
               grid,
-              weights);
+              weights,
+              cfw);
         });
     } else {
       // with CF phase screen
@@ -967,11 +969,13 @@ struct HPG_EXPORT VisibilityGridder final {
           const unsigned& cf_cube = cf_indexes(i).first;
           const unsigned& cf_grp = cf_indexes(i).second;
           const auto& cf = cfs[cf_grp];
-          K::Array<int, 2>
+          const K::Array<int, 2>
             cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
-
           const K::Array<cf_phase_screen_fp, 2>
             cf_gradient{cf_phase_screens(i)[0], cf_phase_screens(i)[1]};
+          scratch_wgts_view cfw(team_member.team_scratch(0), 1);
+          scratch_phscr_view
+            phi_Y(team_member.team_scratch(0), max_cf_extent_y);
 
           GridVis<execution_space> vis(
             Visibility(
@@ -1000,7 +1004,9 @@ struct HPG_EXPORT VisibilityGridder final {
               cf_cube,
               cf_gradient,
               grid,
-              weights);
+              weights,
+              cfw,
+              phi_Y);
         });
     }
   }
@@ -1013,7 +1019,10 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
   using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
   using scratch_wgts_view =
-    K::View<cf_wgt_array*, typename execution_space::scratch_memory_space>;
+    typename VisibilityGridder<execution_space, 0>::scratch_wgts_view;
+
+  using scratch_phscr_view =
+    typename VisibilityGridder<execution_space, 0>::scratch_phscr_view;
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
@@ -1055,8 +1064,9 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
           const unsigned& cf_cube = cf_indexes(i).first;
           const unsigned& cf_grp = cf_indexes(i).second;
           const auto& cf = cfs[cf_grp];
-          K::Array<int, 2>
+          const K::Array<int, 2>
             cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
+          scratch_wgts_view cfw(team_member.team_scratch(0), 1);
 
           GridVis<execution_space> vis(
             Visibility(
@@ -1078,25 +1088,32 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
             cf_size,
             cf_cube,
             grid,
-            weights);
+            weights,
+            cfw);
         });
     } else {
       // with CF phase screen
+      auto shmem_size =
+        scratch_wgts_view::shmem_size(1)
+        + scratch_phscr_view::shmem_size(max_cf_extent_y);
+
       K::parallel_for(
         "gridding",
         K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-        .set_scratch_size(0, K::PerTeam(scratch_wgts_view::shmem_size(1))),
+        .set_scratch_size(0, K::PerTeam(shmem_size)),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto i = team_member.league_rank();
 
           const unsigned& cf_cube = cf_indexes(i).first;
           const unsigned& cf_grp = cf_indexes(i).second;
           const auto& cf = cfs[cf_grp];
-          K::Array<int, 2>
+          const K::Array<int, 2>
             cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
-
           const K::Array<cf_phase_screen_fp, 2>
             cf_gradient{cf_phase_screens(i)[0], cf_phase_screens(i)[1]};
+          scratch_wgts_view cfw(team_member.team_scratch(0), 1);
+          scratch_phscr_view
+            phi_Y(team_member.team_scratch(0), max_cf_extent_y);
 
           GridVis<execution_space> vis(
             Visibility(
@@ -1119,7 +1136,9 @@ struct HPG_EXPORT VisibilityGridder<execution_space, 1> final {
             cf_cube,
             cf_gradient,
             grid,
-            weights);
+            weights,
+            cfw,
+            phi_Y);
         });
     }
   }
