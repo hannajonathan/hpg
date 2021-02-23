@@ -1086,11 +1086,11 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
 
   using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
-  using scratch_wgts_view =
-    typename VisibilityGridder<execution_space, 0>::scratch_wgts_view;
+  using scratch_cfwgt_vis_view =
+    typename VisibilityGridder<N, execution_space, 0>::scratch_cfwgt_vis_view;
 
   using scratch_phscr_view =
-    typename VisibilityGridder<execution_space, 0>::scratch_phscr_view;
+    typename VisibilityGridder<N, execution_space, 0>::scratch_phscr_view;
 
   template <
     typename cf_layout,
