@@ -437,7 +437,7 @@ init_visibilities(
   K::parallel_for(
     "init_vis",
     K::RangePolicy<K::OpenMP>(0, (num_visibilities + N - 1) / N),
-    KOKKOS_LAMBDA(const int i) {
+    [=](const int i) {
 
       auto rstate = generator.get_state();
       auto grp = rstate.urand(0, ngrp);
