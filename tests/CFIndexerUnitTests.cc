@@ -8,30 +8,27 @@ TEST(CFSimpleIndexer, Extents) {
   const unsigned nw = 3;
   const unsigned nf = 4;
   const unsigned nm = 5;
+  const unsigned nc = 6;
 
   for (bool bv : {false, true}) {
-    unsigned plane = 1, grp = 1;
-    if (bv) grp = nb; else plane = nb;
+    unsigned cube = 1, grp = 1;
+    if (bv) grp = nb; else cube = nb;
     for (bool tv : {false, true}) {
-      if (tv) grp *= nt; else plane *= nt;
+      if (tv) grp *= nt; else cube *= nt;
       for (bool wv : {false, true}) {
-        if (wv) grp *= nw; else plane *= nw;
+        if (wv) grp *= nw; else cube *= nw;
         for (bool fv : {false, true}) {
-          if (fv) grp *= nf; else plane *= nf;
-          for (bool mv : {false, true}) {
-            if (mv) grp *= nm; else plane *= nm;
-            hpg::CFSimpleIndexer
-              indexer({nb, bv}, {nt, tv}, {nw, wv}, {nf, fv}, {nm, mv});
-            EXPECT_EQ(
-              indexer.cf_extents(),
-              hpg::CFSimpleIndexer::cf_index_t({plane, grp}));
-            if (mv) grp /= nm; else plane /= nm;
-          }
-          if (fv) grp /= nf; else plane /= nf;
+          if (fv) grp *= nf; else cube *= nf;
+          hpg::CFSimpleIndexer
+            indexer({nb, bv}, {nt, tv}, {nw, wv}, {nf, fv}, {nm, false});
+          EXPECT_EQ(
+            indexer.cf_extents(),
+            hpg::CFSimpleIndexer::cf_index_t({nm, cube, grp}));
+          if (fv) grp /= nf; else cube /= nf;
         }
-        if (wv) grp /= nw; else plane /= nw;
+        if (wv) grp /= nw; else cube /= nw;
       }
-      if (tv) grp /= nt; else plane /= nt;
+      if (tv) grp /= nt; else cube /= nt;
     }
   }
 }
@@ -48,46 +45,46 @@ TEST(CFSimpleIndexer, Examples) {
     indexer({nb, true}, {nt, false}, {nw, true}, {nf, true}, {nm, false});
   EXPECT_EQ(
     indexer.cf_index(hpg::CFCellIndex(0, 0, 0, 0, 0)),
-    hpg::CFSimpleIndexer::cf_index_t({0, 0}));
+    hpg::CFSimpleIndexer::cf_index_t({0, 0, 0}));
   EXPECT_EQ(
     hpg::CFCellIndex(0, 0, 0, 0, 0),
-    indexer.cell_index({0, 0}));
+    indexer.cell_index({0, 0, 0}));
   EXPECT_EQ(
     indexer.cf_index(hpg::CFCellIndex(1, 0, 0, 0, 0)),
-    hpg::CFSimpleIndexer::cf_index_t({0, nw * nf}));
+    hpg::CFSimpleIndexer::cf_index_t({0, 0, nw * nf}));
   EXPECT_EQ(
     hpg::CFCellIndex(1, 0, 0, 0, 0),
-    indexer.cell_index({0, nw * nf}));
+    indexer.cell_index({0, 0, nw * nf}));
   EXPECT_EQ(
     indexer.cf_index(hpg::CFCellIndex(1, 0, 2, 0, 0)),
-    hpg::CFSimpleIndexer::cf_index_t({0, nw * nf + 2 * nf}));
+    hpg::CFSimpleIndexer::cf_index_t({0, 0, nw * nf + 2 * nf}));
   EXPECT_EQ(
     hpg::CFCellIndex(1, 0, 2, 0, 0),
-    indexer.cell_index({0, nw * nf + 2 * nf}));
+    indexer.cell_index({0, 0, nw * nf + 2 * nf}));
   EXPECT_EQ(
     indexer.cf_index(hpg::CFCellIndex(1, 0, 2, 0, 1)),
-    hpg::CFSimpleIndexer::cf_index_t({1, nw * nf + 2 * nf}));
+    hpg::CFSimpleIndexer::cf_index_t({1, 0, nw * nf + 2 * nf}));
   EXPECT_EQ(
     hpg::CFCellIndex(1, 0, 2, 0, 1),
-    indexer.cell_index({1, nw * nf + 2 * nf}));
+    indexer.cell_index({1, 0, nw * nf + 2 * nf}));
   EXPECT_EQ(
     indexer.cf_index(hpg::CFCellIndex(1, 1, 2, 0, 0)),
-    hpg::CFSimpleIndexer::cf_index_t({nm, nw * nf + 2 * nf}));
+    hpg::CFSimpleIndexer::cf_index_t({0, 1, nw * nf + 2 * nf}));
   EXPECT_EQ(
     hpg::CFCellIndex(1, 1, 2, 0, 0),
-    indexer.cell_index({nm, nw * nf + 2 * nf}));
+    indexer.cell_index({0, 1, nw * nf + 2 * nf}));
   EXPECT_EQ(
     indexer.cf_index(hpg::CFCellIndex(1, 1, 2, 0, 1)),
-    hpg::CFSimpleIndexer::cf_index_t({nm + 1, nw * nf + 2 * nf}));
+    hpg::CFSimpleIndexer::cf_index_t({1, 1, nw * nf + 2 * nf}));
   EXPECT_EQ(
     hpg::CFCellIndex(1, 1, 2, 0, 1),
-    indexer.cell_index({nm + 1, nw * nf + 2 * nf}));
+    indexer.cell_index({1, 1, nw * nf + 2 * nf}));
   EXPECT_EQ(
     indexer.cf_index(hpg::CFCellIndex(1, 1, 2, 3, 1)),
-    hpg::CFSimpleIndexer::cf_index_t({nm + 1, nw * nf + 2 * nf + 3}));
+    hpg::CFSimpleIndexer::cf_index_t({1, 1, nw * nf + 2 * nf + 3}));
   EXPECT_EQ(
     hpg::CFCellIndex(1, 1, 2, 3, 1),
-    indexer.cell_index({nm + 1, nw * nf + 2 * nf + 3}));
+    indexer.cell_index({1, 1, nw * nf + 2 * nf + 3}));
 }
 
 // Local Variables:
