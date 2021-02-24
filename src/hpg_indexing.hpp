@@ -48,7 +48,7 @@ struct HPG_EXPORT CFCellIndex final {
   unsigned m_mueller;
 };
 
-/** index converter class between vis_cf_index_t and CFCellIndex
+/** index converter class between cf_index_t and CFCellIndex
  *
  * May be used for any dense subset of a uniform CFStore2 x
  * CFBuffer. Nonuniformity in the CFCells is allowed, but no indexing is
@@ -67,7 +67,7 @@ public:
   axis_desc_t m_time;
   axis_desc_t m_w_plane;
   axis_desc_t m_frequency;
-  axis_desc_t m_mueller;
+  unsigned m_mueller;
 
   /** constructor
    */
@@ -76,7 +76,7 @@ public:
     const axis_desc_t& time,
     const axis_desc_t& w_plane,
     const axis_desc_t& frequency,
-    const axis_desc_t& mueller)
+    unsigned mueller)
     : m_baseline_class(baseline_class)
     , m_time(time)
     , m_w_plane(w_plane)
@@ -112,7 +112,7 @@ public:
    */
   cf_index_t
   cf_extents() const {
-    cf_index_t result{m_mueller.first, 1, 1};
+    cf_index_t result{m_mueller, 1, 1};
     ext_index(result, m_baseline_class);
     ext_index(result, m_time);
     ext_index(result, m_w_plane);
@@ -129,7 +129,7 @@ public:
       m_time.first,
       m_w_plane.first,
       m_frequency.first,
-      m_mueller.first};
+      m_mueller};
   }
 
 private:

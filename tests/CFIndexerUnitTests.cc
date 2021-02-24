@@ -20,7 +20,7 @@ TEST(CFSimpleIndexer, Extents) {
         for (bool fv : {false, true}) {
           if (fv) grp *= nf; else cube *= nf;
           hpg::CFSimpleIndexer
-            indexer({nb, bv}, {nt, tv}, {nw, wv}, {nf, fv}, {nm, false});
+            indexer({nb, bv}, {nt, tv}, {nw, wv}, {nf, fv}, nm);
           EXPECT_EQ(
             indexer.cf_extents(),
             hpg::CFSimpleIndexer::cf_index_t({nm, cube, grp}));
@@ -42,7 +42,7 @@ TEST(CFSimpleIndexer, Examples) {
   const unsigned nm = 8;
 
   hpg::CFSimpleIndexer
-    indexer({nb, true}, {nt, false}, {nw, true}, {nf, true}, {nm, false});
+    indexer({nb, true}, {nt, false}, {nw, true}, {nf, true}, nm);
   EXPECT_EQ(
     indexer.cf_index(hpg::CFCellIndex(0, 0, 0, 0, 0)),
     hpg::CFSimpleIndexer::cf_index_t({0, 0, 0}));
