@@ -8,7 +8,6 @@ TEST(CFSimpleIndexer, Extents) {
   const unsigned nw = 3;
   const unsigned nf = 4;
   const unsigned nm = 5;
-  const unsigned nc = 6;
 
   for (bool bv : {false, true}) {
     unsigned cube = 1, grp = 1;
