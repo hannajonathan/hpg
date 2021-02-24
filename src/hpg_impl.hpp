@@ -898,7 +898,7 @@ struct HPG_EXPORT VisibilityGridder final {
                   vis.m_grid_cube);
               // loop over visibility polarizations
               for (int C = 0; C < N; ++C) {
-                auto mindex = degridding_mindex(R, C);
+                const auto mindex = degridding_mindex(R, C);
                 if (mindex >= 0) {
                   cf_t cfv =
                     cf(
@@ -960,7 +960,7 @@ struct HPG_EXPORT VisibilityGridder final {
             gv_t gv(0);
             // loop over visibility polarizations
             for (int C = 0; C < N; ++C) {
-              auto mindex = gridding_mindex(R, C);
+              const auto mindex = gridding_mindex(R, C);
               if (mindex >= 0) {
                 cf_t cfv =
                   cf(
