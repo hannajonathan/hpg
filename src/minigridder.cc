@@ -423,7 +423,8 @@ init_visibilities(
   const Generator& generator,
   InputData& input_data) {
 
-  std::vector<hpg::VisData<N>> visdata(num_visibilities);
+  int num_visdata = (num_visibilities + N - 1) / N;
+  std::vector<hpg::VisData<N>> visdata(num_visdata);
   auto visdata_p = visdata.data();
   auto cf_sizes_p = cf_sizes.data();
   unsigned ngrp = cf_sizes.size();
@@ -436,7 +437,7 @@ init_visibilities(
   const auto y0 = (input_data.oversampling * (input_data.gsize[1] - 2)) / 2;
   K::parallel_for(
     "init_vis",
-    K::RangePolicy<K::OpenMP>(0, (num_visibilities + N - 1) / N),
+    K::RangePolicy<K::OpenMP>(0, num_visdata),
     [=](const int i) {
 
       auto rstate = generator.get_state();
