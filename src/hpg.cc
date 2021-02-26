@@ -346,11 +346,6 @@ GridderState::operator=(GridderState&& rhs) {
 
 GridderState::~GridderState() {}
 
-size_t
-GridderState::visibility_batch_allocation(size_t batch_size) {
-  return Impl::State::visibility_batch_allocation(batch_size);
-}
-
 Device
 GridderState::device() const noexcept {
   return impl->m_device;

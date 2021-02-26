@@ -1805,14 +1805,6 @@ struct State {
     , m_num_polarizations(num_polarizations)
     , m_implementation_versions(implementation_versions) {}
 
-  static size_t
-  visibility_batch_allocation(size_t batch_size) {
-    // FIXME: should depend on VisData and its parameter value
-    return
-      batch_size
-      * (sizeof(Kokkos::complex<visibility_fp>));
-  }
-
   unsigned
   visibility_gridder_version() const {
     return m_implementation_versions[0];
