@@ -735,7 +735,7 @@ run_trials(
                         cfsize,
                         oversampling,
                         phase_screen,
-                        num_visibilities,
+                        input_data.visibilities.num_elements(),
                         num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
                         , {kernel, 0, 0, 0}

@@ -361,6 +361,31 @@ struct VectorNPol {
     }
   }
 
+  size_t
+  num_elements() const {
+    switch (m_npol) {
+    case 0:
+      return 0;
+      break;
+    case 1:
+      return size();
+      break;
+    case 2:
+      return 2 * size();
+      break;
+    case 3:
+      return 3 * size();
+      break;
+    case 4:
+      return 4 * size();
+      break;
+    default:
+      assert(false);
+      return 0;
+      break;
+    }
+  }
+
   ~VectorNPol() {
     switch (m_npol) {
     case 0:
@@ -809,8 +834,8 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of additional tasks (actual number
    * may be less than requested)
-   * @param max_visibility_batch_size maximum number of visibilities to pass to
-   * the gridding kernel at once
+   * @param max_visibility_batch_size maximum number of VisData<.> values to
+   * pass to the gridding kernel at once
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
    * @param grid_size, in logical axis order: X, Y, mrow, cube
@@ -824,8 +849,8 @@ protected:
    * The value of max_added_tasks and max_visibility_batch_size has an effect on
    * the amount of memory allocated on the selected gridder device. The total
    * amount of memory allocated for visibilities will be approximately equal to
-   * max_added_tasks multiplied by
-   * GridderState::visibility_batch_allocation(max_visibility_batch_size).
+   * max_added_tasks multiplied by sizeof(VisData<N>) for the appropriate value
+   * of N.
    *
    * @sa Gridder::Gridder()
    */
@@ -907,9 +932,6 @@ public:
   GridderState(GridderState&&);
 
   virtual ~GridderState();
-
-  static size_t
-  visibility_batch_allocation(size_t batch_size);
 
   /** copy assignment
    *
@@ -1287,8 +1309,8 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of concurrent tasks (actual
    * number may be less than requested)
-   * @param max_visibility_batch_size maximum number of visibilities to pass to
-   * the gridding kernel at once
+   * @param max_visibility_batch_size maximum number of VisData<.> values to
+   * pass to the gridding kernel at once
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
    * @param grid_size, in logical axis order: X, Y, mrow, cube
@@ -1301,8 +1323,8 @@ protected:
    * The value of max_added_tasks and max_visibility_batch_size has an effect on
    * the amount of memory allocated on the selected gridder device. The total
    * amount of memory allocated for visibilities will be approximately equal to
-   * max_added_tasks multiplied by
-   * GridderState::visibility_batch_allocation(max_visibility_batch_size).
+   * max_added_tasks multiplied by sizeof(VisData<N>) for the appropriate value
+   * of N.
    */
   Gridder(
     Device device,
