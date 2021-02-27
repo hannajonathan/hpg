@@ -393,9 +393,9 @@ enum class CFAxis {
 
 /** axis order for strided CF array layout */
 static const std::array<int, 6> strided_cf_layout_order{
+  static_cast<int>(CFAxis::mueller),
   static_cast<int>(CFAxis::y_major),
   static_cast<int>(CFAxis::x_major),
-  static_cast<int>(CFAxis::mueller),
   static_cast<int>(CFAxis::cube),
   static_cast<int>(CFAxis::x_minor),
   static_cast<int>(CFAxis::y_minor)};
