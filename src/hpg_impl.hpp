@@ -13,7 +13,9 @@
 #include <type_traits>
 #include <variant>
 
-#include <iostream> // FIXME: remove
+#ifndef NDEBUG
+# include <iostream>
+#endif
 
 #include <Kokkos_Core.hpp>
 
