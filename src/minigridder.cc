@@ -419,7 +419,6 @@ init_visibilities(
   const std::vector<std::array<unsigned, 4>>& cf_sizes,
   int num_visibilities,
   bool phase_screen,
-  bool strictly_inner,
   const Generator& generator,
   InputData& input_data) {
 
@@ -445,16 +444,8 @@ init_visibilities(
       auto& cfsz = *(cf_sizes_p + grp);
       std::array<unsigned, 2> cf_index = {rstate.urand(0, cfsz[3]), grp};
 
-      std::array<unsigned, 2> border;
-      if (strictly_inner) {
-        border[0] = (input_data.oversampling * cfsz[0]) / 2;
-        border[1] = (input_data.oversampling * cfsz[1]) / 2;
-      } else {
-        border[0] = 0;
-        border[1] = 0;
-      }
-      float ulim = (x0 - border[0]) / uscale;
-      float vlim = (y0 - border[1]) / vscale;
+      float ulim = x0 / uscale;
+      float vlim = y0 / vscale;
 
       std::array<std::complex<hpg::visibility_fp>, N> visibilities;
       std::array<hpg::vis_weight_fp, N> weights;
@@ -514,7 +505,6 @@ create_input_data(
   bool phase_screen,
   int oversampling,
   int num_visibilities,
-  bool strictly_inner,
   const Generator& generator) {
 
   std::array<unsigned, 4>
@@ -559,7 +549,6 @@ create_input_data(
       cf_sizes,
       num_visibilities,
       phase_screen,
-      strictly_inner,
       generator,
       result);
     result.mueller_indexes = init_mueller_indexes<1>(mueller_indexes);
@@ -569,7 +558,6 @@ create_input_data(
       cf_sizes,
       num_visibilities,
       phase_screen,
-      strictly_inner,
       generator,
       result);
     result.mueller_indexes = init_mueller_indexes<2>(mueller_indexes);
@@ -579,7 +567,6 @@ create_input_data(
       cf_sizes,
       num_visibilities,
       phase_screen,
-      strictly_inner,
       generator,
       result);
     result.mueller_indexes = init_mueller_indexes<3>(mueller_indexes);
@@ -589,7 +576,6 @@ create_input_data(
       cf_sizes,
       num_visibilities,
       phase_screen,
-      strictly_inner,
       generator,
       result);
     result.mueller_indexes = init_mueller_indexes<4>(mueller_indexes);
@@ -721,7 +707,6 @@ run_trials(
                     phase_screen,
                     oversampling,
                     num_visibilities,
-                    kernel == 1,
                     rand_pool_type(348842));
                 for (auto& device : devices) {
                   for (auto& stream : streams) {
