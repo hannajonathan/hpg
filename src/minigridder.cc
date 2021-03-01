@@ -188,7 +188,6 @@ struct TrialSpec {
     const int& gsize_,
     const std::vector<unsigned>& cfsize_,
     const int& oversampling_,
-    bool phase_screen_,
     const int& visibilities_,
     const int& repeats_
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -201,7 +200,6 @@ struct TrialSpec {
     , mueller_indexes(mueller_indexes_)
     , gsize(gsize_)
     , oversampling(oversampling_)
-    , phase_screen(phase_screen_)
     , visibilities(visibilities_)
     , repeats(repeats_)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -219,7 +217,6 @@ struct TrialSpec {
   int gsize;
   std::vector<int> cfsize;
   int oversampling;
-  bool phase_screen;
   int visibilities;
   int repeats;
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -241,7 +238,6 @@ struct TrialSpec {
    "grid",
    "cf",
    "osmp",
-   "phscr",
    "nvis",
    "rpt",
    "vis/s"};
@@ -306,7 +302,6 @@ struct TrialSpec {
         << pad_right(std::to_string(gsize))
         << pad_right(cfsz.str())
         << pad_right(std::to_string(oversampling))
-        << pad_right(phase_screen ? "T" : "F")
         << pad_right(nvis.data())
         << pad_right(std::to_string(repeats));
     return oss.str();
@@ -418,7 +413,6 @@ static void
 init_visibilities(
   const std::vector<std::array<unsigned, 4>>& cf_sizes,
   int num_visibilities,
-  bool phase_screen,
   const Generator& generator,
   InputData& input_data) {
 
@@ -456,9 +450,8 @@ init_visibilities(
             rstate.frand(-1, 1));
         weights[i] = rstate.frand(0, 1);
       }
-      hpg::cf_phase_gradient_t grad{0, 0};
-      if (phase_screen)
-        grad = {rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)};
+      hpg::cf_phase_gradient_t
+        grad{rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)};
       *(visdata_p + i) =
         hpg::VisData<N>(
           visibilities,
@@ -502,7 +495,6 @@ create_input_data(
   const std::vector<std::vector<int>>& mueller_indexes,
   unsigned glen,
   const std::vector<unsigned>& cflen,
-  bool phase_screen,
   int oversampling,
   int num_visibilities,
   const Generator& generator) {
@@ -545,39 +537,19 @@ create_input_data(
 
   switch (mueller_indexes[0].size()) {
   case 1:
-    init_visibilities<1>(
-      cf_sizes,
-      num_visibilities,
-      phase_screen,
-      generator,
-      result);
+    init_visibilities<1>(cf_sizes, num_visibilities, generator, result);
     result.mueller_indexes = init_mueller_indexes<1>(mueller_indexes);
     break;
   case 2:
-    init_visibilities<2>(
-      cf_sizes,
-      num_visibilities,
-      phase_screen,
-      generator,
-      result);
+    init_visibilities<2>(cf_sizes, num_visibilities, generator, result);
     result.mueller_indexes = init_mueller_indexes<2>(mueller_indexes);
     break;
   case 3:
-    init_visibilities<3>(
-      cf_sizes,
-      num_visibilities,
-      phase_screen,
-      generator,
-      result);
+    init_visibilities<3>(cf_sizes, num_visibilities, generator, result);
     result.mueller_indexes = init_mueller_indexes<3>(mueller_indexes);
     break;
   case 4:
-    init_visibilities<4>(
-      cf_sizes,
-      num_visibilities,
-      phase_screen,
-      generator,
-      result);
+    init_visibilities<4>(cf_sizes, num_visibilities, generator, result);
     result.mueller_indexes = init_mueller_indexes<4>(mueller_indexes);
     break;
   default:
@@ -686,8 +658,7 @@ run_trials(
   const std::vector<hpg::Device>& devices,
   const std::vector<unsigned>& kernels,
   const std::vector<unsigned>& streams,
-  const std::vector<unsigned>& batch,
-  bool phase_screen) {
+  const std::vector<unsigned>& batch) {
 
   using rand_pool_type = typename K::Random_XorShift64_Pool<K::OpenMP>;
 
@@ -704,7 +675,6 @@ run_trials(
                     mindexes,
                     gsize,
                     cfsize,
-                    phase_screen,
                     oversampling,
                     num_visibilities,
                     rand_pool_type(348842));
@@ -719,7 +689,6 @@ run_trials(
                         gsize,
                         cfsize,
                         oversampling,
-                        phase_screen,
                         input_data.visibilities.num_elements(),
                         num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -834,11 +803,6 @@ main(int argc, char* argv[]) {
       .default_value(dflt)
       .help("Mueller matrix indexes ["s + dflt + "]");
   }
-  args
-    .add_argument("-f", "--phasescreen")
-    .default_value(false)
-    .implicit_value(true)
-    .help("apply phase gradient to CF");
 
   /* parse the command line arguments */
   try {
@@ -862,7 +826,6 @@ main(int argc, char* argv[]) {
   auto kernels = args.get<argwrap<std::vector<unsigned>>>("--kernel").val;
   auto streams = args.get<argwrap<std::vector<unsigned>>>("--streams").val;
   auto batch = args.get<argwrap<std::vector<unsigned>>>("--batch").val;
-  auto phase_screen = args.get<bool>("--phasescreen");
   auto mueller_indexes =
     parse_mueller_indexes(args.get<std::string>("--mueller"));
 
@@ -878,8 +841,7 @@ main(int argc, char* argv[]) {
       devices,
       kernels,
       streams,
-      batch,
-      phase_screen);
+      batch);
   else
     std::cerr << "OpenMP device is not enabled: no tests will be run"
               << std::endl;
