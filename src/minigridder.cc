@@ -138,6 +138,22 @@ parse_mueller_indexes(const std::string& s) {
           {-1, -1, -1, 3}});
       else
         throw std::runtime_error("invalid diagonal mueller size");
+    } else if (a.front() == 'D') {
+      auto n = std::stoul(a.substr(1));
+      if (n == 1)
+        result.push_back({{0}});
+      else if (n == 2)
+        result.push_back({{0, 1}, {1, 2}});
+      else if (n == 3)
+        result.push_back({{0, 1, 2}, {3, 4, 5}, {6, 7, 8}});
+      else if (n == 4)
+        result.push_back({
+            {0, 1, 2, 3},
+            {4, 5, 6, 7},
+            {8, 9, 10, 11},
+            {12, 13, 14, 15}});
+      else
+        throw std::runtime_error("invalid dense mueller size");
     } else if (a.front() == '{' && a.back() == '}') {
       std::vector<std::vector<int>> m;
       for (auto& mr : split_arg(a.substr(1, a.size() - 2))) {
