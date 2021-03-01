@@ -277,14 +277,35 @@ struct TrialSpec {
   std::string
   mueller() const {
     std::ostringstream oss;
-    std::string sep = "";
-    for (size_t mr = 0; mr < mueller_indexes.size(); ++mr) {
+    bool is_diagonal = true;
+    for (size_t mr = 0; is_diagonal && mr < mueller_indexes.size(); ++mr) {
       auto& mrow = mueller_indexes[mr];
-      for (size_t mc = 0; mc < mrow.size(); ++mc) {
-        oss << sep << mrow[mc];
-        sep = ",";
+      for (size_t mc = 0; is_diagonal && mc < mrow.size(); ++mc)
+        is_diagonal = mrow[mc] == ((mc == mr) ? mr : -1);
+    }
+    if (is_diagonal) {
+      oss << "I" << mueller_indexes.size();
+    } else {
+      bool is_dense = true;
+      int idx = 0;
+      for (size_t mr = 0; is_dense && mr < mueller_indexes.size(); ++mr) {
+        auto& mrow = mueller_indexes[mr];
+        for (size_t mc = 0; is_dense && mc < mrow.size(); ++mc)
+          is_dense = mrow[mc] == idx++;
       }
-      sep = ";";
+      if (is_dense) {
+        oss << "D" << mueller_indexes.size();
+      } else {
+        std::string sep = "";
+        for (size_t mr = 0; mr < mueller_indexes.size(); ++mr) {
+          auto& mrow = mueller_indexes[mr];
+          for (size_t mc = 0; mc < mrow.size(); ++mc) {
+            oss << sep << mrow[mc];
+            sep = ",";
+          }
+          sep = ";";
+        }
+      }
     }
     return oss.str();
   }
