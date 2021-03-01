@@ -1106,8 +1106,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const grid_view<grid_layout, memory_space>& grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
       weights,
-    const scratch_cfwgt_vis_view& cfwv,
-    const scratch_phscr_view& phi_Y) {
+    const scratch_cfwgt_vis_view& cfwv) {
 
     const auto& N_X = cf_size[0];
     const auto& N_Y = cf_size[1];
@@ -1138,20 +1137,10 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
 
     vis_t vis_values[N];
 
-    // compute the values of the phase screen along the Y axis now and store the
-    // results in scratch memory because gridding on the Y axis accesses the
-    // phase screen values for every row of the Mueller matrix column
-    K::parallel_for(
-      K::TeamVectorRange(team_member, N_Y),
-      [=](const int Y) {
-        phi_Y(Y) = phi_Y0 + Y * dphi_Y;
-      });
-    team_member.team_barrier();
-
     if (model.is_allocated()) {
       K::single(
         K::PerTeam(team_member),
-        [=]() {
+        [&]() {
           for (int C = 0; C < N; ++C)
             cfwv(0).vals[C] = 0;
         });
@@ -1172,7 +1161,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             auto phi_X = phi_X0 + X * dphi_X;
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
-              auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
+              auto screen =
+                cphase<execution_space>(phi_X + phi_Y0 + Y * dphi_Y);
               screen.imag() *= -1;
               auto mv =
                 model(
@@ -1229,60 +1219,59 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
 
     // accumulate to grid, and CF weights per visibility polarization
 
-    // parallel loop over grid X
-    K::parallel_for(
-      K::TeamVectorRange(team_member, N_X * N_R),
-      [=](const int X_R) {
-        int X = X_R % N_X;
-        int R = X_R / N_X;
-        // cfwv vals array contains weights here
-        auto phi_X = phi_X0 + X * dphi_X;
-        // loop over grid Y
-        for (int Y = 0; Y < N_Y; ++Y) {
-          auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
-          gv_t gv(0);
-          // loop over visibility polarizations
-          for (int C = 0; C < N; ++C) {
-            const auto mindex = gridding_mindex(R, C);
-            if (mindex >= 0) {
-              cf_t cfv =
-                cf(
-                  X + vis.m_cf_major[0],
-                  Y + vis.m_cf_major[1],
-                  mindex,
-                  cf_cube,
-                  vis.m_cf_minor[0],
-                  vis.m_cf_minor[1]);
-              cfv.imag() *= cf_im_factor;
-              gv += gv_t(cfv * screen * vis_values[C]);
-              pseudo_atomic_add<execution_space>(cfwv(0).vals[C], cfv);
+    // serial loop over grid mrow
+    for (int R = 0; R < N_R; ++R) {
+      // parallel loop over grid X
+      K::parallel_reduce(
+        K::TeamVectorRange(team_member, N_X),
+        [=](const int X, cfwgt_vis_array& cfwv_l) {
+          // cfwv vals array contains weights here
+          auto phi_X = phi_X0 + X * dphi_X;
+          // loop over grid Y
+          for (int Y = 0; Y < N_Y; ++Y) {
+            auto screen =
+              cphase<execution_space>(phi_X + phi_Y0 + Y * dphi_Y);
+            gv_t gv(0);
+            // loop over visibility polarizations
+            for (int C = 0; C < N; ++C) {
+              const auto mindex = gridding_mindex(R, C);
+              if (mindex >= 0) {
+                cf_t cfv =
+                  cf(
+                    X + vis.m_cf_major[0],
+                    Y + vis.m_cf_major[1],
+                    mindex,
+                    cf_cube,
+                    vis.m_cf_minor[0],
+                    vis.m_cf_minor[1]);
+                cfv.imag() *= cf_im_factor;
+                gv += gv_t(cfv * screen * vis_values[C]);
+                cfwv_l.vals[C] += cfv;
+              }
             }
+            pseudo_atomic_add<execution_space>(
+              grid(
+                X + vis.m_grid_coord[0],
+                Y + vis.m_grid_coord[1],
+                R,
+                vis.m_grid_cube),
+              gv);
           }
-          pseudo_atomic_add<execution_space>(
-            grid(
-              X + vis.m_grid_coord[0],
-              Y + vis.m_grid_coord[1],
-              R,
-              vis.m_grid_cube),
-            gv);
-        }
-      });
-    // compute final weight and add it to weights
-    //
-    // FIXME: need to accumulate weights into (R,C) indexed array and the do the
-    // following for all R
-    //
-    // K::single(
-    //   K::PerTeam(team_member),
-    //   [&]() {
-    //     grid_value_fp twgt = 0;
-    //     for (int C = 0; C < N; ++C)
-    //       twgt +=
-    //         grid_value_fp(
-    //           std::hypot(cfwv(0).wgts[C].real(), cfwv(0).wgts[C].imag())
-    //           * vis.m_weights[C]);
-    //     K::atomic_add(&weights(R, vis.m_grid_cube), twgt);
-    //   });
+        },
+        SumCFWgtVis<execution_space>(cfwv(0)));
+      // compute final weight and add it to weights
+      K::single(
+        K::PerTeam(team_member),
+        [&]() {
+          grid_value_fp twgt = 0;
+          for (int C = 0; C < N; ++C)
+            twgt +=
+              grid_value_fp(
+                std::hypot(cfwv(0).vals[C].real(), cfwv(0).vals[C].imag())
+                * vis.m_weights[C]);
+          K::atomic_add(&weights(R, vis.m_grid_cube), twgt);
+        });
+    }
   }
 
   template <
@@ -1317,8 +1306,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
         cfs[0].extent_int(static_cast<int>(CFAxis::y_minor))};
 
     auto shmem_size =
-      scratch_cfwgt_vis_view::shmem_size(1)
-      + scratch_phscr_view::shmem_size(max_cf_extent_y);
+      scratch_cfwgt_vis_view::shmem_size(1);
 
     K::parallel_for(
       "gridding",
@@ -1333,7 +1321,6 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
         const K::Array<int, 2>
           cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
         scratch_cfwgt_vis_view cfwv(team_member.team_scratch(0), 1);
-        scratch_phscr_view phi_Y(team_member.team_scratch(0), max_cf_extent_y);
         const auto& cf_gradient = visibilities(i).m_cf_phase_gradient;
 
         GridVis<N, execution_space>
@@ -1360,8 +1347,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             model,
             grid,
             weights,
-            cfwv,
-            phi_Y);
+            cfwv);
       });
   }
 };
