@@ -1062,12 +1062,46 @@ public:
   rval_t<GridderState>
   set_convolution_function(Device host_device, CFArray&& cf) &&;
 
+  /** set visibility model
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after setting model
+   *
+   * @param host_device device to use for copying model values
+   * @param gv visibility model
+   *
+   * @sa Gridder::set_model()
+   */
   rval_t<GridderState>
   set_model(Device host_device, GridValueArray&& gv) const &;
 
+  /** set visibility model
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after setting model
+   *
+   * @param host_device device to use for copying model values
+   * @param gv visibility model
+   *
+   * @sa Gridder::set_model()
+   */
   rval_t<GridderState>
   set_model(Device host_device, GridValueArray&& gv) &&;
 
+  /** grid some visibilities
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   *
+   * @sa Gridder::grid_visibilities()
+   */
   rval_t<GridderState>
   grid_visibilities(Device host_device, VisDataVector&& visibilities) const &;
 
@@ -1078,11 +1112,8 @@ public:
    * @return new GridderState after gridding task has been submitted to device
    * queue
    *
-   * The indexing of visibilities and all other metadata vectors must be
-   * consistent. For example the weight for the visibility value visibilities[i]
-   * must be located at weights[i].
-   *
-   * @param host_device device to use for changing array layout
+   * @tparam number of polarizations of VisData elements
+   * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
    *
    * @sa Gridder::grid_visibilities()
@@ -1097,6 +1128,18 @@ public:
       grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
   };
 
+  /** grid some visibilities
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   *
+   * @sa Gridder::grid_visibilities()
+   */
   rval_t<GridderState>
   grid_visibilities(Device host_device, VisDataVector&& visibilities) &&;
 
@@ -1104,14 +1147,11 @@ public:
    *
    * May invoke fence() on target.
    *
-   * @return new GridderState that has overwritten the target, but after
-   * gridding task has been submitted to device queue
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
    *
-   * The indexing of visibilities and all other metadata vectors must be
-   * consistent. For example the weight for the visibility value visibilities[i]
-   * must be located at weights[i].
-   *
-   * @param host_device device to use for changing array layout
+   * @tparam number of polarizations of VisData elements
+   * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
    *
    * @sa Gridder::grid_visibilities()
@@ -1126,7 +1166,6 @@ public:
       std::move(*this)
       .grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
   }
-
 
   /** device execution fence
    *
@@ -1491,9 +1530,27 @@ public:
   opt_error_t
   set_convolution_function(Device host_device, CFArray&&);
 
+  /** set visibility model
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after setting model
+   *
+   * @param host_device device to use for copying model values
+   * @param gv visibility model
+   *
+   * @sa Gridder::set_model()
+   */
   opt_error_t
   set_model(Device host_device, GridValueArray&& gv);
 
+  /** grid visibilities
+   *
+   * May invoke fence() on target.
+   *
+   * @param host_device device to use for changing array layout
+   * @param visibilities visibilities
+   */
   opt_error_t
   grid_visibilities(Device host_device, VisDataVector&& visibilities);
 
@@ -1501,10 +1558,7 @@ public:
    *
    * May invoke fence() on target.
    *
-   * The indexing of visibilities and all other metadata vectors must be
-   * consistent. For example the weight for the visibility value visibilities[i]
-   * must be located at weights[i].
-   *
+   * @tparam N number of polarizations in VisData elements
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
    */
