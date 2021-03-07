@@ -3287,59 +3287,61 @@ public:
     override {
 
     std::optional<Error> err;
-    if (in_place) {
-      switch (fft_version()) {
-      case 0:
-        err =
-          Core::FFT<execution_space, 0>
-          ::in_place_kernel(
-            m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
-            sign,
-            m_model);
-        break;
-      default:
-        assert(false);
-        break;
+    if (m_model.is_allocated()){
+      if (in_place) {
+        switch (fft_version()) {
+        case 0:
+          err =
+            Core::FFT<execution_space, 0>
+            ::in_place_kernel(
+              m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+              sign,
+              m_model);
+          break;
+        default:
+          assert(false);
+          break;
+        }
+      } else {
+        const_grid_view<typename GridLayout<D>::layout, memory_space> pre_model
+          = m_model;
+        std::array<int, 4> ig{
+          static_cast<int>(m_grid_size[0]),
+          static_cast<int>(m_grid_size[1]),
+          static_cast<int>(m_grid_size[2]),
+          static_cast<int>(m_grid_size[3])};
+        m_model =
+          decltype(m_model)(
+            K::ViewAllocateWithoutInitializing("grid"),
+            GridLayout<D>::dimensions(ig));
+        switch (fft_version()) {
+        case 0:
+          err =
+            Core::FFT<execution_space, 0>::out_of_place_kernel(
+              m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+              sign,
+              pre_model,
+              m_model);
+          break;
+        default:
+          assert(false);
+          break;
+        }
       }
-    } else {
-      const_grid_view<typename GridLayout<D>::layout, memory_space> pre_model
-        = m_model;
-      std::array<int, 4> ig{
-        static_cast<int>(m_grid_size[0]),
-        static_cast<int>(m_grid_size[1]),
-        static_cast<int>(m_grid_size[2]),
-        static_cast<int>(m_grid_size[3])};
-      m_model =
-        decltype(m_model)(
-          K::ViewAllocateWithoutInitializing("grid"),
-          GridLayout<D>::dimensions(ig));
-      switch (fft_version()) {
-      case 0:
-        err =
-          Core::FFT<execution_space, 0>::out_of_place_kernel(
+      // apply normalization
+      if (norm != 1)
+        switch (grid_normalizer_version()) {
+        case 0:
+          Core::GridNormalizer<execution_space, 0>::kernel(
             m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
-            sign,
-            pre_model,
-            m_model);
-        break;
-      default:
-        assert(false);
-        break;
-      }
+            m_model,
+            norm);
+          break;
+        default:
+          assert(false);
+          break;
+        }
     }
-    // apply normalization
-    if (norm != 1)
-      switch (grid_normalizer_version()) {
-      case 0:
-        Core::GridNormalizer<execution_space, 0>::kernel(
-          m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
-          m_model,
-          norm);
-        break;
-      default:
-        assert(false);
-        break;
-      }
     return err;
   }
 
