@@ -691,11 +691,11 @@ namespace Core {
 /** cf weight and visibility array type for reductions by gridding and
  * degridding kernels */
 struct HPG_EXPORT cfwgt_vis_array final {
-  static_assert(std::is_same_v<cf_t, vis_t>);
-
   static constexpr int n_mrow = 4;
 
-  vis_t vals[n_mrow];
+  cf_t wgts[n_mrow];
+
+  vis_t visibility[n_mrow];
 
   KOKKOS_INLINE_FUNCTION cfwgt_vis_array() {
      init();
@@ -703,21 +703,24 @@ struct HPG_EXPORT cfwgt_vis_array final {
 
   KOKKOS_INLINE_FUNCTION cfwgt_vis_array(const cfwgt_vis_array& rhs) {
     for (int i = 0; i < n_mrow; ++i) {
-      vals[i] = rhs.vals[i];
+      wgts[i] = rhs.wgts[i];
+      visibility[i] = rhs.visibility[i];
     }
   }
 
   KOKKOS_INLINE_FUNCTION void
   init() {
     for (int i = 0; i < n_mrow; ++i) {
-      vals[i] = 0;
+      wgts[i] = 0;
+      visibility[i] = 0;
     }
   }
 
   KOKKOS_INLINE_FUNCTION cfwgt_vis_array&
   operator +=(const cfwgt_vis_array& src) {
     for (int i = 0; i < n_mrow; ++i) {
-      vals[i] += src.vals[i];
+      wgts[i] += src.wgts[i];
+      visibility[i] += src.visibility[i];
     }
     return *this;
   }
@@ -725,7 +728,8 @@ struct HPG_EXPORT cfwgt_vis_array final {
   KOKKOS_INLINE_FUNCTION void
   operator +=(const volatile cfwgt_vis_array& src) volatile {
     for (int i = 0; i < n_mrow; ++i) {
-      vals[i] += src.vals[i];
+      wgts[i] += src.wgts[i];
+      visibility[i] += src.visibility[i];
     }
   }
 };
@@ -850,8 +854,6 @@ struct HPG_EXPORT VisibilityGridder final {
       * ((cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
     const auto dphi_Y = cf_gradient[1] * oversampling[1];
 
-    vis_t vis_values[N];
-
     // compute the values of the phase screen along the Y axis now and store the
     // results in scratch memory because gridding on the Y axis accesses the
     // phase screen values for every row of the Mueller matrix column
@@ -863,11 +865,14 @@ struct HPG_EXPORT VisibilityGridder final {
     team_member.team_barrier();
 
     if (model.is_allocated()) {
+      // initialize CF weights and residual visibilities
       K::single(
         K::PerTeam(team_member),
         [&]() {
-          for (int C = 0; C < N; ++C)
-            cfwv(0).vals[C] = 0;
+          for (int C = 0; C < N; ++C) {
+            cfwv(0).wgts[C] = 0;
+            cfwv(0).visibility[C] = 0;
+          }
         });
       team_member.team_barrier();
 
@@ -882,7 +887,6 @@ struct HPG_EXPORT VisibilityGridder final {
         K::parallel_reduce(
           K::TeamVectorRange(team_member, N_X),
           [=](const int X, cfwgt_vis_array& cfwv_l) {
-            // cfwv vals array contains visibilities here
             auto phi_X = phi_X0 + X * dphi_X;
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
@@ -907,7 +911,8 @@ struct HPG_EXPORT VisibilityGridder final {
                       vis.m_cf_minor[0],
                       vis.m_cf_minor[1]);
                   cfv.imag() *= -cf_im_factor;
-                  cfwv_l.vals[C] += cfv * screen * mv;
+                  cfwv_l.visibility[C] += cfv * screen * mv;
+                  cfwv_l.wgts[C] += cfv;
                 }
               }
             }
@@ -920,10 +925,10 @@ struct HPG_EXPORT VisibilityGridder final {
         K::PerTeam(team_member),
         [&]() {
           for (int C = 0; C < N; ++C) {
-            vis_values[C] =
-              (vis.m_values[C] - cfwv(0).vals[C])
+            cfwv(0).wgts[C] = 0;
+            cfwv(0).visibility[C] =
+              (vis.m_values[C] - cfwv(0).visibility[C])
               * vis.m_weights[C] * conj_phasor;
-            cfwv(0).vals[C] = 0;
           }
         });
       team_member.team_barrier();
@@ -934,8 +939,9 @@ struct HPG_EXPORT VisibilityGridder final {
         K::PerTeam(team_member),
         [&]() {
           for (int C = 0; C < N; ++C) {
-            vis_values[C] = vis.m_values[C] * vis.m_weights[C] * vis.m_phasor;
-            cfwv(0).vals[C] = 0;
+            cfwv(0).wgts[C] = 0;
+            cfwv(0).visibility[C] =
+              vis.m_values[C] * vis.m_weights[C] * vis.m_phasor;
           }
         });
       team_member.team_barrier();
@@ -949,7 +955,6 @@ struct HPG_EXPORT VisibilityGridder final {
       K::parallel_reduce(
         K::TeamVectorRange(team_member, N_X),
         [=](const int X, cfwgt_vis_array& cfwv_l) {
-          // cfwv vals array contains weights here
           auto phi_X = phi_X0 + X * dphi_X;
           // loop over grid Y
           for (int Y = 0; Y < N_Y; ++Y) {
@@ -968,8 +973,8 @@ struct HPG_EXPORT VisibilityGridder final {
                     vis.m_cf_minor[0],
                     vis.m_cf_minor[1]);
                 cfv.imag() *= cf_im_factor;
-                gv += gv_t(cfv * screen * vis_values[C]);
-                cfwv_l.vals[C] += cfv;
+                gv += gv_t(cfv * screen * cfwv(0).visibility[C]);
+                cfwv_l.wgts[C] += cfv;
               }
             }
             pseudo_atomic_add<execution_space>(
@@ -990,7 +995,7 @@ struct HPG_EXPORT VisibilityGridder final {
           for (int C = 0; C < N; ++C)
             twgt +=
               grid_value_fp(
-                std::hypot(cfwv(0).vals[C].real(), cfwv(0).vals[C].imag())
+                std::hypot(cfwv(0).wgts[C].real(), cfwv(0).wgts[C].imag())
                 * vis.m_weights[C]);
           K::atomic_add(&weights(R, vis.m_grid_cube), twgt);
         });
@@ -1076,282 +1081,6 @@ struct HPG_EXPORT VisibilityGridder final {
       });
   }
 };
-
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-template <unsigned N, typename execution_space>
-struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
-
-  using member_type = typename K::TeamPolicy<execution_space>::member_type;
-
-  using scratch_cfwgt_vis_view =
-    typename VisibilityGridder<N, execution_space, 0>::scratch_cfwgt_vis_view;
-
-  using scratch_phscr_view =
-    typename VisibilityGridder<N, execution_space, 0>::scratch_phscr_view;
-
-  // function for gridding a single visibility
-  template <typename cf_layout, typename grid_layout, typename memory_space>
-  static KOKKOS_FUNCTION void
-  grid_vis(
-    const member_type& team_member,
-    const GridVis<N, execution_space>& vis,
-    const K::Array<int, 2>& oversampling,
-    const cf_view<cf_layout, memory_space>& cf,
-    const K::Array<int, 2>& cf_size,
-    const unsigned cf_cube,
-    const K::Array<cf_phase_gradient_fp, 2>& cf_gradient,
-    const const_mindex_view<memory_space>& mueller_indexes,
-    const const_mindex_view<memory_space>& conjugate_mueller_indexes,
-    const const_grid_view<grid_layout, memory_space>& model,
-    const grid_view<grid_layout, memory_space>& grid,
-    const weight_view<typename execution_space::array_layout, memory_space>&
-      weights,
-    const scratch_cfwgt_vis_view& cfwv) {
-
-    const auto& N_X = cf_size[0];
-    const auto& N_Y = cf_size[1];
-    const auto N_R = grid.extent_int(static_cast<int>(GridAxis::mrow));
-
-    cf_fp cf_im_factor;
-    const_mindex_view<memory_space> gridding_mindex;
-    const_mindex_view<memory_space> degridding_mindex;
-    if (vis.m_pos_w) {
-      cf_im_factor = -1;
-      gridding_mindex = mueller_indexes;
-      degridding_mindex = conjugate_mueller_indexes;
-    } else {
-      cf_im_factor = 1;
-      gridding_mindex = conjugate_mueller_indexes;
-      degridding_mindex = mueller_indexes;
-    }
-
-    // phase screen constants at this visibility's location
-    const auto phi_X0 =
-      -cf_gradient[0]
-      * ((cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
-    const auto dphi_X = cf_gradient[0] * oversampling[0];
-    const auto phi_Y0 =
-      -cf_gradient[1]
-      * ((cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
-    const auto dphi_Y = cf_gradient[1] * oversampling[1];
-
-    vis_t vis_values[N];
-
-    if (model.is_allocated()) {
-      K::single(
-        K::PerTeam(team_member),
-        [&]() {
-          for (int C = 0; C < N; ++C)
-            cfwv(0).vals[C] = 0;
-        });
-      team_member.team_barrier();
-
-      // model degridding
-
-      auto conj_phasor = vis.m_phasor;
-      conj_phasor.imag() *= -1;
-
-      // serial loop over grid mrow
-      for (int R = 0; R < N_R; ++R) {
-        // parallel loop over grid X
-        K::parallel_reduce(
-          K::TeamVectorRange(team_member, N_X),
-          [=](const int X, cfwgt_vis_array& cfwv_l) {
-            // cfwv vals array contains visibilities here
-            auto phi_X = phi_X0 + X * dphi_X;
-            // loop over grid Y
-            for (int Y = 0; Y < N_Y; ++Y) {
-              auto screen =
-                cphase<execution_space>(phi_X + phi_Y0 + Y * dphi_Y);
-              screen.imag() *= -1;
-              auto mv =
-                model(
-                  X + vis.m_grid_coord[0],
-                  Y + vis.m_grid_coord[1],
-                  R,
-                  vis.m_grid_cube);
-              // loop over visibility polarizations
-              for (int C = 0; C < N; ++C) {
-                const auto mindex = degridding_mindex(R, C);
-                if (mindex >= 0) {
-                  cf_t cfv =
-                    cf(
-                      X + vis.m_cf_major[0],
-                      Y + vis.m_cf_major[1],
-                      mindex,
-                      cf_cube,
-                      vis.m_cf_minor[0],
-                      vis.m_cf_minor[1]);
-                  cfv.imag() *= -cf_im_factor;
-                  cfwv_l.vals[C] += cfv * screen * mv;
-                }
-              }
-            }
-          },
-          SumCFWgtVis<execution_space>(cfwv(0)));
-      }
-      // multiply degridded visibilities by vis weight and vis phasor, and
-      // reinitialize CF weights
-      K::single(
-        K::PerTeam(team_member),
-        [&]() {
-          for (int C = 0; C < N; ++C) {
-            vis_values[C] =
-              (vis.m_values[C] - cfwv(0).vals[C])
-              * vis.m_weights[C] * conj_phasor;
-            cfwv(0).vals[C] = 0;
-          }
-        });
-      team_member.team_barrier();
-    } else {
-      // multiply visibilities by vis weight and vis phasor, and initialize CF
-      // weights
-      K::single(
-        K::PerTeam(team_member),
-        [&]() {
-          for (int C = 0; C < N; ++C) {
-            vis_values[C] = vis.m_values[C] * vis.m_weights[C] * vis.m_phasor;
-            cfwv(0).vals[C] = 0;
-          }
-        });
-      team_member.team_barrier();
-    }
-
-    // accumulate to grid, and CF weights per visibility polarization
-
-    // serial loop over grid mrow
-    for (int R = 0; R < N_R; ++R) {
-      // parallel loop over grid X
-      K::parallel_reduce(
-        K::TeamVectorRange(team_member, N_X),
-        [=](const int X, cfwgt_vis_array& cfwv_l) {
-          // cfwv vals array contains weights here
-          auto phi_X = phi_X0 + X * dphi_X;
-          // loop over grid Y
-          for (int Y = 0; Y < N_Y; ++Y) {
-            auto screen =
-              cphase<execution_space>(phi_X + phi_Y0 + Y * dphi_Y);
-            gv_t gv(0);
-            // loop over visibility polarizations
-            for (int C = 0; C < N; ++C) {
-              const auto mindex = gridding_mindex(R, C);
-              if (mindex >= 0) {
-                cf_t cfv =
-                  cf(
-                    X + vis.m_cf_major[0],
-                    Y + vis.m_cf_major[1],
-                    mindex,
-                    cf_cube,
-                    vis.m_cf_minor[0],
-                    vis.m_cf_minor[1]);
-                cfv.imag() *= cf_im_factor;
-                gv += gv_t(cfv * screen * vis_values[C]);
-                cfwv_l.vals[C] += cfv;
-              }
-            }
-            pseudo_atomic_add<execution_space>(
-              grid(
-                X + vis.m_grid_coord[0],
-                Y + vis.m_grid_coord[1],
-                R,
-                vis.m_grid_cube),
-              gv);
-          }
-        },
-        SumCFWgtVis<execution_space>(cfwv(0)));
-      // compute final weight and add it to weights
-      K::single(
-        K::PerTeam(team_member),
-        [&]() {
-          grid_value_fp twgt = 0;
-          for (int C = 0; C < N; ++C)
-            twgt +=
-              grid_value_fp(
-                std::hypot(cfwv(0).vals[C].real(), cfwv(0).vals[C].imag())
-                * vis.m_weights[C]);
-          K::atomic_add(&weights(R, vis.m_grid_cube), twgt);
-        });
-    }
-  }
-
-  template <
-    typename cf_layout,
-    typename grid_layout,
-    typename memory_space>
-  static void
-  kernel(
-    execution_space exec,
-    const K::Array<
-      cf_view<cf_layout, memory_space>,
-      HPG_MAX_NUM_CF_GROUPS>& cfs,
-    const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
-    unsigned max_cf_extent_y,
-    const_mindex_view<memory_space> mueller_indexes,
-    const_mindex_view<memory_space> conjugate_mueller_indexes,
-    int num_visibilities,
-    const const_visdata_view<N, memory_space>& visibilities,
-    const K::Array<grid_scale_fp, 2>& grid_scale,
-    const const_grid_view<grid_layout, memory_space>& model,
-    const grid_view<grid_layout, memory_space>& grid,
-    const weight_view<typename execution_space::array_layout, memory_space>&
-      weights) {
-
-    const K::Array<int, 2>
-      grid_size{
-        grid.extent_int(static_cast<int>(GridAxis::x)),
-        grid.extent_int(static_cast<int>(GridAxis::y))};
-    const K::Array<int, 2>
-      oversampling{
-        cfs[0].extent_int(static_cast<int>(CFAxis::x_minor)),
-        cfs[0].extent_int(static_cast<int>(CFAxis::y_minor))};
-
-    auto shmem_size =
-      scratch_cfwgt_vis_view::shmem_size(1);
-
-    K::parallel_for(
-      "gridding",
-      K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-      .set_scratch_size(0, K::PerTeam(shmem_size)),
-      KOKKOS_LAMBDA(const member_type& team_member) {
-        auto i = team_member.league_rank();
-
-        const unsigned& cf_cube = visibilities(i).m_cf_index[0];
-        const unsigned& cf_grp = visibilities(i).m_cf_index[1];
-        const auto& cf = cfs[cf_grp];
-        const K::Array<int, 2>
-          cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
-        scratch_cfwgt_vis_view cfwv(team_member.team_scratch(0), 1);
-        const auto& cf_gradient = visibilities(i).m_cf_phase_gradient;
-
-        GridVis<N, execution_space>
-          vis(visibilities(i), grid_size, oversampling, cf_size, grid_scale);
-
-        // skip this visibility if all of the updated grid points are not
-        // within grid bounds
-        if ((0 <= vis.m_grid_coord[0])
-            && (vis.m_grid_coord[0] + cf_size[0]
-                <= grid.extent_int(static_cast<int>(GridAxis::x)))
-            && (0 <= vis.m_grid_coord[1])
-            && (vis.m_grid_coord[1] + cf_size[1]
-                <= grid.extent_int(static_cast<int>(GridAxis::y))))
-          grid_vis(
-            team_member,
-            vis,
-            oversampling,
-            cf,
-            cf_size,
-            cf_cube,
-            cf_gradient,
-            mueller_indexes,
-            conjugate_mueller_indexes,
-            model,
-            grid,
-            weights,
-            cfwv);
-      });
-  }
-};
-#endif //HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 
 /** grid normalization kernel
  */
@@ -3349,41 +3078,6 @@ public:
       m_weights);
   }
 
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  template <unsigned N>
-  void
-  alt1_grid_visibilities(
-    Device /*host_device*/,
-    size_t offset,
-    const vector_data<::hpg::VisData<N>>& visibilities) {
-
-    auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
-    auto len =
-      exec_copy.copy_visibilities(
-        offset,
-        m_max_visibility_batch_size,
-        visibilities);
-
-    auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
-    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
-    const_grid_view<typename GridLayout<D>::layout, memory_space> model
-      = m_model;
-    Core::VisibilityGridder<N, execution_space, 1>::kernel(
-      exec_compute.space,
-      cf.cf_d,
-      cf.cf_radii,
-      cf.max_cf_extent_y,
-      m_mueller_indexes,
-      m_conjugate_mueller_indexes,
-      len,
-      exec_compute.template visdata<N>(),
-      m_grid_scale,
-      model,
-      m_grid,
-      m_weights);
-  }
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-
   template <unsigned N>
   std::optional<Error>
     grid_visibilities(
@@ -3408,12 +3102,6 @@ public:
       for (size_t i = 0; i < num_visibilities; i += m_max_visibility_batch_size)
         default_grid_visibilities(host_device, i, vis);
       break;
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    case 1:
-      for (size_t i = 0; i < num_visibilities; i += m_max_visibility_batch_size)
-        alt1_grid_visibilities(host_device, i, vis);
-      break;
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     }
     return std::nullopt;
   }
