@@ -197,7 +197,7 @@ run_tests(
       auto sum = sum_grid(grid.get());
       std::cout << "sum " << sum << std::endl;
     }
-    auto err = g0.apply_fft();
+    auto err = g0.apply_grid_fft();
     assert(!err);
     std::cout << "fft applied" << std::endl;
     g0.reset_grid();
@@ -241,7 +241,7 @@ dump_grids(
     host_dev,
     std::remove_reference_t<decltype(vis)>(vis));
   g0.normalize();
-  auto err = g0.apply_fft();
+  auto err = g0.apply_grid_fft();
   assert(!err);
   {
     std::cout << "after fft" << std::endl;

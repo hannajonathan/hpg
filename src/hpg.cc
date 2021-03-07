@@ -131,10 +131,22 @@ struct Impl::GridderState {
 
   template <typename GS>
   static std::variant<Error, ::hpg::GridderState>
-  apply_fft(GS&& st, FFTSign sign, bool in_place) {
+  apply_grid_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    auto error = result.impl->apply_fft(sign, in_place);
+    auto error = result.impl->apply_grid_fft(norm, sign, in_place);
+    if (error)
+      return std::move(error.value());
+    else
+      return std::move(result);
+  }
+
+  template <typename GS>
+  static std::variant<Error, ::hpg::GridderState>
+  apply_model_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
+
+    ::hpg::GridderState result(std::forward<GS>(st));
+    auto error = result.impl->apply_model_fft(norm, sign, in_place);
     if (error)
       return std::move(error.value());
     else
@@ -562,16 +574,53 @@ GridderState::normalize(grid_value_fp wfactor) && {
 }
 
 rval_t<GridderState>
-GridderState::apply_fft(FFTSign sign, bool in_place) const & {
+GridderState::apply_grid_fft(
+  grid_value_fp norm,
+  FFTSign sign,
+  bool in_place) const & {
 
-  return to_rval(Impl::GridderState::apply_fft(*this, sign, in_place));
+  return
+    to_rval(Impl::GridderState::apply_grid_fft(*this, norm, sign, in_place));
 }
 
 rval_t<GridderState>
-GridderState::apply_fft(FFTSign sign, bool in_place) && {
+GridderState::apply_grid_fft(
+  grid_value_fp norm,
+  FFTSign sign,
+  bool in_place) && {
 
   return
-    to_rval(Impl::GridderState::apply_fft(std::move(*this), sign, in_place));
+    to_rval(
+      Impl::GridderState::apply_grid_fft(
+        std::move(*this),
+        norm,
+        sign,
+        in_place));
+}
+
+rval_t<GridderState>
+GridderState::apply_model_fft(
+  grid_value_fp norm,
+  FFTSign sign,
+  bool in_place) const & {
+
+  return
+  to_rval(Impl::GridderState::apply_model_fft(*this, norm, sign, in_place));
+}
+
+rval_t<GridderState>
+GridderState::apply_model_fft(
+  grid_value_fp norm,
+  FFTSign sign,
+  bool in_place) && {
+
+  return
+  to_rval(
+    Impl::GridderState::apply_model_fft(
+      std::move(*this),
+      norm,
+      sign,
+      in_place));
 }
 
 GridderState
@@ -587,6 +636,22 @@ GridderState::shift_grid() && {
 
   GridderState result(std::move(*this));
   result.impl->shift_grid();
+  return result;
+}
+
+GridderState
+GridderState::shift_model() const & {
+
+  GridderState result(*this);
+  result.impl->shift_model();
+  return result;
+}
+
+GridderState
+GridderState::shift_model() && {
+
+  GridderState result(std::move(*this));
+  result.impl->shift_model();
   return result;
 }
 
@@ -846,11 +911,11 @@ Gridder::normalize(grid_value_fp wgt_factor) {
 }
 
 opt_error_t
-Gridder::apply_fft(FFTSign sign, bool in_place) {
+Gridder::apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
 #if HPG_API >= 17
   return
     fold(
-      std::move(state).apply_fft(sign, in_place),
+      std::move(state).apply_grid_fft(norm, sign, in_place),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
         return std::nullopt;
@@ -860,7 +925,29 @@ Gridder::apply_fft(FFTSign sign, bool in_place) {
       });
 #else // HPG_API < 17
   std::unique_ptr<Error> result;
-  std::tie(result, state) = std::move(state).apply_fft(sign, in_place);
+  std::tie(result, state) =
+    std::move(state).apply_grid_fft(norm, sign, in_place);
+  return result;
+#endif //HPG_API >= 17
+}
+
+opt_error_t
+Gridder::apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
+#if HPG_API >= 17
+  return
+    fold(
+      std::move(state).apply_model_fft(norm, sign, in_place),
+      [this](auto&& gs) -> std::optional<Error> {
+        this->state = std::move(gs);
+        return std::nullopt;
+      },
+      [](auto&& err) -> std::optional<Error> {
+        return std::move(err);
+      });
+#else // HPG_API < 17
+  std::unique_ptr<Error> result;
+  std::tie(result, state) =
+    std::move(state).apply_model_fft(norm, sign, in_place);
   return result;
 #endif //HPG_API >= 17
 }
@@ -868,6 +955,11 @@ Gridder::apply_fft(FFTSign sign, bool in_place) {
 void
 Gridder::shift_grid() {
   state = std::move(state).shift_grid();
+}
+
+void
+Gridder::shift_model() {
+  state = std::move(state).shift_model();
 }
 
 opt_error_t

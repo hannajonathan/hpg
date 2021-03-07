@@ -832,11 +832,11 @@ TEST(GridderState, CopyOrMove) {
     EXPECT_FALSE(gs2.is_null());
   }
   {
-    auto rc_fft = gs.apply_fft();
+    auto rc_fft = gs.apply_grid_fft();
     EXPECT_FALSE(gs.is_null());
     ASSERT_TRUE(hpg::is_value(rc_fft));
     hpg::GridderState gs1 = hpg::get_value(std::move(rc_fft));
-    auto err_or_gs2 = std::move(gs1).apply_fft();
+    auto err_or_gs2 = std::move(gs1).apply_grid_fft();
     EXPECT_TRUE(gs1.is_null());
 
     ASSERT_TRUE(hpg::is_value(err_or_gs2));

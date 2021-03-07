@@ -772,7 +772,11 @@ enum class HPG_EXPORT FFTSign {
   NEGATIVE
 };
 
-constexpr FFTSign fft_sign_dflt = FFTSign::POSITIVE;
+constexpr FFTSign grid_fft_sign_dflt = FFTSign::POSITIVE;
+constexpr FFTSign model_fft_sign_dflt =
+  ((grid_fft_sign_dflt == FFTSign::POSITIVE)
+   ? FFTSign::NEGATIVE
+   : FFTSign::POSITIVE);
 
 /** gridder state
  *
@@ -1272,21 +1276,57 @@ public:
    *
    * May invoke fence() on target.
    *
+   * @param norm post-FFT normalization divisor
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
   rval_t<GridderState>
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) const  &;
+  apply_grid_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = grid_fft_sign_dflt,
+    bool in_place = true) const  &;
 
   /** apply FFT to grid array planes
    *
    * May invoke fence() on target.
    *
+   * @param norm post-FFT normalization divisor
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
   rval_t<GridderState>
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true) &&;
+  apply_grid_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = grid_fft_sign_dflt,
+    bool in_place = true) &&;
+
+  /** apply FFT to model array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param norm post-FFT normalization divisor
+   * @param sign sign of imaginary unit in FFT kernel
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  rval_t<GridderState>
+  apply_model_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = model_fft_sign_dflt,
+    bool in_place = true) const  &;
+
+  /** apply FFT to grid array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param norm post-FFT normalization divisor
+   * @param sign sign of imaginary unit in FFT kernel
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  rval_t<GridderState>
+  apply_model_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = model_fft_sign_dflt,
+    bool in_place = true) &&;
 
   /** shift grid planes by half
    *
@@ -1301,6 +1341,20 @@ public:
    */
   GridderState
   shift_grid() &&;
+
+  /** shift model planes by half
+   *
+   * Primarily for use after application of FFT. May invoke fence() on target.
+   */
+  GridderState
+  shift_model() const &;
+
+  /** shift model planes by half
+   *
+   * Primarily for use after application of FFT. May invoke fence() on target.
+   */
+  GridderState
+  shift_model() &&;
 
 protected:
   friend class Gridder;
@@ -1619,11 +1673,29 @@ public:
    *
    * May invoke fence() on target.
    *
+   * @param norm post-FFT normalization divisor
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
   opt_error_t
-  apply_fft(FFTSign sign = fft_sign_dflt, bool in_place = true);
+  apply_grid_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = grid_fft_sign_dflt,
+    bool in_place = true);
+
+  /** apply FFT to model array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param norm post-FFT normalization divisor
+   * @param sign sign of imaginary unit in FFT kernel
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  opt_error_t
+  apply_model_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = model_fft_sign_dflt,
+    bool in_place = true);
 
   /** shift grid planes by half
    *
@@ -1631,6 +1703,13 @@ public:
    */
   void
   shift_grid();
+
+  /** shift model planes by half
+   *
+   * Primarily for use after application of FFT. May invoke fence() on target.
+   */
+  void
+  shift_model();
 
 protected:
 

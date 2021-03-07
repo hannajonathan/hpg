@@ -1117,6 +1117,36 @@ struct HPG_EXPORT GridNormalizer final {
         grid(x, y, mrow, cube) /= (wfactor * weights(mrow, cube));
       });
   }
+
+  template <typename grid_layout, typename memory_space>
+  static void
+  kernel(
+    execution_space exec,
+    const grid_view<grid_layout, memory_space>& grid,
+    const grid_value_fp& norm) {
+
+    static_assert(
+      static_cast<int>(GridAxis::x) == 0
+      && static_cast<int>(GridAxis::y) == 1
+      && static_cast<int>(GridAxis::mrow) == 2
+      && static_cast<int>(GridAxis::cube) == 3);
+    static_assert(
+      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::cube == 1);
+
+    grid_value_fp inv_norm = (grid_value_fp)(1.0) / norm;
+    K::parallel_for(
+      "normalization",
+      K::MDRangePolicy<K::Rank<4>, execution_space>(
+        exec,
+        {0, 0, 0, 0},
+        {grid.extent_int(static_cast<int>(GridAxis::x)),
+         grid.extent_int(static_cast<int>(GridAxis::y)),
+         grid.extent_int(static_cast<int>(GridAxis::mrow)),
+         grid.extent_int(static_cast<int>(GridAxis::cube))}),
+      KOKKOS_LAMBDA(int x, int y, int mrow, int cube) {
+        grid(x, y, mrow, cube) *= inv_norm;
+      });
+  }
 };
 
 /** fftw function class templated on fp precision */
@@ -1776,10 +1806,16 @@ struct State {
   normalize(grid_value_fp wfactor) = 0;
 
   virtual std::optional<Error>
-  apply_fft(FFTSign sign, bool in_place) = 0;
+  apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) = 0;
+
+  virtual std::optional<Error>
+  apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place) = 0;
 
   virtual void
   shift_grid() = 0;
+
+  virtual void
+  shift_model() = 0;
 
   virtual ~State() {}
 };
@@ -3194,7 +3230,9 @@ public:
   }
 
   std::optional<Error>
-  apply_fft(FFTSign sign, bool in_place) override {
+  apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place)
+    override {
+
     std::optional<Error> err;
     if (in_place) {
       switch (fft_version()) {
@@ -3228,6 +3266,80 @@ public:
         break;
       }
     }
+    // apply normalization
+    if (norm != 1)
+      switch (grid_normalizer_version()) {
+      case 0:
+        Core::GridNormalizer<execution_space, 0>::kernel(
+          m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+          m_grid,
+          norm);
+        break;
+      default:
+        assert(false);
+        break;
+      }
+    return err;
+  }
+
+  std::optional<Error>
+  apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place)
+    override {
+
+    std::optional<Error> err;
+    if (in_place) {
+      switch (fft_version()) {
+      case 0:
+        err =
+          Core::FFT<execution_space, 0>
+          ::in_place_kernel(
+            m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+            sign,
+            m_model);
+        break;
+      default:
+        assert(false);
+        break;
+      }
+    } else {
+      const_grid_view<typename GridLayout<D>::layout, memory_space> pre_model
+        = m_model;
+      std::array<int, 4> ig{
+        static_cast<int>(m_grid_size[0]),
+        static_cast<int>(m_grid_size[1]),
+        static_cast<int>(m_grid_size[2]),
+        static_cast<int>(m_grid_size[3])};
+      m_model =
+        decltype(m_model)(
+          K::ViewAllocateWithoutInitializing("grid"),
+          GridLayout<D>::dimensions(ig));
+      switch (fft_version()) {
+      case 0:
+        err =
+          Core::FFT<execution_space, 0>::out_of_place_kernel(
+            m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+            sign,
+            pre_model,
+            m_model);
+        break;
+      default:
+        assert(false);
+        break;
+      }
+    }
+    // apply normalization
+    if (norm != 1)
+      switch (grid_normalizer_version()) {
+      case 0:
+        Core::GridNormalizer<execution_space, 0>::kernel(
+          m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+          m_model,
+          norm);
+        break;
+      default:
+        assert(false);
+        break;
+      }
     return err;
   }
 
@@ -3238,6 +3350,20 @@ public:
       Core::GridShifter<execution_space, 0>::kernel(
         m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
         m_grid);
+      break;
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+  void
+  shift_model() override {
+    switch (grid_shifter_version()) {
+    case 0:
+      Core::GridShifter<execution_space, 0>::kernel(
+        m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+        m_model);
       break;
     default:
       assert(false);
