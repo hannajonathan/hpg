@@ -1353,6 +1353,76 @@ TEST(GridderState, GridOne) {
     cf.verify_cf_footprint(0, g.get(), grid_size, grid_scale, vis, freq, uvw));
 }
 
+TEST(GridderState, ZeroModel) {
+  const std::array<unsigned, 4> grid_size{8192, 8192, 2, 1};
+  const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
+  constexpr unsigned cf_radius = 45;
+  constexpr unsigned cf_oversampling = 20;
+  constexpr hpg::vis_frequency_fp freq = 3.693e+09;
+  constexpr std::complex<hpg::visibility_fp> vis(1.0, -1.0);
+  constexpr hpg::vis_weight_fp wgt = 1.0;
+
+  ConeCFArray cf(1, cf_oversampling, cf_radius);
+  auto gs1_or_err =
+    hpg::GridderState::create<2>(
+      default_device,
+      0,
+      1,
+      &cf,
+      grid_size,
+      grid_scale,
+      {{0, -1}, {-1, 0}},
+      {{0, -1}, {-1, 0}});
+  ASSERT_TRUE(hpg::is_value(gs1_or_err));
+  auto gs2_or_err =
+    hpg::get_value(std::move(gs1_or_err))
+    .set_convolution_function(default_host_device, ConeCFArray(cf));
+  ASSERT_TRUE(hpg::is_value(gs2_or_err));
+  auto gs2 = hpg::get_value(std::move(gs2_or_err));
+
+  // first do gridding without a model
+  auto visibilities =
+    std::vector<hpg::VisData<2>>{
+      hpg::VisData<2>(
+        {vis, -vis},
+        {wgt, wgt / 2},
+        freq,
+        0.0,
+        {0.0, 0.0, 0.0},
+        0,
+        {0, 0})};
+  // retain current value (zero grid) of gs2
+  auto gs3_or_err = gs2.grid_visibilities(default_host_device, visibilities);
+  ASSERT_TRUE(hpg::is_value(gs3_or_err));
+  auto gs3 = hpg::get_value(std::move(gs3_or_err));
+
+  // now set a zero-valued model
+  std::vector<hpg::GridValueArray::value_type>
+    model_buffer(grid_size[0] * grid_size[1] * grid_size[2] * grid_size[3]);
+  auto model =
+    hpg::GridValueArray::copy_from(
+      "model_in",
+      default_device,
+      default_host_device,
+      model_buffer.data(),
+      grid_size);
+  auto gs4_or_err =
+    std::move(gs2).set_model(default_host_device, std::move(*model));
+  ASSERT_TRUE(hpg::is_value(gs4_or_err));
+  // and grid the visibility
+  auto gs5_or_err =
+    hpg::get_value(std::move(gs4_or_err))
+    .grid_visibilities(default_host_device, visibilities);
+  ASSERT_TRUE(hpg::is_value(gs5_or_err));
+  auto gs5 = hpg::get_value(std::move(gs5_or_err));
+
+  // compare grid values
+  auto gv3 = std::get<1>(gs3.grid_weights());
+  ASSERT_TRUE(has_non_zero(gv3.get()));
+  auto gv5 = std::get<1>(gs5.grid_weights());
+  EXPECT_TRUE(values_eq(gv3.get(), gv5.get()));
+}
+
 int
 main(int argc, char **argv) {
   std::ostringstream oss;
