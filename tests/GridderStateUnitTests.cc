@@ -1417,9 +1417,9 @@ TEST(GridderState, ZeroModel) {
   auto gs5 = hpg::get_value(std::move(gs5_or_err));
 
   // compare grid values
-  auto gv3 = std::get<1>(gs3.grid_weights());
+  auto gv3 = std::get<1>(gs3.grid_values());
   ASSERT_TRUE(has_non_zero(gv3.get()));
-  auto gv5 = std::get<1>(gs5.grid_weights());
+  auto gv5 = std::get<1>(gs5.grid_values());
   EXPECT_TRUE(values_eq(gv3.get(), gv5.get()));
 }
 
