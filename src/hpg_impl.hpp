@@ -867,6 +867,10 @@ struct HPG_EXPORT VisibilityGridder final {
         vis_values += vv;
       }
       // multiply degridded visibilities by vis weight and vis phasor
+
+      // TODO: This loop could be moved out of the conditional, if at the same
+      // time the else branch were removed. Hold off on this before deciding
+      // what to do about access to residual visibilities.
       for (int C = 0; C < N; ++C)
         vis_values.vals[C] =
           (vis.m_values[C] - vis_values.vals[C])
