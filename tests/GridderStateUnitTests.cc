@@ -1423,6 +1423,109 @@ TEST(GridderState, ZeroModel) {
   EXPECT_TRUE(values_eq(gv3.get(), gv5.get()));
 }
 
+// test of FFT functionality through grid model
+TEST(GridderState, ModelFFT) {
+  std::array<unsigned, 4> grid_size{64, 64, 4, 3};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
+  auto padding = 2 * hpg::CFArray::padding;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3 + padding, 3 + padding, 3, 3}, {2 + padding, 2 + padding, 2, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
+  auto gs =
+    hpg::get_value(
+      hpg::GridderState::create<1>(
+        default_device,
+        0,
+        15,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0}, {0}, {0}, {0}},
+        {{0}, {0}, {0}, {0}}));
+
+  // initial model should be identically zero
+  {
+    ASSERT_TRUE(!gs.is_null());
+    auto [gs1, model] = std::move(gs).model_values();
+    EXPECT_FALSE(has_non_zero(model.get()));
+    gs = std::move(gs1);
+  }
+
+  // create a zero-value model explicitly
+  {
+    auto [gs1, values] = std::move(gs).grid_values();
+    auto gs2_or_err =
+      std::move(gs1).set_model(default_host_device, std::move(*values));
+    ASSERT_TRUE(hpg::is_value(gs2_or_err));
+    auto [gs3, model] = hpg::get_value(std::move(gs2_or_err)).model_values();
+    EXPECT_FALSE(has_non_zero(model.get()));
+    gs = std::move(gs3);
+  }
+
+  // apply FFT to (identically zero) model
+  {
+    auto gs1_or_err = std::move(gs).apply_model_fft();
+    ASSERT_TRUE(hpg::is_value(gs1_or_err));
+    auto gs1 = hpg::get_value(gs1_or_err);
+    auto [gs2, model] = std::move(gs1).model_values();
+    EXPECT_FALSE(has_non_zero(model.get()));
+    gs = std::move(gs2);
+  }
+
+  // check FFT of non-zero model yields non-zero values
+  std::unique_ptr<hpg::GridValueArray> model0;
+  {
+    auto [gs1, values] = std::move(gs).grid_values(); // still zero
+    auto x0 = grid_size[hpg::GridValueArray::Axis::x] / 2;
+    auto y0 = grid_size[hpg::GridValueArray::Axis::y] / 2;
+    auto n_mrow = grid_size[hpg::GridValueArray::Axis::mrow];
+    auto n_cube = grid_size[hpg::GridValueArray::Axis::cube];
+    for (size_t mrow = 0; mrow < n_mrow; ++mrow)
+      for (size_t cube = 0; cube < n_cube; ++cube)
+        (*values)(x0, y0, mrow, cube) = (mrow + 1) * n_cube + cube;
+    auto gs2_or_err =
+      std::move(gs1).set_model(default_host_device, std::move(*values));
+    ASSERT_TRUE(hpg::is_value(gs2_or_err));
+    auto gs3_or_err = hpg::get_value(std::move(gs2_or_err)).apply_model_fft();
+    ASSERT_TRUE(hpg::is_value(gs3_or_err));
+    auto [gs4, model] = hpg::get_value(std::move(gs3_or_err)).model_values();
+    ASSERT_TRUE(has_non_zero(model.get()));
+    model0 = std::move(model);
+    gs = std::move(gs4);
+  }
+
+  // do FFT again, with normalization factor and compare to previous outcome
+  {
+    // apply normalization factor to model0
+    const hpg::grid_value_fp norm = 0.001;
+    auto n_x = grid_size[hpg::GridValueArray::Axis::x];
+    auto n_y = grid_size[hpg::GridValueArray::Axis::y];
+    auto n_mrow = grid_size[hpg::GridValueArray::Axis::mrow];
+    auto n_cube = grid_size[hpg::GridValueArray::Axis::cube];
+    for (size_t x = 0; x < n_x; ++x)
+      for (size_t y = 0; y < n_y; ++y)
+        for (size_t mrow = 0; mrow < n_mrow; ++mrow)
+          for (size_t cube = 0; cube < n_cube; ++cube)
+            (*model0)(x, y, mrow, cube) /= norm;
+
+    auto [gs1, values] = std::move(gs).grid_values(); // still zero
+    auto x0 = n_x / 2;
+    auto y0 = n_y / 2;
+    for (size_t mrow = 0; mrow < n_mrow; ++mrow)
+      for (size_t cube = 0; cube < n_cube; ++cube)
+        (*values)(x0, y0, mrow, cube) = (mrow + 1) * n_cube + cube;
+    auto gs2_or_err =
+      std::move(gs1).set_model(default_host_device, std::move(*values));
+    ASSERT_TRUE(hpg::is_value(gs2_or_err));
+    auto gs3_or_err =
+      hpg::get_value(std::move(gs2_or_err)).apply_model_fft(norm);
+    ASSERT_TRUE(hpg::is_value(gs3_or_err));
+    auto [gs4, model] = hpg::get_value(std::move(gs3_or_err)).model_values();
+    EXPECT_TRUE(values_eq(model0.get(), model.get()));
+    gs = std::move(gs4);
+  }
+}
+
 int
 main(int argc, char **argv) {
   std::ostringstream oss;
