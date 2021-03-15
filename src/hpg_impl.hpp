@@ -809,7 +809,7 @@ struct HPG_EXPORT VisibilityGridder final {
 
   // function for gridding a single visibility
   template <typename cf_layout, typename grid_layout, typename memory_space>
-  static KOKKOS_FUNCTION void
+  static KOKKOS_FUNCTION poln_array_type<N>
   grid_vis(
     const member_type& team_member,
     const bool degrid_only,
@@ -977,6 +977,7 @@ struct HPG_EXPORT VisibilityGridder final {
           });
       }
     }
+    return vis_values;
   }
 
   template <
@@ -995,7 +996,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const_mindex_view<memory_space> conjugate_mueller_indexes,
     bool degrid_only,
     int num_visibilities,
-    const const_visdata_view<N, memory_space>& visibilities,
+    const visdata_view<N, memory_space>& visibilities,
     const K::Array<grid_scale_fp, 2>& grid_scale,
     const const_grid_view<grid_layout, memory_space>& model,
     const grid_view<grid_layout, memory_space>& grid,
@@ -1028,31 +1029,37 @@ struct HPG_EXPORT VisibilityGridder final {
         scratch_phscr_view phi_Y(team_member.team_scratch(0), max_cf_extent_y);
         const auto& cf_gradient = visibilities(i).m_cf_phase_gradient;
 
+        auto& visibility = visibilities(i);
         GridVis<N, execution_space>
-          vis(visibilities(i), grid_size, oversampling, cf_size, grid_scale);
+          gvis(visibility, grid_size, oversampling, cf_size, grid_scale);
+        poln_array_type<N> rvis;
         // skip this visibility if all of the updated grid points are not
         // within grid bounds
-        if ((0 <= vis.m_grid_coord[0])
-            && (vis.m_grid_coord[0] + cf_size[0]
+        if ((0 <= gvis.m_grid_coord[0])
+            && (gvis.m_grid_coord[0] + cf_size[0]
                 <= grid.extent_int(static_cast<int>(GridAxis::x)))
-            && (0 <= vis.m_grid_coord[1])
-            && (vis.m_grid_coord[1] + cf_size[1]
-                <= grid.extent_int(static_cast<int>(GridAxis::y))))
-          grid_vis(
-            team_member,
-            degrid_only,
-            vis,
-            oversampling,
-            cf,
-            cf_size,
-            cf_cube,
-            cf_gradient,
-            mueller_indexes,
-            conjugate_mueller_indexes,
-            model,
-            grid,
-            weights,
-            phi_Y);
+            && (0 <= gvis.m_grid_coord[1])
+            && (gvis.m_grid_coord[1] + cf_size[1]
+                <= grid.extent_int(static_cast<int>(GridAxis::y)))){
+          rvis =
+            grid_vis(
+              team_member,
+              degrid_only,
+              gvis,
+              oversampling,
+              cf,
+              cf_size,
+              cf_cube,
+              cf_gradient,
+              mueller_indexes,
+              conjugate_mueller_indexes,
+              model,
+              grid,
+              weights,
+              phi_Y);
+        }
+        for (size_t i = 0; i < N; ++i)
+          visibility.m_values[i] = rvis.vals[i];
       });
   }
 };
@@ -2884,7 +2891,7 @@ struct ExecSpace final {
   }
 
   template <unsigned N>
-  constexpr const_visdata_view<N, memory_space>
+  constexpr visdata_view<N, memory_space>
   visdata() const {
     return std::get<visdata_view<N, memory_space>>(visibilities);
   }
