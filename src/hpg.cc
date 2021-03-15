@@ -536,8 +536,7 @@ std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::model_values() && {
 
   GridderState result(std::move(*this));
-  auto mv = result.impl->model_values();
-  return {std::move(result), std::move(mv)};
+  return {std::move(result), std::move(result.impl->model_values())};
 }
 
 GridderState
