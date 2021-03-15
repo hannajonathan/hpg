@@ -1050,8 +1050,6 @@ struct HPG_EXPORT GridNormalizer final {
       && static_cast<int>(GridAxis::y) == 1
       && static_cast<int>(GridAxis::mrow) == 2
       && static_cast<int>(GridAxis::cube) == 3);
-    static_assert(
-      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::cube == 1);
 
     grid_value_fp inv_norm = (grid_value_fp)(1.0) / norm;
     K::parallel_for(
@@ -1716,6 +1714,9 @@ struct State {
   virtual std::unique_ptr<GridValueArray>
   grid_values() const = 0;
 
+  virtual std::unique_ptr<GridValueArray>
+  model_values() const = 0;
+
   virtual void
   reset_grid() = 0;
 
@@ -2111,6 +2112,105 @@ public:
     default:
       assert(false);
       return nullptr;
+      break;
+    }
+  }
+};
+
+/** concrete sub-class of abstract GridValueArray for identically zero model
+ * grids */
+class HPG_EXPORT UnallocatedModelValueArray final
+  : public GridValueArray {
+public:
+
+  value_type m_zero;
+
+  std::array<unsigned, rank> m_extents;
+
+  UnallocatedModelValueArray(const std::array<unsigned, rank>& extents)
+    : m_zero(0)
+    , m_extents(extents) {}
+
+  virtual ~UnallocatedModelValueArray() {}
+
+  unsigned
+  extent(unsigned dim) const override {
+    return m_extents[dim];
+  }
+
+  const value_type&
+  operator()(unsigned, unsigned, unsigned, unsigned)
+    const override {
+
+    return m_zero;
+  }
+
+  value_type&
+  operator()(unsigned, unsigned, unsigned, unsigned) override {
+
+    return m_zero;
+  }
+
+  template <Device H>
+  void
+  copy_to(value_type* dst, Layout lyo) const {
+
+    // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
+    // (otherwise, the following is broken, not least because it may result in
+    // an out-of-bounds access on dst)
+
+    auto espace = typename DeviceT<H>::kokkos_device::execution_space();
+
+    switch (lyo) {
+    case Layout::Left: {
+      K::View<
+        gv_t****,
+        K::LayoutLeft,
+        typename DeviceT<H>::kokkos_device::memory_space,
+        K::MemoryTraits<K::Unmanaged>> dstv(
+          reinterpret_cast<gv_t*>(dst),
+          m_extents[0], m_extents[1], m_extents[2], m_extents[3]);
+      K::deep_copy(espace, dstv, m_zero);
+      espace.fence();
+      break;
+    }
+    case Layout::Right: {
+      K::View<
+        gv_t****,
+        K::LayoutRight,
+        typename DeviceT<H>::kokkos_device::memory_space,
+        K::MemoryTraits<K::Unmanaged>> dstv(
+          reinterpret_cast<gv_t*>(dst),
+          m_extents[0], m_extents[1], m_extents[2], m_extents[3]);
+      K::deep_copy(espace, dstv, m_zero);
+      espace.fence();
+      break;
+    }
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+protected:
+
+  void
+  unsafe_copy_to(Device host_device, value_type* dst, Layout lyo)
+    const override {
+
+    switch (host_device) {
+#ifdef HPG_ENABLE_SERIAL
+    case Device::Serial:
+      copy_to<Device::Serial>(dst, lyo);
+      break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    case Device::OpenMP:
+      copy_to<Device::OpenMP>(dst, lyo);
+      break;
+#endif
+    default:
+      assert(false);
       break;
     }
   }
@@ -3117,6 +3217,25 @@ public:
     K::deep_copy(exec.space, grid_h, m_grid);
     exec.fence();
     return std::make_unique<GridValueViewArray<D>>(grid_h);
+  }
+
+  std::unique_ptr<GridValueArray>
+  model_values() const override {
+    fence();
+    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+    if (m_model.is_allocated()) {
+      auto model_h = K::create_mirror(m_model);
+      K::deep_copy(exec.space, model_h, m_model);
+      exec.fence();
+      return std::make_unique<GridValueViewArray<D>>(model_h);
+    } else {
+      std::array<unsigned, 4> ex{
+        static_cast<unsigned>(m_grid.extent(0)),
+        static_cast<unsigned>(m_grid.extent(1)),
+        static_cast<unsigned>(m_grid.extent(2)),
+        static_cast<unsigned>(m_grid.extent(3))};
+      return std::make_unique<UnallocatedModelValueArray>(ex);
+    }
   }
 
   void

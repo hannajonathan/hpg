@@ -525,6 +525,21 @@ GridderState::grid_values() && {
   return {std::move(result), std::move(result.impl->grid_values())};
 }
 
+std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+GridderState::model_values() const & {
+
+  GridderState result(*this);
+  return {std::move(result), std::move(result.impl->model_values())};
+}
+
+std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+GridderState::model_values() && {
+
+  GridderState result(std::move(*this));
+  auto mv = result.impl->model_values();
+  return {std::move(result), std::move(mv)};
+}
+
 GridderState
 GridderState::reset_grid() const & {
 
@@ -892,6 +907,14 @@ Gridder::grid_values() const {
   std::unique_ptr<GridValueArray> result;
   std::tie(const_cast<Gridder*>(this)->state, result) =
     std::move(const_cast<Gridder*>(this)->state).grid_values();
+  return result;
+}
+
+std::unique_ptr<GridValueArray>
+Gridder::model_values() const {
+  std::unique_ptr<GridValueArray> result;
+  std::tie(const_cast<Gridder*>(this)->state, result) =
+    std::move(const_cast<Gridder*>(this)->state).model_values();
   return result;
 }
 

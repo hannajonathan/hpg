@@ -1224,6 +1224,20 @@ public:
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   grid_values() &&;
 
+  /** get copy of model values
+   *
+   * Invokes fence() on target.
+   */
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  model_values() const &;
+
+  /** get copy of model values
+   *
+   * Invokes fence() on target.
+   */
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  model_values() &&;
+
   /** reset grid values to zero
    *
    * Also resets grid plane weights to zero. May invoke fence() on target.
@@ -1284,7 +1298,7 @@ public:
   apply_grid_fft(
     grid_value_fp norm = 1,
     FFTSign sign = grid_fft_sign_dflt,
-    bool in_place = true) const  &;
+    bool in_place = true) const &;
 
   /** apply FFT to grid array planes
    *
@@ -1312,7 +1326,7 @@ public:
   apply_model_fft(
     grid_value_fp norm = 1,
     FFTSign sign = model_fft_sign_dflt,
-    bool in_place = true) const  &;
+    bool in_place = true) const &;
 
   /** apply FFT to grid array planes
    *
@@ -1648,6 +1662,13 @@ public:
    */
   std::unique_ptr<GridValueArray>
   grid_values() const;
+
+  /** get copy of model values
+   *
+   * Invokes fence() on target.
+   */
+  std::unique_ptr<GridValueArray>
+  model_values() const;
 
   /** reset grid values to zero
    *
