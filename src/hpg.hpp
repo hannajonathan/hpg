@@ -1107,7 +1107,10 @@ public:
    * @sa Gridder::grid_visibilities()
    */
   rval_t<GridderState>
-  grid_visibilities(Device host_device, VisDataVector&& visibilities) const &;
+  grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool degrid_only = false) const &;
 
   /** grid some visibilities
    *
@@ -1126,10 +1129,14 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) const & {
+    std::vector<VisData<N>>&& visibilities,
+    bool degrid_only = false) const & {
 
     return
-      grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
+      grid_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)),
+        degrid_only);
   };
 
   /** grid some visibilities
@@ -1145,7 +1152,10 @@ public:
    * @sa Gridder::grid_visibilities()
    */
   rval_t<GridderState>
-  grid_visibilities(Device host_device, VisDataVector&& visibilities) &&;
+  grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool degrid_only = false) &&;
 
   /** grid some visibilities
    *
@@ -1164,11 +1174,15 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) && {
+    std::vector<VisData<N>>&& visibilities,
+    bool degrid_only = false) && {
 
     return
       std::move(*this)
-      .grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
+      .grid_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)),
+        degrid_only);
   }
 
   /** device execution fence
@@ -1620,7 +1634,10 @@ public:
    * @param visibilities visibilities
    */
   opt_error_t
-  grid_visibilities(Device host_device, VisDataVector&& visibilities);
+  grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool degrid_only = false);
 
   /** grid visibilities
    *
@@ -1634,10 +1651,14 @@ public:
   opt_error_t
   grid_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) {
+    std::vector<VisData<N>>&& visibilities,
+    bool degrid_only = false) {
 
     return
-      grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
+      grid_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)),
+        degrid_only);
   }
 
 /** device execution fence
