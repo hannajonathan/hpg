@@ -1388,7 +1388,7 @@ TEST(GridderState, ZeroModel) {
         {wgt, wgt / 2},
         freq,
         0.0,
-        {0.0, 0.0, 0.0},
+        {0.0, 0.0, 0.1},
         0,
         {0, 0})};
   // retain current value (zero grid) of gs2
