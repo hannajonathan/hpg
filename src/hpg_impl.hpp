@@ -917,14 +917,18 @@ struct HPG_EXPORT VisibilityGridder final {
     conj_phasor.imag() *= -1;
     for (int C = 0; C < N; ++C)
       vis_array.vis[C] =
-        (vis.m_values[C]
-         - ((vis_array.vis[C]
-             / ((vis_array.wgt[C] != (cf_t)0) ? vis_array.wgt[C] : (cf_t)1))
-            * conj_phasor))
-        * vis.m_phasor
-        * vis.m_weights[C];
+        (vis_array.vis[C]
+         / ((vis_array.wgt[C] != (cf_t)0) ? vis_array.wgt[C] : (cf_t)1))
+        * conj_phasor;
 
     if (!degrid_only) {
+      // residual visibilities (result) and gridding values (vv)
+      poln_array_type<N> vv;
+      for (int C = 0; C < N; ++C) {
+        vis_array.vis[C] = vis.m_values[C] - vis_array.vis[C];
+        vv.vals[C] = vis_array.vis[C] * vis.m_phasor * vis.m_weights[C];
+      }
+
       // accumulate to grid, and CF weights per visibility polarization
 
       // serial loop over grid mrow
@@ -977,7 +981,7 @@ struct HPG_EXPORT VisibilityGridder final {
           });
       }
     }
-    return vis_values;
+    return result;
   }
 
   template <
