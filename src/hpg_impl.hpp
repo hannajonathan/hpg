@@ -823,9 +823,6 @@ struct HPG_EXPORT VisibilityGridder final {
 
       // model degridding
 
-      auto conj_phasor = vis.m_phasor;
-      conj_phasor.imag() *= -1;
-
       // serial loop over grid mrow
       for (int R = 0; R < N_R; ++R) {
         poln_array_type<N> vv;
@@ -866,21 +863,15 @@ struct HPG_EXPORT VisibilityGridder final {
           K::Sum<decltype(vv)>(vv));
         vis_values += vv;
       }
-      // multiply degridded visibilities by vis weight and vis phasor
-
-      // TODO: This loop could be moved out of the conditional, if at the same
-      // time the else branch were removed. Hold off on this before deciding
-      // what to do about access to residual visibilities.
-      for (int C = 0; C < N; ++C)
-        vis_values.vals[C] =
-          (vis.m_values[C] - vis_values.vals[C])
-          * vis.m_weights[C] * conj_phasor;
-    } else {
-      // multiply visibilities by vis weight and vis phasor
-      for (int C = 0; C < N; ++C)
-        vis_values.vals[C] =
-          vis.m_values[C] * vis.m_weights[C] * vis.m_phasor;
     }
+    // TODO: keep multiplication by conj_phasor explicit, in anticipation of
+    // supporting read-back of residual visibilities
+    auto conj_phasor = vis.m_phasor;
+    conj_phasor.imag() *= -1;
+    for (int C = 0; C < N; ++C)
+      vis_values.vals[C] =
+        (vis.m_values[C] - vis_values.vals[C] * conj_phasor)
+        * vis.m_phasor * vis.m_weights[C];
 
     // accumulate to grid, and CF weights per visibility polarization
 
