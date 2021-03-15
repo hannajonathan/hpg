@@ -281,7 +281,7 @@ struct TrialSpec {
     for (size_t mr = 0; is_diagonal && mr < mueller_indexes.size(); ++mr) {
       auto& mrow = mueller_indexes[mr];
       for (size_t mc = 0; is_diagonal && mc < mrow.size(); ++mc)
-        is_diagonal = mrow[mc] == ((mc == mr) ? mr : -1);
+        is_diagonal = mrow[mc] == ((mc == mr) ? int(mr) : -1);
     }
     if (is_diagonal) {
       oss << "I" << mueller_indexes.size();
