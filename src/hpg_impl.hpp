@@ -83,6 +83,45 @@ struct poln_array_type {
     }
   }
 };
+
+template<int N>
+struct vis_array_type {
+
+  K::Array<K::complex<visibility_fp>, N> vis;
+  K::Array<K::complex<cf_fp>, N> wgt;
+
+  KOKKOS_INLINE_FUNCTION   // Default constructor - Initialize to 0's
+  vis_array_type() {
+    for (int i = 0; i < N; ++i) {
+      vis[i] = 0;
+      wgt[i] = 0;
+    }
+  }
+  KOKKOS_INLINE_FUNCTION   // Copy Constructor
+  vis_array_type(const vis_array_type& rhs) {
+    for (int i = 0; i < N; ++i) {
+      vis[i] = rhs.vis[i];
+      wgt[i] = rhs.wgt[i];
+    }
+  }
+  KOKKOS_INLINE_FUNCTION   // add operator
+  vis_array_type&
+  operator +=(const vis_array_type& src) {
+    for (int i = 0; i < N; ++i) {
+      vis[i] += src.vis[i];
+      wgt[i] += src.wgt[i];
+    }
+    return *this;
+  }
+  KOKKOS_INLINE_FUNCTION   // volatile add operator
+  void
+  operator +=(const volatile vis_array_type& src) volatile {
+    for (int i = 0; i < N; ++i) {
+      vis[i] += src.vis[i];
+      wgt[i] += src.wgt[i];
+    }
+  }
+};
 }
 }
 
@@ -91,6 +130,13 @@ template<int N>
 struct reduction_identity<hpg::Impl::poln_array_type<N>> {
   KOKKOS_FORCEINLINE_FUNCTION static hpg::Impl::poln_array_type<N> sum() {
     return hpg::Impl::poln_array_type<N>();
+  }
+};
+
+template<int N>
+struct reduction_identity<hpg::Impl::vis_array_type<N>> {
+  KOKKOS_FORCEINLINE_FUNCTION static hpg::Impl::vis_array_type<N> sum() {
+    return hpg::Impl::vis_array_type<N>();
   }
 };
 }
@@ -817,7 +863,7 @@ struct HPG_EXPORT VisibilityGridder final {
       });
     team_member.team_barrier();
 
-    poln_array_type<N> vis_values;
+    vis_array_type<N> vis_array;
 
     if (model.is_allocated()) {
 
@@ -825,11 +871,11 @@ struct HPG_EXPORT VisibilityGridder final {
 
       // serial loop over grid mrow
       for (int R = 0; R < N_R; ++R) {
-        poln_array_type<N> vv;
+        vis_array_type<N> va;
         // parallel loop over grid X
         K::parallel_reduce(
           K::TeamVectorRange(team_member, N_X),
-          [=](const int X, poln_array_type<N>& vis_values_l) {
+          [=](const int X, vis_array_type<N>& vis_array_l) {
             auto phi_X = phi_X0 + X * dphi_X;
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
@@ -855,13 +901,14 @@ struct HPG_EXPORT VisibilityGridder final {
                       vis.m_cf_minor[0],
                       vis.m_cf_minor[1]);
                   cfv.imag() *= -cf_im_factor;
-                  vis_values_l.vals[C] += cfv * mv;
+                  vis_array_l.vis[C] += cfv * mv;
+                  vis_array_l.wgt[C] += cfv;
                 }
               }
             }
           },
-          K::Sum<decltype(vv)>(vv));
-        vis_values += vv;
+          K::Sum<decltype(va)>(va));
+        vis_array += va;
       }
     }
     // TODO: keep multiplication by conj_phasor explicit, in anticipation of
@@ -869,9 +916,13 @@ struct HPG_EXPORT VisibilityGridder final {
     auto conj_phasor = vis.m_phasor;
     conj_phasor.imag() *= -1;
     for (int C = 0; C < N; ++C)
-      vis_values.vals[C] =
-        (vis.m_values[C] - vis_values.vals[C] * conj_phasor)
-        * vis.m_phasor * vis.m_weights[C];
+      vis_array.vis[C] =
+        (vis.m_values[C]
+         - ((vis_array.vis[C]
+             / ((vis_array.wgt[C] != (cf_t)0) ? vis_array.wgt[C] : (cf_t)1))
+            * conj_phasor))
+        * vis.m_phasor
+        * vis.m_weights[C];
 
     // accumulate to grid, and CF weights per visibility polarization
 
@@ -900,7 +951,7 @@ struct HPG_EXPORT VisibilityGridder final {
                     vis.m_cf_minor[0],
                     vis.m_cf_minor[1]);
                 cfv.imag() *= cf_im_factor;
-                gv += gv_t(cfv * screen * vis_values.vals[C]);
+                gv += gv_t(cfv * screen * vis_array.vis[C]);
                 vis_weights_l.vals[C] += cfv;
               }
             }
