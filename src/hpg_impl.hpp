@@ -2885,18 +2885,13 @@ struct ExecSpace final {
   /** copy visibilities to device */
   template <unsigned N>
   size_t
-  copy_visibilities(
-    size_t offset,
-    size_t batch_size,
-    const vector_data<::hpg::VisData<N>>& visdata) {
+  copy_visibilities(const vector_data<::hpg::VisData<N>>& visdata) {
 
-    size_t result = 0;
-    if (visdata->size() > 0) {
+    size_t result = visdata->size();
+    if (result > 0) {
       copy_state.emplace_back(visdata);
-      result = std::min(visdata->size() - offset, batch_size);
-      vector_view<VisData<N>> hview(
-        reinterpret_cast<VisData<N>*>(visdata->data() + offset),
-        result);
+      vector_view<VisData<N>>
+        hview(reinterpret_cast<VisData<N>*>(visdata->data()), result);
       if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
         visibilities =
           visdata_view<N, memory_space>(
@@ -3156,15 +3151,10 @@ public:
   void
   default_grid_visibilities(
     Device /*host_device*/,
-    size_t offset,
     const vector_data<::hpg::VisData<N>>& visibilities) {
 
     auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
-    auto len =
-      exec_copy.copy_visibilities(
-        offset,
-        m_max_visibility_batch_size,
-        visibilities);
+    auto len = exec_copy.copy_visibilities(visibilities);
 
     auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
@@ -3203,11 +3193,9 @@ public:
 //     }
 // #endif // NDEBUG
 
-    size_t num_visibilities = vis->size();
     switch (visibility_gridder_version()) {
     case 0:
-      for (size_t i = 0; i < num_visibilities; i += m_max_visibility_batch_size)
-        default_grid_visibilities(host_device, i, vis);
+      default_grid_visibilities(host_device, vis);
       break;
     }
     return std::nullopt;

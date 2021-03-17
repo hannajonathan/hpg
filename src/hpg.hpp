@@ -838,8 +838,8 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of additional tasks (actual number
    * may be less than requested)
-   * @param max_visibility_batch_size maximum number of VisData<.> values to
-   * pass to the gridding kernel at once
+   * @param max_visibility_batch_size maximum number of VisData<.> values for
+   * calls to grid_visibilities()
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
    * @param grid_size, in logical axis order: X, Y, mrow, cube
@@ -1416,8 +1416,8 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of concurrent tasks (actual
    * number may be less than requested)
-   * @param max_visibility_batch_size maximum number of VisData<.> values to
-   * pass to the gridding kernel at once
+   * @param max_visibility_batch_size maximum number of VisData<.> values for
+   * calls to grid_visibilities()
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
    * @param grid_size, in logical axis order: X, Y, mrow, cube

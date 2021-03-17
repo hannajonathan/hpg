@@ -16,6 +16,7 @@ enum class HPG_EXPORT ErrorType {
   InvalidNumberPolarizations,
   InvalidCFLayout,
   InvalidModelGridSize,
+  ExcessiveNumberVisibilities,
   Other
 };
 

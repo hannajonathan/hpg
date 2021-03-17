@@ -199,7 +199,6 @@ struct TrialSpec {
   TrialSpec(
     const hpg::Device& device_,
     const int& streams_,
-    const unsigned& batch_size_,
     const std::vector<std::vector<int>>& mueller_indexes_,
     const int& gsize_,
     const std::vector<unsigned>& cfsize_,
@@ -212,7 +211,6 @@ struct TrialSpec {
     )
     : device(device_)
     , streams(streams_)
-    , batch_size(batch_size_)
     , mueller_indexes(mueller_indexes_)
     , gsize(gsize_)
     , oversampling(oversampling_)
@@ -228,7 +226,6 @@ struct TrialSpec {
 
   hpg::Device device;
   int streams;
-  unsigned batch_size;
   std::vector<std::vector<int>> mueller_indexes;
   int gsize;
   std::vector<int> cfsize;
@@ -246,7 +243,6 @@ struct TrialSpec {
   {"status",
    "dev",
    "str",
-   "batch",
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
    "vsn",
 #endif
@@ -315,15 +311,12 @@ struct TrialSpec {
     std::ostringstream oss;
     std::array<char, id_col_width - 1> nvis;
     std::snprintf(nvis.data(), nvis.size(), "%g", double(visibilities));
-    std::array<char, id_col_width - 1> nbatch;
-    std::snprintf(nbatch.data(), nbatch.size(), "%g", double(batch_size));
     std::ostringstream cfsz;
     const char* sep = "";
     for (auto& s : cfsize) {
       cfsz << sep << s;
       sep = "-";
     }
-    std::snprintf(nbatch.data(), nbatch.size(), "%g", double(batch_size));
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     std::ostringstream vsns;
     vsns << versions[0] << "," << versions[1] << ","
@@ -331,7 +324,6 @@ struct TrialSpec {
 #endif
     oss << pad_right(device_codes.at(device))
         << pad_right(std::to_string(streams))
-        << pad_right(nbatch.data())
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         << pad_right(vsns.str())
 #endif
@@ -613,7 +605,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
           hpg::GridderState::create(
             spec.device,
             spec.streams - 1,
-            spec.batch_size,
+            input_data.visibilities.size(),
             &input_data.cf,
             input_data.gsize,
             default_scale,
@@ -694,8 +686,7 @@ run_trials(
   const std::vector<unsigned>& repeats,
   const std::vector<hpg::Device>& devices,
   const std::vector<unsigned>& kernels,
-  const std::vector<unsigned>& streams,
-  const std::vector<unsigned>& batch) {
+  const std::vector<unsigned>& streams) {
 
   using rand_pool_type = typename K::Random_XorShift64_Pool<K::OpenMP>;
 
@@ -717,23 +708,20 @@ run_trials(
                     rand_pool_type(348842));
                 for (auto& device : devices) {
                   for (auto& stream : streams) {
-                    for (auto& bsz : batch) {
-                      TrialSpec spec(
-                        device,
-                        std::max(stream, 1u),
-                        std::max(bsz, 1u),
-                        mindexes,
-                        gsize,
-                        cfsize,
-                        oversampling,
-                        input_data.visibilities.num_elements(),
-                        num_repeats
+                    TrialSpec spec(
+                      device,
+                      std::max(stream, 1u),
+                      mindexes,
+                      gsize,
+                      cfsize,
+                      oversampling,
+                      input_data.visibilities.num_elements(),
+                      num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-                        , {kernel, 0, 0, 0}
+                      , {kernel, 0, 0, 0}
 #endif
-                        );
-                      run_hpg_trial(spec, input_data);
-                    }
+                      );
+                    run_hpg_trial(spec, input_data);
                   }
                 }
               }
@@ -826,14 +814,6 @@ main(int argc, char* argv[]) {
       .action(parse_unsigned_args);
   }
   {
-    unsigned dflt = default_num_vis;
-    args
-      .add_argument("-b", "--batch")
-      .default_value(argwrap<std::vector<unsigned>>({dflt}))
-      .help("visibility batch size ["s + std::to_string(dflt) + "]")
-      .action(parse_unsigned_args);
-  }
-  {
     std::string dflt = "I1";
     args
       .add_argument("-m", "--mueller")
@@ -862,7 +842,6 @@ main(int argc, char* argv[]) {
     args.get<argwrap<std::vector<hpg::Device>>>("--device").val;
   auto kernels = args.get<argwrap<std::vector<unsigned>>>("--kernel").val;
   auto streams = args.get<argwrap<std::vector<unsigned>>>("--streams").val;
-  auto batch = args.get<argwrap<std::vector<unsigned>>>("--batch").val;
   auto mueller_indexes =
     parse_mueller_indexes(args.get<std::string>("--mueller"));
 
@@ -877,8 +856,7 @@ main(int argc, char* argv[]) {
       repeats,
       devices,
       kernels,
-      streams,
-      batch);
+      streams);
   else
     std::cerr << "OpenMP device is not enabled: no tests will be run"
               << std::endl;

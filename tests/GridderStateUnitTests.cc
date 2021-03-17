@@ -1147,8 +1147,7 @@ TEST(GridderState, Serialization) {
   }
 }
 
-// test that visibility batching for oversize requests to grid_visibilities()
-// works
+// test that exceeding visibility batch size limit produces error
 TEST(GridderState, Batching) {
   std::array<unsigned, 4> grid_size{16, 15, 1, 3};
   std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
@@ -1158,66 +1157,44 @@ TEST(GridderState, Batching) {
   std::mt19937 rng(42);
   MyCFArray cf = create_cf(10, cf_sizes, rng);
   size_t num_vis = 100;
-  auto gs_small =
+
+  auto gs =
     hpg::get_value(
-      hpg::flatmap(
-        hpg::GridderState::create<1>(
-          default_device,
-          1,
-          num_vis / 11,
-          static_cast<const hpg::CFArray*>(&cf),
-          grid_size,
-          grid_scale,
-          {{0}},
-          {{0}})
-        , [&](auto&& g) {
-            return
-              std::move(g)
-              .set_convolution_function(default_host_device, MyCFArray(cf));
-          }));
-  auto gs_large =
-    hpg::get_value(
-      hpg::flatmap(
-        hpg::GridderState::create<1>(
-          default_device,
-          1,
-          num_vis,
-          static_cast<const hpg::CFArray*>(&cf),
-          grid_size,
-          grid_scale,
-          {{0}},
-          {{0}})
-        , [&](auto&& g) {
-            return
-              std::move(g)
-              .set_convolution_function(default_host_device, std::move(cf));
-          }));
+      hpg::GridderState::create<1>(
+        default_device,
+        1,
+        num_vis - 1,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0}},
+        {{0}}));
 
-  std::vector<hpg::VisData<1>> vis;
-  init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
-
-  auto gv_small =
-    std::get<1>(
+  // error if number of visibilities exceeds batch size
+  {
+    std::vector<hpg::VisData<1>> vis;
+    auto gs1 =
       hpg::get_value(
-        hpg::map(
-          std::move(gs_small).grid_visibilities(
-            default_host_device,
-            decltype(vis)(vis))
-          , [](auto&& g) {
-              return std::move(g).grid_values();
-            })));
-
-  auto gv_large =
-    std::get<1>(
+        gs.set_convolution_function(default_host_device, MyCFArray(cf)));
+    init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
+    auto gs2_or_err =
+      gs1.grid_visibilities(default_host_device, decltype(vis)(vis));
+    ASSERT_TRUE(hpg::is_error(gs2_or_err));
+    EXPECT_EQ(
+      hpg::get_error(gs2_or_err).type(),
+      hpg::ErrorType::ExcessiveNumberVisibilities);
+  }
+  // no error if number of visibilities does not exceed batch size
+  {
+    std::vector<hpg::VisData<1>> vis;
+    auto gs1 =
       hpg::get_value(
-        hpg::map(
-          std::move(gs_large).grid_visibilities(
-            default_host_device,
-            decltype(vis)(vis))
-          , [](auto&& g) {
-              return std::move(g).grid_values();
-            })));
-  EXPECT_TRUE(values_eq(gv_small.get(), gv_large.get()));
+        gs.set_convolution_function(default_host_device, MyCFArray(cf)));
+    init_visibilities(num_vis - 1, grid_size, grid_scale, cf, rng, vis);
+    auto gs2_or_err =
+      gs1.grid_visibilities(default_host_device, decltype(vis)(vis));
+    EXPECT_FALSE(hpg::is_error(gs2_or_err));
+  }
 }
 
 TEST(GridderState, Gridding) {

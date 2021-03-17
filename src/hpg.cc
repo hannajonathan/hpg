@@ -32,6 +32,15 @@ struct InvalidNumberPolarizationsError
 
 };
 
+struct ExcessiveNumberVisibilitiesError
+  : public Error {
+
+  ExcessiveNumberVisibilitiesError()
+    : Error(
+      "Number of visibilities exceeds maximum batch size",
+      ErrorType::ExcessiveNumberVisibilities) {}
+};
+
 Error::Error(const std::string& msg, ErrorType err)
   : m_type(err)
   , m_msg(msg) {}
@@ -112,21 +121,22 @@ struct Impl::GridderState {
   static std::variant<Error, ::hpg::GridderState>
   grid_visibilities(GS&& st, Device host_device, VisDataVector&& visibilities) {
 
-    if (host_devices().count(host_device) > 0) {
-      if (visibilities.m_npol == st.impl->m_num_polarizations) {
-        ::hpg::GridderState result(std::forward<GS>(st));
-        auto error =
-          result.impl->grid_visibilities(host_device, std::move(visibilities));
-        if (error)
-          return std::move(error.value());
-        else
-          return std::move(result);
-      } else {
-        return InvalidNumberPolarizationsError();
-      }
-    } else {
+    if (host_devices().count(host_device) == 0)
       return DisabledHostDeviceError();
-    }
+
+    if (visibilities.size() > st.impl->m_max_visibility_batch_size)
+      return ExcessiveNumberVisibilitiesError();
+
+    if (visibilities.m_npol != st.impl->m_num_polarizations)
+      return InvalidNumberPolarizationsError();
+
+    ::hpg::GridderState result(std::forward<GS>(st));
+    auto error =
+      result.impl->grid_visibilities(host_device, std::move(visibilities));
+    if (error)
+      return std::move(error.value());
+    else
+      return std::move(result);
   }
 
   template <typename GS>
