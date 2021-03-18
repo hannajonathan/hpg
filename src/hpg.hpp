@@ -1186,62 +1186,6 @@ private:
     std::abort();
   }
 
-  template <>
-  future<std::vector<VisData<1>>>
-  future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-    return
-      std::async(
-        [](std::future<VisDataVector>&& f) {
-          auto vs = f.get();
-          assert(vs.m_npol == 1);
-          return std::move(*vs.m_v1);
-        },
-        std::move(fvs).m_f);
-  }
-
-  template <>
-  future<std::vector<VisData<2>>>
-  future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-    return
-      std::async(
-        [](std::future<VisDataVector>&& f) {
-          auto vs = f.get();
-          assert(vs.m_npol == 2);
-          return std::move(*vs.m_v2);
-        },
-        std::move(fvs).m_f);
-  }
-
-  template <>
-  future<std::vector<VisData<3>>>
-  future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-    return
-      std::async(
-        [](std::future<VisDataVector>&& f) {
-          auto vs = f.get();
-          assert(vs.m_npol == 3);
-          return std::move(*vs.m_v3);
-        },
-        std::move(fvs).m_f);
-  }
-
-  template <>
-  future<std::vector<VisData<4>>>
-  future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-    return
-      std::async(
-        [](std::future<VisDataVector>&& f) {
-          auto vs = f.get();
-          assert(vs.m_npol == 4);
-          return std::move(*vs.m_v4);
-        },
-        std::move(fvs).m_f);
-  }
-
 public:
 
   /** grid some visibilities
@@ -1668,6 +1612,62 @@ protected:
   void
   swap(GridderState& other) noexcept;
 };
+
+template <>
+future<std::vector<VisData<1>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
+
+  return
+    std::async(
+      [](std::future<VisDataVector>&& f) {
+        auto vs = f.get();
+        assert(vs.m_npol == 1);
+        return std::move(*vs.m_v1);
+      },
+      std::move(fvs).m_f);
+}
+
+template <>
+future<std::vector<VisData<2>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
+
+  return
+    std::async(
+      [](std::future<VisDataVector>&& f) {
+        auto vs = f.get();
+        assert(vs.m_npol == 2);
+        return std::move(*vs.m_v2);
+      },
+      std::move(fvs).m_f);
+}
+
+template <>
+future<std::vector<VisData<3>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
+
+  return
+    std::async(
+      [](std::future<VisDataVector>&& f) {
+        auto vs = f.get();
+        assert(vs.m_npol == 3);
+        return std::move(*vs.m_v3);
+      },
+      std::move(fvs).m_f);
+}
+
+template <>
+future<std::vector<VisData<4>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
+
+  return
+    std::async(
+      [](std::future<VisDataVector>&& f) {
+        auto vs = f.get();
+        assert(vs.m_npol == 4);
+        return std::move(*vs.m_v4);
+      },
+      std::move(fvs).m_f);
+}
 
 /** Gridder class
  *
