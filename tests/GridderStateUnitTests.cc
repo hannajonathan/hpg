@@ -1511,6 +1511,73 @@ TEST(GridderState, ModelFFT) {
   }
 }
 
+// test residual visibility return functionality
+TEST(GridderState, ResidualVisibilities) {
+  const std::array<unsigned, 4> grid_size{20, 20, 2, 1};
+  const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
+  constexpr unsigned cf_radius = 3;
+  constexpr unsigned cf_oversampling = 10;
+  constexpr hpg::vis_frequency_fp freq = 3.693e+09;
+  constexpr std::complex<hpg::visibility_fp> vis(1.0, -1.0);
+  constexpr hpg::vis_weight_fp wgt = 1.0;
+
+  ConeCFArray cf(1, cf_oversampling, cf_radius);
+  hpg::GridderState gs;
+  {
+    auto gs1_or_err =
+      hpg::GridderState::create<2>(
+        default_device,
+        0,
+        1,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0, -1}, {-1, 0}},
+        {{0, -1}, {-1, 0}});
+    ASSERT_TRUE(hpg::is_value(gs1_or_err));
+    auto gs2_or_err =
+      hpg::get_value(std::move(gs1_or_err))
+      .set_convolution_function(default_host_device, ConeCFArray(cf));
+    ASSERT_TRUE(hpg::is_value(gs2_or_err));
+    gs = hpg::get_value(std::move(gs2_or_err));
+  }
+
+  auto visibilities =
+    std::vector<hpg::VisData<2>>{
+      hpg::VisData<2>(
+        {vis, -vis},
+        {wgt, wgt / 2},
+        freq,
+        0.0,
+        {0.0, 0.0, 0.1},
+        0,
+        {0, 0})};
+
+  {
+    // do gridding
+    auto gsfv_or_err =
+      gs.grid_visibilities(
+        default_host_device,
+        std::vector<hpg::VisData<2>>(visibilities));
+    ASSERT_TRUE(hpg::is_value(gsfv_or_err));
+    auto [gs1, fv] = hpg::get_value(std::move(gsfv_or_err));
+    // ensure that future completes
+    auto gs2 = std::move(gs1).fence();
+    // get result of future
+    auto orv = fv.get();
+    ASSERT_TRUE(orv);
+    // check there was no exception
+    ASSERT_FALSE(std::holds_alternative<std::exception>(orv.value()));
+    // get the residual visibilities
+    auto resvis = std::get<std::vector<hpg::VisData<2>>>(orv.value());
+    EXPECT_TRUE(
+      std::mismatch(
+        resvis.begin(), resvis.end(),
+        visibilities.begin(), visibilities.end())
+      == std::make_pair(resvis.end(), visibilities.end()));
+  }
+}
+
 int
 main(int argc, char **argv) {
   std::ostringstream oss;
