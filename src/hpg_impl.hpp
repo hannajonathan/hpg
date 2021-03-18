@@ -2901,7 +2901,7 @@ struct ExecSpace final {
     std::vector<::hpg::VisData<2>>,
     std::vector<::hpg::VisData<3>>,
     std::vector<::hpg::VisData<4>>> vis_vector;
-  std::optional<std::promise<VisDataVector>> vis_promise;
+  mutable std::optional<std::promise<VisDataVector>> vis_promise;
   size_t num_visibilities;
 
   ExecSpace(execution_space sp)
@@ -2932,11 +2932,6 @@ struct ExecSpace final {
     return *this;
   }
 
-  void
-  fence() const {
-    space.fence();
-  }
-
   template <unsigned N>
   constexpr visdata_view<N, memory_space>
   visdata() const {
@@ -2944,10 +2939,8 @@ struct ExecSpace final {
   }
 
   template <unsigned N>
-  std::tuple<size_t, std::future<VisDataVector>>
-  copy_visibilities_to_device(
-    std::vector<::hpg::VisData<N>>&& in_vis,
-    bool return_visibilities) {
+  size_t
+  copy_visibilities_to_device(std::vector<::hpg::VisData<N>>&& in_vis) {
 
     num_visibilities = in_vis.size();
     if (num_visibilities > 0) {
@@ -2972,28 +2965,23 @@ struct ExecSpace final {
       }
     }
     vis_vector = std::move(in_vis);
-    std::future<VisDataVector> fv;
-    if (return_visibilities) {
-      vis_promise = std::promise<VisDataVector>();
-      fv = vis_promise.value().get_future();
-    } else {
-      std::promise<VisDataVector> p;
-      p.set_value(VisDataVector());
-      fv = p.get_future();
-    }
-    return {num_visibilities, std::move(fv)};
+    return num_visibilities;
   }
 
-  void
-  copy_visibilities_to_host() {
+  std::future<VisDataVector>
+  copy_visibilities_to_host(bool return_visibilities) const {
 
-    if (vis_promise) {
+    std::future<VisDataVector> result;
+    if (return_visibilities) {
+      vis_promise = std::promise<VisDataVector>();
+      result = vis_promise.value().get_future();
       std::visit(
         overloaded {
           [this](auto& v) {
-            using v_t = std::remove_reference_t<decltype(v)>;
-            constexpr unsigned N = v_t::value_type::npol;
+            using v_t =
+              std::remove_const_t<std::remove_reference_t<decltype(v)>>;
             if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
+              constexpr unsigned N = v_t::value_type::npol;
               if (num_visibilities > 0) {
                 auto hview = std::get<vector_view<VisData<N>>>(visibilities_h);
                 auto dview =
@@ -3003,6 +2991,26 @@ struct ExecSpace final {
                 K::deep_copy(space, hview, dview);
               }
             }
+          }
+        },
+        vis_vector);
+    } else {
+      std::promise<VisDataVector> p;
+      p.set_value(VisDataVector());
+      result = p.get_future();
+    }
+    return result;
+  }
+
+  void
+  fence() const {
+    space.fence();
+    if (vis_promise) {
+      std::visit(
+        overloaded {
+          [this](auto& v) {
+            using v_t =
+              std::remove_const_t<std::remove_reference_t<decltype(v)>>;
             vis_promise.value().set_value(
               VisDataVector(std::get<v_t>(std::move(vis_vector))));
           }
@@ -3255,10 +3263,8 @@ public:
     bool degrid_only) {
 
     auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
-    auto [len, result] =
-      exec_pre.copy_visibilities_to_device(
-        std::move(visibilities),
-        return_visibilities);
+    auto len =
+      exec_pre.copy_visibilities_to_device(std::move(visibilities));
 
     auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
@@ -3278,8 +3284,7 @@ public:
       model,
       m_grid,
       m_weights);
-
-    return std::move(result);
+    return exec_grid.copy_visibilities_to_host(return_visibilities);
   }
 
   template <unsigned N>
@@ -3766,12 +3771,8 @@ protected:
         m_exec_space_indexes.push_back(old_idx);
         m_exec_space_indexes.pop_front();
         new_idx = m_exec_space_indexes.front();
-        // Although there is no need to fence on the new ExecSpace explicitly
-        // for correctness, we use this opportunity to exert back-pressure on
-        // the caller to limit the caller's rate of task submissions
-        m_exec_spaces[new_idx].fence();
       }
-      m_exec_spaces[new_idx].copy_visibilities_to_host();
+      m_exec_spaces[new_idx].fence();
       std::get<1>(m_cfs[m_cf_indexes.front()]) = new_idx;
     }
 #ifndef NDEBUG
