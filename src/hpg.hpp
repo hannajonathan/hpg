@@ -213,6 +213,18 @@ struct VisData {
     , m_cf_phase_gradient({0, 0}) {}
 
   VisData() {}
+
+  bool
+  operator==(const VisData& rhs) {
+    return m_visibilities == rhs.m_visibilities
+      && m_weights == rhs.m_weights
+      && m_frequency == rhs.m_frequency
+      && m_phase == rhs.m_phase
+      && m_uvw == rhs.m_uvw
+      && m_grid_cube == rhs.m_grid_cube
+      && m_cf_index == rhs.m_cf_index
+      && m_cf_phase_gradient == rhs.m_cf_phase_gradient;
+  }
 };
 
 namespace Impl {
