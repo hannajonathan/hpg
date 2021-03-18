@@ -647,7 +647,9 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
         return
           map(
             std::get<1>(std::move(t_gs))
-            .grid_visibilities(hpg::Device::OpenMP, std::move(id).visibilities),
+            .grid_visibilities_only(
+              hpg::Device::OpenMP,
+              std::move(id).visibilities),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));

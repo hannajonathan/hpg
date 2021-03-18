@@ -913,22 +913,25 @@ struct HPG_EXPORT VisibilityGridder final {
         vis_array += va;
       }
     }
-    // TODO: keep multiplication by conj_phasor explicit, in anticipation of
-    // supporting read-back of residual visibilities
+
+    // result contains residual or predicted visibilities
+    poln_array_type<N> result;
+
+    // apply weights and phasor to compute predicted visibilities
     auto conj_phasor = vis.m_phasor;
     conj_phasor.imag() *= -1;
     for (int C = 0; C < N; ++C)
-      vis_array.vis[C] =
+      result.vals[C] =
         (vis_array.vis[C]
          / ((vis_array.wgt[C] != (cf_t)0) ? vis_array.wgt[C] : (cf_t)1))
         * conj_phasor;
 
     if (!degrid_only) {
-      // residual visibilities (result) and gridding values (vv)
+      // compute residual visibilities (result) and gridding values (vv)
       poln_array_type<N> vv;
       for (int C = 0; C < N; ++C) {
-        vis_array.vis[C] = vis.m_values[C] - vis_array.vis[C];
-        vv.vals[C] = vis_array.vis[C] * vis.m_phasor * vis.m_weights[C];
+        result.vals[C] = vis.m_values[C] - result.vals[C];
+        vv.vals[C] = result.vals[C] * vis.m_phasor * vis.m_weights[C];
       }
 
       // accumulate to grid, and CF weights per visibility polarization
@@ -958,7 +961,7 @@ struct HPG_EXPORT VisibilityGridder final {
                       vis.m_cf_minor[0],
                       vis.m_cf_minor[1]);
                   cfv.imag() *= cf_im_factor;
-                  gv += gv_t(cfv * screen * vis_array.vis[C]);
+                  gv += gv_t(cfv * screen * vv.vals[C]);
                   vis_weights_l.vals[C] += cfv;
                 }
               }
@@ -1770,10 +1773,11 @@ struct State {
   virtual std::optional<Error>
   set_model(Device host_device, GridValueArray&& gv) = 0;
 
-  virtual std::optional<Error>
+  virtual rval_t<std::future<VisDataVector>>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    bool return_visibilities,
     bool degrid_only) = 0;
 
   virtual void
@@ -2887,10 +2891,45 @@ struct ExecSpace final {
     visdata_view<2, memory_space>,
     visdata_view<3, memory_space>,
     visdata_view<4, memory_space>> visibilities;
-  std::vector<std::any> copy_state;
+  std::variant<
+    vector_view<VisData<1>>,
+    vector_view<VisData<2>>,
+    vector_view<VisData<3>>,
+    vector_view<VisData<4>>> visibilities_h;
+  std::variant<
+    std::vector<::hpg::VisData<1>>,
+    std::vector<::hpg::VisData<2>>,
+    std::vector<::hpg::VisData<3>>,
+    std::vector<::hpg::VisData<4>>> vis_vector;
+  std::optional<std::promise<VisDataVector>> vis_promise;
+  size_t num_visibilities;
 
   ExecSpace(execution_space sp)
     : space(sp) {
+  }
+
+  ExecSpace(const ExecSpace&) = delete;
+
+  ExecSpace(ExecSpace&& other)
+    : space(std::move(other).space)
+    , visbuff(std::move(other).visbuff)
+    , visibilities(std::move(other).visibilities)
+    , visibilities_h(std::move(other).visibilities_h)
+    , vis_vector(std::move(other).vis_vector)
+    , vis_promise(std::move(other).vis_promise)
+    , num_visibilities(std::move(other).num_visibilities) {
+  }
+
+  ExecSpace&
+  operator=(ExecSpace&& rhs) {
+    space = std::move(rhs).space;
+    visbuff = std::move(rhs).visbuff;
+    visibilities = std::move(rhs).visibilities;
+    visibilities_h = std::move(rhs).visibilities_h;
+    vis_vector = std::move(rhs).vis_vector;
+    vis_promise = std::move(rhs).vis_promise;
+    num_visibilities = std::move(rhs).num_visibilities;
+    return *this;
   }
 
   void
@@ -2904,35 +2943,73 @@ struct ExecSpace final {
     return std::get<visdata_view<N, memory_space>>(visibilities);
   }
 
-  /** copy visibilities to device */
   template <unsigned N>
-  size_t
-  copy_visibilities(const vector_data<::hpg::VisData<N>>& visdata) {
+  std::tuple<size_t, std::future<VisDataVector>>
+  copy_visibilities_to_device(
+    std::vector<::hpg::VisData<N>>&& in_vis,
+    bool return_visibilities) {
 
-    size_t result = visdata->size();
-    if (result > 0) {
-      copy_state.emplace_back(visdata);
-      vector_view<VisData<N>>
-        hview(reinterpret_cast<VisData<N>*>(visdata->data()), result);
+    num_visibilities = in_vis.size();
+    if (num_visibilities > 0) {
+      visibilities_h =
+        vector_view<VisData<N>>(
+          reinterpret_cast<VisData<N>*>(in_vis.data()),
+          num_visibilities);
+      auto hview = std::get<vector_view<VisData<N>>>(visibilities_h);
       if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
         visibilities =
           visdata_view<N, memory_space>(
             reinterpret_cast<VisData<N>*>(visbuff.data()),
-            result);
-        auto dview = std::get<visdata_view<N, memory_space>>(visibilities);
-        auto dv = K::subview(dview, std::pair((size_t)0, result));
-        K::deep_copy(space, dv, hview);
-        copy_state.push_back(hview);
-        copy_state.push_back(dv);
+            num_visibilities);
+        auto dview =
+          K::subview(visdata<N>(), std::pair((size_t)0, num_visibilities));
+        K::deep_copy(space, dview, hview);
       } else {
         visibilities =
           visdata_view<N, memory_space>(
             reinterpret_cast<VisData<N>*>(&hview(0)),
-            result);
-        copy_state.push_back(hview);
+            num_visibilities);
       }
     }
-    return result;
+    vis_vector = std::move(in_vis);
+    std::future<VisDataVector> fv;
+    if (return_visibilities) {
+      vis_promise = std::promise<VisDataVector>();
+      fv = vis_promise.value().get_future();
+    } else {
+      std::promise<VisDataVector> p;
+      p.set_value(VisDataVector());
+      fv = p.get_future();
+    }
+    return {num_visibilities, std::move(fv)};
+  }
+
+  void
+  copy_visibilities_to_host() {
+
+    if (vis_promise) {
+      std::visit(
+        overloaded {
+          [this](auto& v) {
+            using v_t = std::remove_reference_t<decltype(v)>;
+            constexpr unsigned N = v_t::value_type::npol;
+            if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
+              if (num_visibilities > 0) {
+                auto hview = std::get<vector_view<VisData<N>>>(visibilities_h);
+                auto dview =
+                  K::subview(
+                    visdata<N>(),
+                    std::pair((size_t)0, num_visibilities));
+                K::deep_copy(space, hview, dview);
+              }
+            }
+            vis_promise.value().set_value(
+              VisDataVector(std::get<v_t>(std::move(vis_vector))));
+          }
+        },
+        vis_vector);
+      vis_promise.reset();
+    }
   }
 };
 
@@ -3170,14 +3247,18 @@ public:
   }
 
   template <unsigned N>
-  void
+  std::future<VisDataVector>
   default_grid_visibilities(
     Device /*host_device*/,
-    const vector_data<::hpg::VisData<N>>& visibilities,
+    std::vector<::hpg::VisData<N>>&& visibilities,
+    bool return_visibilities,
     bool degrid_only) {
 
-    auto len = exec_copy.copy_visibilities(visibilities);
     auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    auto [len, result] =
+      exec_pre.copy_visibilities_to_device(
+        std::move(visibilities),
+        return_visibilities);
 
     auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
@@ -3197,18 +3278,18 @@ public:
       model,
       m_grid,
       m_weights);
+
+    return std::move(result);
   }
 
   template <unsigned N>
-  std::optional<Error>
+  rval_t<std::future<VisDataVector>>
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
+    bool return_visibilities,
     bool degrid_only) {
 
-    const auto vis =
-      std::make_shared<std::vector<::hpg::VisData<N>>>(
-        std::move(visibilities));
 // #ifndef NDEBUG
 //     for (auto& [cube, supp] : *cf_indexes) {
 //       auto& cfpool = std::get<0>(m_cfs[m_cf_indexes.front()]);
@@ -3220,16 +3301,25 @@ public:
 
     switch (visibility_gridder_version()) {
     case 0:
-      default_grid_visibilities(host_device, vis, degrid_only);
+      return
+        default_grid_visibilities(
+          host_device,
+          std::move(visibilities),
+          return_visibilities,
+          degrid_only);
+      break;
+    default:
+      assert(false);
+      std::abort();
       break;
     }
-    return std::nullopt;
   }
 
-  std::optional<Error>
+  rval_t<std::future<VisDataVector>>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    bool return_visibilities,
     bool degrid_only)
     override {
 
@@ -3239,6 +3329,7 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v1),
+          return_visibilities,
           degrid_only);
         break;
     case 2:
@@ -3246,6 +3337,7 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v2),
+          return_visibilities,
           degrid_only);
       break;
     case 3:
@@ -3253,6 +3345,7 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v3),
+          return_visibilities,
           degrid_only);
       break;
     case 4:
@@ -3260,6 +3353,7 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v4),
+          return_visibilities,
           degrid_only);
       break;
     default:
@@ -3523,7 +3617,6 @@ private:
   void
   init_state(const std::variant<const CFArrayShape*, const StateT*>& init) {
     m_streams.resize(m_max_active_tasks);
-    m_exec_spaces.reserve(m_max_active_tasks);
     m_cfs.resize(m_max_active_tasks);
     for (unsigned i = 0; i < m_max_active_tasks; ++i) {
       if constexpr (!std::is_void_v<stream_type>) {
@@ -3678,7 +3771,7 @@ protected:
         // the caller to limit the caller's rate of task submissions
         m_exec_spaces[new_idx].fence();
       }
-      m_exec_spaces[new_idx].copy_state.clear();
+      m_exec_spaces[new_idx].copy_visibilities_to_host();
       std::get<1>(m_cfs[m_cf_indexes.front()]) = new_idx;
     }
 #ifndef NDEBUG

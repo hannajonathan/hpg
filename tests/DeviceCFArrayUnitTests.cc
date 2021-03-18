@@ -410,7 +410,8 @@ TEST(DeviceCFArray, Gridding) {
   auto gridding =
     hpg::RvalM<const hpg::GridderState&, hpg::GridderState>::pure(
       [&](const hpg::GridderState& gs) {
-        return gs.grid_visibilities(default_host_device, decltype(vis)(vis));
+        return
+          gs.grid_visibilities_only(default_host_device, decltype(vis)(vis));
       })
     .map(
       [](auto&& gs) {

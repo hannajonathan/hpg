@@ -799,7 +799,7 @@ TEST(GridderState, CopyOrMove) {
     init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
     auto gs2 =
       hpg::get_value(
-        gs1.grid_visibilities(default_host_device, decltype(vis)(vis)));
+        gs1.grid_visibilities_only(default_host_device, decltype(vis)(vis)));
 
     // gridded visibilities should be in gs2, not gs1
     auto [gs3, values] = std::move(gs1).grid_values();
@@ -809,7 +809,8 @@ TEST(GridderState, CopyOrMove) {
 
     auto gs4 =
       hpg::get_value(
-        std::move(gs3).grid_visibilities(default_host_device, std::move(vis)));
+        std::move(gs3)
+        .grid_visibilities_only(default_host_device, std::move(vis)));
 
     // gs2 and gs4 should have same grid values
     auto [gs5, values5] = std::move(gs2).grid_values();
@@ -939,7 +940,8 @@ TEST(GridderState, Reset) {
 
     auto gs2 =
       hpg::get_value(
-        std::move(gs1).grid_visibilities(default_host_device, std::move(vis)));
+        std::move(gs1)
+        .grid_visibilities_only(default_host_device, std::move(vis)));
 
     auto [gs3, values] = std::move(gs2).grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));
@@ -992,12 +994,13 @@ TEST(GridderState, Sequences) {
     init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
     auto gs2 =
       hpg::get_value(
-        std::move(gs1).grid_visibilities(
+        std::move(gs1).grid_visibilities_only(
           default_host_device,
           decltype(vis)(vis)));
 
     auto err_or_gs3 =
-      std::move(gs2).grid_visibilities(default_host_device, decltype(vis)(vis));
+      std::move(gs2)
+      .grid_visibilities_only(default_host_device, decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_value(err_or_gs3));
 
     auto err_or_gs4 =
@@ -1006,13 +1009,13 @@ TEST(GridderState, Sequences) {
     ASSERT_TRUE(hpg::is_value(err_or_gs4));
 
     auto err_or_gs5 =
-      hpg::get_value(std::move(err_or_gs4)).grid_visibilities(
+      hpg::get_value(std::move(err_or_gs4)).grid_visibilities_only(
         default_host_device,
         decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_value(err_or_gs5));
 
     auto err_or_gs6 =
-      hpg::get_value(std::move(err_or_gs5)).grid_visibilities(
+      hpg::get_value(std::move(err_or_gs5)).grid_visibilities_only(
         default_host_device,
         decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_value(err_or_gs6));
@@ -1050,7 +1053,7 @@ TEST(GridderState, GriddingError) {
         gs.set_convolution_function(default_host_device, MyCFArray(cf)));
     init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
     auto gs2_or_err =
-      gs1.grid_visibilities(default_host_device, decltype(vis)(vis));
+      gs1.grid_visibilities_only(default_host_device, decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
       hpg::get_error(gs2_or_err).type(),
@@ -1110,7 +1113,9 @@ TEST(GridderState, Serialization) {
           [=](auto&& gs) mutable {
             return
               std::move(gs)
-              .grid_visibilities(default_host_device, std::move(vis[first]));
+              .grid_visibilities_only(
+                default_host_device,
+                std::move(vis[first]));
           })
         .and_then(
           [=](auto&& gs) mutable {
@@ -1124,7 +1129,9 @@ TEST(GridderState, Serialization) {
           [=](auto&& gs) mutable {
             return
               std::move(gs)
-              .grid_visibilities(default_host_device, std::move(vis[second]));
+              .grid_visibilities_only(
+                default_host_device,
+                std::move(vis[second]));
           })
         .map(
           [](auto&& gs) {
@@ -1178,7 +1185,7 @@ TEST(GridderState, Batching) {
         gs.set_convolution_function(default_host_device, MyCFArray(cf)));
     init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
     auto gs2_or_err =
-      gs1.grid_visibilities(default_host_device, decltype(vis)(vis));
+      gs1.grid_visibilities_only(default_host_device, decltype(vis)(vis));
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
       hpg::get_error(gs2_or_err).type(),
@@ -1192,7 +1199,7 @@ TEST(GridderState, Batching) {
         gs.set_convolution_function(default_host_device, MyCFArray(cf)));
     init_visibilities(num_vis - 1, grid_size, grid_scale, cf, rng, vis);
     auto gs2_or_err =
-      gs1.grid_visibilities(default_host_device, decltype(vis)(vis));
+      gs1.grid_visibilities_only(default_host_device, decltype(vis)(vis));
     EXPECT_FALSE(hpg::is_error(gs2_or_err));
   }
 }
@@ -1235,7 +1242,7 @@ TEST(GridderState, Gridding) {
           [=](auto&& gs) {
             return
               std::move(gs)
-              .grid_visibilities(
+              .grid_visibilities_only(
                 default_host_device,
                 std::vector<hpg::VisData<1>>{
                   hpg::VisData<1>({vis}, {wgt}, c, 0.0, uvw, 0, {0, 0})});
@@ -1300,7 +1307,7 @@ TEST(GridderState, GridOne) {
           [=](auto&& gs) {
             return
               std::move(gs)
-              .grid_visibilities(
+              .grid_visibilities_only(
                 default_host_device,
                 std::vector<hpg::VisData<1>>{
                   hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw, 0, {0, 0})});
@@ -1369,7 +1376,8 @@ TEST(GridderState, ZeroModel) {
         0,
         {0, 0})};
   // retain current value (zero grid) of gs2
-  auto gs3_or_err = gs2.grid_visibilities(default_host_device, visibilities);
+  auto gs3_or_err =
+    gs2.grid_visibilities_only(default_host_device, visibilities);
   ASSERT_TRUE(hpg::is_value(gs3_or_err));
   auto gs3 = hpg::get_value(std::move(gs3_or_err));
 
@@ -1389,7 +1397,7 @@ TEST(GridderState, ZeroModel) {
   // and grid the visibility
   auto gs5_or_err =
     hpg::get_value(std::move(gs4_or_err))
-    .grid_visibilities(default_host_device, visibilities);
+    .grid_visibilities_only(default_host_device, visibilities);
   ASSERT_TRUE(hpg::is_value(gs5_or_err));
   auto gs5 = hpg::get_value(std::move(gs5_or_err));
 
