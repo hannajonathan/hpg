@@ -5,7 +5,9 @@
 #include "hpg_error.hpp"
 
 #include <cassert>
+#include <chrono>
 #include <complex>
+#include <future>
 #include <memory>
 #include <set>
 #include <string>
@@ -779,6 +781,62 @@ constexpr FFTSign model_fft_sign_dflt =
   ((grid_fft_sign_dflt == FFTSign::POSITIVE)
    ? FFTSign::NEGATIVE
    : FFTSign::POSITIVE);
+
+/** future
+ *
+ * A type similar to a std::future, but with limitations to account for the fact
+ * that GridderState progress to fulfill a future can only occur during calls to
+ * GridderState methods. In this situation a regular std::future is prone to
+ * deadlocks, which is the reason for the existence of this class.
+ *
+ * @todo The current implementation relies on std:future, values of which
+ * typically are completed in a POSIX thread (e.g, future_visibilities_narrow()
+ * uses std::async()). This design requires a dependency on pthreads, meaning
+ * that in many cases both OpenMP and pthreads will be in use, which is not
+ * ideal. Perhaps Kokkos tasking could be used instead, in order to limit
+ * ourselves to a single thread model. While it is unclear whether a Kokkos
+ * based implementation would be possible, at the very least it would require
+ * keeping the Kokkos dependency out of the public HPG interface.
+ */
+template <typename T>
+class HPG_EXPORT future final {
+public:
+
+  future(std::future<T>&& f)
+    : m_f(std::move(f)) {}
+
+  /** get value, may throw an exception */
+  std::unique_ptr<T>
+  get_ex() {
+    std::unique_ptr<T> result;
+    if (m_f.wait_for(std::chrono::microseconds(0))
+        == std::future_status::ready)
+      result = new T(m_f.get());
+    return result;
+  }
+
+#if HPG_API >= 17 || defined(HPG_INTERNAL)
+  /** get value, never throws an exception */
+  std::optional<std::variant<std::exception, T>>
+  get() noexcept {
+    std::optional<std::variant<std::exception, T>> result;
+    try {
+      auto t = get_ex();
+      if (t)
+        result = std::move(*t);
+    } catch (const std::exception& ex) {
+      result = ex;
+    }
+    return result;
+  }
+#endif // HPG_API >= 17
+
+protected:
+
+  friend class GridderState;
+
+  std::future<T> m_f;
+};
 
 /** gridder state
  *

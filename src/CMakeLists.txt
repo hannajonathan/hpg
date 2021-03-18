@@ -75,9 +75,14 @@ if(HAVE_SERIAL GREATER -1 OR  HAVE_OPENMP GREATER -1)
   find_package(FFTW REQUIRED COMPONENTS ${FFTW_COMPONENTS})
 endif()
 
+# find thread library
+#
+find_package(Threads)
+
 # libhpg
 #
 add_library(hpg hpg.cc)
+target_link_libraries(hpg PUBLIC Threads::Threads)
 if(HAVE_SERIAL GREATER -1)
   set(HPG_ENABLE_SERIAL ${Hpg_ENABLE_SERIAL})
   if(HAVE_OPENMP LESS 0)
