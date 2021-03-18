@@ -3564,16 +3564,7 @@ private:
         if constexpr (std::is_same_v<K::HostSpace, memory_space>) {
           std::visit(
             overloaded {
-              [&esp](const visdata_view<1, memory_space>& v) {
-                esp.visibilities = v;
-              },
-              [&esp](const visdata_view<2, memory_space>& v) {
-                esp.visibilities = v;
-              },
-              [&esp](const visdata_view<3, memory_space>& v) {
-                esp.visibilities = v;
-              },
-              [&esp](const visdata_view<4, memory_space>& v) {
+              [&esp](auto& v) {
                 esp.visibilities = v;
               }
             },
@@ -3581,34 +3572,18 @@ private:
         } else {
           std::visit(
             overloaded {
-              [&esp](const visdata_view<1, memory_space>& v) {
+              [&esp](auto& v) {
+                using v_t = std::remove_reference_t<decltype(v)>;
+                constexpr unsigned N = v_t::value_type::npol;
                 esp.visibilities =
-                  visdata_view<1, memory_space>(
-                    reinterpret_cast<VisData<1>*>(esp.visbuff.data()),
-                    v.extent(0));
-              },
-              [&esp](const visdata_view<2, memory_space>& v) {
-                esp.visibilities =
-                  visdata_view<2, memory_space>(
-                    reinterpret_cast<VisData<2>*>(esp.visbuff.data()),
-                    v.extent(0));
-              },
-              [&esp](const visdata_view<3, memory_space>& v) {
-                esp.visibilities =
-                  visdata_view<3, memory_space>(
-                    reinterpret_cast<VisData<3>*>(esp.visbuff.data()),
-                    v.extent(0));
-              },
-              [&esp](const visdata_view<4, memory_space>& v) {
-                esp.visibilities =
-                  visdata_view<4, memory_space>(
-                    reinterpret_cast<VisData<4>*>(esp.visbuff.data()),
+                  visdata_view<N, memory_space>(
+                    reinterpret_cast<VisData<N>*>(esp.visbuff.data()),
                     v.extent(0));
               }
             },
             st_esp.visibilities);
         }
-        esp.copy_state = st_esp.copy_state;
+        // FIXME: esp.copy_state = st_esp.copy_state;
       }
       for (auto& i : ost->m_cf_indexes) {
         auto& [cf, last] = m_cfs[i];
