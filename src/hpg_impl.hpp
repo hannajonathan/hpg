@@ -2571,18 +2571,18 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
 
 /** names for stream states */
 enum class StreamPhase {
-  COPY,
-  COMPUTE
+  PRE_GRIDDING,
+  GRIDDING
 };
 
 std::ostream&
 operator<<(std::ostream& str, const StreamPhase& ph) {
   switch (ph) {
-  case StreamPhase::COPY:
-    str << "COPY";
+  case StreamPhase::PRE_GRIDDING:
+    str << "PRE_GRIDDING";
     break;
-  case StreamPhase::COMPUTE:
-    str << "COMPUTE";
+  case StreamPhase::GRIDDING:
+    str << "GRIDDING";
     break;
   }
   return str;
@@ -2638,7 +2638,8 @@ struct CFPool final {
           other.pool.extent(0));
       K::deep_copy(
         other.state
-        ->m_exec_spaces[other.state->next_exec_space(StreamPhase::COPY)].space,
+        ->m_exec_spaces[other.state->next_exec_space(StreamPhase::PRE_GRIDDING)]
+        .space,
         pool,
         other.pool);
       other.state->fence();
@@ -2683,7 +2684,8 @@ struct CFPool final {
       // possibly avoid a fence before the copy
       K::deep_copy(
         rhs.state
-        ->m_exec_spaces[rhs.state->next_exec_space(StreamPhase::COPY)].space,
+        ->m_exec_spaces[rhs.state->next_exec_space(StreamPhase::PRE_GRIDDING)]
+        .space,
         pool,
         rhs.pool);
       rhs.state->fence();
@@ -2959,7 +2961,7 @@ public:
   mutable std::vector<std::tuple<CFPool<D>, std::optional<int>>> m_cfs;
   mutable std::deque<int> m_exec_space_indexes;
   mutable std::deque<int> m_cf_indexes;
-  mutable StreamPhase m_current = StreamPhase::COPY;
+  mutable StreamPhase m_current = StreamPhase::PRE_GRIDDING;
 
   StateT(
     unsigned max_active_tasks,
@@ -3107,7 +3109,7 @@ public:
     }
 
     switch_cf_pool();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     try {
       cf.add_device_cfs(
@@ -3127,7 +3129,7 @@ public:
       return InvalidModelGridSizeError(model_sz, m_grid_size);
 
     fence();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
 
     if (!m_model.is_allocated()) {
       std::array<int, 4> ig{
@@ -3174,15 +3176,15 @@ public:
     const vector_data<::hpg::VisData<N>>& visibilities,
     bool degrid_only) {
 
-    auto& exec_copy = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
     auto len = exec_copy.copy_visibilities(visibilities);
+    auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
 
-    auto& exec_compute = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
+    auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     const_grid_view<typename GridLayout<D>::layout, memory_space> model
       = m_model;
     Core::VisibilityGridder<N, execution_space, 0>::kernel(
-      exec_compute.space,
+      exec_grid.space,
       cf.cf_d,
       cf.cf_radii,
       cf.max_cf_extent_y,
@@ -3190,7 +3192,7 @@ public:
       m_conjugate_mueller_indexes,
       degrid_only,
       len,
-      exec_compute.template visdata<N>(),
+      exec_grid.template visdata<N>(),
       m_grid_scale,
       model,
       m_grid,
@@ -3273,13 +3275,13 @@ public:
       auto& exec = m_exec_spaces[i];
       exec.fence();
     }
-    m_current = StreamPhase::COPY;
+    m_current = StreamPhase::PRE_GRIDDING;
   }
 
   std::unique_ptr<GridWeightArray>
   grid_weights() const override {
     fence();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     auto wgts_h = K::create_mirror(m_weights);
     K::deep_copy(exec.space, wgts_h, m_weights);
     exec.fence();
@@ -3289,7 +3291,7 @@ public:
   std::unique_ptr<GridValueArray>
   grid_values() const override {
     fence();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     auto grid_h = K::create_mirror(m_grid);
     K::deep_copy(exec.space, grid_h, m_grid);
     exec.fence();
@@ -3299,7 +3301,7 @@ public:
   std::unique_ptr<GridValueArray>
   model_values() const override {
     fence();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     if (m_model.is_allocated()) {
       auto model_h = K::create_mirror(m_model);
       K::deep_copy(exec.space, model_h, m_model);
@@ -3334,7 +3336,7 @@ public:
     switch (grid_normalizer_version()) {
     case 0:
       Core::GridNormalizer<execution_space, 0>::kernel(
-        m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+        m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
         m_grid,
         cweights,
         wfactor);
@@ -3356,7 +3358,7 @@ public:
         err =
           Core::FFT<execution_space, 0>
           ::in_place_kernel(
-            m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+            m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
             sign,
             m_grid);
         break;
@@ -3372,7 +3374,7 @@ public:
       case 0:
         err =
           Core::FFT<execution_space, 0>::out_of_place_kernel(
-            m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+            m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
             sign,
             pre_grid,
             m_grid);
@@ -3387,7 +3389,7 @@ public:
       switch (grid_normalizer_version()) {
       case 0:
         Core::GridNormalizer<execution_space, 0>::kernel(
-          m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+          m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
           m_grid,
           norm);
         break;
@@ -3410,7 +3412,7 @@ public:
           err =
             Core::FFT<execution_space, 0>
             ::in_place_kernel(
-              m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+              m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space,
               sign,
               m_model);
           break;
@@ -3434,7 +3436,7 @@ public:
         case 0:
           err =
             Core::FFT<execution_space, 0>::out_of_place_kernel(
-              m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+              m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space,
               sign,
               pre_model,
               m_model);
@@ -3449,7 +3451,7 @@ public:
         switch (grid_normalizer_version()) {
         case 0:
           Core::GridNormalizer<execution_space, 0>::kernel(
-            m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+            m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space,
             m_model,
             norm);
           break;
@@ -3466,7 +3468,7 @@ public:
     switch (grid_shifter_version()) {
     case 0:
       Core::GridShifter<execution_space, 0>::kernel(
-        m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+        m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
         m_grid);
       break;
     default:
@@ -3480,7 +3482,7 @@ public:
     switch (grid_shifter_version()) {
     case 0:
       Core::GridShifter<execution_space, 0>::kernel(
-        m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)].space,
+        m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
         m_model);
       break;
     default:
@@ -3604,7 +3606,7 @@ private:
         K::deep_copy(m_exec_spaces[0].space, m_model, ost->m_model);
       }
     }
-    m_current = StreamPhase::COPY;
+    m_current = StreamPhase::PRE_GRIDDING;
   }
 
   /** copy Mueller indexes to device */
@@ -3614,7 +3616,7 @@ private:
     const std::string& name,
     const std::vector<iarray<N>>& mindexes) {
 
-    auto esp = m_exec_spaces[next_exec_space(StreamPhase::COMPUTE)];
+    auto& esp = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     mindex_view<memory_space> result(name);
     auto mueller_indexes_h = K::create_mirror_view(result);
     size_t mr = 0;
@@ -3665,7 +3667,8 @@ protected:
   next_exec_space(StreamPhase next) const {
     int old_idx = m_exec_space_indexes.front();
     int new_idx = old_idx;
-    if (m_current == StreamPhase::COMPUTE && next == StreamPhase::COPY) {
+    if (m_current == StreamPhase::GRIDDING
+        && next == StreamPhase::PRE_GRIDDING) {
       if (m_max_active_tasks > 1) {
         m_exec_space_indexes.push_back(old_idx);
         m_exec_space_indexes.pop_front();
@@ -3689,7 +3692,7 @@ protected:
 
   void
   switch_cf_pool() {
-    auto esp_idx = next_exec_space(StreamPhase::COPY);
+    auto esp_idx = next_exec_space(StreamPhase::PRE_GRIDDING);
     m_cf_indexes.push_back(m_cf_indexes.front());
     m_cf_indexes.pop_front();
     auto& [cf, last] = m_cfs[m_cf_indexes.front()];
@@ -3724,7 +3727,7 @@ private:
         decltype(m_grid)(
           K::view_alloc(
             "grid",
-            m_exec_spaces[next_exec_space(StreamPhase::COPY)].space),
+            m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
           GridLayout<D>::dimensions(ig));
 #ifndef NDEBUG
     std::cout << "alloc grid sz " << m_grid.extent(0)
@@ -3753,13 +3756,13 @@ private:
           decltype(m_weights)(
             K::view_alloc(
               "weights",
-              m_exec_spaces[next_exec_space(StreamPhase::COPY)].space),
+              m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
             static_cast<int>(m_grid_size[static_cast<int>(GridAxis::mrow)]),
             static_cast<int>(m_grid_size[static_cast<int>(GridAxis::cube)]));
     }
     if (std::holds_alternative<const StateT*>(source)) {
       auto st = std::get<const StateT*>(source);
-      auto& exec = m_exec_spaces[next_exec_space(StreamPhase::COPY)];
+      auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
       K::deep_copy(exec.space, m_grid, st->m_grid);
       if (also_weights)
         K::deep_copy(exec.space, m_weights, st->m_weights);
