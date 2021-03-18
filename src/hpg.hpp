@@ -806,22 +806,34 @@ public:
     : m_f(std::move(f)) {}
 
   /** get value, may throw an exception */
+  template <
+    typename Rep = std::chrono::milliseconds::rep,
+    typename Period = std::chrono::milliseconds::period>
   std::unique_ptr<T>
-  get_ex() {
+  get_ex(
+    const std::chrono::duration<Rep, Period>& timeout =
+    std::chrono::duration<Rep, Period>(10)) {
+
     std::unique_ptr<T> result;
-    if (m_f.wait_for(std::chrono::microseconds(0))
+    if (m_f.wait_for(timeout)
         == std::future_status::ready)
-      result = new T(m_f.get());
+      result = std::unique_ptr<T>(new T(m_f.get()));
     return result;
   }
 
 #if HPG_API >= 17 || defined(HPG_INTERNAL)
   /** get value, never throws an exception */
+  template <
+    typename Rep = std::chrono::milliseconds::rep,
+    typename Period = std::chrono::milliseconds::period>
   std::optional<std::variant<std::exception, T>>
-  get() noexcept {
+  get(
+    const std::chrono::duration<Rep, Period>& timeout =
+    std::chrono::duration<Rep, Period>(10)) noexcept {
+
     std::optional<std::variant<std::exception, T>> result;
     try {
-      auto t = get_ex();
+      auto t = get_ex(timeout);
       if (t)
         result = std::move(*t);
     } catch (const std::exception& ex) {
@@ -1168,12 +1180,12 @@ private:
 
     return
       std::async(
-        [](future<VisDataVector>&& fvs) {
-          auto vs = fvs.m_f.get();
+        [](std::future<VisDataVector>&& f) {
+          auto vs = f.get();
           assert(vs.m_npol == 1);
           return std::move(*vs.m_v1);
         },
-        std::move(fvs));
+        std::move(fvs).m_f);
   }
 
   template <>
@@ -1182,12 +1194,12 @@ private:
 
     return
       std::async(
-        [](future<VisDataVector>&& fvs) {
-          auto vs = fvs.m_f.get();
+        [](std::future<VisDataVector>&& f) {
+          auto vs = f.get();
           assert(vs.m_npol == 2);
           return std::move(*vs.m_v2);
         },
-        std::move(fvs));
+        std::move(fvs).m_f);
   }
 
   template <>
@@ -1196,12 +1208,12 @@ private:
 
     return
       std::async(
-        [](future<VisDataVector>&& fvs) {
-          auto vs = fvs.m_f.get();
+        [](std::future<VisDataVector>&& f) {
+          auto vs = f.get();
           assert(vs.m_npol == 3);
           return std::move(*vs.m_v3);
         },
-        std::move(fvs));
+        std::move(fvs).m_f);
   }
 
   template <>
@@ -1210,12 +1222,12 @@ private:
 
     return
       std::async(
-        [](future<VisDataVector>&& fvs) {
-          auto vs = fvs.m_f.get();
+        [](std::future<VisDataVector>&& f) {
+          auto vs = f.get();
           assert(vs.m_npol == 4);
           return std::move(*vs.m_v4);
         },
-        std::move(fvs));
+        std::move(fvs).m_f);
   }
 
 public:
