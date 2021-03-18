@@ -205,6 +205,8 @@ using uvw_t = K::Array<vis_uvw_fp, 3>;
 template <unsigned N>
 struct VisData {
 
+  static constexpr unsigned npol = N;
+
   KOKKOS_INLINE_FUNCTION VisData() {};
 
   VisData(

@@ -156,6 +156,8 @@ using opt_error_t = std::unique_ptr<Error>;
 template <unsigned N>
 struct VisData {
 
+  static constexpr unsigned npol = N;
+
   /** visibility values, ordered by polarization*/
   std::array<std::complex<visibility_fp>, N> m_visibilities;
   /** visibility weights, ordered by polarization*/
