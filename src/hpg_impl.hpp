@@ -1773,7 +1773,7 @@ struct State {
   virtual std::optional<Error>
   set_model(Device host_device, GridValueArray&& gv) = 0;
 
-  virtual rval_t<std::future<VisDataVector>>
+  virtual std::variant<Error, std::future<VisDataVector>>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
@@ -3288,7 +3288,7 @@ public:
   }
 
   template <unsigned N>
-  rval_t<std::future<VisDataVector>>
+  std::future<VisDataVector>
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
@@ -3320,7 +3320,7 @@ public:
     }
   }
 
-  rval_t<std::future<VisDataVector>>
+  std::variant<Error, std::future<VisDataVector>>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,

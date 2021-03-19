@@ -13,8 +13,9 @@
 #include <string>
 #include <tuple>
 #include <vector>
-#if HPG_API >= 17
+#if HPG_API >= 17 || defined(HPG_INTERNAL)
 # include <optional>
+# include <variant>
 #endif
 
 #include "hpg_export.h"
@@ -813,6 +814,8 @@ constexpr FFTSign model_fft_sign_dflt =
 template <typename T>
 class HPG_EXPORT future final {
 public:
+
+  future() {}
 
   future(std::future<T>&& f)
     : m_f(std::move(f)) {}

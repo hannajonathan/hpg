@@ -138,16 +138,20 @@ struct Impl::GridderState {
       return InvalidNumberPolarizationsError();
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    return
-      map(
-        result.impl->grid_visibilities(
-          host_device,
-          std::move(visibilities),
-          return_visibilities,
-          degrid_only),
-        [result=std::move(result)](auto&& fvs) {
-          return std::make_tuple(std::move(result), future(std::move(fvs)));
-        });
+    auto err_or_fv =
+      result.impl->grid_visibilities(
+        host_device,
+        std::move(visibilities),
+        return_visibilities,
+        degrid_only);
+    if (std::holds_alternative<Error>(err_or_fv)) {
+      return std::get<Error>(err_or_fv);
+    } else {
+      return
+        std::make_tuple(
+          std::move(result),
+          future(std::get<std::future<VisDataVector>>(std::move(err_or_fv))));
+    }
   }
 
   template <typename GS>
@@ -912,17 +916,16 @@ Gridder::grid_visibilities(
         return std::move(err);
       });
 #else // HPG_API < 17
-  std::unique_ptr<Error> result;
-  std::tuple<GridderState, std::future<VisDataVector>> gs_fvs;
-  std::tie(result, gs_fvs) =
+  auto [result, gsf] =
     std::move(state)
     .grid_visibilities(
       host_device,
       std::move(visibilities),
       false, // FIXME
       degrid_only);
-  state = std::get<0>(std::move(gs_fvs));
-  return result;
+  if (!result)
+    std::tie(state, std::ignore) = std::move(gsf);
+  return std::move(result);
 #endif // HPG_API >= 17
 }
 
