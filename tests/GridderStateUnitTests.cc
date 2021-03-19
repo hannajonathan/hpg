@@ -1566,10 +1566,12 @@ TEST(GridderState, ResidualVisibilities) {
     // get result of future
     auto orv = fv.get();
     ASSERT_TRUE(orv);
-    // check there was no exception
-    ASSERT_FALSE(std::holds_alternative<std::exception>(orv.value()));
+#if HPG_API >= 17
     // get the residual visibilities
-    auto resvis = std::get<std::vector<hpg::VisData<2>>>(orv.value());
+    auto resvis = std::move(orv).value();
+#else
+    auto resvis = std::move(*orv);
+#endif
     EXPECT_TRUE(
       std::mismatch(
         resvis.begin(), resvis.end(),

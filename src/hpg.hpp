@@ -807,6 +807,9 @@ constexpr FFTSign model_fft_sign_dflt =
  * GridderState methods. In this situation a regular std::future is prone to
  * deadlocks, which is the reason for the existence of this class.
  *
+ * Note that, by design, these futures are never resolved by an exception, and
+ * it is a requirement that the underlying std::future behaves similarly.
+ *
  * @todo The current implementation relies on std:future, values of which
  * typically are completed in a POSIX thread (e.g, future_visibilities_narrow()
  * uses std::async()). This design requires a dependency on pthreads, meaning
@@ -825,43 +828,24 @@ public:
   future(std::future<T>&& f)
     : m_f(std::move(f)) {}
 
-  /** get value, may throw an exception */
+  /** get value */
   template <
     typename Rep = std::chrono::milliseconds::rep,
     typename Period = std::chrono::milliseconds::period>
-  std::unique_ptr<T>
-  get_ex(
-    const std::chrono::duration<Rep, Period>& timeout =
-    std::chrono::duration<Rep, Period>(10)) {
-
-    std::unique_ptr<T> result;
-    if (m_f.wait_for(timeout)
-        == std::future_status::ready)
-      result = std::unique_ptr<T>(new T(m_f.get()));
-    return result;
-  }
-
-#if HPG_API >= 17 || defined(HPG_INTERNAL)
-  /** get value, never throws an exception */
-  template <
-    typename Rep = std::chrono::milliseconds::rep,
-    typename Period = std::chrono::milliseconds::period>
-  std::optional<std::variant<std::exception, T>>
+  opt_t<T>
   get(
     const std::chrono::duration<Rep, Period>& timeout =
     std::chrono::duration<Rep, Period>(10)) noexcept {
 
-    std::optional<std::variant<std::exception, T>> result;
-    try {
-      auto t = get_ex(timeout);
-      if (t)
-        result = std::move(*t);
-    } catch (const std::exception& ex) {
-      result = ex;
-    }
+    opt_t<T> result;
+    if (m_f.wait_for(timeout) == std::future_status::ready)
+#if HPG_API >= 17
+      result = m_f.get();
+#else // HPG_API < 17
+      result = std::unique_ptr<T>(new T(m_f.get()));
+#endif // HPG_API >= 17
     return result;
   }
-#endif // HPG_API >= 17
 
 protected:
 
