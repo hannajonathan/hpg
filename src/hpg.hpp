@@ -149,12 +149,17 @@ using vis_uvw_t = std::array<vis_uvw_fp, 3>;
 /** CF phase gradient type */
 using cf_phase_gradient_t = std::array<cf_phase_gradient_fp, 2>;
 
-/** type to represent a possible error */
+/** type to represent an optional value */
 #if HPG_API >= 17
-using opt_error_t = std::optional<Error>;
+template <typename T>
+using opt_t = std::optional<T>;
 #else // HPG_API < 17
-using opt_error_t = std::unique_ptr<Error>;
+template <typename T>
+using opt_t = std::unique_ptr<T>;
 #endif //HPG_API >= 17
+
+/** type to represent a possible error */
+using opt_error_t = opt_t<Error>;
 
 template <unsigned N>
 struct VisData {
@@ -657,7 +662,7 @@ public:
    *
    * @return an Error, iff host_device names a disabled host device
    */
-  opt_error_t
+  opt_t<Error>
   copy_to(
     Device host_device,
     value_type* dst,
@@ -736,7 +741,7 @@ public:
    *
    * @return an Error, iff host_device names a disabled host device
    */
-  opt_error_t
+  opt_t<Error>
   copy_to(
     Device host_device,
     value_type* dst,
@@ -1877,7 +1882,7 @@ public:
    * @return new GridderState that is a copy of the target, but with memory
    * allocated for convolution function, or error
    */
-  opt_error_t
+  opt_t<Error>
   allocate_convolution_function_region(const CFArrayShape* shape);
 
   /** set convolution function
@@ -1890,7 +1895,7 @@ public:
    * @param host_device device to use for changing array layout
    * @param cf convolution function array
    */
-  opt_error_t
+  opt_t<Error>
   set_convolution_function(Device host_device, CFArray&&);
 
   /** set visibility model
@@ -1904,7 +1909,7 @@ public:
    *
    * @sa Gridder::set_model()
    */
-  opt_error_t
+  opt_t<Error>
   set_model(Device host_device, GridValueArray&& gv);
 
   /** grid visibilities
@@ -1914,7 +1919,7 @@ public:
    * @param host_device device to use for changing array layout
    * @param visibilities visibilities
    */
-  opt_error_t
+  opt_t<Error>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
@@ -1929,7 +1934,7 @@ public:
    * @param visibilities visibilities
    */
   template <unsigned N>
-  opt_error_t
+  opt_t<Error>
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
@@ -2000,7 +2005,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-  opt_error_t
+  opt_t<Error>
   apply_grid_fft(
     grid_value_fp norm = 1,
     FFTSign sign = grid_fft_sign_dflt,
@@ -2014,7 +2019,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-  opt_error_t
+  opt_t<Error>
   apply_model_fft(
     grid_value_fp norm = 1,
     FFTSign sign = model_fft_sign_dflt,

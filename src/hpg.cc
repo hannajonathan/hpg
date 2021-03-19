@@ -831,7 +831,7 @@ Gridder::convolution_function_region_size(const CFArrayShape* shape)
   return state.convolution_function_region_size(shape);
 }
 
-opt_error_t
+opt_t<Error>
 Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
 #if HPG_API >= 17
   return
@@ -852,7 +852,7 @@ Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
 #endif //HPG_API >= 17
 }
 
-opt_error_t
+opt_t<Error>
 Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
 #if HPG_API >= 17
   return
@@ -873,7 +873,7 @@ Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
 #endif //HPG_API >= 17
 }
 
-opt_error_t
+opt_t<Error>
 Gridder::set_model(Device host_device, GridValueArray&& gv) {
 #if HPG_API >= 17
   return
@@ -894,7 +894,7 @@ Gridder::set_model(Device host_device, GridValueArray&& gv) {
 #endif //HPG_API >= 17
 }
 
-opt_error_t
+opt_t<Error>
 Gridder::grid_visibilities(
   Device host_device,
   VisDataVector&& visibilities,
@@ -973,7 +973,7 @@ Gridder::normalize(grid_value_fp wgt_factor) {
   state = std::move(state).normalize(wgt_factor);
 }
 
-opt_error_t
+opt_t<Error>
 Gridder::apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
 #if HPG_API >= 17
   return
@@ -994,7 +994,7 @@ Gridder::apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
 #endif //HPG_API >= 17
 }
 
-opt_error_t
+opt_t<Error>
 Gridder::apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
 #if HPG_API >= 17
   return
@@ -1025,7 +1025,7 @@ Gridder::shift_model() {
   state = std::move(state).shift_model();
 }
 
-opt_error_t
+opt_t<Error>
 GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
@@ -1048,7 +1048,7 @@ GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
 #endif //HPG_API >= 17
 }
 
-opt_error_t
+opt_t<Error>
 GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
