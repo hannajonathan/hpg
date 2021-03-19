@@ -3,6 +3,7 @@
 #include "gtest/gtest.h"
 
 #include <array>
+#include <chrono>
 #include <complex>
 #include <random>
 
@@ -80,6 +81,64 @@ struct ConeCFArray final
       std::polar(
         (mueller + 1) * std::max(m_oversampled_radius[grp] - std::abs(p), 0.0f),
         std::arg(std::abs(p.real()) + 1.0if * std::abs(p.imag())));
+  }
+};
+
+struct LargeCFArray final
+  : public hpg::CFArray {
+
+  static const unsigned m_oversampling = 20;
+  static constexpr const std::array<unsigned,32> m_sizes{
+    17, 17, 17, 17, 18, 19, 20, 21,
+    22, 23, 25, 26, 28, 31, 36, 40,
+    50, 50, 50, 50, 50, 50, 50, 50,
+    50, 50, 50, 50, 50, 50, 50, 50};
+  std::vector<std::array<unsigned, 4>> m_extents;
+  std::vector<std::vector<std::complex<hpg::cf_fp>>> m_values;
+
+  LargeCFArray() {}
+
+  LargeCFArray(unsigned n_mueller) {
+
+    for (auto& sz : m_sizes) {
+      m_extents.push_back(
+        {(2 * (sz + padding) + 1) * m_oversampling,
+         (2 * (sz + padding) + 1) * m_oversampling,
+         n_mueller,
+         1});
+      size_t len =
+        m_extents.back()[0] * m_extents.back()[1]
+        * m_extents.back()[2] * m_extents.back()[3];
+      m_values.emplace_back(len);
+    }
+  }
+
+  unsigned
+  oversampling() const override {
+    return m_oversampling;
+  }
+
+  unsigned
+  num_groups() const override {
+    return static_cast<unsigned>(m_extents.size());
+  }
+
+  std::array<unsigned, 4>
+  extents(unsigned grp) const override {
+    return m_extents[grp];
+  }
+
+  std::complex<hpg::cf_fp>
+  operator()(
+    unsigned x,
+    unsigned y,
+    unsigned mueller,
+    unsigned cube,
+    unsigned grp)
+    const override {
+    auto& vals = m_values[grp];
+    auto& ext = m_extents[grp];
+    return vals[((x * ext[1] + y) * ext[2] + mueller) * ext[3] + cube];
   }
 };
 
@@ -373,6 +432,97 @@ TEST(DeviceCFArray, Gridding) {
   ASSERT_TRUE(hpg::is_value(grid_devcf_or_err));
   auto grid_devcf = hpg::get_value(std::move(grid_devcf_or_err));
   EXPECT_TRUE(values_eq(grid_cf.get(), grid_devcf.get()));
+}
+
+TEST(DeviceCFArray, Efficiency) {
+  // create two versions of the following CFArray: one, the original; and two,
+  // the DeviceCFArray equivalent
+  LargeCFArray cf(2);
+  // create DeviceCFArrays of cf
+  std::vector<
+    std::tuple<std::array<unsigned, 4>, std::vector<hpg::CFArray::value_type>>>
+    sized_arrays;
+  std::string vsn;
+  for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
+    // allocate storage for cf values in group "grp"
+    std::vector<hpg::CFArray::value_type>
+      array(hpg::get_value(cf.min_buffer_size(default_device, grp)));
+    // copy cf values to array
+    auto vsn_or_err =
+      cf.copy_to(default_device, default_host_device, grp, array.data());
+    ASSERT_TRUE(hpg::is_value(vsn_or_err));
+    vsn = hpg::get_value(vsn_or_err); // this should be the same for all groups
+    // save value array for this group along with the group's extents
+    sized_arrays.emplace_back(cf.extents(grp), std::move(array));
+  }
+  // create the DeviceCFArray version of cf
+  auto devcf_or_err =
+    hpg::DeviceCFArray::create(vsn, cf.oversampling(), std::move(sized_arrays));
+  ASSERT_TRUE(hpg::is_value(devcf_or_err));
+  auto devcf = hpg::get_value(std::move(devcf_or_err));
+
+  // define test as a function of CFArray, to do timing of
+  // set_convolution_function() with give CFArray
+  auto time_set_cf =
+    [](hpg::CFArray&& cf) {
+      return
+        hpg::RvalM<void, hpg::GridderState>::pure(
+          [&]() {
+            // create the GridderState instance
+            return
+              hpg::GridderState::create<1>(
+                default_device,
+                0,
+                10,
+                &cf,
+                {1000, 1000, 1, 1},
+                {0.1, 0.1},
+                {{0}},
+                {{0}});
+          })
+        .map(
+          [](auto&& gs) {
+            // start a timer
+            auto result = std::move(gs).fence();
+            return // (start-time, GridderState) tuple
+              std::make_tuple(
+                std::chrono::steady_clock::now(),
+                std::move(result));
+          })
+        .and_then(
+          [&](auto&& t0_gs) {
+            // set CF
+            return
+              map(
+                std::get<1>(std::move(t0_gs))
+                .set_convolution_function(default_host_device, std::move(cf)),
+                [&](auto&& gs) {
+                  return
+                    std::make_tuple( // (start-time, GridderState) tuple
+                      std::get<0>(std::move(t0_gs)),
+                      std::move(gs));
+                });
+          })
+        .map(
+          [](auto&& t0_gs) {
+            // fence to complete CF transfer
+            std::get<1>(std::move(t0_gs)).fence();
+            // compute elapsed time
+            std::chrono::duration<double> elapsed =
+              std::chrono::steady_clock::now() - std::get<0>(std::move(t0_gs));
+            return elapsed.count();
+          });
+    };
+
+  // run test with each version of cf
+  auto tcf_or_err = time_set_cf(std::move(cf))();
+  ASSERT_TRUE(hpg::is_value(tcf_or_err));
+  auto t_cf = hpg::get_value(tcf_or_err);
+  auto tdevcf_or_err = time_set_cf(std::move(*devcf))();
+  ASSERT_TRUE(hpg::is_value(tdevcf_or_err));
+  auto t_devcf = hpg::get_value(tdevcf_or_err);
+  std::cout << "cf " << t_cf << "; dev_cf" << t_devcf << std::endl;
+  EXPECT_LT(t_devcf, t_cf);
 }
 
 int
