@@ -478,13 +478,13 @@ TEST(DeviceCFArray, Efficiency) {
         .and_then_loop(
           static_cast<unsigned>(cfs.size()),
           [&](unsigned i, auto&& t0_gs) {
-            // set CF
             return
-              map(
-                std::get<1>(std::move(t0_gs))
-                .set_convolution_function(
+              hpg::map(
+                // set CF
+                std::get<1>(std::move(t0_gs)).set_convolution_function(
                   default_host_device,
                   std::move(*cfs[i])),
+                // insert start time into returned tuple
                 [&](auto&& gs) {
                   return
                     std::make_tuple( // (start-time, GridderState) tuple
@@ -532,7 +532,7 @@ TEST(DeviceCFArray, Efficiency) {
     ASSERT_TRUE(hpg::is_value(tdevcf_or_err));
     t_devcf = hpg::get_value(tdevcf_or_err);
   }
-  std::cout << "cf " << t_cf << "; dev_cf" << t_devcf << std::endl;
+  std::cout << "cf " << t_cf << "; devcf " << t_devcf << std::endl;
   EXPECT_LT(t_devcf, t_cf);
 }
 
