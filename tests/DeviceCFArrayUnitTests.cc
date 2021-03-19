@@ -257,14 +257,6 @@ values_eq(const T* array0, const T* array1) {
   return true;
 }
 
-std::vector<std::array<int, 1>>
-diagonal_mueller(const std::array<unsigned, 4>& grid_size) {
-  std::vector<std::array<int, 1>> result;
-  for (size_t i = 0; i < grid_size[2]; ++i)
-    result.push_back({int(i)});
-  return result;
-}
-
 // test array returned from hpg::CFArray::copy_to()
 TEST(DeviceCFArray, Create) {
   const unsigned oversampling = 20;
@@ -415,7 +407,6 @@ TEST(DeviceCFArray, Gridding) {
         }));
 
   // function to grid visibilities and return gridded values
-  auto mueller_indexes = diagonal_mueller(grid_size);
   auto gridding =
     hpg::RvalM<const hpg::GridderState&, hpg::GridderState>::pure(
       [&](const hpg::GridderState& gs) {
@@ -455,16 +446,11 @@ TEST(DeviceCFArray, Efficiency) {
     // save value array for this group along with the group's extents
     sized_arrays.emplace_back(cf.extents(grp), std::move(array));
   }
-  // create the DeviceCFArray version of cf
-  auto devcf_or_err =
-    hpg::DeviceCFArray::create(vsn, cf.oversampling(), std::move(sized_arrays));
-  ASSERT_TRUE(hpg::is_value(devcf_or_err));
-  auto devcf = hpg::get_value(std::move(devcf_or_err));
 
   // define test as a function of CFArray, to do timing of
-  // set_convolution_function() with give CFArray
+  // set_convolution_function() with given CFArray
   auto time_set_cf =
-    [](hpg::CFArray&& cf) {
+    [](std::vector<std::unique_ptr<hpg::CFArray>>& cfs) {
       return
         hpg::RvalM<void, hpg::GridderState>::pure(
           [&]() {
@@ -474,7 +460,7 @@ TEST(DeviceCFArray, Efficiency) {
                 default_device,
                 0,
                 10,
-                &cf,
+                cfs[0].get(),
                 {1000, 1000, 1, 1},
                 {0.1, 0.1},
                 {{0}},
@@ -489,13 +475,16 @@ TEST(DeviceCFArray, Efficiency) {
                 std::chrono::steady_clock::now(),
                 std::move(result));
           })
-        .and_then(
-          [&](auto&& t0_gs) {
+        .and_then_loop(
+          static_cast<unsigned>(cfs.size()),
+          [&](unsigned i, auto&& t0_gs) {
             // set CF
             return
               map(
                 std::get<1>(std::move(t0_gs))
-                .set_convolution_function(default_host_device, std::move(cf)),
+                .set_convolution_function(
+                  default_host_device,
+                  std::move(*cfs[i])),
                 [&](auto&& gs) {
                   return
                     std::make_tuple( // (start-time, GridderState) tuple
@@ -514,13 +503,35 @@ TEST(DeviceCFArray, Efficiency) {
           });
     };
 
-  // run test with each version of cf
-  auto tcf_or_err = time_set_cf(std::move(cf))();
-  ASSERT_TRUE(hpg::is_value(tcf_or_err));
-  auto t_cf = hpg::get_value(tcf_or_err);
-  auto tdevcf_or_err = time_set_cf(std::move(*devcf))();
-  ASSERT_TRUE(hpg::is_value(tdevcf_or_err));
-  auto t_devcf = hpg::get_value(tdevcf_or_err);
+  // run test with a vector of each version of cf, but allocate the vectors one
+  // type at a time to conserve memory
+  const unsigned num_copies = 10;
+  double t_cf;
+  {
+    std::vector<std::unique_ptr<hpg::CFArray>> cfs;
+    for (unsigned i = 0; i < num_copies; ++i) {
+      cfs.emplace_back(new LargeCFArray(cf));
+    }
+    auto tcf_or_err = time_set_cf(cfs)();
+    ASSERT_TRUE(hpg::is_value(tcf_or_err));
+    t_cf = hpg::get_value(tcf_or_err);
+  }
+  double t_devcf;
+  {
+    std::vector<std::unique_ptr<hpg::CFArray>> devcfs;
+    for (unsigned i = 0; i < num_copies; ++i) {
+      auto devcf_or_err =
+        hpg::DeviceCFArray::create(
+          vsn,
+          cf.oversampling(),
+          decltype(sized_arrays)(sized_arrays));
+      ASSERT_TRUE(hpg::is_value(devcf_or_err));
+      devcfs.push_back(hpg::get_value(std::move(devcf_or_err)));
+    }
+    auto tdevcf_or_err = time_set_cf(devcfs)();
+    ASSERT_TRUE(hpg::is_value(tdevcf_or_err));
+    t_devcf = hpg::get_value(tdevcf_or_err);
+  }
   std::cout << "cf " << t_cf << "; dev_cf" << t_devcf << std::endl;
   EXPECT_LT(t_devcf, t_cf);
 }
