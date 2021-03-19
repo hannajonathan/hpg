@@ -1182,7 +1182,9 @@ public:
 
   /** grid some visibilities
    *
-   * May invoke fence() on target; always when return_visibilities is true
+   * May invoke fence() on target. This method is the most general of all the
+   * "grid_visibilities() const" methods, and the one that is called by the
+   * implementations of all other variants.
    *
    * @return new GridderState after gridding task has been submitted to device
    * queue, and a future of a potentially empty vector of returned (residual or
@@ -1196,7 +1198,7 @@ public:
    * @sa Gridder::grid_visibilities()
    */
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
-  grid_visibilities(
+  grid_visibilities_base(
     Device host_device,
     VisDataVector&& visibilities,
     bool return_visibilities = true,
@@ -1210,7 +1212,7 @@ public:
 
     return
       map(
-        grid_visibilities(
+        grid_visibilities_base(
           host_device,
           std::move(visibilities),
           false,
@@ -1245,7 +1247,7 @@ public:
 
     return
       map(
-        grid_visibilities(
+        grid_visibilities_base(
           host_device,
           VisDataVector(std::move(visibilities)),
           return_visibilities,
@@ -1280,7 +1282,7 @@ public:
 
     return
       map(
-        grid_visibilities(
+        grid_visibilities_base(
           host_device,
           VisDataVector(std::move(visibilities)),
           false,
@@ -1290,7 +1292,9 @@ public:
 
   /** grid some visibilities
    *
-   * May invoke fence() on target; always when return_visibilities is true
+   * May invoke fence() on target. This method is the most general of all the
+   * "grid_visibilities() &&" methods, and the one that is called by the
+   * implementations of all other variants.
    *
    * @return new GridderState after gridding task has been submitted to device
    * queue, and a future of a potentially empty vector of returned (residual or
@@ -1304,7 +1308,7 @@ public:
    * @sa Gridder::grid_visibilities()
    */
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
-  grid_visibilities(
+  grid_visibilities_base(
     Device host_device,
     VisDataVector&& visibilities,
     bool return_visibilities = true,
@@ -1319,7 +1323,7 @@ public:
     return
       map(
         std::move(*this)
-        .grid_visibilities(
+        .grid_visibilities_base(
           host_device,
           std::move(visibilities),
           false,
@@ -1355,7 +1359,7 @@ public:
     return
       map(
         std::move(*this)
-        .grid_visibilities(
+        .grid_visibilities_base(
           host_device,
           VisDataVector(std::move(visibilities)),
           return_visibilities,
@@ -1391,7 +1395,7 @@ public:
     return
       map(
         std::move(*this)
-        .grid_visibilities(
+        .grid_visibilities_base(
           host_device,
           VisDataVector(std::move(visibilities)),
           false,

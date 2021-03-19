@@ -481,7 +481,7 @@ GridderState::set_model(Device host_device, GridValueArray&& gv) && {
 }
 
 rval_t<std::tuple<GridderState, future<VisDataVector>>>
-GridderState::grid_visibilities(
+GridderState::grid_visibilities_base(
   Device host_device,
   VisDataVector&& visibilities,
   bool return_visibilities,
@@ -498,7 +498,7 @@ GridderState::grid_visibilities(
 }
 
 rval_t<std::tuple<GridderState, future<VisDataVector>>>
-GridderState::grid_visibilities(
+GridderState::grid_visibilities_base(
   Device host_device,
   VisDataVector&& visibilities,
   bool return_visibilities,
@@ -903,7 +903,7 @@ Gridder::grid_visibilities(
   return
     fold(
       std::move(state)
-      .grid_visibilities(
+      .grid_visibilities_base(
         host_device,
         std::move(visibilities),
         false, // FIXME
@@ -918,7 +918,7 @@ Gridder::grid_visibilities(
 #else // HPG_API < 17
   auto [result, gsf] =
     std::move(state)
-    .grid_visibilities(
+    .grid_visibilities_base(
       host_device,
       std::move(visibilities),
       false, // FIXME
