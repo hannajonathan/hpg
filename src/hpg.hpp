@@ -1171,7 +1171,9 @@ public:
   rval_t<GridderState>
   set_model(Device host_device, GridValueArray&& gv) &&;
 
-private:
+protected:
+
+  friend class Gridder;
 
   template <unsigned N>
   static future<std::vector<VisData<N>>>
@@ -1514,7 +1516,7 @@ public:
           return
             std::make_tuple(
               std::get<0>(std::move(gs_fvs)),
-              future_visibilities_narrow<N>(std::get<1>(gs_fvs)));
+              future_visibilities_narrow<N>(std::get<1>(std::move(gs_fvs))));
         });
   };
 
@@ -1546,7 +1548,7 @@ public:
           return
             std::make_tuple(
               std::get<0>(std::move(gs_fvs)),
-              future_visibilities_narrow<N>(std::get<1>(gs_fvs)));
+              future_visibilities_narrow<N>(std::get<1>(std::move(gs_fvs))));
         });
   };
 
@@ -2162,11 +2164,11 @@ public:
   opt_t<Error>
   set_model(Device host_device, GridValueArray&& gv);
 
-  /** grid visibilities
+  /** grid visibilities (template-free version)
    *
    * May invoke fence() on target.
    *
-   * @param host_device device to use for changing array layout
+   * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
    */
   opt_t<Error>
@@ -2174,12 +2176,13 @@ public:
     Device host_device,
     VisDataVector&& visibilities);
 
-  /** grid visibilities
+  /** grid visibilities (template version)
    *
    * May invoke fence() on target.
    *
-   * @tparam N number of polarizations in VisData elements
-   * @param host_device device to use for changing array layout
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
    */
   template <unsigned N>
@@ -2192,6 +2195,124 @@ public:
       grid_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)));
+  }
+
+  /** degrid and grid visibilities (template-free version)
+   *
+   * May invoke fence() on target.
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  opt_t<Error>
+  degrid_grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities);
+
+  /** degrid and grid visibilities (template version)
+   *
+   * May invoke fence() on target.
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  template <unsigned N>
+  opt_t<Error>
+  degrid_grid_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities) {
+
+    return
+      degrid_grid_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+  }
+
+  /** degrid visibilities, returning predicted visibilities (template-free
+   * version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return future of predicted visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  rval_t<future<VisDataVector>>
+  degrid_get_predicted_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities);
+
+  /** degrid visibilities, returning predicted visibilities (template version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return future of predicted visibilities
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  template <unsigned N>
+  rval_t<future<std::vector<VisData<N>>>>
+  degrid_get_predicted_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities) {
+
+    return
+      map(
+        degrid_get_predicted_visibilities(
+          host_device,
+          VisDataVector(std::move(visibilities))),
+        [](auto&& fvs) {
+          return GridderState::future_visibilities_narrow<N>(std::move(fvs));
+        });
+  }
+
+  /** degrid and grid visibilities, returning residual visibilities
+   * (template-free version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return future of residual visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  rval_t<future<VisDataVector>>
+  degrid_grid_get_residual_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities);
+
+  /** degrid and grid visibilities, returning residual visibilities (template
+   * version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return future of residual visibilities
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  template <unsigned N>
+  rval_t<future<std::vector<VisData<N>>>>
+  degrid_grid_get_residual_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities) {
+
+    return
+      map(
+        degrid_grid_get_residual_visibilities(
+          host_device,
+          VisDataVector(std::move(visibilities))),
+        [](auto&& fvs) {
+          return GridderState::future_visibilities_narrow<N>(std::move(fvs));
+        });
   }
 
   /** device execution fence
