@@ -1,0 +1,35 @@
+#include "hpg_version.hpp"
+
+using namespace hpg;
+
+const char*
+hpg::version() {
+  return "@hpg_VERSION@";
+}
+
+unsigned
+hpg::version_major() {
+  return @hpg_VERSION_MAJOR@;
+}
+
+unsigned
+hpg::version_minor() {
+  return @hpg_VERSION_MINOR@ + 0;
+}
+
+unsigned
+hpg::version_patch() {
+  return @hpg_VERSION_PATCH@ + 0;
+}
+
+unsigned
+hpg::version_tweak() {
+  return @hpg_VERSION_TWEAK@ + 0;
+}
+
+// Local Variables:
+// mode: c++
+// c-basic-offset: 2
+// fill-column: 80
+// indent-tabs-mode: nil
+// End:

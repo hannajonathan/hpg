@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.14)
-project(hpg)
+include(hpgVersionDetails.cmake)
+project(hpg
+  VERSION ${hpg_VER}
+  DESCRIPTION "High performance (de-)gridding kernel implementation library"
+  HOMEPAGE_URL https://gitlab.nrao.edu/mpokorny/hpg)
 enable_testing()
 enable_language(CXX)
 

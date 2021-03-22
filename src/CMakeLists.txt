@@ -79,10 +79,21 @@ endif()
 #
 find_package(Threads)
 
+# libhpg_version
+#
+configure_file(hpg_version.cpp.in hpg_version.cpp @ONLY)
+add_library(hpg_version STATIC
+  ${CMAKE_CURRENT_BINARY_DIR}/hpg_version.cpp)
+target_include_directories(hpg_version
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+
 # libhpg
 #
 add_library(hpg hpg.cc)
-target_link_libraries(hpg PUBLIC Threads::Threads)
+target_link_libraries(hpg
+  PRIVATE hpg_version
+  PUBLIC Threads::Threads)
 if(HAVE_SERIAL GREATER -1)
   set(HPG_ENABLE_SERIAL ${Hpg_ENABLE_SERIAL})
   if(HAVE_OPENMP LESS 0)
@@ -112,11 +123,12 @@ set(hpg_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_indexing.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_rval.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_error.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/hpg_version.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_config.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_export.h)
 set_target_properties(hpg PROPERTIES
-  VERSION 0.0.1
-  SOVERSION 0
+  VERSION ${hpg_VERSION}
+  SOVERSION ${hpg_VERSION_MAJOR}
   PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}"
   COMPILE_DEFINITIONS HPG_MAX_NUM_CF_GROUPS=${Hpg_MAX_NUM_CF_GROUPS})
 target_link_libraries(hpg PRIVATE Kokkos::kokkoscore)

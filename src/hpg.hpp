@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hpg_config.hpp"
+#include "hpg_version.hpp"
 #include "hpg_rval.hpp"
 #include "hpg_error.hpp"
 
