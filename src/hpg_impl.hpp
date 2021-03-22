@@ -1803,7 +1803,7 @@ struct State {
   reset_model() = 0;
 
   virtual void
-  normalize(grid_value_fp wfactor) = 0;
+  normalize_by_weights(grid_value_fp wfactor) = 0;
 
   virtual std::optional<Error>
   apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) = 0;
@@ -3442,7 +3442,7 @@ public:
   }
 
   void
-  normalize(grid_value_fp wfactor) override {
+  normalize_by_weights(grid_value_fp wfactor) override {
     const_weight_view<typename execution_space::array_layout, memory_space>
       cweights = m_weights;
     switch (grid_normalizer_version()) {

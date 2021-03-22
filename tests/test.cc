@@ -190,7 +190,7 @@ run_tests(
       auto sum = sum_grid(grid.get());
       std::cout << "sum " << sum << std::endl;
     }
-    g0.normalize();
+    g0.normalize_by_weights();
     std::cout << "grid normalized" << std::endl;
     {
       auto grid = g0.grid_values();
@@ -240,7 +240,7 @@ dump_grids(
   g0.grid_visibilities(
     host_dev,
     std::remove_reference_t<decltype(vis)>(vis));
-  g0.normalize();
+  g0.normalize_by_weights();
   auto err = g0.apply_grid_fft();
   assert(!err);
   {

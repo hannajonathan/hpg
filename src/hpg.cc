@@ -611,18 +611,18 @@ GridderState::reset_model() && {
 }
 
 GridderState
-GridderState::normalize(grid_value_fp wfactor) const & {
+GridderState::normalize_by_weights(grid_value_fp wfactor) const & {
 
   GridderState result(*this);
-  result.impl->normalize(wfactor);
+  result.impl->normalize_by_weights(wfactor);
   return result;
 }
 
 GridderState
-GridderState::normalize(grid_value_fp wfactor) && {
+GridderState::normalize_by_weights(grid_value_fp wfactor) && {
 
   GridderState result(std::move(*this));
-  result.impl->normalize(wfactor);
+  result.impl->normalize_by_weights(wfactor);
   return result;
 }
 
@@ -1050,8 +1050,8 @@ Gridder::reset_model() {
 }
 
 void
-Gridder::normalize(grid_value_fp wgt_factor) {
-  state = std::move(state).normalize(wgt_factor);
+Gridder::normalize_by_weights(grid_value_fp wgt_factor) {
+  state = std::move(state).normalize_by_weights(wgt_factor);
 }
 
 opt_t<Error>

@@ -1770,7 +1770,7 @@ public:
    * normalization
    */
   GridderState
-  normalize(grid_value_fp wgt_factor = 1) const &;
+  normalize_by_weights(grid_value_fp wgt_factor = 1) const &;
 
   /** normalize grid values by scaled weights
    *
@@ -1780,7 +1780,7 @@ public:
    * normalization
    */
   GridderState
-  normalize(grid_value_fp wgt_factor = 1) &&;
+  normalize_by_weights(grid_value_fp wgt_factor = 1) &&;
 
   /** apply FFT to grid array planes
    *
@@ -2354,7 +2354,7 @@ public:
   void
   reset_model();
 
-  /** normalize grid values by weights
+  /** normalize grid values by scaled weights
    *
    * May invoke fence() on target.
    *
@@ -2362,7 +2362,7 @@ public:
    * normalization
    */
   void
-  normalize(grid_value_fp wgt_factor = 1);
+  normalize_by_weights(grid_value_fp wgt_factor = 1);
 
   /** apply FFT to grid array planes
    *
