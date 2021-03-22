@@ -602,7 +602,7 @@ TEST(GridArrays, CompareLayouts) {
       [&](auto&& gs) mutable {
         return
           std::move(gs)
-          .grid_visibilities_only(default_host_device, std::move(vis));
+          .grid_visibilities(default_host_device, std::move(vis));
       })
     .map(
       [](auto&& gs) {

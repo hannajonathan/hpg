@@ -125,8 +125,9 @@ struct Impl::GridderState {
     GS&& st,
     Device host_device,
     VisDataVector&& visibilities,
+    bool do_degrid,
     bool return_visibilities,
-    bool degrid_only) {
+    bool do_grid) {
 
     if (host_devices().count(host_device) == 0)
       return DisabledHostDeviceError();
@@ -142,8 +143,9 @@ struct Impl::GridderState {
       result.impl->grid_visibilities(
         host_device,
         std::move(visibilities),
+        do_degrid,
         return_visibilities,
-        degrid_only);
+        do_grid);
     if (std::holds_alternative<Error>(err_or_fv)) {
       return std::get<Error>(err_or_fv);
     } else {
@@ -484,8 +486,9 @@ rval_t<std::tuple<GridderState, future<VisDataVector>>>
 GridderState::grid_visibilities_base(
   Device host_device,
   VisDataVector&& visibilities,
+  bool do_degrid,
   bool return_visibilities,
-  bool degrid_only) const & {
+  bool do_grid) const & {
 
   return
     to_rval(
@@ -493,16 +496,18 @@ GridderState::grid_visibilities_base(
         *this,
         host_device,
         std::move(visibilities),
+        do_degrid,
         return_visibilities,
-        degrid_only));
+        do_grid));
 }
 
 rval_t<std::tuple<GridderState, future<VisDataVector>>>
 GridderState::grid_visibilities_base(
   Device host_device,
   VisDataVector&& visibilities,
+  bool do_degrid,
   bool return_visibilities,
-  bool degrid_only) && {
+  bool do_grid) && {
 
   return
     to_rval(
@@ -510,8 +515,9 @@ GridderState::grid_visibilities_base(
         std::move(*this),
         std::move(host_device),
         std::move(visibilities),
+        do_degrid,
         return_visibilities,
-        degrid_only));
+        do_grid));
 }
 
 GridderState
@@ -897,35 +903,26 @@ Gridder::set_model(Device host_device, GridValueArray&& gv) {
 opt_t<Error>
 Gridder::grid_visibilities(
   Device host_device,
-  VisDataVector&& visibilities,
-  bool degrid_only) {
+  VisDataVector&& visibilities) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state)
-      .grid_visibilities_base(
-        host_device,
-        std::move(visibilities),
-        false, // FIXME
-        degrid_only),
-      [this](auto&& gs_fvs) -> std::optional<Error> {
-        this->state = std::get<0>(std::move(gs_fvs));
+      .grid_visibilities(host_device, std::move(visibilities)),
+      [this](auto&& gs) -> std::optional<Error> {
+        this->state = std::move(gs);
         return std::nullopt;
       },
       [](auto&& err) -> std::optional<Error> {
         return std::move(err);
       });
 #else // HPG_API < 17
-  auto [result, gsf] =
+  auto [err, gs] =
     std::move(state)
-    .grid_visibilities_base(
-      host_device,
-      std::move(visibilities),
-      false, // FIXME
-      degrid_only);
-  if (!result)
-    std::tie(state, std::ignore) = std::move(gsf);
-  return std::move(result);
+    .grid_visibilities_base(host_device, std::move(visibilities));
+  if (!err)
+    state = std::move(gs);
+  return std::move(err);
 #endif // HPG_API >= 17
 }
 

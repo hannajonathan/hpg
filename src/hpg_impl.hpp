@@ -814,7 +814,8 @@ struct HPG_EXPORT VisibilityGridder final {
   static KOKKOS_FUNCTION poln_array_type<N>
   grid_vis(
     const member_type& team_member,
-    const bool degrid_only,
+    const bool do_degrid,
+    const bool do_grid,
     const GridVis<N, execution_space>& vis,
     const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
@@ -868,7 +869,7 @@ struct HPG_EXPORT VisibilityGridder final {
 
     vis_array_type<N> vis_array;
 
-    if (model.is_allocated()) {
+    if (do_degrid && model.is_allocated()) {
       // model degridding
 
       // serial loop over grid mrow
@@ -926,7 +927,7 @@ struct HPG_EXPORT VisibilityGridder final {
          / ((vis_array.wgt[C] != (cf_t)0) ? vis_array.wgt[C] : (cf_t)1))
         * conj_phasor;
 
-    if (!degrid_only) {
+    if (do_grid) {
       // compute residual visibilities (result) and gridding values (vv)
       poln_array_type<N> vv;
       for (int C = 0; C < N; ++C) {
@@ -1003,7 +1004,8 @@ struct HPG_EXPORT VisibilityGridder final {
     unsigned max_cf_extent_y,
     const_mindex_view<memory_space> mueller_indexes,
     const_mindex_view<memory_space> conjugate_mueller_indexes,
-    bool degrid_only,
+    bool do_degrid,
+    bool do_grid,
     int num_visibilities,
     const visdata_view<N, memory_space>& visibilities,
     const K::Array<grid_scale_fp, 2>& grid_scale,
@@ -1053,7 +1055,8 @@ struct HPG_EXPORT VisibilityGridder final {
           rvis =
             grid_vis(
               team_member,
-              degrid_only,
+              do_degrid,
+              do_grid,
               gvis,
               oversampling,
               cf,
@@ -1777,8 +1780,9 @@ struct State {
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    bool do_degrid,
     bool return_visibilities,
-    bool degrid_only) = 0;
+    bool do_grid) = 0;
 
   virtual void
   fence() const = 0;
@@ -3259,8 +3263,9 @@ public:
   default_grid_visibilities(
     Device /*host_device*/,
     std::vector<::hpg::VisData<N>>&& visibilities,
+    bool do_degrid,
     bool return_visibilities,
-    bool degrid_only) {
+    bool do_grid) {
 
     auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     auto len =
@@ -3277,7 +3282,8 @@ public:
       cf.max_cf_extent_y,
       m_mueller_indexes,
       m_conjugate_mueller_indexes,
-      degrid_only,
+      do_degrid,
+      do_grid,
       len,
       exec_grid.template visdata<N>(),
       m_grid_scale,
@@ -3292,8 +3298,9 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
+    bool do_degrid,
     bool return_visibilities,
-    bool degrid_only) {
+    bool do_grid) {
 
 // #ifndef NDEBUG
 //     for (auto& [cube, supp] : *cf_indexes) {
@@ -3310,8 +3317,9 @@ public:
         default_grid_visibilities(
           host_device,
           std::move(visibilities),
+          do_degrid,
           return_visibilities,
-          degrid_only);
+          do_grid);
       break;
     default:
       assert(false);
@@ -3324,8 +3332,9 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    bool do_degrid,
     bool return_visibilities,
-    bool degrid_only)
+    bool do_grid)
     override {
 
     switch (visibilities.m_npol) {
@@ -3334,32 +3343,36 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v1),
+          do_degrid,
           return_visibilities,
-          degrid_only);
+          do_grid);
         break;
     case 2:
       return
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v2),
+          do_degrid,
           return_visibilities,
-          degrid_only);
+          do_grid);
       break;
     case 3:
       return
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v3),
+          do_degrid,
           return_visibilities,
-          degrid_only);
+          do_grid);
       break;
     case 4:
       return
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v4),
+          do_degrid,
           return_visibilities,
-          degrid_only);
+          do_grid);
       break;
     default:
       assert(false);
