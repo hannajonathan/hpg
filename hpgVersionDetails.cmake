@@ -6,4 +6,4 @@
 # This supports aligning a git commit to each change in version
 # number, and also allows parent projects to provide their own version
 # number.
-set(hpg_VER 0.12.0)
+set(hpg_VER 0.12.1)

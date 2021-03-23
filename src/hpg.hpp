@@ -1993,7 +1993,11 @@ protected:
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     IArrayVector&& mueller_indexes,
-    IArrayVector&& conjugate_mueller_indexes);
+    IArrayVector&& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    );
 
 public:
 
