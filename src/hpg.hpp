@@ -82,6 +82,7 @@ devices() noexcept;
 HPG_EXPORT const std::set<Device>&
 host_devices() noexcept;
 
+/** identification string for unspecified CF layout */
 extern const char * const cf_layout_unspecified_version;
 
 /** hpg scope object
@@ -162,9 +163,14 @@ using opt_t = std::unique_ptr<T>;
 /** type to represent a possible error */
 using opt_error_t = opt_t<Error>;
 
+/** representation of visibility data
+ *
+ * @tparam N number of polarizations
+ */
 template <unsigned N>
 struct VisData {
 
+  /** number of polarizations */
   static constexpr unsigned npol = N;
 
   /** visibility values, ordered by polarization*/
@@ -184,6 +190,7 @@ struct VisData {
   /** phase gradient */
   cf_phase_gradient_t m_cf_phase_gradient;
 
+  /** constructor, with CF phase gradient values */
   VisData(
     const std::array<std::complex<visibility_fp>, N>& visibilities,
     const std::array<vis_weight_fp, N>& weights,
@@ -202,6 +209,7 @@ struct VisData {
     , m_cf_index(cf_index)
     , m_cf_phase_gradient(cf_phase_gradient) {}
 
+  /** constructor, without CF phase gradient values */
   VisData(
     const std::array<std::complex<visibility_fp>, N>& visibilities,
     const std::array<vis_weight_fp, N>& weights,
@@ -219,8 +227,10 @@ struct VisData {
     , m_cf_index(cf_index)
     , m_cf_phase_gradient({0, 0}) {}
 
+  /** default constructor */
   VisData() {}
 
+  /** equality operator */
   bool
   operator==(const VisData& rhs) {
     return m_visibilities == rhs.m_visibilities
@@ -238,6 +248,10 @@ namespace Impl {
 struct HPG_EXPORT State;
 struct HPG_EXPORT GridderState;
 
+/** sign of a value
+ *
+ * @return -1, if less than 0; +1, if greater than 0; 0, if equal to 0
+ */
 template <typename T>
 inline constexpr int
 sgn(T val) {
@@ -245,11 +259,17 @@ sgn(T val) {
 }
 } // end namespace Impl
 
+/** vector of elements parameterized by number of polarizations
+ *
+ * Erases "number of polarizations" template parameter
+ */
 template <template <unsigned> typename E>
 struct VectorNPol {
 
+  /** number of polarizations in elements of contained vector */
   unsigned m_npol;
 
+  /** contained vector */
   union {
     std::unique_ptr<std::vector<E<1>>> m_v1;
     std::unique_ptr<std::vector<E<2>>> m_v2;
@@ -257,42 +277,52 @@ struct VectorNPol {
     std::unique_ptr<std::vector<E<4>>> m_v4;
   };
 
+  /** default constructor */
   VectorNPol()
     : m_npol(0)
     , m_v1() {}
 
+  /** construct instance by moving vector elements with N=1 */
   VectorNPol(std::vector<E<1>>&& v)
     : m_npol(1)
     , m_v1(new std::vector<E<1>>(std::move(v))) {}
 
+  /** construct instance by copying vector elements with N=1 */
   VectorNPol(const std::vector<E<1>>& v)
     : m_npol(1)
     , m_v1(new std::vector<E<1>>(v)) {}
 
+  /** construct instance by moving vector elements with N=2 */
   VectorNPol(std::vector<E<2>>&& v)
     : m_npol(2)
     , m_v2(new std::vector<E<2>>(std::move(v))) {}
 
+  /** construct instance by copying vector elements with N=2 */
   VectorNPol(const std::vector<E<2>>& v)
     : m_npol(2)
     , m_v2(new std::vector<E<2>>(v)) {}
 
+  /** construct instance by moving vector elements with N=3 */
   VectorNPol(std::vector<E<3>>&& v)
     : m_npol(3)
     , m_v3(new std::vector<E<3>>(std::move(v))) {}
 
+  /** construct instance by copying vector elements with N=3 */
   VectorNPol(const std::vector<E<3>>& v)
     : m_npol(3)
     , m_v3(new std::vector<E<3>>(v)) {}
 
+  /** construct instance by moving vector elements with N=4 */
   VectorNPol(std::vector<E<4>>&& v)
     : m_npol(4)
     , m_v4(new std::vector<E<4>>(std::move(v))) {}
 
+  /** construct instance by copying vector elements with N=4 */
   VectorNPol(const std::vector<E<4>>& v)
     : m_npol(4)
     , m_v4(new std::vector<E<4>>(v)) {}
 
+  /** copy constructor */
   VectorNPol(const VectorNPol& other)
     : m_npol(other.m_npol)
     , m_v1() {
@@ -321,6 +351,7 @@ struct VectorNPol {
     }
   }
 
+  /** move constructor */
   VectorNPol(VectorNPol&& other)
     : m_npol(other.m_npol)
     , m_v1() {
@@ -345,6 +376,7 @@ struct VectorNPol {
     }
   }
 
+  /** copy assignment operator */
   VectorNPol&
   operator=(const VectorNPol& rhs) {
     VectorNPol tmp(rhs);
@@ -352,6 +384,7 @@ struct VectorNPol {
     return *this;
   }
 
+  /** move assignment operator */
   VectorNPol&
   operator=(VectorNPol&& rhs) {
     VectorNPol tmp(std::move(rhs));
@@ -359,6 +392,7 @@ struct VectorNPol {
     return *this;
   }
 
+  /** number of elements of vector */
   size_t
   size() const {
     switch (m_npol) {
@@ -384,6 +418,10 @@ struct VectorNPol {
     }
   }
 
+  /** total number of stored values
+   *
+   * number of polarization multiplied by size of vector
+   */
   size_t
   num_elements() const {
     switch (m_npol) {
@@ -432,6 +470,7 @@ struct VectorNPol {
 
 private:
 
+  /** take over the vector from another instance */
   void
   takev(VectorNPol& other) {
     switch (other.m_npol) {
@@ -456,6 +495,7 @@ private:
     other.m_npol = 0;
   }
 
+  /** swap contents with another instance */
   void
   swap(VectorNPol& other) {
     switch (other.m_npol) {
@@ -501,11 +541,14 @@ private:
   }
 };
 
+/** vector of VisData<.> elements */
 using VisDataVector = VectorNPol<VisData>;
 
+/** helper type for definition of IArrayVector */
 template <unsigned N>
 using iarray = std::array<int, N>;
 
+/** vector of std::array<int, .> elements */
 using IArrayVector = VectorNPol<iarray>;
 
 /** array layout enumeration */
@@ -524,17 +567,22 @@ enum class HPG_EXPORT Layout {
 class HPG_EXPORT CFArrayShape {
 public:
 
+  /** rank of array */
   static constexpr unsigned rank = 5;
 
+  /** oversampling factor */
   virtual unsigned
   oversampling() const = 0;
 
+  /** number of CF groups */
   virtual unsigned
   num_groups() const = 0;
 
+  /** array extents for a given group */
   virtual std::array<unsigned, rank - 1>
   extents(unsigned grp) const = 0;
 
+  /** destructor */
   virtual ~CFArrayShape() {}
 };
 
@@ -543,8 +591,11 @@ class HPG_EXPORT CFArray
   : public CFArrayShape {
 public:
 
+  /** element value type */
   using value_type = std::complex<cf_fp>;
 
+  /** padding, in units of major increments (not oversampled), on every edge of
+   * CF support domain */
   static constexpr unsigned padding = 2;
 
   /** ordered index axis names */
@@ -552,11 +603,21 @@ public:
   // access operators
   enum Axis {x, y, mueller, cube, group};
 
+  /** CF element layout identification */
   virtual const char*
   layout() const {
     return cf_layout_unspecified_version;
   }
 
+  /** element access operator
+   *
+   * @param x X coordinate, relative to padded domain edge (oversampled units)
+   * @param y Y coordinate, relative to padded domain edge (oversampled units)
+   * @param mueller Mueller element index; selects an element of a Mueller
+   * matrix
+   * @param cube cube index
+   * @param group group index
+   */
   virtual std::complex<cf_fp>
   operator()(
     unsigned x,
@@ -566,6 +627,7 @@ public:
     unsigned group)
     const = 0;
 
+  /** half-widths of CF support domain for a given group index */
   std::array<unsigned, 2>
   radii(unsigned grp) const {
     auto os = oversampling();
@@ -575,6 +637,7 @@ public:
       ((ext[1] - 2 * padding * os) / os) / 2};
   }
 
+  /** destructor */
   virtual ~CFArray() {}
 
   /** copy values into a buffer with optimal layout for a given device
@@ -624,6 +687,7 @@ public:
         std::vector<value_type>>>&&
       arrays);
 
+  /** associated device type */
   virtual Device
   device() const = 0;
 
@@ -637,8 +701,10 @@ public:
 class HPG_EXPORT GridValueArray {
 public:
 
+  /** rank of array */
   static constexpr unsigned rank = 4;
 
+  /** element value type */
   using value_type = std::complex<grid_value_fp>;
 
   /** ordered index axis names */
@@ -646,12 +712,15 @@ public:
   // access operators
   enum Axis {x, y, mrow, cube};
 
+  /** size of array on given dimension */
   virtual unsigned
   extent(unsigned dim) const = 0;
 
+  /** const element access operator */
   virtual const value_type&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) const = 0;
 
+  /** non-const element access operator */
   virtual value_type&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) = 0;
 
@@ -678,6 +747,7 @@ public:
     return extent(0) * extent(1) * extent(2) * extent(3);
   }
 
+  /** destructor */
   virtual ~GridValueArray() {}
 
   /** create GridValueArray instance from values in a buffer
@@ -716,8 +786,10 @@ protected:
 class HPG_EXPORT GridWeightArray {
 public:
 
+  /** rank of array */
   static constexpr unsigned rank = 2;
 
+  /** element value type */
   using value_type = grid_value_fp;
 
   /** ordered index axis names */
@@ -725,12 +797,15 @@ public:
   // access operators
   enum Axis {mrow, cube};
 
+  /** size of array on given dimension */
   virtual unsigned
   extent(unsigned dim) const = 0;
 
+  /** const element access operator */
   virtual const value_type&
   operator()(unsigned mrow, unsigned cube) const = 0;
 
+  /** non-const element access operator */
   virtual value_type&
   operator()(unsigned mrow, unsigned cube) = 0;
 
@@ -757,6 +832,7 @@ public:
     return extent(0) * extent(1);
   }
 
+  /** destructor */
   virtual ~GridWeightArray() {}
 
   /** create GridWeightArray instance from values in a buffer
@@ -790,12 +866,18 @@ protected:
 
 class HPG_EXPORT Gridder;
 
+/** sign of imaginary unit in exponent of FFT kernel */
 enum class HPG_EXPORT FFTSign {
-  POSITIVE,
-  NEGATIVE
+  POSITIVE, /**< +1 */
+  NEGATIVE  /**< -1 */
 };
 
+/** default value of sign of imaginary unit in exponent of FFT kernel for
+ * apply_grid_fft() */
 constexpr FFTSign grid_fft_sign_dflt = FFTSign::POSITIVE;
+
+/** default value of sign of imaginary unit in exponent of FFT kernel for
+ * apply_model_fft() */
 constexpr FFTSign model_fft_sign_dflt =
   ((grid_fft_sign_dflt == FFTSign::POSITIVE)
    ? FFTSign::NEGATIVE
@@ -824,12 +906,20 @@ template <typename T>
 class HPG_EXPORT future final {
 public:
 
+  /** default constructor */
   future() {}
 
+  /** constructor, using std::future value */
   future(std::future<T>&& f)
     : m_f(std::move(f)) {}
 
-  /** get value */
+  /** get value
+   *
+   * @param timeout maximum time to wait for value
+   *
+   * @return value of the future if it has been resolved within the timeout
+   * period, or nothing
+   */
   template <
     typename Rep = std::chrono::milliseconds::rep,
     typename Period = std::chrono::milliseconds::period>
@@ -852,7 +942,7 @@ protected:
 
   friend class GridderState;
 
-  std::future<T> m_f;
+  std::future<T> m_f; /**< contained std::future */
 };
 
 /** gridder state
@@ -919,9 +1009,11 @@ protected:
    * calls to grid_visibilities()
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
-   * @param grid_size, in logical axis order: X, Y, mrow, cube
-   * @param grid_scale, in X, Y order
-   * @param mueller_indexes CFArray mueller indexes, by mrow
+   * @param grid_size in logical axis order: X, Y, mrow, cube
+   * @param grid_scale in X, Y order
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
    *
    * max_added_tasks may be used to control the level of concurrency available
    * to the GridderState instance. In all cases, at least one task is
@@ -951,6 +1043,12 @@ protected:
 
 public:
 
+  /** GridderState factory method
+   *
+   * Does not throw an exception if device argument names an unsupported device
+   *
+   * @sa GridderState()
+   */
   static rval_t<GridderState>
   create(
     Device device,
@@ -968,7 +1066,11 @@ public:
 
   /** GridderState factory method
    *
-   * does not throw an exception if device argument names an unsupported device
+   * Does not throw an exception if device argument names an unsupported device
+   *
+   * @tparam N number of polarizations in visibilities to be gridded
+   *
+   * @sa GridderState()
    */
   template <unsigned N>
   static rval_t<GridderState>
@@ -1175,6 +1277,11 @@ protected:
 
   friend class Gridder;
 
+  /** narrow type of future containing VisDataVector to future containing
+   * std::vector<VisData<N>>
+   *
+   * @tparam N number of polarizations in visibilities
+   */
   template <unsigned N>
   static future<std::vector<VisData<N>>>
   future_visibilities_narrow(future<VisDataVector>&& fvs) {
@@ -1195,9 +1302,9 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
-   * @param do_degrid, do degridding
+   * @param do_degrid do degridding
    * @param return_visibilities return residual or predicted visibilities
-   * @param do_grid, do gridding
+   * @param do_grid do gridding
    */
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   grid_visibilities_base(
@@ -1219,9 +1326,9 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
-   * @param do_degrid, do degridding
+   * @param do_degrid do degridding
    * @param return_visibilities return residual or predicted visibilities
-   * @param do_grid, do gridding
+   * @param do_grid do gridding
    */
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   grid_visibilities_base(
@@ -1869,10 +1976,12 @@ public:
 protected:
   friend class Gridder;
 
+  /** swap member values with another GridderState instance */
   void
   swap(GridderState& other) noexcept;
 };
 
+/** specialization of GridderState::future_visibilities_narrow<1> */
 template <>
 future<std::vector<VisData<1>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
@@ -1887,6 +1996,7 @@ GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
       std::move(fvs).m_f);
 }
 
+/** specialization of GridderState::future_visibilities_narrow<2> */
 template <>
 future<std::vector<VisData<2>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
@@ -1901,6 +2011,7 @@ GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
       std::move(fvs).m_f);
 }
 
+/** specialization of GridderState::future_visibilities_narrow<3> */
 template <>
 future<std::vector<VisData<3>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
@@ -1915,6 +2026,7 @@ GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
       std::move(fvs).m_f);
 }
 
+/** specialization of GridderState::future_visibilities_narrow<4> */
 template <>
 future<std::vector<VisData<4>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
@@ -1972,8 +2084,11 @@ protected:
    * calls to grid_visibilities()
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
-   * @param grid_size, in logical axis order: X, Y, mrow, cube
-   * @param grid_scale, in X, Y order
+   * @param grid_size in logical axis order: X, Y, mrow, cube
+   * @param grid_scale in X, Y order
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
    *
    * max_added_tasks may be used to control the level of concurrency available
    * to the GridderState instance. In all cases, at least one task is employed,
@@ -2001,6 +2116,12 @@ protected:
 
 public:
 
+  /** Gridder factory method
+   *
+   * Does not throw an exception if device argument names an unsupported device
+   *
+   * @sa Gridder()
+   */
   static rval_t<Gridder>
   create(
     Device device,
@@ -2018,7 +2139,11 @@ public:
 
   /** Gridder factory method
    *
-   * does not throw an exception if device argument names an unsupported device
+   * Does not throw an exception if device argument names an unsupported device
+   *
+   * @tparam N number of polarization in visibilities to be gridded
+   *
+   * @sa Gridder()
    */
   template <unsigned N>
   static rval_t<Gridder>
@@ -2355,6 +2480,8 @@ public:
   void
   reset_grid();
 
+  /** reset model values to zero
+   */
   void
   reset_model();
 
@@ -2412,6 +2539,7 @@ public:
 
 protected:
 
+  /** move constructor */
   Gridder(GridderState&& st);
 };
 

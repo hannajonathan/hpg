@@ -31,14 +31,18 @@ private:
 
 public:
 
+  /** error constructor */
   Error(const std::string& msg, ErrorType err = ErrorType::Other);
 
+  /** error description */
   const std::string&
   message() const;
 
+  /** error type */
   ErrorType
   type() const;
 
+  /** destructor */
   virtual ~Error();
 };
 }  // end namespace hpg

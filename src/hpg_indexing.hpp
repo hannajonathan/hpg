@@ -41,11 +41,11 @@ struct HPG_EXPORT CFCellIndex final {
       && m_mueller == rhs.m_mueller;
   }
 
-  unsigned m_baseline_class;
-  unsigned m_time;
-  unsigned m_w_plane;
-  unsigned m_frequency;
-  unsigned m_mueller;
+  unsigned m_baseline_class; /**< baseline class index */
+  unsigned m_time; /**< time index */
+  unsigned m_w_plane; /**< w plane index */
+  unsigned m_frequency; /**< frequency index */
+  unsigned m_mueller; /**< mueller element index */
 };
 
 /** index converter class between cf_index_t and CFCellIndex
@@ -57,17 +57,23 @@ struct HPG_EXPORT CFCellIndex final {
 class HPG_EXPORT CFSimpleIndexer final {
 public:
 
-  // pair elements: (axis length, allows variable-size CF)
+  /** axis descriptor
+   *
+   *  pair elements: (axis length, allows variable-size CF)
+   */
   using axis_desc_t = std::pair<unsigned, bool>;
 
-  // array elements: (mueller, cube, grp)
+  /** CF index
+   *
+   * array elements: (mueller, cube, grp)
+   */
   using cf_index_t = std::array<unsigned, 3>;
 
-  axis_desc_t m_baseline_class;
-  axis_desc_t m_time;
-  axis_desc_t m_w_plane;
-  axis_desc_t m_frequency;
-  unsigned m_mueller;
+  axis_desc_t m_baseline_class; /**< baseline class axis descriptor */
+  axis_desc_t m_time; /**< time axis descriptor */
+  axis_desc_t m_w_plane; /**< w plane axis descriptor */
+  axis_desc_t m_frequency; /**< frequency axis descriptor */
+  unsigned m_mueller; /**< Mueller element axis descriptor */
 
   /** constructor
    */
@@ -134,12 +140,14 @@ public:
 
 private:
 
+  /** accumulate index value to linearized cube or group index  */
   static void
   acc_index(cf_index_t& index, unsigned i, const axis_desc_t& ad) {
     unsigned& index_part = (ad.second ? index[2] : index[1]);
     index_part = index_part * ad.first + i;
   }
 
+  /** separate index value from linearized cube or group index */
   static void
   sep_index(unsigned& index, cf_index_t& i, const axis_desc_t& ad) {
     unsigned& i_part = (ad.second ? i[2] : i[1]);
@@ -147,6 +155,7 @@ private:
     i_part /= ad.first;
   }
 
+  /** extent of linearized cube or group index */
   static void
   ext_index(cf_index_t& index, const axis_desc_t& ad) {
     unsigned& index_part = (ad.second ? index[2] : index[1]);

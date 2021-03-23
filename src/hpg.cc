@@ -5,6 +5,10 @@
 
 using namespace hpg;
 
+/** disabled device error
+ *
+ * Device is not enabled in HPG configuration.
+ */
 struct DisabledDeviceError
   : public Error {
 
@@ -12,6 +16,9 @@ struct DisabledDeviceError
     : Error("Requested device is not enabled", ErrorType::DisabledDevice) {}
 };
 
+/** invalid number of Mueller index rows error
+ *
+ * Number of rows of Mueller indexes does not equal grid "mrow" axis size */
 struct InvalidNumberMuellerIndexRowsError
   : public Error {
 
@@ -22,6 +29,10 @@ struct InvalidNumberMuellerIndexRowsError
 
 };
 
+/** invalid number of polarizations error
+ *
+ * Number of polarizations in visibility data does not equal number of columns
+ * of Mueller indexes */
 struct InvalidNumberPolarizationsError
   : public Error {
 
@@ -32,6 +43,11 @@ struct InvalidNumberPolarizationsError
 
 };
 
+/** excessive number of visibilities error
+ *
+ * Number of visibilities exceeds configured maximum batch size of
+ * GridderState
+ */
 struct ExcessiveNumberVisibilitiesError
   : public Error {
 
@@ -70,6 +86,11 @@ ScopeGuard::~ScopeGuard() {
     finalize();
 }
 
+/** helper class for calling methods of StateT member of GridderState
+ * instances
+ *
+ * Manages calling the appropriate methods of StateT as well as updating the
+ * StateT member */
 struct Impl::GridderState {
 
   template <typename GS>

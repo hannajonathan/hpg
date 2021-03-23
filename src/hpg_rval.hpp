@@ -35,15 +35,17 @@ is_error(const rval_t<T>& rv) {
 #endif // HPG_API >= 17
 }
 
-/** type trait to get value type from rval_t type
+/** type trait to get type parameter of a template type
  */
 template <typename T>
 struct HPG_EXPORT rval_value {
-  using type = void;
+  using type = void; /**< parameter type */
 };
+/** specialized type trait to get value type from rval_t type
+ */
 template <typename T>
 struct rval_value<rval_t<T>> {
-  using type = T;
+  using type = T; /**< parameter type */
 };
 
 /** query whether rval_t value contains a (non-error) value
@@ -198,7 +200,7 @@ fold(RV&& rv, ValF vf, ErrF ef) {
 // The following classes may be of use in a functional programming style of
 // error handling; otherwise, they can be safely ignored.
 
-/** monadic class of functions with domain A and range rval_t<B> */
+/** monadic class of functions with domain A and range rval_t\<B> */
 template <typename A, typename B>
 struct RvalM;
 
@@ -225,18 +227,22 @@ struct RvalMF :
   static_assert(
     std::is_same_v<B, typename rval_value<std::invoke_result_t<F, A>>::type>);
 
+  /** value type of G applied to value of type B */
   template <typename G>
   using gv_t = typename rval_value<std::invoke_result_t<G, B>>::type;
 
+  /** value type of G applied to a loop index and value of type B */
   template <typename G>
   using giv_t =
     typename rval_value<std::invoke_result_t<G, unsigned, B>>::type;
 
-  F m_f;
+  F m_f; /**< wrapped function, as value */
 
+  /** constructor */
   RvalMF(const F& f)
     : m_f(f) {}
 
+  /** constructor */
   RvalMF(F&& f)
     : m_f(std::move(f)) {}
 
@@ -298,6 +304,7 @@ struct RvalMF :
   }
 };
 
+/** specialization of RvalMF<A> for A = void */
 template <typename B, typename F>
 struct RvalMF<void, B, F> :
   public RvalM<void, B> {
@@ -305,17 +312,21 @@ struct RvalMF<void, B, F> :
   static_assert(
     std::is_same_v<B, typename rval_value<std::invoke_result_t<F>>::type>);
 
+  /** value type of G applied to value of type B */
   template <typename G>
   using gv_t = typename rval_value<std::invoke_result_t<G, B>>::type;
 
+  /** value type of G applied to a loop index and value of type B */
   template <typename G>
   using giv_t = typename rval_value<std::invoke_result_t<G, unsigned, B>>::type;
 
-  F m_f;
+  F m_f; /**< wrapped function, as value */
 
+  /** constructor */
   RvalMF(const F& f)
     : m_f(f) {}
 
+  /** constructor */
   RvalMF(F&& f)
     : m_f(std::move(f)) {}
 

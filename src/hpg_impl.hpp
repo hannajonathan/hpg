@@ -36,9 +36,9 @@
 namespace K = Kokkos;
 namespace KExp = Kokkos::Experimental;
 
-// helper type for std::visit
+/** helper type for std::visit */
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-// explicit deduction guide (not needed as of C++20)
+/** explicit deduction guide (not needed as of C++20) */
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 /** @file hpg_impl.hpp
@@ -48,6 +48,12 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 namespace hpg {
 namespace Impl {
 
+/** scalar type for all polarization products of a visibility value
+ *
+ * Values of this type can be used in Kokkos reductions
+ *
+ * @tparam N number of polarizations
+ */
 template<int N>
 struct poln_array_type {
 
@@ -84,6 +90,12 @@ struct poln_array_type {
   }
 };
 
+/** scalar type for all polarization products of visibility values and weights
+ *
+ * Values of this type can be used in Kokkos reductions
+ *
+ * @tparam N number of polarizations
+ */
 template<int N>
 struct vis_array_type {
 
@@ -126,6 +138,7 @@ struct vis_array_type {
 }
 
 namespace Kokkos { //reduction identity must be defined in Kokkos namespace
+/** reduction identity of poln_array_type */
 template<int N>
 struct reduction_identity<hpg::Impl::poln_array_type<N>> {
   KOKKOS_FORCEINLINE_FUNCTION static hpg::Impl::poln_array_type<N> sum() {
@@ -133,6 +146,7 @@ struct reduction_identity<hpg::Impl::poln_array_type<N>> {
   }
 };
 
+/** reduction identity of vis_array_type */
 template<int N>
 struct reduction_identity<hpg::Impl::vis_array_type<N>> {
   KOKKOS_FORCEINLINE_FUNCTION static hpg::Impl::vis_array_type<N> sum() {
@@ -143,6 +157,10 @@ struct reduction_identity<hpg::Impl::vis_array_type<N>> {
 
 namespace hpg {
 
+/** disabled host device error
+ *
+ * Host device is not enabled by HPG configuration.
+ */
 struct DisabledHostDeviceError
   : public Error {
 
@@ -164,9 +182,14 @@ struct DisabledHostDeviceError
 //       ErrorType::OutOfBoundsCFIndex) {}
 // };
 
+/** invalid model grid size error
+ *
+ * Dimensions of model grid do not equal those of (visibility) value grid.
+ */
 struct InvalidModelGridSizeError
   : public Error {
 
+  /** constructor */
   InvalidModelGridSizeError(
     const std::array<unsigned, GridValueArray::rank>& model_size,
     const std::array<unsigned, GridValueArray::rank>& grid_size)
@@ -175,6 +198,7 @@ struct InvalidModelGridSizeError
       + " is different from visibility grid size " + sz2str(grid_size),
       ErrorType::InvalidModelGridSize) {}
 
+  /** array extents as string */
   static std::string
   sz2str(const std::array<unsigned, GridValueArray::rank>& sz) {
     std::ostringstream oss;
@@ -296,6 +320,7 @@ struct DeviceT {
 };
 
 #ifdef HPG_ENABLE_SERIAL
+/** Serial device type trait */
 template <>
 struct DeviceT<Device::Serial> {
   using kokkos_device = K::Serial;
@@ -309,6 +334,7 @@ struct DeviceT<Device::Serial> {
 #endif // HPG_ENABLE_SERIAL
 
 #ifdef HPG_ENABLE_OPENMP
+/** OpenMP device type trait */
 template <>
 struct DeviceT<Device::OpenMP> {
   using kokkos_device = K::OpenMP;
@@ -322,6 +348,7 @@ struct DeviceT<Device::OpenMP> {
 #endif // HPG_ENABLE_OPENMP
 
 #ifdef HPG_ENABLE_CUDA
+/** Cuda device type trait */
 template <>
 struct DeviceT<Device::Cuda> {
   using kokkos_device = K::Cuda;
@@ -355,6 +382,7 @@ struct DeviceT<Device::Cuda> {
 #endif // HPG_ENABLE_CUDA
 
 #ifdef HPG_ENABLE_HPX
+/** HPX device type trait */
 template <>
 struct DeviceT<Device::HPX> {
   // FIXME
@@ -373,6 +401,7 @@ struct DeviceT<Device::HPX> {
 template <typename Layout, typename memory_space>
 using grid_view = K::View<gv_t****, Layout, memory_space>;
 
+/** View type for constant grid values */
 template <typename Layout, typename memory_space>
 using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
 
@@ -383,6 +412,7 @@ using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
 template <typename Layout, typename memory_space>
 using weight_view = K::View<grid_value_fp**, Layout, memory_space>;
 
+/** View type for constant weight values */
 template <typename Layout, typename memory_space>
 using const_weight_view = K::View<const grid_value_fp**, Layout, memory_space>;
 
@@ -391,6 +421,7 @@ template <typename Layout, typename memory_space>
 using cf_view =
   K::View<cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
 
+/** View type for constant CF values */
 template <typename Layout, typename memory_space>
 using const_cf_view =
   K::View<const cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
@@ -408,6 +439,7 @@ template <unsigned N, typename memory_space>
 using visdata_view =
   K::View<VisData<N>*, memory_space, K::MemoryTraits<K::Unmanaged>>;
 
+/** View for constant VisData<N> */
 template <unsigned N, typename memory_space>
 using const_visdata_view =
   K::View<const VisData<N>*, memory_space, K::MemoryTraits<K::Unmanaged>>;
@@ -420,6 +452,7 @@ using visbuff_view = K::View<VisData<4>*, memory_space>;
 template <typename memory_space>
 using mindex_view = K::View<int[4][4], memory_space>;
 
+/** view for constant Mueller element index matrix */
 template <typename memory_space>
 using const_mindex_view =
   K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
@@ -654,6 +687,7 @@ cphase(T ph) {
   return result;
 }
 
+/** magnitude of K::complex<T> value */
 template <typename T>
 KOKKOS_FORCEINLINE_FUNCTION T
 mag(const K::complex<T>& v) {
@@ -1171,6 +1205,7 @@ struct FFTW {
   // destroy_plan(std::tuple<plan_t, plan_t> plan);
 };
 
+/** FFTW specialized for double precision */
 template <>
 struct FFTW<double> {
 
@@ -1219,6 +1254,7 @@ struct FFTW<double> {
   }
 };
 
+/** FFTW specialized for single precision */
 template <>
 struct FFTW<float> {
 
@@ -2583,6 +2619,7 @@ enum class StreamPhase {
   GRIDDING
 };
 
+/** formatted output for StreamPhase value */
 std::ostream&
 operator<<(std::ostream& str, const StreamPhase& ph) {
   switch (ph) {
@@ -2599,6 +2636,7 @@ operator<<(std::ostream& str, const StreamPhase& ph) {
 template <Device D>
 struct StateT;
 
+/** memory pool and views therein for elements of a (sparse) CF */
 template <Device D>
 struct CFPool final {
 
@@ -2882,6 +2920,8 @@ struct CFPool final {
   }
 };
 
+/** container for data and views associated with one stream of an execution
+ * space*/
 template <Device D>
 struct ExecSpace final {
   using kokkos_device = typename DeviceT<D>::kokkos_device;
