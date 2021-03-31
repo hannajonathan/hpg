@@ -1356,20 +1356,7 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) const & {
-
-    return
-      map(
-        grid_visibilities_base(
-          host_device,
-          VisDataVector(std::move(visibilities)),
-          false, // do_degrid
-          false, // return_visibilities
-          true), // do_grid
-        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
-          return std::get<0>(std::move(gs_fvs));
-        });
-  };
+    VisDataVector&& visibilities) const &;
 
   /** grid visibilities, without degridding (template-free, rvalue reference
    * version)
@@ -1385,20 +1372,7 @@ public:
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) && {
-
-    return
-      map(
-        std::move(*this).grid_visibilities_base(
-          host_device,
-          std::move(visibilities),
-          false, // do_degrid
-          false, // return_visibilities
-          true), // do_grid
-        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
-          return std::get<0>(std::move(gs_fvs));
-        });
-  };
+    VisDataVector&& visibilities) &&;
 
   /** grid visibilities, without degridding (templated, const version)
    *
@@ -1459,20 +1433,7 @@ public:
   rval_t<GridderState>
   degrid_grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) const & {
-
-    return
-      map(
-        grid_visibilities_base(
-          host_device,
-          std::move(visibilities),
-          true, // do_degrid
-          false, // return_visibilities
-          true), // do_grid
-        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
-          return std::get<0>(std::move(gs_fvs));
-        });
-  };
+    VisDataVector&& visibilities) const &;
 
   /** degrid and grid visibilities (template-free, rvalue reference version)
    *
@@ -1487,20 +1448,7 @@ public:
   rval_t<GridderState>
   degrid_grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) && {
-
-    return
-      map(
-        std::move(*this).grid_visibilities_base(
-          host_device,
-          std::move(visibilities),
-          true, // do_degrid
-          false, // return_visibilities
-          true), // do_grid
-        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
-          return std::get<0>(std::move(gs_fvs));
-        });
-  };
+    VisDataVector&& visibilities) &&;
 
   /** degrid and grid visibilities (templated, const version)
    *
@@ -1564,16 +1512,7 @@ public:
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   degrid_get_predicted_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) const & {
-
-    return
-      grid_visibilities_base(
-        host_device,
-        std::move(visibilities),
-        true,   // do_degrid
-        true,   // return_visibilities
-        false); // do_grid
-  };
+    VisDataVector&& visibilities) const &;
 
   /** degrid visibilities, returning predicted visibilities (template-free,
    * rvalue reference version)
@@ -1589,16 +1528,7 @@ public:
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   degrid_get_predicted_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) && {
-
-    return
-      std::move(*this).grid_visibilities_base(
-        host_device,
-        std::move(visibilities),
-        true,   // do_degrid
-        true,   // return_visibilities
-        false); // do_grid
-  };
+    VisDataVector&& visibilities) &&;
 
   /** degrid visibilities, returning predicted visibilities (templated, const
    * version)
@@ -1619,17 +1549,19 @@ public:
     Device host_device,
     std::vector<VisData<N>>&& visibilities) const & {
 
-    return
-      map(
-        degrid_get_predicted_visibilities(
-          host_device,
-          VisDataVector(std::move(visibilities))),
-        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
-          return
-            std::make_tuple(
-              std::get<0>(std::move(gs_fvs)),
-              future_visibilities_narrow<N>(std::get<1>(std::move(gs_fvs))));
-        });
+    auto tpl_or_err =
+      degrid_get_predicted_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(tpl_or_err)) {
+      auto [gs, fvs] = hpg::get_value(std::move(tpl_or_err));
+      return
+        std::make_tuple(
+          std::move(gs),
+          future_visibilities_narrow<N>(std::move(fvs)));
+    } else {
+      return hpg::get_error(std::move(tpl_or_err));
+    }
   };
 
   /** degrid visibilities, returning predicted visibilities (templated, rvalue
@@ -1651,17 +1583,19 @@ public:
     Device host_device,
     std::vector<VisData<N>>&& visibilities) && {
 
-    return
-      map(
-        std::move(*this).degrid_get_predicted_visibilities(
-          host_device,
-          VisDataVector(std::move(visibilities))),
-        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
-          return
-            std::make_tuple(
-              std::get<0>(std::move(gs_fvs)),
-              future_visibilities_narrow<N>(std::get<1>(std::move(gs_fvs))));
-        });
+    auto tpl_or_err =
+      std::move(*this).degrid_get_predicted_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(tpl_or_err)) {
+      auto [gs, fvs] = hpg::get_value(std::move(tpl_or_err));
+      return
+        std::make_tuple(
+          std::move(gs),
+          future_visibilities_narrow<N>(std::move(fvs)));
+    } else {
+      return hpg::get_error(std::move(tpl_or_err));
+    }
   };
 
   /** degrid and grid visibilities, returning residual visibilities
@@ -1678,16 +1612,7 @@ public:
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   degrid_grid_get_residual_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) const & {
-
-    return
-      grid_visibilities_base(
-        host_device,
-        std::move(visibilities),
-        true,  // do_degrid
-        true,  // return_visibilities
-        true); // do_grid
-  };
+    VisDataVector&& visibilities) const &;
 
   /** degrid and grid visibilities, returning residual visibilities
    * (template-free, rvalue reference version)
@@ -1703,16 +1628,7 @@ public:
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   degrid_grid_get_residual_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) && {
-
-    return
-      std::move(*this).grid_visibilities_base(
-        host_device,
-        std::move(visibilities),
-        true,  // do_degrid
-        true,  // return_visibilities
-        true); // do_grid
-  };
+    VisDataVector&& visibilities) &&;
 
   /** degrid and grid visibilities, returning residual visibilities (templated,
    * const version)
@@ -1733,17 +1649,22 @@ public:
     Device host_device,
     std::vector<VisData<N>>&& visibilities) const & {
 
-    return
-      map(
-        degrid_grid_get_residual_visibilities(
-          host_device,
-          VisDataVector(std::move(visibilities))),
-        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
-          return
-            std::make_tuple(
-              std::get<0>(std::move(gs_fvs)),
-              future_visibilities_narrow<N>(std::get<1>(std::move(gs_fvs))));
-        });
+    auto tpl_or_err =
+      degrid_grid_get_residual_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(tpl_or_err)) {
+      auto [gs, fvs] = hpg::get_value(std::move(tpl_or_err));
+      return
+        rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
+          std::make_tuple(
+            std::move(gs),
+            future_visibilities_narrow<N>(std::move(fvs))));
+    } else {
+      return
+        rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
+          hpg::get_error(std::move(tpl_or_err)));
+    }
   };
 
   /** degrid and grid visibilities, returning residual visibilities (templated,
@@ -1765,17 +1686,22 @@ public:
     Device host_device,
     std::vector<VisData<N>>&& visibilities) && {
 
-    return
-      map(
-        std::move(*this).degrid_grid_get_residual_visibilities(
-          host_device,
-          VisDataVector(std::move(visibilities))),
-        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
-          return
-            std::make_tuple(
-              std::get<0>(std::move(gs_fvs)),
-              future_visibilities_narrow<N>(std::get<1>(std::move(gs_fvs))));
-        });
+    auto tpl_or_err =
+      std::move(*this).degrid_grid_get_residual_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(tpl_or_err)) {
+      auto [gs, fvs] = hpg::get_value(std::move(tpl_or_err));
+      return
+        rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
+          std::make_tuple(
+            std::move(gs),
+            future_visibilities_narrow<N>(std::move(fvs))));
+    } else {
+      return
+        rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
+          hpg::get_error(std::move(tpl_or_err)));
+    }
   };
 
 
@@ -2396,14 +2322,16 @@ public:
     Device host_device,
     std::vector<VisData<N>>&& visibilities) {
 
-    return
-      map(
-        degrid_get_predicted_visibilities(
-          host_device,
-          VisDataVector(std::move(visibilities))),
-        [](future<VisDataVector>&& fvs) {
-          return GridderState::future_visibilities_narrow<N>(std::move(fvs));
-        });
+    auto fvs_or_err =
+      degrid_get_predicted_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(fvs_or_err))
+      return
+        GridderState::future_visibilities_narrow<N>(
+          hpg::get_value(std::move(fvs_or_err)));
+    else
+      return hpg::get_error(std::move(fvs_or_err));
   }
 
   /** degrid and grid visibilities, returning residual visibilities
@@ -2439,14 +2367,16 @@ public:
     Device host_device,
     std::vector<VisData<N>>&& visibilities) {
 
-    return
-      map(
-        degrid_grid_get_residual_visibilities(
-          host_device,
-          VisDataVector(std::move(visibilities))),
-        [](future<VisDataVector>&& fvs) {
-          return GridderState::future_visibilities_narrow<N>(std::move(fvs));
-        });
+    auto fvs_or_err =
+      degrid_grid_get_residual_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(fvs_or_err))
+      return
+        GridderState::future_visibilities_narrow<N>(
+          hpg::get_value(std::move(fvs_or_err)));
+    else
+      return hpg::get_error(std::move(fvs_or_err));
   }
 
   /** device execution fence

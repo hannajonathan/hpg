@@ -541,6 +541,134 @@ GridderState::grid_visibilities_base(
         do_grid));
 }
 
+rval_t<GridderState>
+GridderState::grid_visibilities(
+  Device host_device,
+  VisDataVector&& visibilities) const & {
+
+  return
+    map(
+      grid_visibilities_base(
+        host_device,
+        VisDataVector(std::move(visibilities)),
+        false, // do_degrid
+        false, // return_visibilities
+        true), // do_grid
+      [](auto&& gs_fvs) {
+        return std::get<0>(std::move(gs_fvs));
+      });
+};
+
+rval_t<GridderState>
+GridderState::grid_visibilities(
+  Device host_device,
+  VisDataVector&& visibilities) && {
+
+  return
+    map(
+      std::move(*this).grid_visibilities_base(
+        host_device,
+        std::move(visibilities),
+        false, // do_degrid
+        false, // return_visibilities
+        true), // do_grid
+      [](auto&& gs_fvs) {
+        return std::get<0>(std::move(gs_fvs));
+      });
+};
+
+rval_t<GridderState>
+GridderState::degrid_grid_visibilities(
+  Device host_device,
+  VisDataVector&& visibilities) const & {
+
+  return
+    map(
+      grid_visibilities_base(
+        host_device,
+        std::move(visibilities),
+        true, // do_degrid
+        false, // return_visibilities
+        true), // do_grid
+      [](auto&& gs_fvs) {
+        return std::get<0>(std::move(gs_fvs));
+      });
+};
+
+rval_t<GridderState>
+GridderState::degrid_grid_visibilities(
+  Device host_device,
+  VisDataVector&& visibilities) && {
+
+  return
+    map(
+      std::move(*this).grid_visibilities_base(
+        host_device,
+        std::move(visibilities),
+        true, // do_degrid
+        false, // return_visibilities
+        true), // do_grid
+      [](auto&& gs_fvs) {
+        return std::get<0>(std::move(gs_fvs));
+      });
+};
+
+rval_t<std::tuple<GridderState, future<VisDataVector>>>
+GridderState::degrid_get_predicted_visibilities(
+  Device host_device,
+  VisDataVector&& visibilities) const & {
+
+  return
+    grid_visibilities_base(
+      host_device,
+      std::move(visibilities),
+      true,   // do_degrid
+      true,   // return_visibilities
+      false); // do_grid
+};
+
+rval_t<std::tuple<GridderState, future<VisDataVector>>>
+GridderState::degrid_get_predicted_visibilities(
+  Device host_device,
+  VisDataVector&& visibilities) && {
+
+  return
+    std::move(*this).grid_visibilities_base(
+      host_device,
+      std::move(visibilities),
+      true,   // do_degrid
+      true,   // return_visibilities
+      false); // do_grid
+};
+
+rval_t<std::tuple<GridderState, future<VisDataVector>>>
+GridderState::degrid_grid_get_residual_visibilities(
+  Device host_device,
+  VisDataVector&& visibilities) const & {
+
+  return
+    grid_visibilities_base(
+      host_device,
+      std::move(visibilities),
+      true,  // do_degrid
+      true,  // return_visibilities
+      true); // do_grid
+};
+
+rval_t<std::tuple<GridderState, future<VisDataVector>>>
+GridderState::degrid_grid_get_residual_visibilities(
+  Device host_device,
+  VisDataVector&& visibilities) && {
+
+  return
+    std::move(*this).grid_visibilities_base(
+      host_device,
+      std::move(visibilities),
+      true,  // do_degrid
+      true,  // return_visibilities
+      true); // do_grid
+};
+
 GridderState
 GridderState::fence() const & {
 
