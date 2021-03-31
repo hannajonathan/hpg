@@ -1003,9 +1003,9 @@ Gridder::degrid_get_predicted_visibilities(
     .degrid_get_predicted_visibilities(host_device, std::move(visibilities));
   if (!err) {
     state = std::get<0>(std::move(gs_fvs));
-    return std::get<1>(std::move(gs_fvs));
+    return rval<future<VisDataVector>>(std::get<1>(std::move(gs_fvs)));
   }
-  return std::move(err);
+  return rval<future<VisDataVector>>(std::move(*err));
 #endif // HPG_API >= 17
 }
 
@@ -1033,9 +1033,9 @@ Gridder::degrid_grid_get_residual_visibilities(
       std::move(visibilities));
   if (!err) {
     state = std::get<0>(std::move(gs_fvs));
-    return std::get<1>(std::move(gs_fvs));
+    return rval<future<VisDataVector>>(std::get<1>(std::move(gs_fvs)));
   }
-  return std::move(err);
+  return rval<future<VisDataVector>>(std::move(*err));
 #endif // HPG_API >= 17
 }
 

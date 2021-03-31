@@ -913,6 +913,9 @@ public:
   future(std::future<T>&& f)
     : m_f(std::move(f)) {}
 
+  future(future&& f)
+    : m_f(std::move(f).m_f) {}
+
   /** get value
    *
    * @param timeout maximum time to wait for value
@@ -937,6 +940,8 @@ public:
 #endif // HPG_API >= 17
     return result;
   }
+
+  virtual ~future() {}
 
 protected:
 

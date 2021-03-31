@@ -34,6 +34,8 @@ public:
   /** error constructor */
   Error(const std::string& msg, ErrorType err = ErrorType::Other);
 
+  Error() {}
+
   /** error description */
   const std::string&
   message() const;
