@@ -87,22 +87,9 @@ struct InvalidModelGridSizeError
     const std::array<unsigned, GridValueArray::rank>& model_size,
     const std::array<unsigned, GridValueArray::rank>& grid_size)
     : Error(
-      "model grid size " + sz2str(model_size)
-      + " is different from visibility grid size " + sz2str(grid_size),
+      "model grid size is different from visibility grid size",
       ErrorType::InvalidModelGridSize) {}
-
-  /** array extents as string */
-  static std::string
-  sz2str(const std::array<unsigned, GridValueArray::rank>& sz) {
-    std::ostringstream oss;
-    oss << "[" << sz[0]
-        << "," << sz[1]
-        << "," << sz[2]
-        << "," << sz[3]
-        << "]" << std::endl;
-    return oss.str();
-  }
-};
+  };
 
 /** CF support exceeds grid size error
  *
@@ -459,7 +446,7 @@ public:
   template <Device H>
   static std::unique_ptr<GridValueViewArray>
   copy_from(
-    const std::string& name,
+    const hpg::string& name,
     const value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
@@ -467,7 +454,7 @@ public:
     std::array<int, rank>
       iext{int(extents[0]), int(extents[1]), int(extents[2]), int(extents[3])};
     grid_t grid(
-      K::ViewAllocateWithoutInitializing(name),
+      K::ViewAllocateWithoutInitializing(name.val),
       grid_layout::dimensions(iext));
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
@@ -512,7 +499,7 @@ public:
 
   static std::unique_ptr<GridValueViewArray>
   copy_from(
-    const std::string& name,
+    const hpg::string& name,
     Device host_device,
     const value_type* src,
     const std::array<unsigned, rank>& extents,
@@ -641,13 +628,13 @@ public:
   template <Device H>
   static std::unique_ptr<GridWeightViewArray>
   copy_from(
-    const std::string& name,
+    const hpg::string& name,
     const value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
     weight_t weight(
-      K::ViewAllocateWithoutInitializing(name),
+      K::ViewAllocateWithoutInitializing(name.val),
       layout(extents[0], extents[1]));
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
@@ -692,7 +679,7 @@ public:
 
   static std::unique_ptr<GridWeightViewArray>
   copy_from(
-    const std::string& name,
+    const hpg::string& name,
     Device host_device,
     const value_type* src,
     const std::array<unsigned, rank>& extents,

@@ -728,7 +728,7 @@ public:
    *
    * @return layout version string or error
    */
-  rval_t<std::string>
+  rval_t<hpg::string>
   copy_to(Device device, Device host_device, unsigned grp, value_type* dst)
     const;
 
@@ -758,7 +758,7 @@ public:
    */
   static rval_t<std::unique_ptr<DeviceCFArray>>
   create(
-    const std::string& version,
+    const hpg::string& version,
     unsigned oversampling,
     std::vector<
       std::tuple<
@@ -880,7 +880,7 @@ public:
    */
   static std::unique_ptr<GridValueArray>
   copy_from(
-    const std::string& name,
+    const hpg::string& name,
     Device target_device,
     Device host_device,
     const value_type* src,
@@ -965,7 +965,7 @@ public:
    */
   static std::unique_ptr<GridWeightArray>
   copy_from(
-    const std::string& name,
+    const hpg::string& name,
     Device target_device,
     Device host_device,
     const value_type* src,

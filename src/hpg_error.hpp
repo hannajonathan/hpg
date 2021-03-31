@@ -17,9 +17,32 @@
 #include "hpg_export.h"
 
 #include <memory>
-#include <string>
+#include <cstring>
 
 namespace hpg {
+
+/** string type in HPG API
+ *
+ * Workaround for a problem occurring when client code links to both HPG and
+ * CASA libraries...
+ */
+struct HPG_EXPORT string {
+  char val[120];
+
+  string() {
+    val[0] = '\0';
+  }
+
+  string(const char* s) {
+    std::strncpy(val, s, sizeof(val));
+    val[sizeof(val) - 1] = '\0';
+  }
+
+  bool
+  operator==(const string& rhs) const {
+    return std::strcmp(val, rhs.val) == 0;
+  }
+};
 
 /** error types
  */
@@ -44,17 +67,17 @@ private:
 
   ErrorType m_type;
 
-  std::string m_msg;
+  hpg::string m_msg;
 
 public:
 
   /** error constructor */
-  Error(const std::string& msg, ErrorType err = ErrorType::Other);
+  Error(const hpg::string& msg, ErrorType err = ErrorType::Other);
 
   Error() {}
 
   /** error description */
-  const std::string&
+  const hpg::string&
   message() const;
 
   /** error type */

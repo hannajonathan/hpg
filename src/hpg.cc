@@ -43,11 +43,52 @@ struct InvalidNumberMuellerIndexRowsError
 
 };
 
-Error::Error(const std::string& msg, ErrorType err)
+/** invalid number of polarizations error
+ *
+ * Number of polarizations in visibility data does not equal number of columns
+ * of Mueller indexes */
+struct InvalidNumberPolarizationsError
+  : public Error {
+
+  InvalidNumberPolarizationsError()
+    : Error(
+      "Number of visibility polarizations does not match Mueller matrix",
+      ErrorType::InvalidNumberPolarizations) {}
+
+};
+
+/** excessive number of visibilities error
+ *
+ * Number of visibilities exceeds configured maximum batch size of
+ * GridderState
+ */
+struct ExcessiveNumberVisibilitiesError
+  : public Error {
+
+  ExcessiveNumberVisibilitiesError()
+    : Error(
+      "Number of visibilities exceeds maximum batch size",
+      ErrorType::ExcessiveNumberVisibilities) {}
+};
+
+/** update weights without gridding error
+ *
+ * Grid weights cannot be updated without doing gridding
+ */
+struct UpdateWeightsWithoutGriddingError
+  : public Error {
+
+  UpdateWeightsWithoutGriddingError()
+    : Error(
+      "Unable to update grid weights during degridding only",
+      ErrorType::UpdateWeightsWithoutGridding) {}
+};
+
+Error::Error(const hpg::string& msg, ErrorType err)
   : m_type(err)
   , m_msg(msg) {}
 
-const std::string&
+const hpg::string&
 Error::message() const {
   return m_msg;
 }
@@ -1594,7 +1635,7 @@ GridWeightArray::copy_from(
 const char * const
 hpg::cf_layout_unspecified_version = "";
 
-rval_t<std::string>
+rval_t<hpg::string>
 CFArray::copy_to(
   Device device,
   Device host_device,
@@ -1604,10 +1645,10 @@ CFArray::copy_to(
   using namespace runtime;
 
   if (host_devices().count(host_device) == 0)
-    return rval<std::string>(DisabledHostDeviceError());
+    return rval<hpg::string>(DisabledHostDeviceError());
 
   if (devices().count(device) == 0)
-    return rval<std::string>(DisabledDeviceError());
+    return rval<hpg::string>(DisabledDeviceError());
 
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
@@ -1631,9 +1672,10 @@ CFArray::copy_to(
   }
   return
     rval(
-      impl::construct_cf_layout_version(
-        impl::cf_layout_version_number,
-        device));
+      std::string(
+        impl::construct_cf_layout_version(
+          impl::cf_layout_version_number,
+          device).data()));
 }
 
 rval_t<size_t>
@@ -1644,7 +1686,7 @@ CFArray::min_buffer_size(Device device, unsigned grp) const {
 
 rval_t<std::unique_ptr<DeviceCFArray>>
 DeviceCFArray::create(
-  const std::string& layout,
+  const hpg::string& layout,
   unsigned oversampling,
   std::vector<
     std::tuple<std::array<unsigned, rank - 1>, std::vector<value_type>>>&&
@@ -1652,7 +1694,7 @@ DeviceCFArray::create(
 
   using namespace runtime;
 
-  auto opt_vn_dev = impl::parsed_cf_layout_version(layout);
+  auto opt_vn_dev = impl::parsed_cf_layout_version(layout.val);
   if (!opt_vn_dev)
     return
       rval<std::unique_ptr<DeviceCFArray>>(
@@ -1667,7 +1709,7 @@ DeviceCFArray::create(
     return
       rval<std::unique_ptr<DeviceCFArray>>(
         std::make_unique<impl::DeviceCFArray<Device::Serial>>(
-          layout,
+          layout.val,
           oversampling,
           std::move(arrays)));
     break;
@@ -1677,7 +1719,7 @@ DeviceCFArray::create(
     return
       rval<std::unique_ptr<DeviceCFArray>>(
         std::make_unique<impl::DeviceCFArray<Device::OpenMP>>(
-          layout,
+          layout.val,
           oversampling,
           std::move(arrays)));
     break;
@@ -1687,7 +1729,7 @@ DeviceCFArray::create(
     return
       rval<std::unique_ptr<DeviceCFArray>>(
         std::make_unique<impl::DeviceCFArray<Device::Cuda>>(
-          layout,
+          layout.val,
           oversampling,
           std::move(arrays)));
     break;

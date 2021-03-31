@@ -336,7 +336,7 @@ TEST(DeviceCFArray, Create) {
   const unsigned oversampling = 20;
   ConeCFArray cf(2, oversampling, {10, 20, 30});
   std::vector<std::vector<ConeCFArray::value_type>> arrays;
-  std::optional<std::string> vsn;
+  std::optional<hpg::string> vsn;
   for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
     auto sz_or_err = cf.min_buffer_size(default_device, grp);
     ASSERT_TRUE(hpg::is_value(sz_or_err));
@@ -349,7 +349,7 @@ TEST(DeviceCFArray, Create) {
         arrays.back().data());
     ASSERT_TRUE(hpg::is_value(vsn_or_err));
     if (vsn)
-      EXPECT_EQ(vsn, hpg::get_value(vsn_or_err));
+      EXPECT_EQ(vsn.value(), hpg::get_value(vsn_or_err));
     else
       vsn = hpg::get_value(vsn_or_err);
   }
@@ -434,7 +434,7 @@ TEST(DeviceCFArray, LayoutVersion) {
   auto vsn_or_err =
     cf.copy_to(default_device, default_host_device, 0, array.data());
   ASSERT_TRUE(hpg::is_value(vsn_or_err));
-  std::string vsn = hpg::get_value(vsn_or_err);
+  auto vsn = hpg::get_value(vsn_or_err);
 
   std::vector<
     std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
@@ -465,7 +465,7 @@ TEST(DeviceCFArray, Gridding) {
   auto vsn_or_err =
     cf.copy_to(default_device, default_host_device, 0, array.data());
   ASSERT_TRUE(hpg::is_value(vsn_or_err));
-  std::string vsn = hpg::get_value(vsn_or_err);
+  auto vsn = hpg::get_value(vsn_or_err);
   std::vector<
     std::tuple<std::array<unsigned, 4>, std::vector<ConeCFArray::value_type>>>
     sized_arrays;
@@ -553,7 +553,7 @@ TEST(DeviceCFArray, Efficiency) {
   std::vector<
     std::tuple<std::array<unsigned, 4>, std::vector<hpg::CFArray::value_type>>>
     sized_arrays;
-  std::string vsn;
+  hpg::string vsn;
   for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
     // allocate storage for cf values in group "grp"
     std::vector<hpg::CFArray::value_type>
