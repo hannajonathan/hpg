@@ -1366,7 +1366,7 @@ public:
           false, // do_degrid
           false, // return_visibilities
           true), // do_grid
-        [](auto&& gs_fvs) {
+        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
           return std::get<0>(std::move(gs_fvs));
         });
   };
@@ -1395,7 +1395,7 @@ public:
           false, // do_degrid
           false, // return_visibilities
           true), // do_grid
-        [](auto&& gs_fvs) {
+        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
           return std::get<0>(std::move(gs_fvs));
         });
   };
@@ -1469,7 +1469,7 @@ public:
           true, // do_degrid
           false, // return_visibilities
           true), // do_grid
-        [](auto&& gs_fvs) {
+        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
           return std::get<0>(std::move(gs_fvs));
         });
   };
@@ -1497,7 +1497,7 @@ public:
           true, // do_degrid
           false, // return_visibilities
           true), // do_grid
-        [](auto&& gs_fvs) {
+        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
           return std::get<0>(std::move(gs_fvs));
         });
   };
@@ -1624,7 +1624,7 @@ public:
         degrid_get_predicted_visibilities(
           host_device,
           VisDataVector(std::move(visibilities))),
-        [](auto&& gs_fvs) {
+        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
           return
             std::make_tuple(
               std::get<0>(std::move(gs_fvs)),
@@ -1656,7 +1656,7 @@ public:
         std::move(*this).degrid_get_predicted_visibilities(
           host_device,
           VisDataVector(std::move(visibilities))),
-        [](auto&& gs_fvs) {
+        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
           return
             std::make_tuple(
               std::get<0>(std::move(gs_fvs)),
@@ -1738,7 +1738,7 @@ public:
         degrid_grid_get_residual_visibilities(
           host_device,
           VisDataVector(std::move(visibilities))),
-        [](auto&& gs_fvs) {
+        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
           return
             std::make_tuple(
               std::get<0>(std::move(gs_fvs)),
@@ -1770,7 +1770,7 @@ public:
         std::move(*this).degrid_grid_get_residual_visibilities(
           host_device,
           VisDataVector(std::move(visibilities))),
-        [](auto&& gs_fvs) {
+        [](std::tuple<GridderState, future<VisDataVector>>&& gs_fvs) {
           return
             std::make_tuple(
               std::get<0>(std::move(gs_fvs)),
@@ -2401,7 +2401,7 @@ public:
         degrid_get_predicted_visibilities(
           host_device,
           VisDataVector(std::move(visibilities))),
-        [](auto&& fvs) {
+        [](future<VisDataVector>&& fvs) {
           return GridderState::future_visibilities_narrow<N>(std::move(fvs));
         });
   }
@@ -2444,7 +2444,7 @@ public:
         degrid_grid_get_residual_visibilities(
           host_device,
           VisDataVector(std::move(visibilities))),
-        [](auto&& fvs) {
+        [](future<VisDataVector>&& fvs) {
           return GridderState::future_visibilities_narrow<N>(std::move(fvs));
         });
   }
