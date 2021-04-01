@@ -75,6 +75,11 @@ get_value(const RV& rv) {
   return std::get<1>(rv);
 }
 template <typename RV>
+HPG_EXPORT inline typename rval_value<RV>::type&
+get_value(RV& rv) {
+  return std::get<1>(rv);
+}
+template <typename RV>
 HPG_EXPORT inline typename rval_value<RV>::type&&
 get_value(RV&& rv) {
   return std::get<1>(std::move(rv));
@@ -97,6 +102,15 @@ get_error(RV&& rv) {
 template <typename RV>
 HPG_EXPORT inline const typename rval_value<RV>::type&
 get_error(const RV& rv) {
+# if HPG_API >= 17
+#  error "Unsupported c++ standard and HPG API version"
+# else // HPG_API < 17
+  return *std::get<0>(rv);
+# endif // HPG_API >= 17
+}
+template <typename RV>
+HPG_EXPORT inline typename rval_value<RV>::type&
+get_error(RV& rv) {
 # if HPG_API >= 17
 #  error "Unsupported c++ standard and HPG API version"
 # else // HPG_API < 17

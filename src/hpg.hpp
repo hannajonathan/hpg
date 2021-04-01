@@ -916,6 +916,17 @@ public:
   future(future&& f)
     : m_f(std::move(f).m_f) {}
 
+  future(const future& f) = delete;
+
+  future&
+  operator=(const future& f) = delete;
+
+  future&
+  operator=(future&& f) {
+    m_f = std::move(f).m_f;
+    return *this;
+  }
+
   /** get value
    *
    * @param timeout maximum time to wait for value
@@ -1554,7 +1565,9 @@ public:
         host_device,
         VisDataVector(std::move(visibilities)));
     if (hpg::is_value(tpl_or_err)) {
-      auto [gs, fvs] = hpg::get_value(std::move(tpl_or_err));
+      GridderState gs;
+      future<VisDataVector> fvs;
+      std::tie(gs, fvs) = hpg::get_value(std::move(tpl_or_err));
       return
         std::make_tuple(
           std::move(gs),
@@ -1588,7 +1601,9 @@ public:
         host_device,
         VisDataVector(std::move(visibilities)));
     if (hpg::is_value(tpl_or_err)) {
-      auto [gs, fvs] = hpg::get_value(std::move(tpl_or_err));
+      GridderState gs;
+      future<VisDataVector> fvs;
+      std::tie(gs, fvs) = hpg::get_value(std::move(tpl_or_err));
       return
         std::make_tuple(
           std::move(gs),
@@ -1654,7 +1669,9 @@ public:
         host_device,
         VisDataVector(std::move(visibilities)));
     if (hpg::is_value(tpl_or_err)) {
-      auto [gs, fvs] = hpg::get_value(std::move(tpl_or_err));
+      GridderState gs;
+      future<VisDataVector> fvs;
+      std::tie(gs, fvs) = hpg::get_value(std::move(tpl_or_err));
       return
         rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
           std::make_tuple(
@@ -1691,7 +1708,9 @@ public:
         host_device,
         VisDataVector(std::move(visibilities)));
     if (hpg::is_value(tpl_or_err)) {
-      auto [gs, fvs] = hpg::get_value(std::move(tpl_or_err));
+      GridderState gs;
+      future<VisDataVector> fvs;
+      std::tie(gs, fvs) = hpg::get_value(std::move(tpl_or_err));
       return
         rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
           std::make_tuple(
