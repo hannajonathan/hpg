@@ -892,15 +892,6 @@ constexpr FFTSign model_fft_sign_dflt =
  *
  * Note that, by design, these futures are never resolved by an exception, and
  * it is a requirement that the underlying std::future behaves similarly.
- *
- * @todo The current implementation relies on std:future, values of which
- * typically are completed in a POSIX thread (e.g, future_visibilities_narrow()
- * uses std::async()). This design requires a dependency on pthreads, meaning
- * that in many cases both OpenMP and pthreads will be in use, which is not
- * ideal. Perhaps Kokkos tasking could be used instead, in order to limit
- * ourselves to a single thread model. While it is unclear whether a Kokkos
- * based implementation would be possible, at the very least it would require
- * keeping the Kokkos dependency out of the public HPG interface.
  */
 template <typename T>
 class HPG_EXPORT future final {
@@ -1933,63 +1924,23 @@ protected:
 
 /** specialization of GridderState::future_visibilities_narrow<1> */
 template <>
-future<std::vector<VisData<1>>>
-GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-  return
-    std::async(
-      [](std::future<VisDataVector>&& f) {
-        auto vs = f.get();
-        assert(vs.m_npol == 1);
-        return std::move(*vs.m_v1);
-      },
-      std::move(fvs).m_f);
-}
+HPG_EXPORT future<std::vector<VisData<1>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs);
 
 /** specialization of GridderState::future_visibilities_narrow<2> */
 template <>
-future<std::vector<VisData<2>>>
-GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-  return
-    std::async(
-      [](std::future<VisDataVector>&& f) {
-        auto vs = f.get();
-        assert(vs.m_npol == 2);
-        return std::move(*vs.m_v2);
-      },
-      std::move(fvs).m_f);
-}
+HPG_EXPORT future<std::vector<VisData<2>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs);
 
 /** specialization of GridderState::future_visibilities_narrow<3> */
 template <>
-future<std::vector<VisData<3>>>
-GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-  return
-    std::async(
-      [](std::future<VisDataVector>&& f) {
-        auto vs = f.get();
-        assert(vs.m_npol == 3);
-        return std::move(*vs.m_v3);
-      },
-      std::move(fvs).m_f);
-}
+HPG_EXPORT future<std::vector<VisData<3>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs);
 
 /** specialization of GridderState::future_visibilities_narrow<4> */
 template <>
-future<std::vector<VisData<4>>>
-GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-  return
-    std::async(
-      [](std::future<VisDataVector>&& f) {
-        auto vs = f.get();
-        assert(vs.m_npol == 4);
-        return std::move(*vs.m_v4);
-      },
-      std::move(fvs).m_f);
-}
+HPG_EXPORT future<std::vector<VisData<4>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs);
 
 /** Gridder class
  *
