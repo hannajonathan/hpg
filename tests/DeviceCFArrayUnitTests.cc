@@ -142,6 +142,65 @@ struct LargeCFArray final
   }
 };
 
+struct EncodedCFArray final
+  : public hpg::CFArray {
+
+  unsigned m_nmueller;
+  unsigned m_oversampling;
+  unsigned m_width;
+
+  EncodedCFArray() {}
+
+  EncodedCFArray(
+    unsigned nmueller,
+    unsigned oversampling,
+    unsigned width)
+    : m_nmueller(nmueller)
+    , m_oversampling(oversampling)
+    , m_width(width) {
+  }
+
+  EncodedCFArray(const EncodedCFArray& other)
+    : m_nmueller(other.m_nmueller)
+    , m_oversampling(other.m_oversampling)
+    , m_width(other.m_width) {
+  }
+
+  unsigned
+  oversampling() const override {
+    return m_oversampling;
+  }
+
+  unsigned
+  num_groups() const override {
+    return 1;
+  }
+
+  std::array<unsigned, 4>
+  extents(unsigned) const override {
+    return {m_width * m_oversampling, m_width * m_oversampling, m_nmueller, 1};
+  }
+
+  static std::complex<float>
+  encode(const std::array<unsigned, 3>& idx) {
+    return
+      {static_cast<float>(idx[0]), static_cast<float>(4 * idx[1] + idx[2])};
+  }
+
+  static std::array<unsigned, 3>
+  decode(const std::complex<float>& v) {
+    unsigned ym = static_cast<unsigned>(v.imag());
+    return {static_cast<unsigned>(v.real()), ym / 4, ym % 4};
+  }
+
+  std::complex<float>
+  operator()(unsigned x, unsigned y, unsigned mueller, unsigned, unsigned)
+    const override {
+
+    return encode({x, y, mueller});
+  }
+};
+
 template <typename Generator>
 void
 init_visibilities(
@@ -303,6 +362,51 @@ TEST(DeviceCFArray, Create) {
       for (unsigned y = 0; y < radius; ++y)
         for (unsigned x = 0; x < radius; ++x)
           EXPECT_EQ((*devcf)(x, y, m, 0, grp), cf(x, y, m, 0, grp));
+  }
+}
+
+// test layout of array returned from hpg::CFArray::copy_to()
+//
+// use default_host_device because, for comparison, I can work out what the
+// layout should be, otherwise there are too many cases for the non-host memory
+// devices
+TEST(DeviceCFArray, Layout) {
+  const unsigned oversampling = 3;
+  EncodedCFArray cf(2, oversampling, 4);
+  auto sz = hpg::get_value(cf.min_buffer_size(default_host_device, 0));
+  std::vector<hpg::CFArray::value_type> array(sz);
+  auto vsn =
+    hpg::get_value(
+      cf.copy_to(
+        default_host_device,
+        default_host_device,
+        0,
+        array.data()));
+  auto ext = cf.extents(0);
+  auto mueller = 0;
+  auto y = 0;
+  auto x = 0;
+  for (size_t i = 0; i < array.size(); ++i) {
+    auto d = EncodedCFArray::decode(array[i]);
+    EXPECT_EQ(d[2], mueller);
+    EXPECT_EQ(d[1], y);
+    EXPECT_EQ(d[0], x);
+    mueller += 1;
+    if (mueller == ext[2]) {
+      mueller = 0;
+      y += oversampling;
+      if (y >= ext[1]) {
+        y %= ext[1];
+        x += oversampling;
+        if (x >= ext[0]) {
+          x = (x % ext[0]) + 1;
+          if (x == oversampling) {
+            x = 0;
+            y += 1;
+          }
+        }
+      }
+    }
   }
 }
 
