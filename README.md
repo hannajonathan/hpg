@@ -48,6 +48,28 @@ Building *libhpg* requires a compiler that supports C++17 or later,
 although the C++ language standard of the *HPG* API can be selected by
 the user as noted above.
 
+### Installation using Spack
+
+Installation of *HPG* *via* [Spack](https://spack.io) is
+supported. Building and installing *HPG* by this path is, in many
+ways, the simplest alternative, although *Spack* itself is naturally a
+prerequisite. The *Spack* package file for *HPG* is available in the
+`spack` sub-directory of this repository. To simply build and install
+*HPG* it is sufficient to copy the package file alone to a *Spack*
+repository. Alternatively, if one is intending to do development on
+*HPG*, cloning the *HPG* git repository is also necessary. As an
+example, the following single command is sufficient to build and
+install *HPG* built with serial, OpenMP and CUDA devices, together
+with all its dependencies (including an appropriate version of
+*CMake*), starting from a fresh *Spack* installation configured with
+*gcc* version 9.3.0
+
+``` shell
+$ spack install hpg@main%gcc@9.3.0+openmp+serial+cuda ^fftw~mpi \
+    ^kokkos cuda_arch=70 ^kokkos-nvcc-wrapper~mpi
+```
+Users are encouraged to find out more at the [Spack web site](https://spack.io).
+
 ## Using libhpg
 
 The *HPG* installation includes a *CMake* package configuration file
