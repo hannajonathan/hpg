@@ -60,13 +60,16 @@ repository. Alternatively, if one is intending to do development on
 *HPG*, cloning the *HPG* git repository is also necessary. As an
 example, the following single command is sufficient to build and
 install *HPG* built with serial, OpenMP and CUDA devices, together
-with all its dependencies (including an appropriate version of
-*CMake*), starting from a fresh *Spack* installation configured with
-*gcc* version 9.3.0
+with all its dependencies (including *CMake*, *CUDA*, *FFTW*,
+*Kokkos*, plus all transitive dependencies), starting from a fresh
+*Spack* installation configured with *gcc* version 9.3.0
 
 ``` shell
-$ spack install hpg@main%gcc@9.3.0+openmp+serial+cuda ^fftw~mpi \
-    ^kokkos cuda_arch=70 ^kokkos-nvcc-wrapper~mpi
+$ spack install \
+    hpg@main%gcc@9.3.0+openmp+serial+cuda+wrapper api=11 \
+        ^fftw~mpi \
+        ^kokkos cuda_arch=70 \
+        ^kokkos-nvcc-wrapper~mpi
 ```
 Users are encouraged to find out more at the [Spack web site](https://spack.io).
 
