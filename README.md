@@ -1,10 +1,5 @@
 # HPG: high performance gridder
 
-**Confidential**, at least for the time being. Please do not share
-access to this repository or any clone of this repository without
-obtaining prior approval from [Martin
-Pokorny](mailto:mpokorny@nrao.edu)
-
 High performance gridding (kernel) implementation library.
 
 ## Build requirements
