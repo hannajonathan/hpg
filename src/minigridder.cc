@@ -325,8 +325,8 @@ struct TrialSpec {
   std::string
   id() const {
     std::ostringstream oss;
-    std::array<char, id_col_width - 1> nvis;
-    std::snprintf(nvis.data(), nvis.size(), "%g", double(visibilities));
+    std::array<char, id_col_width> nvis;
+    std::snprintf(nvis.data(), nvis.size(), "%9.2g", double(visibilities));
     std::ostringstream cfsz;
     const char* sep = "";
     for (auto& s : cfsize) {
@@ -365,7 +365,7 @@ struct TrialSpec {
   run(double seconds) const {
 
     std::ostringstream oss;
-    std::array<char, id_col_width - 1> vr;
+    std::array<char, id_col_width> vr;
     std::snprintf(
       vr.data(),
       vr.size(),
