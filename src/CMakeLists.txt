@@ -100,9 +100,8 @@ find_package(Threads)
 configure_file(hpg_version.cpp.in hpg_version.cpp @ONLY)
 add_library(hpg_version STATIC
   ${CMAKE_CURRENT_BINARY_DIR}/hpg_version.cpp)
-target_include_directories(hpg_version
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-  PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+target_include_directories(hpg_version PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR} $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 
 # libhpg
 #
