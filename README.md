@@ -66,9 +66,9 @@ with all its dependencies (including *CMake*, *CUDA*, *FFTW*,
 
 ``` shell
 $ spack install \
-    hpg@main%gcc@9.3.0+openmp+serial+cuda+wrapper api=11 \
+    hpg@main%gcc@9.3.0+openmp+serial+cuda api=11 \
         ^fftw~mpi \
-        ^kokkos cuda_arch=70 \
+        ^kokkos cuda_arch=70 +wrapper \
         ^kokkos-nvcc-wrapper~mpi
 ```
 Users are encouraged to find out more at the [Spack web site](https://spack.io).

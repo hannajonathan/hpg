@@ -25,8 +25,6 @@ class Hpg(CMakePackage):
     variant('openmp', default=False, description='Enable OpenMP device')
     variant('serial', default=True, description='Enable serial device')
     variant('shared', default=True, description='Build shared libraries')
-    variant('wrapper', default=False,
-            description='Use Kokkos nvcc compiler wrapper')
 
     depends_on('cmake@3.14:', type='build')
 
@@ -35,8 +33,6 @@ class Hpg(CMakePackage):
     depends_on('fftw@3.3.8: +openmp precision=double', when='+openmp')
     depends_on('kokkos@3.2.00: std=17')
     depends_on('kokkos+cuda+cuda_lambda', when='+cuda')
-    depends_on('kokkos+wrapper', when='+cuda+wrapper')
-    #depends_on('kokkos+cuda+cuda_lambda', when='%clang+cuda')
     depends_on('kokkos+openmp', when='+openmp')
     depends_on('kokkos+serial', when='+serial')
 
@@ -53,9 +49,9 @@ class Hpg(CMakePackage):
             self.define_from_variant(
                 'Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS',
                 'exptl')]
-        if self.spec.satisfies('+wrapper'):
-            args.extend(
+        if self.spec['kokkos'].satisfies('+wrapper'):
+            args.extend([
                 self.define(
                     'CMAKE_CXX_COMPILER',
-                    self.spec['kokkos'].kokkos_cxx))
+                    self.spec['kokkos'].kokkos_cxx)])
         return args
