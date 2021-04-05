@@ -299,22 +299,6 @@ GridderState::GridderState(
     assert(false);
 #endif //HPG_ENABLE_CUDA
     break;
-#ifdef HPG_ENABLE_HPX
-  case Device::HPX:
-    impl =
-      std::make_shared<Impl::StateT<Device::HPX>>(
-        max_active_tasks,
-        max_visibility_batch_size,
-        init_cf_shape,
-        grid_size,
-        grid_scale,
-        mueller_indexes,
-        conjugate_mueller_indexes,
-        implementation_versions);
-#else
-    assert(false);
-#endif // HPG_ENABLE_HPX
-    break;
   default:
     assert(false);
     break;
@@ -398,14 +382,6 @@ GridderState::operator=(const GridderState& rhs) {
         ->copy());
     break;
 #endif // HPG_ENABLE_CUDA
-#ifdef HPG_ENABLE_HPX
-  case Device::HPX:
-    impl =
-      std::make_shared<Impl::StateT<Device::HPX>>(
-        dynamic_cast<const Impl::StateT<Device::HPX>*>(crhs.impl.get())
-        ->copy());
-    break;
-#endif // HPG_ENABLE_HPX
   default:
     assert(false);
     break;
@@ -1410,9 +1386,6 @@ hpg::devices() noexcept {
 #ifdef HPG_ENABLE_CUDA
     Device::Cuda,
 #endif
-#ifdef HPG_ENABLE_HPX
-    Device::HPX,
-#endif
   };
   return result;
 }
@@ -1462,11 +1435,6 @@ CFArray::copy_to(
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     Impl::layout_for_device<Device::Cuda>(host_device, *this, grp, dst);
-    break;
-#endif
-#ifdef HPG_ENABLE_HPX
-  case Device::HPX:
-    Impl::layout_for_device<Device::HPX>(host_device, *this, grp, dst);
     break;
 #endif
   default:
@@ -1540,23 +1508,6 @@ CFArray::min_buffer_size(Device device, unsigned grp) const {
     break;
   }
 #endif
-#ifdef HPG_ENABLE_HPX
-  case Device::HPX: {
-    auto layout = Impl::CFLayout<Device::HPX>::dimensions(this, grp);
-    alloc_sz =
-      Impl::cf_view<
-        typename Impl::DeviceT<Device::HPX>::kokkos_device::array_layout,
-        K::HostSpace>
-      ::required_allocation_size(
-        layout.dimension[0],
-        layout.dimension[1],
-        layout.dimension[2],
-        layout.dimension[3],
-        layout.dimension[4],
-        layout.dimension[5]);
-    break;
-  }
-#endif
   default:
     assert(false);
     break;
@@ -1591,8 +1542,8 @@ DeviceCFArray::create(
           layout,
           oversampling,
           std::move(arrays)));
-#endif // HPG_ENABLE_SERIAL
     break;
+#endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     return
@@ -1601,8 +1552,8 @@ DeviceCFArray::create(
           layout,
           oversampling,
           std::move(arrays)));
-#endif // HPG_ENABLE_OPENMP
     break;
+#endif // HPG_ENABLE_OPENMP
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     return
@@ -1611,18 +1562,8 @@ DeviceCFArray::create(
           layout,
           oversampling,
           std::move(arrays)));
+    break;
 #endif //HPG_ENABLE_CUDA
-    break;
-#ifdef HPG_ENABLE_HPX
-  case Device::HPX:
-    return
-      rval<std::unique_ptr<DeviceCFArray>>(
-        std::make_unique<Impl::DeviceCFArray<Device::HPX>>(
-          layout,
-          oversampling,
-          std::move(arrays)));
-#endif // HPG_ENABLE_HPX
-    break;
   default:
     return rval<std::unique_ptr<DeviceCFArray>>(DisabledDeviceError());
     break;

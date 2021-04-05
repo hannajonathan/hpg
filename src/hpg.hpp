@@ -87,7 +87,6 @@ enum class HPG_EXPORT Device {
   Serial, /**< serial device */
   OpenMP, /**< OpenMP device */
   Cuda, /**< CUDA device */
-  HPX, /**< HIP device */
 };
 
 /** supported devices */

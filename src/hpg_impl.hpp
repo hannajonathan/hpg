@@ -397,22 +397,6 @@ struct DeviceT<Device::Cuda> {
 };
 #endif // HPG_ENABLE_CUDA
 
-#ifdef HPG_ENABLE_HPX
-/** HPX device type trait */
-template <>
-struct DeviceT<Device::HPX> {
-  // FIXME
-
-  using kokkos_device = K::HPX;
-
-  static unsigned constexpr active_task_limit = 1024;
-
-  using stream_type = void;
-
-  static constexpr const char* const name = "HPX";
-};
-#endif // HPG_ENABLE_HPX
-
 /** View type for grid values */
 template <typename Layout, typename memory_space>
 using grid_view = K::View<gv_t****, Layout, memory_space>;
@@ -814,25 +798,6 @@ pseudo_atomic_add<K::Cuda, float>(
   K::atomic_add(&acc.imag(), val.imag());
 }
 #endif // HPG_ENABLE_CUDA
-#ifdef HPG_ENABLE_HPX
-template <>
-KOKKOS_FORCEINLINE_FUNCTION void
-pseudo_atomic_add<K::HPX, double>(
-  volatile K::complex<double>& acc, const K::complex<double>& val) {
-
-  K::atomic_add(&acc.real(), val.real());
-  K::atomic_add(&acc.imag(), val.imag());
-}
-
-template <>
-KOKKOS_FORCEINLINE_FUNCTION void
-pseudo_atomic_add<K::HPX, float>(
-  volatile K::complex<float>& acc, const K::complex<float>& val) {
-
-  K::atomic_add(&acc.real(), val.real());
-  K::atomic_add(&acc.imag(), val.imag());
-}
-#endif // HPG_ENABLE_HPX
 
 /** compute kernels
  *
@@ -2423,13 +2388,6 @@ parsed_cf_layout_version(const std::string& layout) {
           static_cast<unsigned>(vn.value()),
           std::optional<Device>(Device::Cuda));
 #endif
-#ifdef HPG_ENABLE_HPX
-    if (dev == DeviceT<Device::HPX>::name)
-      return
-        std::make_tuple(
-          static_cast<unsigned>(vn.value()),
-          std::optional<Device>(Device::HPX));
-#endif
     return std::make_tuple(static_cast<unsigned>(vn.value()), std::nullopt);
   }
   return std::nullopt;
@@ -2453,11 +2411,6 @@ construct_cf_layout_version(unsigned vn, Device device) {
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     oss << DeviceT<Device::Cuda>::name;
-    break;
-#endif
-#ifdef HPG_ENABLE_HPX
-  case Device::HPX:
-    oss << DeviceT<Device::HPX>::name;
     break;
 #endif
   default:
@@ -3984,17 +3937,6 @@ GridValueArray::copy_from(
         layout);
     break;
 #endif
-#ifdef HPG_ENABLE_HPX
-  case Device::HPX:
-    return
-      Impl::GridValueViewArray<Device::HPX>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
   default:
     assert(false);
     return nullptr;
@@ -4038,17 +3980,6 @@ GridWeightArray::copy_from(
   case Device::Cuda:
     return
       Impl::GridWeightViewArray<Device::Cuda>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-#ifdef HPG_ENABLE_HPX
-  case Device::HPX:
-    return
-      Impl::GridWeightViewArray<Device::HPX>::copy_from(
         name,
         host_device,
         src,
