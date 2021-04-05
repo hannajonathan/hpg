@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+# SPDX-License-Identifier: Apache-2.0
+#
 add_executable(GridderStateUnitTests GridderStateUnitTests.cc)
 target_link_libraries(GridderStateUnitTests hpg gtest)
 add_test(NAME GridderStateUnitTests COMMAND GridderStateUnitTests)

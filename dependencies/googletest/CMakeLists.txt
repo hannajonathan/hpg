@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+# SPDX-License-Identifier: Apache-2.0
+#
 set(BUILD_SHARED_LIBS NO)
 
 # Prevent overriding the parent project's compiler/linker
