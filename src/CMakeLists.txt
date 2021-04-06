@@ -150,7 +150,7 @@ target_link_libraries(hpg PRIVATE Kokkos::kokkoscore)
 target_include_directories(hpg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/hpg>)
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 include(GenerateExportHeader)
 generate_export_header(hpg)
