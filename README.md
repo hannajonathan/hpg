@@ -76,15 +76,26 @@ Users are encouraged to find out more at the [Spack web site](https://spack.io).
 ## Using libhpg
 
 The *HPG* installation includes a *CMake* package configuration file
-that defines the `hpg` target. To build the *CMake* target `MyProgram`
-against the *libhpg* library, simply include something like the
-following statement in `CMakeLists.txt`:
+that defines the `hpg` target. To build *CMake* targets against
+the *libhpg* library, simply include something like the following
+statements in `CMakeLists.txt`:
 
 ``` cmake
+# find the package
+find_package(HPG CONFIG)
+message(STATUS "Found HPG: ${HPG_DIR}")
+
+# link to executable "MyProgram"
+add_executable(MyProgram)
 target_link_libraries(MyProgram hpg)
+
+# link to library "MyLibrary" (HPG API not exposed by MyLibrary)
+add_library(MyLibrary)
+target_link_libraries(MyLibrary PRIVATE hpg)
 ```
 
-Most client code should include only the header `hpg.hpp`, which hides
-from the client code all use by the *HPG* implementation of *Kokkos*
-types and concepts. However, if direct access to the *Kokkos* kernels
-is desired, the header `hpg_impl.h` may be used.
+Most client code should include only the header `hpg.hpp` (using
+`#include <hpg/hpg.hpp>`), which hides from the client code all use
+by the *HPG* implementation of *Kokkos* types and concepts. However,
+if direct access to the *Kokkos* kernels is desired, the header 
+`hpg_impl.h` may be used.
