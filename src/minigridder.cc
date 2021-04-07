@@ -119,17 +119,29 @@ parse_enumerated(
 }
 
 const std::unordered_map<hpg::Device, std::string> device_codes{
+#ifdef HPG_ENABLE_SERIAL
   {hpg::Device::Serial, "serial"},
+#endif
+#ifdef HPG_ENABLE_OPENMP
   {hpg::Device::OpenMP, "omp"},
+#endif
+#ifdef HPG_ENABLE_CUDA
   {hpg::Device::Cuda, "cuda"}
+#endif
 };
 
 argwrap<std::vector<hpg::Device>>
 parse_devices(const std::string& s) {
   static const std::vector<std::string> all{
+#ifdef HPG_ENABLE_SERIAL
     device_codes.at(hpg::Device::Serial),
+#endif
+#ifdef HPG_ENABLE_OPENMP
     device_codes.at(hpg::Device::OpenMP),
+#endif
+#ifdef HPG_ENABLE_CUDA
     device_codes.at(hpg::Device::Cuda)};
+#endif
 
   return parse_enumerated(s, "device", device_codes, all);
 }
