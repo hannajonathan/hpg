@@ -140,8 +140,9 @@ parse_devices(const std::string& s) {
     device_codes.at(hpg::Device::OpenMP),
 #endif
 #ifdef HPG_ENABLE_CUDA
-    device_codes.at(hpg::Device::Cuda)};
+    device_codes.at(hpg::Device::Cuda)
 #endif
+  };
 
   return parse_enumerated(s, "device", device_codes, all);
 }
