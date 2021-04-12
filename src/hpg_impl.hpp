@@ -291,9 +291,16 @@ static bool hpg_impl_initialized = false;
 
 /** implementation initialization function */
 bool
-initialize() {
+initialize(const InitArguments& args) {
   bool result = true;
-  K::initialize();
+  Kokkos::InitArguments kargs;
+  kargs.num_threads = args.num_threads;
+  kargs.num_numa = args.num_numa;
+  kargs.device_id = args.device_id;
+  kargs.ndevices = args.ndevices;
+  kargs.skip_device = args.skip_device;
+  kargs.disable_warnings = args.disable_warnings;
+  K::initialize(kargs);
 #ifdef HPG_ENABLE_OPENMP
   auto rc = fftw_init_threads();
   result = rc != 0;

@@ -97,6 +97,14 @@ ScopeGuard::ScopeGuard()
   }
 }
 
+ScopeGuard::ScopeGuard(const InitArguments& args)
+  : init(false) {
+  if (!is_initialized()) {
+    initialize(args);
+    init = true;
+  }
+}
+
 ScopeGuard::~ScopeGuard() {
   if (is_initialized() && init)
     finalize();
@@ -1366,7 +1374,19 @@ hpg::cf_layout_unspecified_version = "";
 
 bool
 hpg::initialize() {
-  return Impl::initialize();
+  InitArguments args;
+  args.num_threads = -1;
+  args.num_numa = -1;
+  args.device_id = -1;
+  args.ndevices = -1;
+  args.skip_device = -1;
+  args.disable_warnings = false;
+  return initialize(args);
+}
+
+bool
+hpg::initialize(const InitArguments& args) {
+  return Impl::initialize(args);
 }
 
 void

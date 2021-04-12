@@ -46,6 +46,52 @@
  */
 namespace hpg {
 
+/** initialization arguments
+ *
+ * This type is currently identical to the Kokkos type of the same name,
+ * although that could change in future versions.
+ *
+ * If you set num_threads or num_numa to zero or less, Kokkos will try to
+ * determine default values if possible or otherwise set them to 1. In
+ * particular, Kokkos can use the hwloc library to determine default settings
+ * using the assumption that the process binding mask is unique, i.e., that this
+ * process does not share any cores with another process. Note that the default
+ * value of each parameter is -1.
+ */
+struct InitArguments {
+  /** number of threads per NUMA region
+   *
+   * Used in conjunction with num_numa
+   */
+  int num_threads;
+
+  /** number of NUMA regions used by process
+   */
+  int num_numa;
+
+  /** device id to be used */
+  int device_id;
+
+  /** number of devices to be used per node
+   *
+   * Used when running MPI jobs. Process to device mapping happens by obtaining
+   * the local MPI rank and assigning devices round-robin.
+   */
+  int ndevices;
+
+  /** device to ignore
+   *
+   * Used in conjunction with ndevices.  This is most useful
+   * on workstations with multiple GPUs, one of which is used to drive screen
+   * output.
+   */
+  int skip_device;
+
+  /** disable Kokkos warnings
+   */
+  bool disable_warnings;
+};
+
 /** global initialization of hpg
  *
  * Function is idempotent, but should not be called by a process after a call to
@@ -67,6 +113,12 @@ namespace hpg {
  * @return true, if and only if initialization succeeded
  */
 HPG_EXPORT bool initialize();
+
+/** global initialization of hpg, with arguments
+ *
+ * @param args initialization parameters
+ */
+HPG_EXPORT bool initialize(const InitArguments& args);
 
 /** global finalization of hpg
  *
@@ -128,7 +180,17 @@ private:
   bool init;
 
 public:
+  /** default constructor
+   *
+   * calls hpg::initialize()
+   */
   ScopeGuard();
+
+  /** constructor with initialization argument
+   *
+   * calls hpg::initialize(const InitArguments&)
+   */
+  ScopeGuard(const InitArguments& args);
 
   ~ScopeGuard();
 
