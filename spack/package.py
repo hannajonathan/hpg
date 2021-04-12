@@ -40,6 +40,8 @@ class Hpg(CMakePackage):
         args = [
             self.define('INSTALL_GTEST', False),
             self.define('BUILD_GMOCK', False),
+            self.define('Hpg_BUILD_DOCS', False),
+            self.define('Hpg_BUILD_TESTS', self.run_tests),
             self.define_from_variant('BUILD_SHARED_LIBS', 'shared'),
             self.define_from_variant('Hpg_ENABLE_SERIAL', 'serial'),
             self.define_from_variant('Hpg_ENABLE_OPENMP', 'openmp'),

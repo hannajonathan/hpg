@@ -59,6 +59,9 @@ endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(Hpg_BUILD_DOCS "Build Doxygen documentation" ON)
+option(Hpg_BUILD_TESTS "Build unit tests" ON)
+
 add_subdirectory(cmake)
 
 add_subdirectory(dependencies)
@@ -66,6 +69,10 @@ add_subdirectory(dependencies)
 add_subdirectory(src)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  add_subdirectory(doc)
-  add_subdirectory(tests)
+  if(${Hpg_BUILD_DOCS})
+    add_subdirectory(doc)
+  endif()
+  if(${Hpg_BUILD_TESTS})
+    add_subdirectory(tests)
+  endif()
 endif()
