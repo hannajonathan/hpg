@@ -59,6 +59,15 @@ namespace hpg {
  * value of each parameter is -1.
  */
 struct InitArguments {
+
+  InitArguments()
+    : num_threads(-1)
+    , num_numa(-1)
+    , device_id(-1)
+    , ndevices(-1)
+    , skip_device(01)
+    , disable_warnings(false) {}
+
   /** number of threads per NUMA region
    *
    * Used in conjunction with num_numa

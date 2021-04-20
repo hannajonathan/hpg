@@ -1374,14 +1374,7 @@ hpg::cf_layout_unspecified_version = "";
 
 bool
 hpg::initialize() {
-  InitArguments args;
-  args.num_threads = -1;
-  args.num_numa = -1;
-  args.device_id = -1;
-  args.ndevices = -1;
-  args.skip_device = -1;
-  args.disable_warnings = false;
-  return initialize(args);
+  return initialize(InitArguments());
 }
 
 bool
