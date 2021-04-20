@@ -764,18 +764,39 @@ run_trials(
   }
 }
 
+static std::string
+wrap(const std::string& str) {
+  if (str.size() == 0)
+    return "";
+
+  const std::string::size_type width = 72;
+  std::ostringstream result;
+  std::string::size_type pos = 0;
+  do {
+    auto substr = str.substr(pos, width);
+    auto sp = substr.rfind(" ", substr.size());
+    if (sp == std::string::npos || substr.size() < width)
+      sp = substr.size();
+    result << substr.substr(0, sp)
+           << std::endl;
+    pos += sp + 1;
+  } while (pos < str.size());
+  return result.str();
+}
+
 int
 main(int argc, char* argv[]) {
   /* set up the argument parser */
   argparse::ArgumentParser args("minigridder", "0.0.1");
   args.add_description(
-    "Measure achieved rate of visibilities gridded "s
-    + "for various parameter values. "
-    + "Many command line options can be expressed as comma-separated lists "
-    + "to support running sweeps through different gridding trials "
-    + "with a single invocation of the program. Note that options that can "
-    + "take values in a small, enumerable set also accept `*` as a value "
-    + "to indicate all the values in the set.");
+    wrap(
+      "Measure achieved rate of visibilities gridded "s
+      + "for various parameter values. "
+      + "Many command line options can be expressed as comma-separated lists "
+      + "to support running sweeps through different gridding trials "
+      + "with a single invocation of the program. Note that options that can "
+      + "take values in a small, enumerable set also accept `*` as a value "
+      + "to indicate all the values in the set."));
 
   const unsigned default_num_vis = 1000000;
   {
