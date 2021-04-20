@@ -172,7 +172,7 @@ parse_mueller_indexes(const std::string& s) {
       if (n == 1)
         result.push_back({{0}});
       else if (n == 2)
-        result.push_back({{0, 1}, {1, 2}});
+        result.push_back({{0, 1}, {2, 3}});
       else if (n == 3)
         result.push_back({{0, 1, 2}, {3, 4, 5}, {6, 7, 8}});
       else if (n == 4)
