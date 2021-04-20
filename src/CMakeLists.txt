@@ -155,15 +155,16 @@ target_include_directories(hpg PUBLIC
 include(GenerateExportHeader)
 generate_export_header(hpg)
 
-install(TARGETS hpg
-  EXPORT HPGConfig
-  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/hpg)
-install(EXPORT HPGConfig DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/hpg)
-export(TARGETS hpg FILE HPGConfig.cmake)
-
 # minigridder
 #
 if(Hpg_ENABLE_OPENMP)
   add_executable(minigridder minigridder.cc)
   target_link_libraries(minigridder hpg Kokkos::kokkoscore)
 endif()
+
+install(TARGETS hpg
+  EXPORT HPGConfig
+  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/hpg)
+install(EXPORT HPGConfig DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/hpg)
+export(TARGETS hpg FILE HPGConfig.cmake)
+install(TARGETS minigridder)
