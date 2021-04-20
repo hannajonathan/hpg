@@ -769,11 +769,11 @@ main(int argc, char* argv[]) {
   /* set up the argument parser */
   argparse::ArgumentParser args("minigridder", "0.0.1");
   args.add_description(
-    "measure achieved rate of visibilities gridded "s
+    "Measure achieved rate of visibilities gridded "s
     + "for various parameter values. "
-    + "many command line options can be expressed as comma-separated lists "
+    + "Many command line options can be expressed as comma-separated lists "
     + "to support running sweeps through different gridding trials "
-    + "with a single invocation of the program. note that options that can "
+    + "with a single invocation of the program. Note that options that can "
     + "take values in a small, enumerable set also accept `*` as a value "
     + "to indicate all the values in the set.");
 
@@ -837,6 +837,14 @@ main(int argc, char* argv[]) {
       .action(parse_unsigned_args);
   }
   {
+    unsigned dflt = 0;
+    args
+      .add_argument("-i", "--id")
+      .default_value(argwrap<std::vector<unsigned>>({dflt}))
+      .help("device id ["s + std::to_string(dflt) + "]")
+      .action(parse_unsigned_args);
+  }
+  {
     unsigned dflt = 4;
     args
       .add_argument("-s", "--streams")
@@ -871,12 +879,20 @@ main(int argc, char* argv[]) {
   auto repeats = args.get<argwrap<std::vector<unsigned>>>("--repeats").val;
   auto devices =
     args.get<argwrap<std::vector<hpg::Device>>>("--device").val;
+  auto device_ids = args.get<argwrap<std::vector<unsigned>>>("--id").val;
   auto kernels = args.get<argwrap<std::vector<unsigned>>>("--kernel").val;
   auto streams = args.get<argwrap<std::vector<unsigned>>>("--streams").val;
   auto mueller_indexes =
     parse_mueller_indexes(args.get<std::string>("--mueller"));
 
-  hpg::ScopeGuard hpg;
+  if (device_ids.size() != 1) {
+    std::cerr << "Only a single device id may be specified" << std::endl;
+    return -1;
+  }
+
+  hpg::InitArguments init_args;
+  init_args.device_id = device_ids[0];
+  hpg::ScopeGuard hpg(init_args);
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)
     run_trials(
       mueller_indexes,
