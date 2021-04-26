@@ -159,6 +159,7 @@ generate_export_header(hpg)
 #
 if(Hpg_ENABLE_OPENMP)
   add_executable(minigridder minigridder.cc)
+  target_compile_options(minigridder --expt-relaxed-constexpr)
   target_link_libraries(minigridder hpg Kokkos::kokkoscore)
 endif()
 
