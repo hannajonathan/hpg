@@ -73,6 +73,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(Hpg_BUILD_DOCS "Build Doxygen documentation" ON)
 option(Hpg_BUILD_TESTS "Build unit tests" ON)
 
+# the following are set according to Hpg_ENABLE_* cache variables and
+# the devices enabled by Kokkos (in the src directory)
+set(HPG_ENABLE_SERIAL OFF)
+set(HPG_ENABLE_OPENMP OFF)
+set(HPG_ENABLE_CUDA OFF)
+
 add_subdirectory(cmake)
 
 add_subdirectory(dependencies)
@@ -87,3 +93,18 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     add_subdirectory(tests)
   endif()
 endif()
+
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(hpgConfigVersion.cmake
+  VERSION 0
+  COMPATIBILITY AnyNewerVersion)
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/hpgConfig.cmake"
+  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hpg")
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/hpgConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/hpgConfigVersion.cmake"
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hpg")
+install(EXPORT hpgTargets
+  NAMESPACE hpg::
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hpg")

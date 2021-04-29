@@ -15,28 +15,28 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 add_executable(GridderStateUnitTests GridderStateUnitTests.cc)
-target_link_libraries(GridderStateUnitTests hpg gtest)
+target_link_libraries(GridderStateUnitTests hpg::hpg gtest)
 add_test(NAME GridderStateUnitTests COMMAND GridderStateUnitTests)
 set_tests_properties(GridderStateUnitTests PROPERTIES TIMEOUT 45)
 
 add_executable(GridderUnitTests GridderUnitTests.cc)
-target_link_libraries(GridderUnitTests hpg gtest)
+target_link_libraries(GridderUnitTests hpg::hpg gtest)
 add_test(NAME GridderUnitTests COMMAND GridderUnitTests)
 
 add_executable(CFIndexerUnitTests CFIndexerUnitTests.cc)
-target_link_libraries(CFIndexerUnitTests hpg gtest_main)
+target_link_libraries(CFIndexerUnitTests hpg::hpg gtest_main)
 add_test(NAME CFIndexerUnitTests COMMAND CFIndexerUnitTests)
 
 add_executable(GridArraysUnitTests GridArraysUnitTests.cc)
-target_link_libraries(GridArraysUnitTests hpg gtest_main)
+target_link_libraries(GridArraysUnitTests hpg::hpg gtest_main)
 add_test(NAME GridArraysUnitTests COMMAND GridArraysUnitTests)
 
 add_executable(DeviceCFArrayUnitTests DeviceCFArrayUnitTests.cc)
-target_link_libraries(DeviceCFArrayUnitTests hpg gtest_main)
+target_link_libraries(DeviceCFArrayUnitTests hpg::hpg gtest_main)
 add_test(NAME DeviceCFArrayUnitTests COMMAND DeviceCFArrayUnitTests)
 set_tests_properties(DeviceCFArrayUnitTests PROPERTIES TIMEOUT 60)
 
 # basic test application
 #
 add_executable(test0 test.cc)
-target_link_libraries(test0 hpg)
+target_link_libraries(test0 hpg::hpg)

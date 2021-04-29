@@ -78,7 +78,7 @@ kokkos_check(DEVICES ${ENABLED_DEVICES})
 
 # find FFTW
 #
-if(HAVE_SERIAL GREATER -1 OR  HAVE_OPENMP GREATER -1)
+if(HAVE_SERIAL GREATER -1 OR HAVE_OPENMP GREATER -1)
   # find FFTW
   # TODO: might be good to choose precision according to config variable
   set(FFTW_COMPONENTS)
@@ -102,32 +102,43 @@ add_library(hpg_version STATIC
   ${CMAKE_CURRENT_BINARY_DIR}/hpg_version.cpp)
 target_include_directories(hpg_version PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR} $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+set_target_properties(hpg_version PROPERTIES
+  EXPORT_NAME version
+  OUTPUT_NAME hpgversion)
+add_library(hpg::version ALIAS hpg_version)
 
 # libhpg
 #
-add_library(hpg hpg.cc)
-target_link_libraries(hpg
-  PRIVATE hpg_version
+add_library(hpg_hpg hpg.cc)
+target_link_libraries(hpg_hpg
+  PRIVATE hpg::version
   PUBLIC Threads::Threads)
+add_library(hpg::hpg ALIAS hpg_hpg)
 if(HAVE_SERIAL GREATER -1)
   set(HPG_ENABLE_SERIAL ${Hpg_ENABLE_SERIAL})
   if(HAVE_OPENMP LESS 0)
-    target_link_libraries(hpg PRIVATE FFTW::Double)
+    target_link_libraries(hpg_hpg PRIVATE FFTW::Double)
   endif()
 endif()
 if(HAVE_OPENMP GREATER -1)
   set(HPG_ENABLE_OPENMP ${Hpg_ENABLE_OPENMP})
-  target_link_libraries(hpg PRIVATE FFTW::DoubleOpenMP)
+  target_link_libraries(hpg_hpg PRIVATE FFTW::DoubleOpenMP)
 endif()
 if(HAVE_CUDA GREATER -1)
   set(HPG_ENABLE_CUDA ${Hpg_ENABLE_CUDA})
-  target_compile_options(hpg PRIVATE --expt-relaxed-constexpr)
-  target_link_libraries(hpg PRIVATE cufft)
+  target_compile_options(hpg_hpg PRIVATE --expt-relaxed-constexpr)
+  target_link_libraries(hpg_hpg PRIVATE cufft)
 endif()
 if(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
   set(HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     ${Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS})
 endif()
+
+# set the HPG_ENABLE_* variables in the parent scope based on
+# Hpg_ENABLE_* and what we found in Kokkos
+set(HPG_ENABLE_SERIAL ${HPG_ENABLE_SERIAL} PARENT_SCOPE)
+set(HPG_ENABLE_OPENMP ${HPG_ENABLE_OPENMP} PARENT_SCOPE)
+set(HPG_ENABLE_CUDA ${HPG_ENABLE_CUDA} PARENT_SCOPE)
 
 # use configuration file to save some variables that affect API
 configure_file(hpg_config.hpp.in hpg_config.hpp)
@@ -141,31 +152,35 @@ set(hpg_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_version.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_config.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_export.h)
-set_target_properties(hpg PROPERTIES
+set_target_properties(hpg_hpg PROPERTIES
   VERSION ${hpg_VERSION}
   SOVERSION ${hpg_VERSION_MAJOR}
+  EXPORT_NAME hpg
+  OUTPUT_NAME hpg
   PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}"
   COMPILE_DEFINITIONS HPG_MAX_NUM_CF_GROUPS=${Hpg_MAX_NUM_CF_GROUPS})
-target_link_libraries(hpg PRIVATE Kokkos::kokkoscore)
-target_include_directories(hpg PUBLIC
+target_link_libraries(hpg_hpg PRIVATE Kokkos::kokkoscore)
+target_include_directories(hpg_hpg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 include(GenerateExportHeader)
-generate_export_header(hpg)
+generate_export_header(hpg_hpg BASE_NAME hpg)
+
+install(TARGETS hpg_hpg hpg_version
+  EXPORT hpgTargets
+  PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/hpg")
 
 # minigridder
 #
-if(Hpg_ENABLE_OPENMP)
+if(HPG_ENABLE_OPENMP)
   add_executable(minigridder minigridder.cc)
-  target_compile_options(minigridder PRIVATE --expt-relaxed-constexpr)
-  target_link_libraries(minigridder hpg Kokkos::kokkoscore)
-endif()
+  if(HPG_ENABLE_CUDA)
+    target_compile_options(minigridder PRIVATE --expt-relaxed-constexpr)
+  endif()
+  target_link_libraries(minigridder hpg::hpg Kokkos::kokkoscore)
 
-install(TARGETS hpg
-  EXPORT HPGConfig
-  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/hpg)
-install(EXPORT HPGConfig DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/hpg)
-export(TARGETS hpg FILE HPGConfig.cmake)
-install(TARGETS minigridder)
+  install(TARGETS minigridder
+    EXPORT hpgTargets)
+endif()
