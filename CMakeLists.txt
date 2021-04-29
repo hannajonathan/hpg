@@ -98,12 +98,16 @@ include(CMakePackageConfigHelpers)
 write_basic_package_version_file(hpgConfigVersion.cmake
   VERSION 0
   COMPATIBILITY AnyNewerVersion)
+set(cmakeModulesDir "${CMAKE_INSTALL_LIBDIR}/cmake/hpg")
 configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
   "${CMAKE_CURRENT_BINARY_DIR}/hpgConfig.cmake"
-  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hpg")
+  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hpg"
+  PATH_VARS cmakeModulesDir
+  NO_SET_AND_CHECK_MACRO)
 install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/hpgConfig.cmake"
   "${CMAKE_CURRENT_BINARY_DIR}/hpgConfigVersion.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/cmake/findFFTW-src/FindFFTW.cmake"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hpg")
 install(EXPORT hpgTargets
   NAMESPACE hpg::
