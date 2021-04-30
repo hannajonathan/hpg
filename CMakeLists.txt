@@ -47,17 +47,6 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT
   set(CMAKE_INSTALL_PREFIX "/opt/nrao.edu/${PROJECT_NAME}" CACHE PATH "..." FORCE)
 endif()
 
-# initialize install RPATH
-if(APPLE)
-  set(base @loader_path)
-else()
-  set(base $ORIGIN)
-endif()
-file(RELATIVE_PATH relDir
-  ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}
-  ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR})
-set(CMAKE_INSTALL_RPATH ${base} ${base}/${relDir})
-
 # Project wide setup
 set(MIN_CXX_STANDARD 17)
 if(NOT CMAKE_CXX_STANDARD)
