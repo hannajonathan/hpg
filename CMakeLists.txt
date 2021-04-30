@@ -23,6 +23,8 @@ project(hpg
 enable_testing()
 enable_language(CXX)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 include(CheckCXXCompilerFlag)
 
 # Set a default build type if none was specified
@@ -68,8 +70,6 @@ set(HPG_ENABLE_SERIAL OFF)
 set(HPG_ENABLE_OPENMP OFF)
 set(HPG_ENABLE_CUDA OFF)
 
-add_subdirectory(cmake)
-
 add_subdirectory(dependencies)
 
 add_subdirectory(src)
@@ -96,7 +96,7 @@ configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
 install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/hpgConfig.cmake"
   "${CMAKE_CURRENT_BINARY_DIR}/hpgConfigVersion.cmake"
-  "${CMAKE_CURRENT_BINARY_DIR}/cmake/findFFTW-src/FindFFTW.cmake"
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindFFTW.cmake"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hpg")
 install(EXPORT hpgTargets
   NAMESPACE hpg::
