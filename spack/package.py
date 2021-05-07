@@ -26,7 +26,7 @@ class Hpg(CMakePackage):
     variant('serial', default=True, description='Enable serial device')
     variant('shared', default=True, description='Build shared libraries')
 
-    depends_on('cmake@3.14:', type='build')
+    depends_on('cmake@3.18:', type='build')
 
     depends_on('cuda@11.0.2:', when='+cuda')
     depends_on('fftw@3.3.8: precision=double', when='+serial')

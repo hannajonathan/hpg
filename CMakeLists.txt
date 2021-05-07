@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.18)
 include(hpgVersionDetails.cmake)
 project(hpg
   VERSION ${hpg_VER}
