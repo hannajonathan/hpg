@@ -85,8 +85,8 @@ endif()
 
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file(hpgConfigVersion.cmake
-  VERSION 0
-  COMPATIBILITY AnyNewerVersion)
+  VERSION ${hpg_VER}
+  COMPATIBILITY SameMajorVersion)
 set(cmakeModulesDir "${CMAKE_INSTALL_LIBDIR}/cmake/hpg")
 configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
   "${CMAKE_CURRENT_BINARY_DIR}/hpgConfig.cmake"
