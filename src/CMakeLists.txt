@@ -92,7 +92,7 @@ endif()
 
 # find thread library
 #
-find_package(Threads)
+find_package(Threads REQUIRED)
 
 # libhpg_version
 #
