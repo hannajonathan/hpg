@@ -109,6 +109,16 @@ add_library(hpg::version ALIAS hpg_version)
 # libhpg
 #
 add_library(hpg_hpg hpg.cc)
+set_target_properties(hpg_hpg PROPERTIES
+  INTERFACE_ENABLE_SERIAL ${Hpg_ENABLE_SERIAL}
+  INTERFACE_ENABLE_OPENMP ${Hpg_ENABLE_OPENMP}
+  INTERFACE_ENABLE_CUDA ${Hpg_ENABLE_CUDA})
+set_property(TARGET hpg_hpg APPEND PROPERTY
+  COMPATIBLE_INTERFACE_BOOL ENABLE_SERIAL)
+set_property(TARGET hpg_hpg APPEND PROPERTY
+  COMPATIBLE_INTERFACE_BOOL ENABLE_OPENMP)
+set_property(TARGET hpg_hpg APPEND PROPERTY
+  COMPATIBLE_INTERFACE_BOOL ENABLE_CUDA)
 target_link_libraries(hpg_hpg
   PRIVATE hpg::version
   PUBLIC Threads::Threads)
