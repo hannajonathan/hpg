@@ -248,7 +248,7 @@ struct VisData {
 
   KOKKOS_INLINE_FUNCTION VisData() {};
 
-  VisData(
+  KOKKOS_INLINE_FUNCTION VisData(
     const K::Array<vis_t, N>& values, /**< visibility values */
     const K::Array<vis_weight_fp, N> weights, /**< visibility weights */
     vis_frequency_fp freq, /**< frequency */
@@ -270,11 +270,11 @@ struct VisData {
 
   VisData(VisData&&) = default;
 
-  KOKKOS_INLINE_FUNCTION ~VisData() = default;
+  ~VisData() = default;
 
-  KOKKOS_INLINE_FUNCTION VisData& operator=(VisData const&) = default;
+  VisData& operator=(VisData const&) = default;
 
-  KOKKOS_INLINE_FUNCTION VisData& operator=(VisData&&) = default;
+  VisData& operator=(VisData&&) = default;
 
   K::Array<vis_t, N> m_values;
   K::Array<vis_weight_fp, N> m_weights;
@@ -765,9 +765,9 @@ struct GridVis final {
 
   GridVis(GridVis&&) = default;
 
-  KOKKOS_INLINE_FUNCTION GridVis& operator=(GridVis const&) = default;
+  GridVis& operator=(GridVis const&) = default;
 
-  KOKKOS_INLINE_FUNCTION GridVis& operator=(GridVis&&) = default;
+  GridVis& operator=(GridVis&&) = default;
 };
 
 /** almost atomic complex addition
