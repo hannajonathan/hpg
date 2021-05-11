@@ -21,7 +21,6 @@
 #include "hpg_error.hpp"
 
 #include <cassert>
-#include <chrono>
 #include <complex>
 #include <future>
 #include <memory>
@@ -1005,21 +1004,13 @@ public:
 
   /** get value
    *
-   * @param timeout maximum time to wait for value
-   *
-   * @return value of the future if it has been resolved within the timeout
-   * period, or nothing
+   * @return value of the future if it has been resolved, or nothing
    */
-  template <
-    typename Rep = std::chrono::milliseconds::rep,
-    typename Period = std::chrono::milliseconds::period>
   opt_t<T>
-  get(
-    const std::chrono::duration<Rep, Period>& timeout =
-    std::chrono::duration<Rep, Period>(10)) noexcept {
+  get() noexcept {
 
     opt_t<T> result;
-    if (m_f.wait_for(timeout) == std::future_status::ready)
+    if (m_f.wait_for(0) == std::future_status::ready)
 #if HPG_API >= 17
       result = m_f.get();
 #else // HPG_API < 17
