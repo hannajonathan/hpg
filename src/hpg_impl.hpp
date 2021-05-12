@@ -23,6 +23,7 @@
 #include <cfenv>
 #include <cmath>
 #include <deque>
+#include <future>
 #include <memory>
 #include <set>
 #include <type_traits>

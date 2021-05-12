@@ -191,12 +191,21 @@ struct Impl::GridderState {
         return_visibilities,
         do_grid);
     if (std::holds_alternative<Error>(err_or_fv)) {
-      return std::get<Error>(err_or_fv);
+      return std::get<Error>(std::move(err_or_fv));
     } else {
       return
         std::make_tuple(
           std::move(result),
-          future(std::get<std::future<VisDataVector>>(std::move(err_or_fv))));
+          future<VisDataVector>(
+            [fvs = std::get<std::future<VisDataVector>>(
+                std::move(err_or_fv)).share()]()
+            mutable -> std::optional<VisDataVector> {
+              if (fvs.wait_for(std::chrono::seconds(0))
+                  == std::future_status::ready)
+                return std::move(fvs).get();
+              else
+                return std::nullopt;
+            }));
     }
   }
 
@@ -861,22 +870,16 @@ GridderState::swap(GridderState& other) noexcept {
   std::swap(impl, other.impl);
 }
 
-// TODO This design requires a dependency on pthreads, meaning that in many
-// cases both OpenMP and pthreads will be in use, which is not ideal. Perhaps
-// Kokkos tasking could be used instead, in order to limit ourselves to a single
-// thread model.
 template <>
 future<std::vector<VisData<1>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
 
   return
-    std::async(
-      [](std::future<VisDataVector>&& f) {
-        auto vs = f.get();
+    fvs.map(
+      [](const VisDataVector& vs) -> std::vector<VisData<1>> {
         assert(vs.m_npol == 1);
         return std::move(*vs.m_v1);
-      },
-      std::move(fvs).m_f);
+      });
 }
 
 template <>
@@ -884,13 +887,11 @@ future<std::vector<VisData<2>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
 
   return
-    std::async(
-      [](std::future<VisDataVector>&& f) {
-        auto vs = f.get();
+    fvs.map(
+      [](const VisDataVector& vs) -> std::vector<VisData<2>> {
         assert(vs.m_npol == 2);
         return std::move(*vs.m_v2);
-      },
-      std::move(fvs).m_f);
+      });
 }
 
 template <>
@@ -898,13 +899,11 @@ future<std::vector<VisData<3>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
 
   return
-    std::async(
-      [](std::future<VisDataVector>&& f) {
-        auto vs = f.get();
+    fvs.map(
+      [](const VisDataVector& vs) -> std::vector<VisData<3>> {
         assert(vs.m_npol == 3);
         return std::move(*vs.m_v3);
-      },
-      std::move(fvs).m_f);
+      });
 }
 
 template <>
@@ -912,13 +911,11 @@ future<std::vector<VisData<4>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
 
   return
-    std::async(
-      [](std::future<VisDataVector>&& f) {
-        auto vs = f.get();
+    fvs.map(
+      [](const VisDataVector& vs) -> std::vector<VisData<4>> {
         assert(vs.m_npol == 4);
         return std::move(*vs.m_v4);
-      },
-      std::move(fvs).m_f);
+      });
 }
 
 Gridder::Gridder() {}

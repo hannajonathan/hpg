@@ -22,7 +22,7 @@
 
 #include <cassert>
 #include <complex>
-#include <future>
+#include <functional>
 #include <memory>
 #include <set>
 #include <string>
@@ -984,9 +984,10 @@ public:
   /** default constructor */
   future() {}
 
-  /** constructor, using std::future value */
-  future(std::future<T>&& f)
-    : m_f(std::move(f)) {}
+  /** constructor */
+  template <typename F>
+  future(F&& f)
+    : m_f(std::forward<F>(f)) {}
 
   future(future&& f)
     : m_f(std::move(f).m_f) {}
@@ -1008,15 +1009,20 @@ public:
    */
   opt_t<T>
   get() noexcept {
+    return m_f();
+  }
 
-    opt_t<T> result;
-    if (m_f.wait_for(0) == std::future_status::ready)
-#if HPG_API >= 17
-      result = m_f.get();
-#else // HPG_API < 17
-      result = std::unique_ptr<T>(new T(m_f.get()));
-#endif // HPG_API >= 17
-    return result;
+  template <typename F>
+  future<std::invoke_result_t<F, T>>
+  map(F f) const {
+    return future<std::invoke_result_t<F, T>>(
+      [f, mf=std::move(m_f)]() -> opt_t<std::invoke_result_t<F, T>> {
+        auto ot = mf();
+        if (ot)
+          return f(ot.value());
+        else
+          return std::nullopt;
+      });
   }
 
   virtual ~future() {}
@@ -1025,7 +1031,7 @@ protected:
 
   friend class GridderState;
 
-  std::future<T> m_f; /**< contained std::future */
+  std::function<opt_t<T>()> m_f; /**< contained std::function */
 };
 
 /** gridder state

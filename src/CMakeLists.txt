@@ -90,10 +90,6 @@ if(HAVE_SERIAL GREATER -1 OR HAVE_OPENMP GREATER -1)
   find_package(FFTW REQUIRED COMPONENTS ${FFTW_COMPONENTS})
 endif()
 
-# find thread library
-#
-find_package(Threads REQUIRED)
-
 # libhpg_version
 #
 configure_file(hpg_version.cpp.in hpg_version.cpp @ONLY)
@@ -120,8 +116,7 @@ set_property(TARGET hpg_hpg APPEND PROPERTY
 set_property(TARGET hpg_hpg APPEND PROPERTY
   COMPATIBLE_INTERFACE_BOOL ENABLE_CUDA)
 target_link_libraries(hpg_hpg
-  PRIVATE hpg::version
-  PUBLIC Threads::Threads)
+  PRIVATE hpg::version)
 add_library(hpg::hpg ALIAS hpg_hpg)
 if(HAVE_SERIAL GREATER -1)
   set(HPG_ENABLE_SERIAL ${Hpg_ENABLE_SERIAL})
