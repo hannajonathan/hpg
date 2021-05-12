@@ -25,6 +25,7 @@
 #include <deque>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <type_traits>
 #include <variant>
@@ -2648,33 +2649,7 @@ struct CFPool final {
       cf_d[i] = cfd_view();
   }
 
-  CFPool(const CFPool& other)
-    : num_cf_groups(other.num_cf_groups)
-    , max_cf_extent_y(other.max_cf_extent_y)
-    , cf_radii(other.cf_radii) {
-
-    if (other.pool.extent(0) > 0) {
-      pool =
-        decltype(pool)(
-          K::ViewAllocateWithoutInitializing("cf"),
-          other.pool.extent(0));
-      K::deep_copy(
-        other.state
-        ->m_exec_spaces[other.state->next_exec_space(StreamPhase::PRE_GRIDDING)]
-        .space,
-        pool,
-        other.pool);
-      other.state->fence();
-      for (size_t i = 0; i < num_cf_groups; ++i) {
-        // don't need cf_h, since the previous fence ensures that the copy from
-        // host has completed
-        cf_d[i] =
-          cfd_view(
-            pool.data() + (other.cf_d[i].data() - other.pool.data()),
-            other.cf_d[i].layout());
-      }
-    }
-  }
+  CFPool(const CFPool& other) = delete;
 
   CFPool(CFPool&& other) {
 
@@ -2706,11 +2681,12 @@ struct CFPool final {
       // possibly avoid a fence before the copy
       K::deep_copy(
         rhs.state
-        ->m_exec_spaces[rhs.state->next_exec_space(StreamPhase::PRE_GRIDDING)]
+        ->m_exec_spaces[
+          rhs.state->next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)]
         .space,
         pool,
         rhs.pool);
-      rhs.state->fence();
+      rhs.state->fence_unlocked();
       for (size_t i = 0; i < num_cf_groups; ++i) {
         // don't need cf_h, since the previous fence ensures that the copy from
         // host has completed
@@ -3062,12 +3038,19 @@ public:
   // computation when possible
   std::vector<std::conditional_t<std::is_void_v<stream_type>, int, stream_type>>
     m_streams;
+
+private:
+  mutable std::mutex m_mtx;
+  // access to the following members in const methods must be protected by m_mtx
+  // (intentionally do not provide any thread safety guarantee outside of const
+  // methods!)
   mutable std::vector<ExecSpace<D>> m_exec_spaces;
   mutable std::vector<std::tuple<CFPool<D>, std::optional<int>>> m_cfs;
   mutable std::deque<int> m_exec_space_indexes;
   mutable std::deque<int> m_cf_indexes;
   mutable StreamPhase m_current = StreamPhase::PRE_GRIDDING;
 
+public:
   StateT(
     unsigned max_active_tasks,
     size_t max_visibility_batch_size,
@@ -3104,7 +3087,8 @@ public:
       st.m_num_polarizations,
       st.m_implementation_versions) {
 
-    st.fence();
+    std::scoped_lock lock(st.m_mtx);
+    st.fence_unlocked();
     init_state(&st);
     m_mueller_indexes = st.m_mueller_indexes;
     m_conjugate_mueller_indexes = st.m_conjugate_mueller_indexes;
@@ -3183,6 +3167,7 @@ public:
   size_t
   convolution_function_region_size(const CFArrayShape* shape)
     const noexcept override {
+    std::scoped_lock lock(m_mtx);
     return
       shape
       ? std::get<0>(m_cfs[0]).pool_size(shape)
@@ -3399,17 +3384,16 @@ public:
 
   void
   fence() const override {
-    for (auto& i : m_exec_space_indexes) {
-      auto& exec = m_exec_spaces[i];
-      exec.fence();
-    }
-    m_current = StreamPhase::PRE_GRIDDING;
+    std::scoped_lock lock(m_mtx);
+    fence_unlocked();
   }
 
   std::unique_ptr<GridWeightArray>
   grid_weights() const override {
-    fence();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    std::scoped_lock lock(m_mtx);
+    fence_unlocked();
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
     auto wgts_h = K::create_mirror(m_weights);
     K::deep_copy(exec.space, wgts_h, m_weights);
     exec.fence();
@@ -3418,8 +3402,10 @@ public:
 
   std::unique_ptr<GridValueArray>
   grid_values() const override {
-    fence();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    std::scoped_lock lock(m_mtx);
+    fence_unlocked();
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
     auto grid_h = K::create_mirror(m_grid);
     K::deep_copy(exec.space, grid_h, m_grid);
     exec.fence();
@@ -3428,8 +3414,10 @@ public:
 
   std::unique_ptr<GridValueArray>
   model_values() const override {
-    fence();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    std::scoped_lock lock(m_mtx);
+    fence_unlocked();
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
     if (m_model.is_allocated()) {
       auto model_h = K::create_mirror(m_model);
       K::deep_copy(exec.space, model_h, m_model);
@@ -3622,6 +3610,15 @@ public:
 private:
 
   void
+  fence_unlocked() const {
+    for (auto& i : m_exec_space_indexes) {
+      auto& exec = m_exec_spaces[i];
+      exec.fence();
+    }
+    m_current = StreamPhase::PRE_GRIDDING;
+  }
+
+  void
   swap(StateT& other) {
     assert(m_max_active_tasks == other.m_max_active_tasks);
     std::swap(m_max_visibility_batch_size, other.m_max_visibility_batch_size);
@@ -3791,7 +3788,7 @@ protected:
   friend class CFPool<D>;
 
   int
-  next_exec_space(StreamPhase next) const {
+  next_exec_space_unlocked(StreamPhase next) const {
     int old_idx = m_exec_space_indexes.front();
     int new_idx = old_idx;
     if (m_current == StreamPhase::GRIDDING
@@ -3811,6 +3808,12 @@ protected:
 #endif // NDEBUG
     m_current = next;
     return new_idx;
+  }
+
+  int
+  next_exec_space(StreamPhase next) const {
+    std::scoped_lock lock(m_mtx);
+    return next_exec_space_unlocked(next);
   }
 
   void
