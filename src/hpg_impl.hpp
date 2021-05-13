@@ -23,7 +23,6 @@
 #include <cfenv>
 #include <cmath>
 #include <deque>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -1749,6 +1748,8 @@ struct State {
   unsigned m_num_polarizations; /**< number of visibility polarizations */
   std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
 
+  using maybe_vis_t = std::shared_ptr<std::optional<VisDataVector>>;
+
   State(Device device)
     : m_device(device) {}
 
@@ -1801,7 +1802,7 @@ struct State {
   virtual std::optional<Error>
   set_model(Device host_device, GridValueArray&& gv) = 0;
 
-  virtual std::variant<Error, std::future<VisDataVector>>
+  virtual std::variant<Error, maybe_vis_t>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
@@ -2897,7 +2898,7 @@ struct ExecSpace final {
     std::vector<::hpg::VisData<2>>,
     std::vector<::hpg::VisData<3>>,
     std::vector<::hpg::VisData<4>>> vis_vector;
-  mutable std::optional<std::promise<VisDataVector>> vis_promise;
+  mutable State::maybe_vis_t vis_promise;
   size_t num_visibilities;
 
   ExecSpace(execution_space sp)
@@ -2915,6 +2916,8 @@ struct ExecSpace final {
     , vis_promise(std::move(other).vis_promise)
     , num_visibilities(std::move(other).num_visibilities) {
   }
+
+  virtual ~ExecSpace() {}
 
   ExecSpace&
   operator=(ExecSpace&& rhs) {
@@ -2964,13 +2967,14 @@ struct ExecSpace final {
     return num_visibilities;
   }
 
-  std::future<VisDataVector>
+  State::maybe_vis_t
   copy_visibilities_to_host(bool return_visibilities) const {
 
-    std::future<VisDataVector> result;
+    State::maybe_vis_t result;
     if (return_visibilities) {
-      vis_promise = std::promise<VisDataVector>();
-      result = vis_promise.value().get_future();
+      vis_promise =
+        std::make_shared<std::optional<VisDataVector>>(std::nullopt);
+      result = vis_promise;
       std::visit(
         overloaded {
           [this](auto& v) {
@@ -2990,10 +2994,6 @@ struct ExecSpace final {
           }
         },
         vis_vector);
-    } else {
-      std::promise<VisDataVector> p;
-      p.set_value(VisDataVector());
-      result = p.get_future();
     }
     return result;
   }
@@ -3007,8 +3007,7 @@ struct ExecSpace final {
           [this](auto& v) {
             using v_t =
               std::remove_const_t<std::remove_reference_t<decltype(v)>>;
-            vis_promise.value().set_value(
-              VisDataVector(std::get<v_t>(std::move(vis_vector))));
+            *vis_promise = VisDataVector(std::get<v_t>(std::move(vis_vector)));
           }
         },
         vis_vector);
@@ -3260,7 +3259,7 @@ public:
   }
 
   template <unsigned N>
-  std::future<VisDataVector>
+  State::maybe_vis_t
   default_grid_visibilities(
     Device /*host_device*/,
     std::vector<::hpg::VisData<N>>&& visibilities,
@@ -3295,7 +3294,7 @@ public:
   }
 
   template <unsigned N>
-  std::future<VisDataVector>
+  State::maybe_vis_t
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
@@ -3329,7 +3328,7 @@ public:
     }
   }
 
-  std::variant<Error, std::future<VisDataVector>>
+  std::variant<Error, State::maybe_vis_t>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,

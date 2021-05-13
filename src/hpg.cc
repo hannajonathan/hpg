@@ -183,29 +183,43 @@ struct Impl::GridderState {
       return InvalidNumberPolarizationsError();
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    auto err_or_fv =
+    auto err_or_maybevis =
       result.impl->grid_visibilities(
         host_device,
         std::move(visibilities),
         do_degrid,
         return_visibilities,
         do_grid);
-    if (std::holds_alternative<Error>(err_or_fv)) {
-      return std::get<Error>(std::move(err_or_fv));
+    if (std::holds_alternative<Error>(err_or_maybevis)) {
+      return std::get<Error>(std::move(err_or_maybevis));
     } else {
+      auto mvs = std::get<State::maybe_vis_t>(std::move(err_or_maybevis));
+#if HPG_API >= 17
       return
         std::make_tuple(
           std::move(result),
           future<VisDataVector>(
-            [fvs = std::get<std::future<VisDataVector>>(
-                std::move(err_or_fv)).share()]()
-            mutable -> std::optional<VisDataVector> {
-              if (fvs.wait_for(std::chrono::seconds(0))
-                  == std::future_status::ready)
-                return std::move(fvs).get();
+            [mvs, null=opt_t<VisDataVector>()]() mutable
+            -> opt_t<VisDataVector>& {
+              if (mvs && mvs->has_value())
+                return *mvs;
               else
-                return std::nullopt;
+                return null;
             }));
+#else
+      return
+        std::make_tuple(
+          std::move(result),
+          future<VisDataVector>(
+            [mvs, result=opt_t<VisDataVector>()]() mutable
+            -> opt_t<VisDataVector>& {
+              if (!result && mvs && mvs->has_value())
+                result =
+                  opt_t<VisDataVector>(
+                    new VisDataVector(std::move(mvs)->value()));
+              return result;
+            }));
+#endif
     }
   }
 
@@ -875,10 +889,10 @@ future<std::vector<VisData<1>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
 
   return
-    fvs.map(
-      [](const VisDataVector& vs) -> std::vector<VisData<1>> {
+    std::move(fvs).map<std::vector<VisData<1>>>(
+      [](VisDataVector&& vs) {
         assert(vs.m_npol == 1);
-        return std::move(*vs.m_v1);
+        return *vs.m_v1.release();
       });
 }
 
@@ -887,10 +901,10 @@ future<std::vector<VisData<2>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
 
   return
-    fvs.map(
-      [](const VisDataVector& vs) -> std::vector<VisData<2>> {
+    std::move(fvs).map<std::vector<VisData<2>>>(
+      [](VisDataVector&& vs) {
         assert(vs.m_npol == 2);
-        return std::move(*vs.m_v2);
+        return *vs.m_v2.release();
       });
 }
 
@@ -899,10 +913,10 @@ future<std::vector<VisData<3>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
 
   return
-    fvs.map(
-      [](const VisDataVector& vs) -> std::vector<VisData<3>> {
+    std::move(fvs).map<std::vector<VisData<3>>>(
+      [](VisDataVector&& vs) {
         assert(vs.m_npol == 3);
-        return std::move(*vs.m_v3);
+        return *vs.m_v3.release();
       });
 }
 
@@ -911,10 +925,10 @@ future<std::vector<VisData<4>>>
 GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
 
   return
-    fvs.map(
-      [](const VisDataVector& vs) -> std::vector<VisData<4>> {
+    std::move(fvs).map<std::vector<VisData<4>>>(
+      [](VisDataVector&& vs) {
         assert(vs.m_npol == 4);
-        return std::move(*vs.m_v4);
+        return *vs.m_v4.release();
       });
 }
 
@@ -1064,7 +1078,7 @@ Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
         return std::move(err);
       });
 #else //HPG_API < 17
-  std::unique_ptr<Error> result;
+  std::shared_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).allocate_convolution_function_region(shape);
   return result;
@@ -1085,7 +1099,7 @@ Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
         return std::move(err);
       });
 #else // HPG_API < 17
-  std::unique_ptr<Error> result;
+  std::shared_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).set_convolution_function(host_device, std::move(cf));
   return result;
@@ -1106,7 +1120,7 @@ Gridder::set_model(Device host_device, GridValueArray&& gv) {
         return std::move(err);
       });
 #else // HPG_API < 17
-  std::unique_ptr<Error> result;
+  std::shared_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).set_model(host_device, std::move(gv));
   return result;
@@ -1281,7 +1295,7 @@ Gridder::apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
         return std::move(err);
       });
 #else // HPG_API < 17
-  std::unique_ptr<Error> result;
+  std::shared_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).apply_grid_fft(norm, sign, in_place);
   return result;
@@ -1302,7 +1316,7 @@ Gridder::apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
         return std::move(err);
       });
 #else // HPG_API < 17
-  std::unique_ptr<Error> result;
+  std::shared_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).apply_model_fft(norm, sign, in_place);
   return result;
@@ -1336,7 +1350,7 @@ GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   return std::nullopt;
 #else // HPG_API < 17
   if (host_devices().count(host_device) == 0)
-    return std::unique_ptr<Error>(new DisabledHostDeviceError());
+    return std::shared_ptr<Error>(new DisabledHostDeviceError());
   unsafe_copy_to(host_device, dst, layout);
   return nullptr;
 #endif //HPG_API >= 17
@@ -1359,7 +1373,7 @@ GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   return std::nullopt;
 #else // HPG_API < 17
   if (host_devices().count(host_device) == 0)
-    return std::unique_ptr<Error>(new DisabledHostDeviceError());
+    return std::shared_ptr<Error>(new DisabledHostDeviceError());
   unsafe_copy_to(host_device, dst, layout);
   return nullptr;
 #endif //HPG_API >= 17

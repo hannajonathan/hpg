@@ -241,7 +241,7 @@ template <typename T>
 using opt_t = std::optional<T>;
 #else // HPG_API < 17
 template <typename T>
-using opt_t = std::unique_ptr<T>;
+using opt_t = std::shared_ptr<T>;
 #endif //HPG_API >= 17
 
 /** type to represent a possible error */
@@ -985,17 +985,20 @@ public:
   future() {}
 
   /** constructor */
-  template <typename F>
-  future(F&& f)
-    : m_f(std::forward<F>(f)) {}
+  future(const std::function<opt_t<T>&()>& f)
+    : m_f(f) {}
 
   future(future&& f)
     : m_f(std::move(f).m_f) {}
 
-  future(const future& f) = delete;
+  future(const future& f)
+    : m_f(f.m_f) {}
 
   future&
-  operator=(const future& f) = delete;
+  operator=(const future& f) {
+    m_f = f.m_f;
+    return *this;
+  }
 
   future&
   operator=(future&& f) {
@@ -1007,21 +1010,27 @@ public:
    *
    * @return value of the future if it has been resolved, or nothing
    */
-  opt_t<T>
+  opt_t<T>&
   get() noexcept {
     return m_f();
   }
 
-  template <typename F>
-  future<std::invoke_result_t<F, T>>
-  map(F f) const {
-    return future<std::invoke_result_t<F, T>>(
-      [f, mf=std::move(m_f)]() -> opt_t<std::invoke_result_t<F, T>> {
-        auto ot = mf();
-        if (ot)
-          return f(ot.value());
-        else
-          return std::nullopt;
+  template <typename U>
+  future<U>
+  map(const std::function<U(T&&)>& f) && {
+    return future<U>(
+      [f, mf=std::move(m_f), result=opt_t<U>()]() mutable -> opt_t<U>& {
+        if (!result) {
+          auto& ot = mf();
+#if HPG_API >= 17
+          if (ot)
+            result = f(std::move(ot).value());
+#else
+          if (ot)
+            result = opt_t<U>(new U(f(std::move(*ot))));
+#endif
+        }
+        return result;
       });
   }
 
@@ -1031,7 +1040,7 @@ protected:
 
   friend class GridderState;
 
-  std::function<opt_t<T>()> m_f; /**< contained std::function */
+  std::function<opt_t<T>&()> m_f; /**< contained std::function */
 };
 
 /** gridder state

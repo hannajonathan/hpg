@@ -1576,6 +1576,8 @@ TEST(GridderState, ResidualVisibilities) {
         std::vector<hpg::VisData<2>>(visibilities));
     ASSERT_TRUE(hpg::is_value(gsfv_or_err));
     auto [gs1, fv] = hpg::get_value(std::move(gsfv_or_err));
+    // one try before future has a chance to complete
+    ASSERT_FALSE(fv.get());
     // ensure that future completes
     auto gs2 = std::move(gs1).fence();
     // get result of future
