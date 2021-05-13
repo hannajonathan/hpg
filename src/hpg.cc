@@ -199,12 +199,16 @@ struct Impl::GridderState {
         std::make_tuple(
           std::move(result),
           future<VisDataVector>(
-            [mvs, null=opt_t<VisDataVector>()]() mutable
+            [mvs, result=opt_t<VisDataVector>()]() mutable
             -> opt_t<VisDataVector>& {
-              if (mvs && mvs->has_value())
-                return *mvs;
-              else
-                return null;
+              if (!result) {
+                if (mvs) {
+                  auto mvs0 = std::atomic_load(&mvs);
+                  if (*mvs0 && (*mvs0)->has_value())
+                    result = std::move(**mvs0);
+                }
+              }
+              return result;
             }));
 #else
       return
@@ -213,10 +217,15 @@ struct Impl::GridderState {
           future<VisDataVector>(
             [mvs, result=opt_t<VisDataVector>()]() mutable
             -> opt_t<VisDataVector>& {
-              if (!result && mvs && mvs->has_value())
-                result =
-                  opt_t<VisDataVector>(
-                    new VisDataVector(std::move(mvs)->value()));
+              if (!result) {
+                if (mvs) {
+                  auto mvs0 = std::atomic_load(&mvs);
+                  if (*mvs0 && (*mvs0)->has_value())
+                    result =
+                      opt_t<VisDataVector>(
+                        new VisDataVector(std::move(*mvs0)->value()));
+                }
+              }
               return result;
             }));
 #endif
@@ -892,7 +901,7 @@ GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
     std::move(fvs).map<std::vector<VisData<1>>>(
       [](VisDataVector&& vs) {
         assert(vs.m_npol == 1);
-        return *vs.m_v1.release();
+        return std::move(*vs.m_v1);
       });
 }
 
@@ -904,7 +913,7 @@ GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
     std::move(fvs).map<std::vector<VisData<2>>>(
       [](VisDataVector&& vs) {
         assert(vs.m_npol == 2);
-        return *vs.m_v2.release();
+        return std::move(*vs.m_v2);
       });
 }
 
@@ -916,7 +925,7 @@ GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
     std::move(fvs).map<std::vector<VisData<3>>>(
       [](VisDataVector&& vs) {
         assert(vs.m_npol == 3);
-        return *vs.m_v3.release();
+        return std::move(*vs.m_v3);
       });
 }
 
@@ -928,7 +937,7 @@ GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
     std::move(fvs).map<std::vector<VisData<4>>>(
       [](VisDataVector&& vs) {
         assert(vs.m_npol == 4);
-        return *vs.m_v4.release();
+        return std::move(*vs.m_v4);
       });
 }
 

@@ -531,7 +531,7 @@ struct VectorNPol {
     }
   }
 
-  ~VectorNPol() {
+  virtual ~VectorNPol() {
     switch (m_npol) {
     case 0:
     case 1:
@@ -1037,8 +1037,6 @@ public:
   virtual ~future() {}
 
 protected:
-
-  friend class GridderState;
 
   std::function<opt_t<T>&()> m_f; /**< contained std::function */
 };

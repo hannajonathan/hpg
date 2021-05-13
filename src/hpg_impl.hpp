@@ -1748,7 +1748,8 @@ struct State {
   unsigned m_num_polarizations; /**< number of visibility polarizations */
   std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
 
-  using maybe_vis_t = std::shared_ptr<std::optional<VisDataVector>>;
+  using maybe_vis_t =
+    std::shared_ptr<std::shared_ptr<std::optional<VisDataVector>>>;
 
   State(Device device)
     : m_device(device) {}
@@ -2973,7 +2974,8 @@ struct ExecSpace final {
     State::maybe_vis_t result;
     if (return_visibilities) {
       vis_promise =
-        std::make_shared<std::optional<VisDataVector>>(std::nullopt);
+        std::make_shared<std::shared_ptr<std::optional<VisDataVector>>>(
+          std::make_shared<std::optional<VisDataVector>>(std::nullopt));
       result = vis_promise;
       std::visit(
         overloaded {
@@ -2999,7 +3001,7 @@ struct ExecSpace final {
   }
 
   void
-  fence() const {
+  fence() {
     space.fence();
     if (vis_promise) {
       std::visit(
@@ -3007,7 +3009,10 @@ struct ExecSpace final {
           [this](auto& v) {
             using v_t =
               std::remove_const_t<std::remove_reference_t<decltype(v)>>;
-            *vis_promise = VisDataVector(std::get<v_t>(std::move(vis_vector)));
+            auto vdv =
+              std::make_shared<std::optional<VisDataVector>>(
+                VisDataVector(std::get<v_t>(std::move(vis_vector))));
+            std::atomic_store(&*vis_promise, vdv);
           }
         },
         vis_vector);
