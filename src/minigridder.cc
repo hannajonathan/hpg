@@ -911,6 +911,7 @@ main(int argc, char* argv[]) {
   }
 
   hpg::InitArguments init_args;
+  init_args.cleanup_fftw = true;
   init_args.device_id = device_ids[0];
   hpg::ScopeGuard hpg(init_args);
   if (hpg::host_devices().count(hpg::Device::OpenMP) > 0)

@@ -740,7 +740,9 @@ main(int argc, char **argv) {
   {
     // weird, but using ScopeGuard/initialize/finalize at function scope can
     // sometimes hang this program on exit (but not when executed by ctest)
-    hpg::initialize();
+    hpg::InitArguments args;
+    args.cleanup_fftw = true;
+    hpg::initialize(args);
     rc = RUN_ALL_TESTS();
     hpg::finalize();
   }

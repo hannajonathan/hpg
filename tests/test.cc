@@ -294,7 +294,9 @@ dump_grids(
 int
 main(int argc, char* argv[]) {
 
-  hpg::ScopeGuard hpg;
+  hpg::InitArguments args;
+  args.cleanup_fftw = true;
+  hpg::ScopeGuard hpg(args);
 
   std::vector<hpg::VisData<1>> vis;
 
