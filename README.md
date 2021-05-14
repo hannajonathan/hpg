@@ -76,22 +76,21 @@ Users are encouraged to find out more at the [Spack web site](https://spack.io).
 ## Using libhpg
 
 The *HPG* installation includes a *CMake* package configuration file
-that defines the `hpg` target. To build *CMake* targets against
+that defines the `hpg::hpg` target. To build *CMake* targets against
 the *libhpg* library, simply include something like the following
 statements in `CMakeLists.txt`:
 
 ``` cmake
 # find the package
-find_package(HPG CONFIG)
-message(STATUS "Found HPG: ${HPG_DIR}")
+find_package(hpg CONFIG)
 
 # link to executable "MyProgram"
 add_executable(MyProgram)
-target_link_libraries(MyProgram hpg)
+target_link_libraries(MyProgram hpg::hpg)
 
 # link to library "MyLibrary" (HPG API not exposed by MyLibrary)
 add_library(MyLibrary)
-target_link_libraries(MyLibrary PRIVATE hpg)
+target_link_libraries(MyLibrary PRIVATE hpg::hpg)
 ```
 
 Most client code should include only the header `hpg.hpp` (using
