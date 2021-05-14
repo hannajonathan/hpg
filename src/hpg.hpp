@@ -64,7 +64,8 @@ struct InitArguments {
     , device_id(-1)
     , ndevices(-1)
     , skip_device(01)
-    , disable_warnings(false) {}
+    , disable_warnings(false)
+    , cleanup_fftw(false) {}
 
   /** number of threads per NUMA region
    *
@@ -97,6 +98,10 @@ struct InitArguments {
   /** disable Kokkos warnings
    */
   bool disable_warnings;
+
+  /** cleanup fftw on finalization
+   */
+  bool cleanup_fftw;
 };
 
 /** global initialization of hpg

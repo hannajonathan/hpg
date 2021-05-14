@@ -288,6 +288,7 @@ struct VisData {
 };
 
 static bool hpg_impl_initialized = false;
+static bool hpg_impl_cleanup_fftw = false;
 
 /** implementation initialization function */
 bool
@@ -315,6 +316,7 @@ initialize(const InitArguments& args) {
               << "  set rounding mode to FE_TONEAREST" << std::endl;
 #endif
   hpg_impl_initialized = result;
+  hpg_impl_cleanup_fftw = args.cleanup_fftw;
   return result;
 }
 
@@ -322,6 +324,14 @@ initialize(const InitArguments& args) {
 void
 finalize() {
   K::finalize();
+  if (hpg_impl_cleanup_fftw) {
+#ifdef HPG_ENABLE_SERIAL
+    fftw_cleanup();
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    fftw_cleanup_threads();
+#endif
+  }
 }
 
 /** implementation initialization state */
