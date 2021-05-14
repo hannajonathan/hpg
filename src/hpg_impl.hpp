@@ -971,11 +971,11 @@ struct HPG_EXPORT VisibilityGridder final {
 
       // serial loop over grid mrow
       for (int R = 0; R < N_R; ++R) {
-        poln_array_type<N> vis_weights;
+        poln_array_type<N> grid_wgt;
         // parallel loop over grid X
         K::parallel_reduce(
           K::TeamVectorRange(team_member, N_X),
-          [=](const int X, poln_array_type<N>& vis_weights_l) {
+          [=](const int X, poln_array_type<N>& grid_wgt_l) {
             auto phi_X = phi_X0 + X * dphi_X;
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
@@ -995,7 +995,7 @@ struct HPG_EXPORT VisibilityGridder final {
                       vis.m_cf_minor[1]);
                   cfv.imag() *= cf_im_factor;
                   gv += gv_t(cfv * screen * vv.vals[C]);
-                  vis_weights_l.vals[C] += cfv;
+                  grid_wgt_l.vals[C] += cfv;
                 }
               }
               pseudo_atomic_add<execution_space>(
@@ -1007,14 +1007,14 @@ struct HPG_EXPORT VisibilityGridder final {
                 gv);
             }
           },
-          K::Sum<decltype(vis_weights)>(vis_weights));
+          K::Sum<decltype(grid_wgt)>(grid_wgt));
         // compute final weight and add it to weights
         K::single(
           K::PerTeam(team_member),
           [&]() {
             grid_value_fp twgt = 0;
             for (int C = 0; C < N; ++C)
-              twgt += grid_value_fp(mag(vis_weights.vals[C]) * vis.m_weights[C]);
+              twgt += grid_value_fp(mag(grid_wgt.vals[C]) * vis.m_weights[C]);
             K::atomic_add(&weights(R, vis.m_grid_cube), twgt);
           });
       }
