@@ -29,7 +29,7 @@
 using namespace std::string_literals;
 namespace K = Kokkos;
 
-static const std::array<float, 2> default_scale{0.001, -0.001};
+static const std::array<hpg::grid_scale_fp, 2> default_scale{0.001, -0.001};
 
 /** fudge factor to shift the origin of the convolution functions for agreement
  * with CASA

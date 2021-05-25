@@ -219,13 +219,13 @@ using visibility_fp = float;
 /** gridded value floating point type */
 using grid_value_fp = double;
 /** grid scale floating point type */
-using grid_scale_fp = float;
+using grid_scale_fp = double;
 /** visibility (U, V, W) coordinate floating point type */
 using vis_uvw_fp = double;
 /** visibility weight floating point type */
 using vis_weight_fp = float;
 /** visibility frequency floating point type */
-using vis_frequency_fp = float;
+using vis_frequency_fp = double;
 /** visibility phase floating point type */
 using vis_phase_fp = double;
 /** CF phase gradient floating point type */
