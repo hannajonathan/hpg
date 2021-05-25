@@ -229,7 +229,7 @@ using vis_frequency_fp = double;
 /** visibility phase floating point type */
 using vis_phase_fp = double;
 /** CF phase gradient floating point type */
-using cf_phase_gradient_fp = float;
+using cf_phase_gradient_fp = double;
 
 // vis_uvw_t can be any type that supports std::get<N>() for element access
 /** UVW coordinate type */
