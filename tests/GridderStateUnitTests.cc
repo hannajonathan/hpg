@@ -1269,7 +1269,7 @@ TEST(GridderState, Gridding) {
             return std::make_tuple(std::move(gv), std::move(gw));
           });
         };
-  const std::array<float, 2> fine_scale{
+  const std::array<hpg::grid_scale_fp, 2> fine_scale{
     grid_scale[0] * cf_oversampling,
     grid_scale[1] * cf_oversampling
   };
@@ -1334,7 +1334,7 @@ TEST(GridderState, GridOne) {
             return std::make_tuple(std::move(gv), std::move(gw));
           });
         };
-  const std::array<float, 2> fine_scale{
+  const std::array<hpg::grid_scale_fp, 2> fine_scale{
     grid_scale[0] * cf_oversampling,
     grid_scale[1] * cf_oversampling
   };

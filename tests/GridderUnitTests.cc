@@ -144,7 +144,7 @@ void
 init_visibilities(
   unsigned num_vis,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<float, 2>& grid_scale,
+  const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const MyCFArray& cf,
   Generator& gen,
   std::vector<hpg::VisData<1>>& vis) {
@@ -232,7 +232,7 @@ values_eq(const T* array0, const T* array1) {
 // test that Gridder constructor arguments are properly set
 TEST(Gridder, ConstructorArgs) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
-  std::array<float, 2> grid_scale{0.12, -0.34};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
   size_t batch_size = 21;
   const std::vector<std::array<unsigned, 4>>
     cf_sizes{{3, 3, 3, 3}, {2, 2, 2, 2}};
@@ -265,7 +265,7 @@ TEST(Gridder, ConstructorArgs) {
 // test that Gridder copies have correct parameters
 TEST(Gridder, Copies) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
-  std::array<float, 2> grid_scale{0.12, -0.34};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
   size_t batch_size = 31;
   const std::vector<std::array<unsigned, 4>>
     cf_sizes{{3, 3, 3, 3}, {2, 2, 2, 2}};
@@ -306,7 +306,7 @@ TEST(Gridder, Copies) {
 // test that Gridder moves have expected outcomes
 TEST(Gridder, Moves) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
-  std::array<float, 2> grid_scale{0.12, -0.34};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
   size_t batch_size = 11;
   const std::vector<std::array<unsigned, 4>>
     cf_sizes{{3, 3, 3, 3}, {2, 2, 2, 2}};
@@ -348,7 +348,7 @@ TEST(Gridder, Moves) {
 // test that Gridder grid values and weights are properly initialized
 TEST(Gridder, InitValues) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
-  std::array<float, 2> grid_scale{0.12, -0.34};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
   const std::vector<std::array<unsigned, 4>>
     cf_sizes{{3, 3, 3, 3}, {2, 2, 2, 2}};
   MyCFArrayShape cf(10, cf_sizes);
@@ -378,7 +378,7 @@ TEST(Gridder, InitValues) {
 // tests for Gridder::set_convolution_function()
 TEST(Gridder, CF) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
-  std::array<float, 2> grid_scale{0.1, -0.1};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   const std::vector<std::array<unsigned, 4>>
     cf_sizes{{3, 3, 3, 3}, {2, 2, 2, 2}};
   MyCFArrayShape cf(10, cf_sizes);
@@ -437,7 +437,7 @@ TEST(Gridder, CF) {
 // test that Gridder::reset_grid() correctly resets grid weights and values
 TEST(Gridder, Reset) {
   std::array<unsigned, 4> grid_size{16, 15, 1, 3};
-  std::array<float, 2> grid_scale{0.1, -0.1};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
   size_t num_vis = 10;
   auto padding = 2 * hpg::CFArray::padding;
   const std::vector<std::array<unsigned, 4>>

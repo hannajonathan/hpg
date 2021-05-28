@@ -221,7 +221,7 @@ void
 init_visibilities(
   unsigned num_vis,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<float, 2>& grid_scale,
+  const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const hpg::CFArray* cf,
   Generator& gen,
   std::vector<hpg::VisData<1>>& vis) {
@@ -476,7 +476,7 @@ TEST(DeviceCFArray, Gridding) {
 
   // grid definition
   std::array<unsigned, 4> grid_size{50, 50, 1, 1};
-  std::array<float, 2> grid_scale{0.1, -0.1};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
 
   // visibilities
   unsigned num_vis = 1000;

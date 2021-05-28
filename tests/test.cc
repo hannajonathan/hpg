@@ -86,7 +86,7 @@ void
 init_visibilities(
   unsigned num_vis,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<float, 2>& grid_scale,
+  const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const std::array<unsigned, 4>& cf_size,
   Generator& gen,
   std::vector<hpg::VisData<1>>& vis) {
@@ -140,7 +140,7 @@ run_tests(
   const std::string& dev_name,
   hpg::Device host_dev,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<float, 2>& grid_scale,
+  const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const MyCFArray& cf,
   std::vector<hpg::VisData<1>>& vis) {
 
@@ -231,7 +231,7 @@ dump_grids(
   const std::string& dev_name,
   hpg::Device host_dev,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<float, 2>& grid_scale,
+  const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const MyCFArray& cf,
   std::vector<hpg::VisData<1>>& vis) {
 
@@ -305,7 +305,7 @@ main(int argc, char* argv[]) {
 
     const std::array<unsigned, 4> grid_size{1000, 2000, 2, 1};
     const std::array<unsigned, 4> cf_size{31, 21, 1, 3};
-    const std::array<float, 2> grid_scale{0.1, -0.1};
+    const std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);
     const unsigned num_visibilities = 1000000;
     init_visibilities(
@@ -331,7 +331,7 @@ main(int argc, char* argv[]) {
 
     const std::array<unsigned, 4> grid_size{5, 6, 2, 3};
     const std::array<unsigned, 4> cf_size{3, 3, 1, 2};
-    const std::array<float, 2> grid_scale{0.1, -0.1};
+    const std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
     MyCFArray cf = create_cf(cf_size, rng);
     const unsigned num_visibilities = 50;
     init_visibilities(
