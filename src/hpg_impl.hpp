@@ -68,14 +68,13 @@ namespace Impl {
  *
  * Values of this type can be used in Kokkos reductions
  *
+ * @tparam T floating point type of visibility values
  * @tparam N number of polarizations
  */
-template<int N>
+template<typename T, int N>
 struct poln_array_type {
 
-  static_assert(std::is_same_v<visibility_fp, cf_fp>);
-
-  K::complex<visibility_fp> vals[N];
+  K::complex<T> vals[N];
 
   KOKKOS_INLINE_FUNCTION   // Default constructor - Initialize to 0's
   poln_array_type() {
@@ -110,13 +109,14 @@ struct poln_array_type {
  *
  * Values of this type can be used in Kokkos reductions
  *
+ * @tparam T floating point type of values
  * @tparam N number of polarizations
  */
-template<int N>
+template<typename T, int N>
 struct vis_array_type {
 
-  K::Array<K::complex<visibility_fp>, N> vis;
-  K::Array<K::complex<cf_fp>, N> wgt;
+  K::Array<K::complex<T>, N> vis;
+  K::Array<K::complex<T>, N> wgt;
 
   KOKKOS_INLINE_FUNCTION   // Default constructor - Initialize to 0's
   vis_array_type() {
@@ -156,17 +156,33 @@ struct vis_array_type {
 namespace Kokkos { //reduction identity must be defined in Kokkos namespace
 /** reduction identity of poln_array_type */
 template<int N>
-struct reduction_identity<hpg::Impl::poln_array_type<N>> {
-  KOKKOS_FORCEINLINE_FUNCTION static hpg::Impl::poln_array_type<N> sum() {
-    return hpg::Impl::poln_array_type<N>();
+struct reduction_identity<hpg::Impl::poln_array_type<float, N>> {
+  KOKKOS_FORCEINLINE_FUNCTION static
+  hpg::Impl::poln_array_type<float, N> sum() {
+    return hpg::Impl::poln_array_type<float, N>();
+  }
+};
+template<int N>
+struct reduction_identity<hpg::Impl::poln_array_type<double, N>> {
+  KOKKOS_FORCEINLINE_FUNCTION static
+  hpg::Impl::poln_array_type<double, N> sum() {
+    return hpg::Impl::poln_array_type<double, N>();
   }
 };
 
 /** reduction identity of vis_array_type */
 template<int N>
-struct reduction_identity<hpg::Impl::vis_array_type<N>> {
-  KOKKOS_FORCEINLINE_FUNCTION static hpg::Impl::vis_array_type<N> sum() {
-    return hpg::Impl::vis_array_type<N>();
+struct reduction_identity<hpg::Impl::vis_array_type<float, N>> {
+  KOKKOS_FORCEINLINE_FUNCTION
+  static hpg::Impl::vis_array_type<float, N> sum() {
+    return hpg::Impl::vis_array_type<float, N>();
+  }
+};
+template<int N>
+struct reduction_identity<hpg::Impl::vis_array_type<double, N>> {
+  KOKKOS_FORCEINLINE_FUNCTION
+  static hpg::Impl::vis_array_type<double, N> sum() {
+    return hpg::Impl::vis_array_type<double, N>();
   }
 };
 }
@@ -229,11 +245,27 @@ struct InvalidModelGridSizeError
 
 namespace Impl {
 
+/** accumulation value type for complex values
+ *
+ * @tparam C K::Complex<.> type
+ */
+template <typename C>
+using acc_cpx_t =
+  K::complex<
+    std::conditional_t<
+      std::is_same_v<typename C::value_type, float>,
+      double,
+      long double>>;
+
 /** visibility value type */
 using vis_t = K::complex<visibility_fp>;
 
+using acc_vis_t = acc_cpx_t<vis_t>;
+
 /** convolution function value type */
 using cf_t = K::complex<cf_fp>;
+
+using acc_cf_t = acc_cpx_t<cf_t>;
 
 /** gridded value type */
 using gv_t = K::complex<grid_value_fp>;
@@ -843,7 +875,7 @@ struct HPG_EXPORT VisibilityGridder final {
 
   // function for gridding a single visibility
   template <typename cf_layout, typename grid_layout, typename memory_space>
-  static KOKKOS_FUNCTION poln_array_type<N>
+  static KOKKOS_FUNCTION poln_array_type<vis_t::value_type, N>
   grid_vis(
     const member_type& team_member,
     const bool do_degrid,
@@ -899,18 +931,19 @@ struct HPG_EXPORT VisibilityGridder final {
       });
     team_member.team_barrier();
 
-    vis_array_type<N> vis_array;
+    static_assert(std::is_same_v<acc_vis_t, acc_cf_t>);
+    vis_array_type<acc_vis_t::value_type, N> vis_array;
 
     if (do_degrid && model.is_allocated()) {
       // model degridding
 
       // serial loop over grid mrow
       for (int R = 0; R < N_R; ++R) {
-        vis_array_type<N> va;
+        decltype(vis_array) va;
         // parallel loop over grid X
         K::parallel_reduce(
           K::TeamVectorRange(team_member, N_X),
-          [=](const int X, vis_array_type<N>& vis_array_l) {
+          [=](const int X, decltype(vis_array)& vis_array_l) {
             auto phi_X = phi_X0 + X * dphi_X;
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
@@ -948,7 +981,7 @@ struct HPG_EXPORT VisibilityGridder final {
     }
 
     // result contains residual or predicted visibilities
-    poln_array_type<N> result;
+    poln_array_type<vis_t::value_type, N> result;
 
     // apply weights and phasor to compute predicted visibilities
     auto conj_phasor = vis.m_phasor;
@@ -956,12 +989,12 @@ struct HPG_EXPORT VisibilityGridder final {
     for (int C = 0; C < N; ++C)
       result.vals[C] =
         (vis_array.vis[C]
-         / ((vis_array.wgt[C] != (cf_t)0) ? vis_array.wgt[C] : (cf_t)1))
+         / ((vis_array.wgt[C] != (acc_cf_t)0) ? vis_array.wgt[C] : (acc_cf_t)1))
         * conj_phasor;
 
     if (do_grid) {
       // compute residual visibilities (result) and gridding values (vv)
-      poln_array_type<N> vv;
+      poln_array_type<vis_t::value_type, N> vv;
       for (int C = 0; C < N; ++C) {
         result.vals[C] = vis.m_values[C] - result.vals[C];
         vv.vals[C] = result.vals[C] * vis.m_phasor * vis.m_weights[C];
@@ -971,11 +1004,11 @@ struct HPG_EXPORT VisibilityGridder final {
 
       // serial loop over grid mrow
       for (int R = 0; R < N_R; ++R) {
-        poln_array_type<N> grid_wgt;
+        poln_array_type<acc_cf_t::value_type, N> grid_wgt;
         // parallel loop over grid X
         K::parallel_reduce(
           K::TeamVectorRange(team_member, N_X),
-          [=](const int X, poln_array_type<N>& grid_wgt_l) {
+          [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
             auto phi_X = phi_X0 + X * dphi_X;
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
@@ -1075,7 +1108,7 @@ struct HPG_EXPORT VisibilityGridder final {
         auto& visibility = visibilities(i);
         GridVis<N, execution_space>
           gvis(visibility, grid_size, oversampling, cf_size, grid_scale);
-        poln_array_type<N> rvis;
+        poln_array_type<float, N> rvis;
         // skip this visibility if all of the updated grid points are not
         // within grid bounds
         if ((0 <= gvis.m_grid_coord[0])
