@@ -22,6 +22,7 @@
 #include <cassert>
 #include <chrono>
 #include <queue>
+#include <set>
 
 #include <Kokkos_Core.hpp>
 #include <Kokkos_Random.hpp>
@@ -146,6 +147,29 @@ parse_devices(const std::string& s) {
   return parse_enumerated(s, "device", device_codes, all);
 }
 
+enum class Op {
+  Gridding,
+  Degridding,
+  DegriddingAndGridding
+};
+
+const std::unordered_map<Op, std::string> op_codes{
+  {Op::Gridding, "grid"},
+  {Op::Degridding, "degrid"},
+  {Op::DegriddingAndGridding, "both"}
+};
+
+argwrap<std::vector<Op>>
+parse_ops(const std::string& s) {
+  static const std::vector<std::string> all{
+    op_codes.at(Op::Gridding),
+    op_codes.at(Op::Degridding),
+    op_codes.at(Op::DegriddingAndGridding)
+  };
+
+  return parse_enumerated(s, "op", op_codes, all);
+}
+
 std::vector<std::vector<std::vector<int>>>
 parse_mueller_indexes(const std::string& s) {
   std::vector<std::vector<std::vector<int>>> result;
@@ -227,6 +251,7 @@ struct TrialSpec {
   TrialSpec(
     const hpg::Device& device_,
     const int& streams_,
+    const Op& op_,
     const std::vector<std::vector<int>>& mueller_indexes_,
     const int& gsize_,
     const std::vector<unsigned>& cfsize_,
@@ -239,6 +264,7 @@ struct TrialSpec {
     )
     : device(device_)
     , streams(streams_)
+    , op(op_)
     , mueller_indexes(mueller_indexes_)
     , gsize(gsize_)
     , oversampling(oversampling_)
@@ -253,6 +279,7 @@ struct TrialSpec {
  }
 
   hpg::Device device;
+  Op op;
   int streams;
   std::vector<std::vector<int>> mueller_indexes;
   int gsize;
@@ -271,6 +298,7 @@ struct TrialSpec {
   {"status",
    "dev",
    "str",
+   "op",
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
    "vsn",
 #endif
@@ -352,6 +380,7 @@ struct TrialSpec {
 #endif
     oss << pad_right(device_codes.at(device))
         << pad_right(std::to_string(streams))
+        << pad_right(op_codes.at(op))
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         << pad_right(vsns.str())
 #endif
@@ -463,6 +492,7 @@ struct InputData {
 
   hpg::VisDataVector visibilities;
   hpg::IArrayVector mueller_indexes;
+  std::vector<hpg::GridValueArray::value_type> model_values;
 };
 
 template <unsigned N, typename Generator>
@@ -554,6 +584,7 @@ create_input_data(
   const std::vector<unsigned>& cflen,
   int oversampling,
   int num_visibilities,
+  const Op& op,
   const Generator& generator) {
 
   std::array<unsigned, 4>
@@ -613,17 +644,50 @@ create_input_data(
     assert(false);
     break;
   }
+
+  if (op != Op::Gridding) {
+    result.model_values.resize(
+      std::accumulate(
+        gsize.begin(),
+        gsize.end(),
+        1u,
+        std::multiplies<unsigned>()));
+    hpg::GridValueArray::value_type* vals = result.model_values.data();
+    K::parallel_for(
+      K::RangePolicy<K::OpenMP>(0, result.model_values.size()),
+      KOKKOS_LAMBDA(int i) {
+        auto rstate = generator.get_state();
+        *(vals + i) = {rstate.frand(-1, 1), rstate.frand(-1, 1)};
+        generator.free_state(rstate);
+      });
+  }
   return result;
 }
 
 /** gridding with hpg
  */
+template <Op op, typename GridlikeFn>
 void
-run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
+run_hpg_trial_op(
+  const TrialSpec& spec,
+  const InputData& input_data,
+  GridlikeFn gfn) {
 
   std::queue<InputData> ids;
   for (unsigned i = 0; i <= spec.streams; ++i)
     ids.push(input_data);
+
+  std::unique_ptr<hpg::GridValueArray> model;
+  if constexpr (op != Op::Gridding) {
+    if (input_data.model_values.size() > 0)
+      model =
+        hpg::GridValueArray::copy_from(
+          "model",
+          spec.device,
+          hpg::Device::OpenMP,
+          input_data.model_values.data(),
+          input_data.gsize);
+  }
 
   auto time_trial =
     hpg::RvalM<void, hpg::GridderState>::pure(
@@ -653,6 +717,16 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
             hpg::Device::OpenMP,
             CFArray(input_data.cf));
       })
+    .and_then(
+      // set visibility model
+      [&](hpg::GridderState&& gs) {
+        if (model)
+          return
+            std::move(gs)
+            .set_model(hpg::Device::OpenMP, std::move(*model));
+        else
+          return hpg::rval(std::move(gs));
+      })
     .map(
       // start timer after convolution function initialization completes
       [&](hpg::GridderState&& gs) {
@@ -674,10 +748,7 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
         }
         return
           map(
-            std::get<1>(std::move(t_gs))
-            .grid_visibilities(
-              hpg::Device::OpenMP,
-              std::move(id).visibilities),
+            gfn(std::get<1>(std::move(t_gs)), std::move(id).visibilities),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));
@@ -704,6 +775,69 @@ run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
   std::cout << output << std::endl;
 }
 
+/** gridding with hpg
+ */
+template <Op op>
+void
+run_hpg_trial(const TrialSpec& spec, const InputData& input_data) {
+  assert(false);
+}
+
+template <>
+void
+run_hpg_trial<Op::Gridding>(
+  const TrialSpec& spec,
+  const InputData& input_data) {
+
+  run_hpg_trial_op<Op::Gridding>(
+    spec,
+    input_data,
+    [](hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
+      return
+        std::move(gs).grid_visibilities(
+          hpg::Device::OpenMP,
+          std::move(vis));
+    });
+}
+
+template <>
+void
+run_hpg_trial<Op::Degridding>(
+  const TrialSpec& spec,
+  const InputData& input_data) {
+
+  run_hpg_trial_op<Op::Degridding>(
+    spec,
+    input_data,
+    [](hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
+      return
+        map(
+          std::move(gs).degrid_get_predicted_visibilities(
+            hpg::Device::OpenMP,
+            std::move(vis)),
+          [](auto&& gs_pv) {
+            return std::get<0>(std::move(gs_pv));
+          });
+    });
+}
+
+template <>
+void
+run_hpg_trial<Op::DegriddingAndGridding>(
+  const TrialSpec& spec,
+  const InputData& input_data) {
+
+  run_hpg_trial_op<Op::DegriddingAndGridding>(
+    spec,
+    input_data,
+    [](hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
+      return
+        std::move(gs).degrid_grid_visibilities(
+          hpg::Device::OpenMP,
+          std::move(vis));
+    });
+}
+
 /** run gridding trials
  */
 void
@@ -714,6 +848,7 @@ run_trials(
   const std::vector<unsigned>& oversamplings,
   const std::vector<unsigned>& visibilities,
   const std::vector<unsigned>& repeats,
+  const std::vector<Op>& ops,
   const std::vector<hpg::Device>& devices,
   const std::vector<unsigned>& kernels,
   const std::vector<unsigned>& streams) {
@@ -728,30 +863,46 @@ run_trials(
           for (auto& cfsize : cfsizes) {
             for (auto& oversampling : oversamplings) {
               for (auto& kernel : kernels) {
-                const auto input_data =
-                  create_input_data(
-                    mindexes,
-                    gsize,
-                    cfsize,
-                    oversampling,
-                    num_visibilities,
-                    rand_pool_type(348842));
-                for (auto& device : devices) {
-                  for (auto& stream : streams) {
-                    TrialSpec spec(
-                      device,
-                      std::max(stream, 1u),
+                for (auto& op : ops) {
+                  const auto input_data =
+                    create_input_data(
                       mindexes,
                       gsize,
                       cfsize,
                       oversampling,
-                      input_data.visibilities.num_elements(),
-                      num_repeats
+                      num_visibilities,
+                      op,
+                      rand_pool_type(348842));
+                  for (auto& device : devices) {
+                    for (auto& stream : streams) {
+                      TrialSpec spec(
+                        device,
+                        std::max(stream, 1u),
+                        op,
+                        mindexes,
+                        gsize,
+                        cfsize,
+                        oversampling,
+                        input_data.visibilities.num_elements(),
+                        num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-                      , {kernel, 0, 0, 0}
+                        , {kernel, 0, 0, 0}
 #endif
-                      );
-                    run_hpg_trial(spec, input_data);
+                        );
+                      switch (op) {
+                      case Op::Gridding:
+                        run_hpg_trial<Op::Gridding>(spec, input_data);
+                        break;
+                      case Op::Degridding:
+                        run_hpg_trial<Op::Degridding>(spec, input_data);
+                        break;
+                      case Op::DegriddingAndGridding:
+                        run_hpg_trial<Op::DegriddingAndGridding>(
+                          spec,
+                          input_data);
+                        break;
+                      }
+                    }
                   }
                 }
               }
@@ -849,6 +1000,14 @@ main(int argc, char* argv[]) {
       .action(parse_devices);
   }
   {
+    Op dflt = Op::Gridding;
+    args
+      .add_argument("-o", "--op")
+      .default_value(argwrap<std::vector<Op>>({dflt}))
+      .help("op (grid|degrid|both) ["s + op_codes.at(dflt) + "]")
+      .action(parse_ops);
+  }
+  {
     unsigned dflt = 0;
     args
       .add_argument("-k", "--kernel")
@@ -899,6 +1058,7 @@ main(int argc, char* argv[]) {
   auto repeats = args.get<argwrap<std::vector<unsigned>>>("--repeats").val;
   auto devices =
     args.get<argwrap<std::vector<hpg::Device>>>("--device").val;
+  auto ops = args.get<argwrap<std::vector<Op>>>("--op").val;
   auto device_ids = args.get<argwrap<std::vector<unsigned>>>("--id").val;
   auto kernels = args.get<argwrap<std::vector<unsigned>>>("--kernel").val;
   auto streams = args.get<argwrap<std::vector<unsigned>>>("--streams").val;
@@ -922,6 +1082,7 @@ main(int argc, char* argv[]) {
       oversampling,
       visibilities,
       repeats,
+      ops,
       devices,
       kernels,
       streams);
