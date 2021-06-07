@@ -956,7 +956,7 @@ struct HPG_EXPORT VisibilityGridder final {
               for (int Y = 0; Y < N_Y; ++Y) {
                 cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
                 screen.imag() *= -1;
-                auto mv =
+                const auto mv =
                   model(
                     X + vis.m_grid_coord[0],
                     Y + vis.m_grid_coord[1],
@@ -1018,7 +1018,7 @@ struct HPG_EXPORT VisibilityGridder final {
               auto phi_X = phi_X0 + X * dphi_X;
               // loop over grid Y
               for (int Y = 0; Y < N_Y; ++Y) {
-                cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
+                const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
                 gv_t gv(0);
                 // loop over visibility polarizations
                 for (int C = 0; C < N; ++C) {
