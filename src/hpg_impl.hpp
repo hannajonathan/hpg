@@ -874,12 +874,16 @@ struct HPG_EXPORT VisibilityGridder final {
       typename execution_space::scratch_memory_space>;
 
   // function for gridding a single visibility
-  template <typename cf_layout, typename grid_layout, typename memory_space>
+  template <
+    typename cf_layout,
+    typename grid_layout,
+    typename memory_space,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool do_grid>
   static KOKKOS_FUNCTION poln_array_type<vis_t::value_type, N>
   grid_vis(
     const member_type& team_member,
-    const bool do_degrid,
-    const bool do_grid,
     const GridVis<N, execution_space>& vis,
     const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
@@ -931,68 +935,69 @@ struct HPG_EXPORT VisibilityGridder final {
       });
     team_member.team_barrier();
 
-    static_assert(std::is_same_v<acc_vis_t, acc_cf_t>);
-    vis_array_type<acc_vis_t::value_type, N> vis_array;
-
-    if (do_degrid && model.is_allocated()) {
-      // model degridding
-
-      // serial loop over grid mrow
-      for (int R = 0; R < N_R; ++R) {
-        decltype(vis_array) va;
-        // parallel loop over grid X
-        K::parallel_reduce(
-          K::TeamVectorRange(team_member, N_X),
-          [=](const int X, decltype(vis_array)& vis_array_l) {
-            auto phi_X = phi_X0 + X * dphi_X;
-            // loop over grid Y
-            for (int Y = 0; Y < N_Y; ++Y) {
-              cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
-              screen.imag() *= -1;
-              auto mv =
-                model(
-                  X + vis.m_grid_coord[0],
-                  Y + vis.m_grid_coord[1],
-                  R,
-                  vis.m_grid_cube)
-                * screen;
-              // loop over visibility polarizations
-              for (int C = 0; C < N; ++C) {
-                const auto mindex = degridding_mindex(R, C);
-                if (mindex >= 0) {
-                  cf_t cfv =
-                    cf(
-                      X + vis.m_cf_major[0],
-                      Y + vis.m_cf_major[1],
-                      mindex,
-                      cf_cube,
-                      vis.m_cf_minor[0],
-                      vis.m_cf_minor[1]);
-                  cfv.imag() *= -cf_im_factor;
-                  vis_array_l.vis[C] += cfv * mv;
-                  vis_array_l.wgt[C] += cfv;
-                }
-              }
-            }
-          },
-          K::Sum<decltype(va)>(va));
-        vis_array += va;
-      }
-    }
-
     // result contains residual or predicted visibilities
     poln_array_type<vis_t::value_type, N> result;
 
-    // apply weights and phasor to compute predicted visibilities
-    auto conj_phasor = vis.m_phasor;
-    conj_phasor.imag() *= -1;
-    for (int C = 0; C < N; ++C)
-      result.vals[C] =
-        (vis_array.vis[C]
-         / ((vis_array.wgt[C] != (acc_cf_t)0) ? vis_array.wgt[C] : (acc_cf_t)1))
-        * conj_phasor;
+    if constexpr (do_degrid) {
+      if (model.is_allocated()) {
+        // model degridding
+        static_assert(std::is_same_v<acc_vis_t, acc_cf_t>);
+        vis_array_type<acc_vis_t::value_type, N> vis_array;
 
-    if (do_grid) {
+        // serial loop over grid mrow
+        for (int R = 0; R < N_R; ++R) {
+          decltype(vis_array) va;
+          // parallel loop over grid X
+          K::parallel_reduce(
+            K::TeamVectorRange(team_member, N_X),
+            [=](const int X, decltype(vis_array)& vis_array_l) {
+              auto phi_X = phi_X0 + X * dphi_X;
+              // loop over grid Y
+              for (int Y = 0; Y < N_Y; ++Y) {
+                cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
+                screen.imag() *= -1;
+                auto mv =
+                  model(
+                    X + vis.m_grid_coord[0],
+                    Y + vis.m_grid_coord[1],
+                    R,
+                    vis.m_grid_cube)
+                  * screen;
+                // loop over visibility polarizations
+                for (int C = 0; C < N; ++C) {
+                  const auto mindex = degridding_mindex(R, C);
+                  if (mindex >= 0) {
+                    cf_t cfv =
+                      cf(
+                        X + vis.m_cf_major[0],
+                        Y + vis.m_cf_major[1],
+                        mindex,
+                        cf_cube,
+                        vis.m_cf_minor[0],
+                        vis.m_cf_minor[1]);
+                    cfv.imag() *= -cf_im_factor;
+                    vis_array_l.vis[C] += cfv * mv;
+                    vis_array_l.wgt[C] += cfv;
+                  }
+                }
+              }
+            },
+            K::Sum<decltype(va)>(va));
+          vis_array += va;
+        }
+
+        // apply weights and phasor to compute predicted visibilities
+        auto conj_phasor = vis.m_phasor;
+        conj_phasor.imag() *= -1;
+        for (int C = 0; C < N; ++C)
+          result.vals[C] =
+            (vis_array.vis[C]
+             / ((vis_array.wgt[C] != (acc_cf_t)0) ? vis_array.wgt[C] : (acc_cf_t)1))
+            * conj_phasor;
+      }
+    }
+
+    if constexpr (do_grid) {
       // compute residual visibilities (result) and gridding values (vv)
       poln_array_type<vis_t::value_type, N> vv;
       for (int C = 0; C < N; ++C) {
@@ -1004,63 +1009,104 @@ struct HPG_EXPORT VisibilityGridder final {
 
       // serial loop over grid mrow
       for (int R = 0; R < N_R; ++R) {
-        poln_array_type<acc_cf_t::value_type, N> grid_wgt;
-        // parallel loop over grid X
-        K::parallel_reduce(
-          K::TeamVectorRange(team_member, N_X),
-          [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
-            auto phi_X = phi_X0 + X * dphi_X;
-            // loop over grid Y
-            for (int Y = 0; Y < N_Y; ++Y) {
-              cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
-              gv_t gv(0);
-              // loop over visibility polarizations
-              for (int C = 0; C < N; ++C) {
-                const auto mindex = gridding_mindex(R, C);
-                if (mindex >= 0) {
-                  cf_t cfv =
-                    cf(
-                      X + vis.m_cf_major[0],
-                      Y + vis.m_cf_major[1],
-                      mindex,
-                      cf_cube,
-                      vis.m_cf_minor[0],
-                      vis.m_cf_minor[1]);
-                  cfv.imag() *= cf_im_factor;
-                  gv += gv_t(cfv * screen * vv.vals[C]);
-                  grid_wgt_l.vals[C] += cfv;
+        if constexpr (update_grid_weights) {
+          poln_array_type<acc_cf_t::value_type, N> grid_wgt;
+          // parallel loop over grid X
+          K::parallel_reduce(
+            K::TeamVectorRange(team_member, N_X),
+            [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
+              auto phi_X = phi_X0 + X * dphi_X;
+              // loop over grid Y
+              for (int Y = 0; Y < N_Y; ++Y) {
+                cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
+                gv_t gv(0);
+                // loop over visibility polarizations
+                for (int C = 0; C < N; ++C) {
+                  const auto mindex = gridding_mindex(R, C);
+                  if (mindex >= 0) {
+                    cf_t cfv =
+                      cf(
+                        X + vis.m_cf_major[0],
+                        Y + vis.m_cf_major[1],
+                        mindex,
+                        cf_cube,
+                        vis.m_cf_minor[0],
+                        vis.m_cf_minor[1]);
+                    cfv.imag() *= cf_im_factor;
+                    gv += gv_t(cfv * screen * vv.vals[C]);
+                    grid_wgt_l.vals[C] += cfv;
+                  }
                 }
+                pseudo_atomic_add<execution_space>(
+                  grid(
+                    X + vis.m_grid_coord[0],
+                    Y + vis.m_grid_coord[1],
+                    R,
+                    vis.m_grid_cube),
+                  gv);
               }
-              pseudo_atomic_add<execution_space>(
-                grid(
-                  X + vis.m_grid_coord[0],
-                  Y + vis.m_grid_coord[1],
-                  R,
-                  vis.m_grid_cube),
-                gv);
-            }
-          },
-          K::Sum<decltype(grid_wgt)>(grid_wgt));
-        // compute final weight and add it to weights
-        K::single(
-          K::PerTeam(team_member),
-          [&]() {
-            grid_value_fp twgt = 0;
-            for (int C = 0; C < N; ++C)
-              twgt += grid_value_fp(mag(grid_wgt.vals[C]) * vis.m_weights[C]);
-            K::atomic_add(&weights(R, vis.m_grid_cube), twgt);
-          });
+            },
+            K::Sum<decltype(grid_wgt)>(grid_wgt));
+          // compute final weight and add it to weights
+          K::single(
+            K::PerTeam(team_member),
+            [&]() {
+              grid_value_fp twgt = 0;
+              for (int C = 0; C < N; ++C)
+                twgt += grid_value_fp(mag(grid_wgt.vals[C]) * vis.m_weights[C]);
+              K::atomic_add(&weights(R, vis.m_grid_cube), twgt);
+            });
+        } else {
+          // parallel loop over grid X
+          K::parallel_for(
+            K::TeamVectorRange(team_member, N_X),
+            [=](const int X) {
+              auto phi_X = phi_X0 + X * dphi_X;
+              // loop over grid Y
+              for (int Y = 0; Y < N_Y; ++Y) {
+                cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
+                gv_t gv(0);
+                // loop over visibility polarizations
+                for (int C = 0; C < N; ++C) {
+                  const auto mindex = gridding_mindex(R, C);
+                  if (mindex >= 0) {
+                    cf_t cfv =
+                      cf(
+                        X + vis.m_cf_major[0],
+                        Y + vis.m_cf_major[1],
+                        mindex,
+                        cf_cube,
+                        vis.m_cf_minor[0],
+                        vis.m_cf_minor[1]);
+                    cfv.imag() *= cf_im_factor;
+                    gv += gv_t(cfv * screen * vv.vals[C]);
+                  }
+                }
+                pseudo_atomic_add<execution_space>(
+                  grid(
+                    X + vis.m_grid_coord[0],
+                    Y + vis.m_grid_coord[1],
+                    R,
+                    vis.m_grid_cube),
+                  gv);
+              }
+            });
+        }
       }
     }
     return result;
   }
 
+  // parallel outer loop over visibilities
   template <
     typename cf_layout,
     typename grid_layout,
-    typename memory_space>
+    typename memory_space,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool do_grid>
   static void
-  kernel(
+  grid_all(
     execution_space exec,
     const K::Array<
       cf_view<cf_layout, memory_space>,
@@ -1069,8 +1115,6 @@ struct HPG_EXPORT VisibilityGridder final {
     unsigned max_cf_extent_y,
     const_mindex_view<memory_space> mueller_indexes,
     const_mindex_view<memory_space> conjugate_mueller_indexes,
-    bool do_degrid,
-    bool do_grid,
     int num_visibilities,
     const visdata_view<N, memory_space>& visibilities,
     const K::Array<grid_scale_fp, 2>& grid_scale,
@@ -1116,10 +1160,9 @@ struct HPG_EXPORT VisibilityGridder final {
             && (0 <= gvis.m_grid_coord[1])
             && (gvis.m_grid_coord[1] + cf_size[1] <= grid_size[1])) {
           rvis =
-            grid_vis(
+            grid_vis<cf_layout, grid_layout, memory_space,
+                     update_grid_weights, do_degrid, do_grid>(
               team_member,
-              do_degrid,
-              do_grid,
               gvis,
               oversampling,
               cf,
@@ -1136,6 +1179,77 @@ struct HPG_EXPORT VisibilityGridder final {
         for (size_t i = 0; i < N; ++i)
           visibility.m_values[i] = rvis.vals[i];
       });
+  }
+
+  static constexpr int
+  grid_all_switch(bool update_grid_weights, bool do_degrid, bool do_grid) {
+    return
+      ((update_grid_weights ? 1 : 0) << 2)
+      | ((do_degrid ? 1 : 0) << 1)
+      | ((do_grid ? 1 : 0) << 0);
+  }
+
+  template <
+    typename cf_layout,
+    typename grid_layout,
+    typename memory_space>
+  static void
+  kernel(
+    execution_space exec,
+    const K::Array<
+      cf_view<cf_layout, memory_space>,
+      HPG_MAX_NUM_CF_GROUPS>& cfs,
+    const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
+    unsigned max_cf_extent_y,
+    const_mindex_view<memory_space> mueller_indexes,
+    const_mindex_view<memory_space> conjugate_mueller_indexes,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool do_grid,
+    int num_visibilities,
+    const visdata_view<N, memory_space>& visibilities,
+    const K::Array<grid_scale_fp, 2>& grid_scale,
+    const const_grid_view<grid_layout, memory_space>& model,
+    const grid_view<grid_layout, memory_space>& grid,
+    const weight_view<typename execution_space::array_layout, memory_space>&
+      weights) {
+
+#define GRID_ALL(ugw, dd, dg) do {                                  \
+      grid_all<cf_layout, grid_layout, memory_space, ugw, dd, dg>(  \
+        exec,                                                       \
+        cfs,                                                        \
+        cf_radii,                                                   \
+        max_cf_extent_y,                                            \
+        mueller_indexes,                                            \
+        conjugate_mueller_indexes,                                  \
+        num_visibilities,                                           \
+        visibilities,                                               \
+        grid_scale,                                                 \
+        model,                                                      \
+        grid,                                                       \
+        weights);                                                   \
+    } while (0)
+
+    switch (grid_all_switch(update_grid_weights, do_degrid, do_grid)) {
+    case grid_all_switch(true, true, true):
+      GRID_ALL(true, true, true);
+      break;
+    case grid_all_switch(true, false, true):
+      GRID_ALL(true, false, true);
+      break;
+    case grid_all_switch(false, true, true):
+      GRID_ALL(false, true, true);
+      break;
+    case grid_all_switch(false, true, false):
+      GRID_ALL(false, true, false);
+      break;
+    case grid_all_switch(false, false, true):
+      GRID_ALL(false, false, true);
+      break;
+    default:
+      assert(false);
+      break;
+    }
   }
 };
 
@@ -3334,6 +3448,7 @@ public:
       cf.max_cf_extent_y,
       m_mueller_indexes,
       m_conjugate_mueller_indexes,
+      update_grid_weights,
       do_degrid,
       do_grid,
       len,
