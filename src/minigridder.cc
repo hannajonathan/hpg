@@ -834,9 +834,13 @@ run_hpg_trial<Op::Degridding>(
     [](hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
       return
         map(
-          std::move(gs).degrid_get_predicted_visibilities(
+          std::move(gs).grid_visibilities_base(
             hpg::Device::OpenMP,
-            std::move(vis)),
+            std::move(vis),
+            false,  // update_grid_weights
+            true,   // do_degrid
+            false,  // return_visibilities
+            false), // do_grid
           [](auto&& gs_pv) {
             return std::get<0>(std::move(gs_pv));
           });
