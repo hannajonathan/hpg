@@ -72,6 +72,19 @@ struct ExcessiveNumberVisibilitiesError
       ErrorType::ExcessiveNumberVisibilities) {}
 };
 
+/** update weights without gridding error
+ *
+ * Grid weights cannot be updated without doing gridding
+ */
+struct UpdateWeightsWithoutGriddingError
+  : public Error {
+
+  UpdateWeightsWithoutGriddingError()
+    : Error(
+      "Unable to update grid weights during degridding only",
+      ErrorType::UpdateWeightsWithoutGridding) {}
+};
+
 Error::Error(const std::string& msg, ErrorType err)
   : m_type(err)
   , m_msg(msg) {}
@@ -169,6 +182,7 @@ struct Impl::GridderState {
     GS&& st,
     Device host_device,
     VisDataVector&& visibilities,
+    bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
     bool do_grid) {
@@ -182,11 +196,15 @@ struct Impl::GridderState {
     if (visibilities.m_npol != st.impl->m_num_polarizations)
       return InvalidNumberPolarizationsError();
 
+    if (!do_grid && update_grid_weights)
+      return UpdateWeightsWithoutGriddingError();
+
     ::hpg::GridderState result(std::forward<GS>(st));
     auto err_or_maybevis =
       result.impl->grid_visibilities(
         host_device,
         std::move(visibilities),
+        update_grid_weights,
         do_degrid,
         return_visibilities,
         do_grid);
@@ -538,6 +556,7 @@ rval_t<std::tuple<GridderState, future<VisDataVector>>>
 GridderState::grid_visibilities_base(
   Device host_device,
   VisDataVector&& visibilities,
+  bool update_grid_weights,
   bool do_degrid,
   bool return_visibilities,
   bool do_grid) const & {
@@ -548,6 +567,7 @@ GridderState::grid_visibilities_base(
         *this,
         host_device,
         std::move(visibilities),
+        update_grid_weights,
         do_degrid,
         return_visibilities,
         do_grid));
@@ -557,6 +577,7 @@ rval_t<std::tuple<GridderState, future<VisDataVector>>>
 GridderState::grid_visibilities_base(
   Device host_device,
   VisDataVector&& visibilities,
+  bool update_grid_weights,
   bool do_degrid,
   bool return_visibilities,
   bool do_grid) && {
@@ -567,6 +588,7 @@ GridderState::grid_visibilities_base(
         std::move(*this),
         std::move(host_device),
         std::move(visibilities),
+        update_grid_weights,
         do_degrid,
         return_visibilities,
         do_grid));
@@ -575,13 +597,15 @@ GridderState::grid_visibilities_base(
 rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
-  VisDataVector&& visibilities) const & {
+  VisDataVector&& visibilities,
+  bool update_grid_weights) const & {
 
   return
     map(
       grid_visibilities_base(
         host_device,
         VisDataVector(std::move(visibilities)),
+        update_grid_weights,
         false, // do_degrid
         false, // return_visibilities
         true), // do_grid
@@ -593,13 +617,15 @@ GridderState::grid_visibilities(
 rval_t<GridderState>
 GridderState::grid_visibilities(
   Device host_device,
-  VisDataVector&& visibilities) && {
+  VisDataVector&& visibilities,
+  bool update_grid_weights) && {
 
   return
     map(
       std::move(*this).grid_visibilities_base(
         host_device,
         std::move(visibilities),
+        update_grid_weights,
         false, // do_degrid
         false, // return_visibilities
         true), // do_grid
@@ -611,13 +637,15 @@ GridderState::grid_visibilities(
 rval_t<GridderState>
 GridderState::degrid_grid_visibilities(
   Device host_device,
-  VisDataVector&& visibilities) const & {
+  VisDataVector&& visibilities,
+  bool update_grid_weights) const & {
 
   return
     map(
       grid_visibilities_base(
         host_device,
         std::move(visibilities),
+        update_grid_weights,
         true, // do_degrid
         false, // return_visibilities
         true), // do_grid
@@ -629,13 +657,15 @@ GridderState::degrid_grid_visibilities(
 rval_t<GridderState>
 GridderState::degrid_grid_visibilities(
   Device host_device,
-  VisDataVector&& visibilities) && {
+  VisDataVector&& visibilities,
+  bool update_grid_weights) && {
 
   return
     map(
       std::move(*this).grid_visibilities_base(
         host_device,
         std::move(visibilities),
+        update_grid_weights,
         true, // do_degrid
         false, // return_visibilities
         true), // do_grid
@@ -653,6 +683,7 @@ GridderState::degrid_get_predicted_visibilities(
     grid_visibilities_base(
       host_device,
       std::move(visibilities),
+      false,  // update_grid_weights
       true,   // do_degrid
       true,   // return_visibilities
       false); // do_grid
@@ -667,6 +698,7 @@ GridderState::degrid_get_predicted_visibilities(
     std::move(*this).grid_visibilities_base(
       host_device,
       std::move(visibilities),
+      false,  // update_grid_weights
       true,   // do_degrid
       true,   // return_visibilities
       false); // do_grid
@@ -675,12 +707,14 @@ GridderState::degrid_get_predicted_visibilities(
 rval_t<std::tuple<GridderState, future<VisDataVector>>>
 GridderState::degrid_grid_get_residual_visibilities(
   Device host_device,
-  VisDataVector&& visibilities) const & {
+  VisDataVector&& visibilities,
+  bool update_grid_weights) const & {
 
   return
     grid_visibilities_base(
       host_device,
       std::move(visibilities),
+      update_grid_weights,
       true,  // do_degrid
       true,  // return_visibilities
       true); // do_grid
@@ -689,12 +723,14 @@ GridderState::degrid_grid_get_residual_visibilities(
 rval_t<std::tuple<GridderState, future<VisDataVector>>>
 GridderState::degrid_grid_get_residual_visibilities(
   Device host_device,
-  VisDataVector&& visibilities) && {
+  VisDataVector&& visibilities,
+  bool update_grid_weights) && {
 
   return
     std::move(*this).grid_visibilities_base(
       host_device,
       std::move(visibilities),
+      update_grid_weights,
       true,  // do_degrid
       true,  // return_visibilities
       true); // do_grid
@@ -1139,12 +1175,16 @@ Gridder::set_model(Device host_device, GridValueArray&& gv) {
 opt_t<Error>
 Gridder::grid_visibilities(
   Device host_device,
-  VisDataVector&& visibilities) {
+  VisDataVector&& visibilities,
+  bool update_grid_weights) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state)
-      .grid_visibilities(host_device, std::move(visibilities)),
+      .grid_visibilities(
+        host_device,
+        std::move(visibilities),
+        update_grid_weights),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
         return std::nullopt;
@@ -1155,7 +1195,10 @@ Gridder::grid_visibilities(
 #else // HPG_API < 17
   auto [err, gs] =
     std::move(state)
-    .grid_visibilities(host_device, std::move(visibilities));
+    .grid_visibilities(
+      host_device,
+      std::move(visibilities),
+      update_grid_weights);
   if (!err)
     state = std::move(gs);
   return std::move(err);
@@ -1165,12 +1208,16 @@ Gridder::grid_visibilities(
 opt_t<Error>
 Gridder::degrid_grid_visibilities(
   Device host_device,
-  VisDataVector&& visibilities) {
+  VisDataVector&& visibilities,
+  bool update_grid_weights) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state)
-      .degrid_grid_visibilities(host_device, std::move(visibilities)),
+      .degrid_grid_visibilities(
+        host_device,
+        std::move(visibilities),
+        update_grid_weights),
       [this](auto&& gs) -> std::optional<Error> {
         this->state = std::move(gs);
         return std::nullopt;
@@ -1181,7 +1228,10 @@ Gridder::degrid_grid_visibilities(
 #else // HPG_API < 17
   auto [err, gs] =
     std::move(state)
-    .degrid_grid_visibilities(host_device, std::move(visibilities));
+    .degrid_grid_visibilities(
+      host_device,
+      std::move(visibilities),
+      update_grid_weights);
   if (!err)
     state = std::move(gs);
   return std::move(err);
@@ -1219,13 +1269,15 @@ Gridder::degrid_get_predicted_visibilities(
 rval_t<future<VisDataVector>>
 Gridder::degrid_grid_get_residual_visibilities(
   Device host_device,
-  VisDataVector&& visibilities) {
+  VisDataVector&& visibilities,
+  bool update_grid_weights) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state).degrid_grid_get_residual_visibilities(
         host_device,
-        std::move(visibilities)),
+        std::move(visibilities),
+        update_grid_weights),
       [this](auto&& gs_fvs) -> rval_t<future<VisDataVector>> {
         this->state = std::get<0>(std::move(gs_fvs));
         return std::get<1>(std::move(gs_fvs));
@@ -1237,7 +1289,8 @@ Gridder::degrid_grid_get_residual_visibilities(
   auto [err, gs_fvs] =
     std::move(state).degrid_grid_get_residual_visibilities(
       host_device,
-      std::move(visibilities));
+      std::move(visibilities),
+      update_grid_weights);
   if (!err) {
     state = std::get<0>(std::move(gs_fvs));
     return rval<future<VisDataVector>>(std::get<1>(std::move(gs_fvs)));

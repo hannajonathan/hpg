@@ -1848,6 +1848,7 @@ struct State {
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
     bool do_grid) = 0;
@@ -3313,6 +3314,7 @@ public:
   default_grid_visibilities(
     Device /*host_device*/,
     std::vector<::hpg::VisData<N>>&& visibilities,
+    bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
     bool do_grid) {
@@ -3348,6 +3350,7 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
+    bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
     bool do_grid) {
@@ -3367,6 +3370,7 @@ public:
         default_grid_visibilities(
           host_device,
           std::move(visibilities),
+          update_grid_weights,
           do_degrid,
           return_visibilities,
           do_grid);
@@ -3382,6 +3386,7 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
     bool do_grid)
@@ -3393,6 +3398,7 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v1),
+          update_grid_weights,
           do_degrid,
           return_visibilities,
           do_grid);
@@ -3402,6 +3408,7 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v2),
+          update_grid_weights,
           do_degrid,
           return_visibilities,
           do_grid);
@@ -3411,6 +3418,7 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v3),
+          update_grid_weights,
           do_degrid,
           return_visibilities,
           do_grid);
@@ -3420,6 +3428,7 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v4),
+          update_grid_weights,
           do_degrid,
           return_visibilities,
           do_grid);

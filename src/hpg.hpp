@@ -1403,6 +1403,7 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    * @param do_degrid do degridding
    * @param return_visibilities return residual or predicted visibilities
    * @param do_grid do gridding
@@ -1411,6 +1412,7 @@ public:
   grid_visibilities_base(
     Device host_device,
     VisDataVector&& visibilities,
+    bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
     bool do_grid) const &;
@@ -1427,6 +1429,7 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    * @param do_degrid do degridding
    * @param return_visibilities return residual or predicted visibilities
    * @param do_grid do gridding
@@ -1435,6 +1438,7 @@ public:
   grid_visibilities_base(
     Device host_device,
     VisDataVector&& visibilities,
+    bool update_grid_weights,
     bool do_grid,
     bool return_visibilities,
     bool do_degrid) &&;
@@ -1448,11 +1452,13 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) const &;
+    VisDataVector&& visibilities,
+    bool update_grid_weights = false) const &;
 
   /** grid visibilities, without degridding (template-free, rvalue reference
    * version)
@@ -1464,11 +1470,13 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) &&;
+    VisDataVector&& visibilities,
+    bool update_grid_weights = false) &&;
 
   /** grid visibilities, without degridding (templated, const version)
    *
@@ -1481,15 +1489,20 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) const & {
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = false) const & {
 
     return
-      grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
+      grid_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
   };
 
   /** grid visibilities, without degridding (templated, rvalue reference
@@ -1504,16 +1517,21 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
   rval_t<GridderState>
   grid_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) && {
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = false) && {
 
     return
       std::move(*this)
-      .grid_visibilities(host_device, VisDataVector(std::move(visibilities)));
+      .grid_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
   };
 
   /** degrid and grid visibilities (template-free, const version)
@@ -1525,11 +1543,13 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   rval_t<GridderState>
   degrid_grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) const &;
+    VisDataVector&& visibilities,
+    bool update_grid_weights = false) const &;
 
   /** degrid and grid visibilities (template-free, rvalue reference version)
    *
@@ -1540,11 +1560,13 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   rval_t<GridderState>
   degrid_grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) &&;
+    VisDataVector&& visibilities,
+    bool update_grid_weights = false) &&;
 
   /** degrid and grid visibilities (templated, const version)
    *
@@ -1557,17 +1579,20 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
   rval_t<GridderState>
   degrid_grid_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) const & {
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = false) const & {
 
     return
       degrid_grid_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
   };
 
   /** degrid and grid visibilities (templated, rvalue reference version)
@@ -1581,17 +1606,20 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
   rval_t<GridderState>
   degrid_grid_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) && {
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = false) && {
 
     return
       std::move(*this).degrid_grid_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
   };
 
   /** degrid visibilities, returning predicted visibilities (template-free,
@@ -1708,11 +1736,13 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   degrid_grid_get_residual_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) const &;
+    VisDataVector&& visibilities,
+    bool update_grid_weights = false) const &;
 
   /** degrid and grid visibilities, returning residual visibilities
    * (template-free, rvalue reference version)
@@ -1724,11 +1754,13 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   degrid_grid_get_residual_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) &&;
+    VisDataVector&& visibilities,
+    bool update_grid_weights = false) &&;
 
   /** degrid and grid visibilities, returning residual visibilities (templated,
    * const version)
@@ -1742,17 +1774,20 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
   rval_t<std::tuple<GridderState, future<std::vector<VisData<N>>>>>
   degrid_grid_get_residual_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) const & {
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = false) const & {
 
     auto tpl_or_err =
       degrid_grid_get_residual_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
     if (hpg::is_value(tpl_or_err)) {
       GridderState gs;
       future<VisDataVector> fvs;
@@ -2294,11 +2329,13 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   opt_t<Error>
   grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities);
+    VisDataVector&& visibilities,
+    bool update_grid_weights = false);
 
   /** grid visibilities (template version)
    *
@@ -2308,17 +2345,20 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
   opt_t<Error>
   grid_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) {
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = false) {
 
     return
       grid_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
   }
 
   /** degrid and grid visibilities (template-free version)
@@ -2327,11 +2367,13 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   opt_t<Error>
   degrid_grid_visibilities(
     Device host_device,
-    VisDataVector&& visibilities);
+    VisDataVector&& visibilities,
+    bool update_grid_weights = false);
 
   /** degrid and grid visibilities (template version)
    *
@@ -2341,17 +2383,20 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
   opt_t<Error>
   degrid_grid_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) {
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = false) {
 
     return
       degrid_grid_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
   }
 
   /** degrid visibilities, returning predicted visibilities (template-free
@@ -2407,11 +2452,13 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   rval_t<future<VisDataVector>>
   degrid_grid_get_residual_visibilities(
     Device host_device,
-    VisDataVector&& visibilities);
+    VisDataVector&& visibilities,
+    bool update_grid_weights = false);
 
   /** degrid and grid visibilities, returning residual visibilities (template
    * version)
@@ -2424,17 +2471,20 @@ public:
    *
    * @param host_device device to use for copying visibilities
    * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
   rval_t<future<std::vector<VisData<N>>>>
   degrid_grid_get_residual_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) {
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = false) {
 
     auto fvs_or_err =
       degrid_grid_get_residual_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
     if (hpg::is_value(fvs_or_err))
       return
         GridderState::future_visibilities_narrow<N>(
