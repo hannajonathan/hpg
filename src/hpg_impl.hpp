@@ -2011,7 +2011,7 @@ public:
   static std::unique_ptr<GridValueViewArray>
   copy_from(
     const std::string& name,
-    value_type* src,
+    const value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
@@ -2037,7 +2037,8 @@ public:
         K::LayoutLeft,
         typename grid_t::memory_space,
         K::MemoryTraits<K::Unmanaged>> srcv(
-          reinterpret_cast<typename grid_t::pointer_type>(src),
+          reinterpret_cast<typename grid_t::pointer_type>(
+            const_cast<value_type *>(src)),
           grid.extent(0), grid.extent(1), grid.extent(2), grid.extent(3));
       K::deep_copy(espace, grid, srcv);
       espace.fence();
@@ -2049,7 +2050,8 @@ public:
         K::LayoutRight,
         typename grid_t::memory_space,
         K::MemoryTraits<K::Unmanaged>> srcv(
-          reinterpret_cast<typename grid_t::pointer_type>(src),
+          reinterpret_cast<typename grid_t::pointer_type>(
+            const_cast<value_type *>(src)),
           grid.extent(0), grid.extent(1), grid.extent(2), grid.extent(3));
       K::deep_copy(espace, grid, srcv);
       espace.fence();
@@ -2066,7 +2068,7 @@ public:
   copy_from(
     const std::string& name,
     Device host_device,
-    value_type* src,
+    const value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
@@ -2193,7 +2195,7 @@ public:
   static std::unique_ptr<GridWeightViewArray>
   copy_from(
     const std::string& name,
-    value_type* src,
+    const value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
@@ -2214,7 +2216,8 @@ public:
         K::LayoutLeft,
         typename weight_t::memory_space,
         K::MemoryTraits<K::Unmanaged>> srcv(
-          reinterpret_cast<typename weight_t::pointer_type>(src),
+          reinterpret_cast<typename weight_t::pointer_type>(
+            const_cast<value_type *>(src)),
           weight.extent(0), weight.extent(1));
       K::deep_copy(espace, weight, srcv);
       espace.fence();
@@ -2226,7 +2229,8 @@ public:
         K::LayoutRight,
         typename weight_t::memory_space,
         K::MemoryTraits<K::Unmanaged>> srcv(
-          reinterpret_cast<typename weight_t::pointer_type>(src),
+          reinterpret_cast<typename weight_t::pointer_type>(
+            const_cast<value_type *>(src)),
           weight.extent(0), weight.extent(1));
       K::deep_copy(espace, weight, srcv);
       espace.fence();
@@ -2243,7 +2247,7 @@ public:
   copy_from(
     const std::string& name,
     Device host_device,
-    value_type* src,
+    const value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
@@ -3950,7 +3954,7 @@ GridValueArray::copy_from(
   const std::string& name,
   Device target_device,
   Device host_device,
-  value_type* src,
+  const value_type* src,
   const std::array<unsigned, GridValueArray::rank>& extents,
   Layout layout) {
 
@@ -4006,7 +4010,7 @@ GridWeightArray::copy_from(
   const std::string& name,
   Device target_device,
   Device host_device,
-  value_type* src,
+  const value_type* src,
   const std::array<unsigned, GridWeightArray::rank>& extents,
   Layout layout) {
 

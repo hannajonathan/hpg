@@ -854,7 +854,7 @@ public:
     const std::string& name,
     Device target_device,
     Device host_device,
-    value_type* src,
+    const value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout layout = Layout::Left);
 
@@ -939,7 +939,7 @@ public:
     const std::string& name,
     Device target_device,
     Device host_device,
-    value_type* src,
+    const value_type* src,
     const std::array<unsigned, rank>& extents,
     Layout layout = Layout::Left);
 
