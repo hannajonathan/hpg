@@ -666,14 +666,18 @@ create_input_data(
       std::accumulate(
         gsize.begin(),
         gsize.end(),
-        1u,
-        std::multiplies<unsigned>()));
-    hpg::GridValueArray::value_type* vals = result.model_values.data();
+        (size_t)1,
+        std::multiplies<size_t>()));
+    auto vals_p = result.model_values.data();
     K::parallel_for(
+      "init_model",
       K::RangePolicy<K::OpenMP>(0, result.model_values.size()),
-      KOKKOS_LAMBDA(int i) {
+      KOKKOS_LAMBDA(long i) {
         auto rstate = generator.get_state();
-        *(vals + i) = {rstate.frand(-1, 1), rstate.frand(-1, 1)};
+        *(vals_p + i) =
+          hpg::GridValueArray::value_type(
+            rstate.drand(-1, 1),
+            rstate.drand(-1, 1));
         generator.free_state(rstate);
       });
   }
