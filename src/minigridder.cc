@@ -80,6 +80,17 @@ split_arg(const std::string& s, char sep = ',') {
   return result;
 }
 
+/** parse a boolean argument value
+ */
+argwrap<std::vector<bool>>
+parse_bool_args(const std::string& s) {
+
+  std::vector<bool> result;
+  for (auto& a : split_arg(s))
+    result.push_back(std::min(std::stoul(a), 1ul));
+  return argwrap(result);
+}
+
 /** parse an unsigned integer argument value
  */
 argwrap<std::vector<unsigned>>
@@ -252,6 +263,7 @@ struct TrialSpec {
     const hpg::Device& device_,
     const int& streams_,
     const Op& op_,
+    bool sow_,
     const std::vector<std::vector<int>>& mueller_indexes_,
     const int& gsize_,
     const std::vector<unsigned>& cfsize_,
@@ -265,6 +277,7 @@ struct TrialSpec {
     : device(device_)
     , streams(streams_)
     , op(op_)
+    , sow(sow_)
     , mueller_indexes(mueller_indexes_)
     , gsize(gsize_)
     , oversampling(oversampling_)
@@ -280,6 +293,7 @@ struct TrialSpec {
 
   hpg::Device device;
   Op op;
+  bool sow;
   int streams;
   std::vector<std::vector<int>> mueller_indexes;
   int gsize;
@@ -299,6 +313,7 @@ struct TrialSpec {
    "dev",
    "str",
    "op",
+   "sow",
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
    "vsn",
 #endif
@@ -381,6 +396,7 @@ struct TrialSpec {
     oss << pad_right(device_codes.at(device))
         << pad_right(std::to_string(streams))
         << pad_right(op_codes.at(op))
+        << pad_right(sow ? "T" : "F")
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         << pad_right(vsns.str())
 #endif
@@ -792,11 +808,13 @@ run_hpg_trial<Op::Gridding>(
   run_hpg_trial_op<Op::Gridding>(
     spec,
     input_data,
-    [](hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
+    [update_grid_weights=spec.sow]
+    (hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
       return
         std::move(gs).grid_visibilities(
           hpg::Device::OpenMP,
-          std::move(vis));
+          std::move(vis),
+          update_grid_weights);
     });
 }
 
@@ -830,11 +848,13 @@ run_hpg_trial<Op::DegriddingAndGridding>(
   run_hpg_trial_op<Op::DegriddingAndGridding>(
     spec,
     input_data,
-    [](hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
+    [update_grid_weights=spec.sow]
+    (hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
       return
         std::move(gs).degrid_grid_visibilities(
           hpg::Device::OpenMP,
-          std::move(vis));
+          std::move(vis),
+          update_grid_weights);
     });
 }
 
@@ -849,6 +869,7 @@ run_trials(
   const std::vector<unsigned>& visibilities,
   const std::vector<unsigned>& repeats,
   const std::vector<Op>& ops,
+  const std::vector<bool>& update_grid_weights,
   const std::vector<hpg::Device>& devices,
   const std::vector<unsigned>& kernels,
   const std::vector<unsigned>& streams) {
@@ -864,43 +885,47 @@ run_trials(
             for (auto& oversampling : oversamplings) {
               for (auto& kernel : kernels) {
                 for (auto& op : ops) {
-                  const auto input_data =
-                    create_input_data(
-                      mindexes,
-                      gsize,
-                      cfsize,
-                      oversampling,
-                      num_visibilities,
-                      op,
-                      rand_pool_type(348842));
-                  for (auto& device : devices) {
-                    for (auto& stream : streams) {
-                      TrialSpec spec(
-                        device,
-                        std::max(stream, 1u),
-                        op,
+                  for (auto sow : update_grid_weights) {
+                    const auto input_data =
+                      create_input_data(
                         mindexes,
                         gsize,
                         cfsize,
                         oversampling,
-                        input_data.visibilities.num_elements(),
-                        num_repeats
+                        num_visibilities,
+                        op,
+                        rand_pool_type(348842));
+                    for (auto& device : devices) {
+                      for (auto& stream : streams) {
+                        TrialSpec spec(
+                          device,
+                          std::max(stream, 1u),
+                          op,
+                          sow,
+                          mindexes,
+                          gsize,
+                          cfsize,
+                          oversampling,
+                          input_data.visibilities.num_elements(),
+                          num_repeats
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-                        , {kernel, 0, 0, 0}
+                          , {kernel, 0, 0, 0}
 #endif
-                        );
-                      switch (op) {
-                      case Op::Gridding:
-                        run_hpg_trial<Op::Gridding>(spec, input_data);
-                        break;
-                      case Op::Degridding:
-                        run_hpg_trial<Op::Degridding>(spec, input_data);
-                        break;
-                      case Op::DegriddingAndGridding:
-                        run_hpg_trial<Op::DegriddingAndGridding>(
-                          spec,
-                          input_data);
-                        break;
+                          );
+                        switch (op) {
+                        case Op::Gridding:
+                          run_hpg_trial<Op::Gridding>(spec, input_data);
+                          break;
+                        case Op::Degridding:
+                          if (!sow)
+                            run_hpg_trial<Op::Degridding>(spec, input_data);
+                          break;
+                        case Op::DegriddingAndGridding:
+                          run_hpg_trial<Op::DegriddingAndGridding>(
+                            spec,
+                            input_data);
+                          break;
+                        }
                       }
                     }
                   }
@@ -1008,6 +1033,15 @@ main(int argc, char* argv[]) {
       .action(parse_ops);
   }
   {
+    bool dflt = false;
+    args
+      .add_argument("-w", "--weights")
+      .default_value(argwrap<std::vector<bool>>({dflt}))
+      .help("sum of weights (0|1) ["s + (dflt ? "1" : "0") + "]")
+      .action(parse_bool_args);
+  }
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  {
     unsigned dflt = 0;
     args
       .add_argument("-k", "--kernel")
@@ -1015,6 +1049,7 @@ main(int argc, char* argv[]) {
       .help("gridding kernel version ["s + std::to_string(dflt) + "]")
       .action(parse_unsigned_args);
   }
+#endif
   {
     unsigned dflt = 0;
     args
@@ -1059,8 +1094,13 @@ main(int argc, char* argv[]) {
   auto devices =
     args.get<argwrap<std::vector<hpg::Device>>>("--device").val;
   auto ops = args.get<argwrap<std::vector<Op>>>("--op").val;
+  auto wgts = args.get<argwrap<std::vector<bool>>>("--weights").val;
   auto device_ids = args.get<argwrap<std::vector<unsigned>>>("--id").val;
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   auto kernels = args.get<argwrap<std::vector<unsigned>>>("--kernel").val;
+#else
+  const std::vector<unsigned> kernels{0};
+#endif
   auto streams = args.get<argwrap<std::vector<unsigned>>>("--streams").val;
   auto mueller_indexes =
     parse_mueller_indexes(args.get<std::string>("--mueller"));
@@ -1083,6 +1123,7 @@ main(int argc, char* argv[]) {
       visibilities,
       repeats,
       ops,
+      wgts,
       devices,
       kernels,
       streams);
