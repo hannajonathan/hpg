@@ -956,7 +956,7 @@ TEST(GridderState, Reset) {
     auto gs2 =
       hpg::get_value(
         std::move(gs1)
-        .grid_visibilities(default_host_device, std::move(vis)));
+        .grid_visibilities(default_host_device, std::move(vis), true));
 
     auto [gs3, values] = std::move(gs2).grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));
@@ -1130,7 +1130,8 @@ TEST(GridderState, Serialization) {
               std::move(gs)
               .grid_visibilities(
                 default_host_device,
-                std::move(vis[first]));
+                std::move(vis[first]),
+                true);
           })
         .and_then(
           [=](auto&& gs) mutable {
@@ -1146,7 +1147,8 @@ TEST(GridderState, Serialization) {
               std::move(gs)
               .grid_visibilities(
                 default_host_device,
-                std::move(vis[second]));
+                std::move(vis[second]),
+                true);
           })
         .map(
           [](auto&& gs) {
@@ -1260,7 +1262,8 @@ TEST(GridderState, Gridding) {
               .grid_visibilities(
                 default_host_device,
                 std::vector<hpg::VisData<1>>{
-                  hpg::VisData<1>({vis}, {wgt}, c, 0.0, uvw, 0, {0, 0})});
+                  hpg::VisData<1>({vis}, {wgt}, c, 0.0, uvw, 0, {0, 0})},
+                true);
           })
         .map(
           [](auto&& gs) {
@@ -1325,7 +1328,8 @@ TEST(GridderState, GridOne) {
               .grid_visibilities(
                 default_host_device,
                 std::vector<hpg::VisData<1>>{
-                  hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw, 0, {0, 0})});
+                  hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw, 0, {0, 0})},
+                true);
           })
         .map(
           [](auto&& gs) {

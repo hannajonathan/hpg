@@ -465,7 +465,7 @@ TEST(Gridder, Reset) {
     MyCFArray cf = create_cf(10, {cf_size}, rng);
     g.set_convolution_function(default_host_device, MyCFArray(cf));
     init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
-    g.grid_visibilities(default_host_device, std::move(vis));
+    g.grid_visibilities(default_host_device, std::move(vis), true);
 
     auto values = g.grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));
