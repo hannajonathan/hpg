@@ -581,7 +581,7 @@ init_mueller_indexes(const std::vector<std::vector<int>>& mueller_indexes) {
   std::vector<std::array<int, N>> result;
   for (size_t mrow = 0; mrow < mueller_indexes.size(); ++mrow) {
     auto& mi_mrow = mueller_indexes[mrow];
-    assert(mi_mrow.size() == 1);
+    assert(mi_mrow.size() == N);
     std::array<int, N> mindexes;
     for (size_t mcol = 0; mcol < N; ++mcol)
       mindexes[mcol] = mi_mrow[mcol];
