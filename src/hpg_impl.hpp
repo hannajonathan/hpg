@@ -949,7 +949,7 @@ struct HPG_EXPORT VisibilityGridder final {
           decltype(vis_array) va;
           // parallel loop over grid X
           K::parallel_reduce(
-            K::TeamVectorRange(team_member, N_X),
+            K::TeamThreadRange(team_member, N_X),
             [=](const int X, decltype(vis_array)& vis_array_l) {
               auto phi_X = phi_X0 + X * dphi_X;
               // loop over grid Y
@@ -1011,7 +1011,7 @@ struct HPG_EXPORT VisibilityGridder final {
           poln_array_type<acc_cf_t::value_type, N> grid_wgt;
           // parallel loop over grid X
           K::parallel_reduce(
-            K::TeamVectorRange(team_member, N_X),
+            K::TeamThreadRange(team_member, N_X),
             [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
               auto phi_X = phi_X0 + X * dphi_X;
               // loop over grid Y
