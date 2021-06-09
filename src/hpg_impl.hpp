@@ -954,7 +954,7 @@ struct HPG_EXPORT VisibilityGridder final {
               auto phi_X = phi_X0 + X * dphi_X;
               // loop over grid Y
               for (int Y = 0; Y < N_Y; ++Y) {
-                cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
+                auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
                 screen.imag() *= -1;
                 const auto mv =
                   model(
