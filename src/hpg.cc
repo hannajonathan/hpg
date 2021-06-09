@@ -134,8 +134,8 @@ struct Impl::GridderState {
   allocate_convolution_function_region(GS&& st, const CFArrayShape* shape) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    auto error = result.impl->allocate_convolution_function_region(shape);
-    if (error)
+    if (auto error = result.impl->allocate_convolution_function_region(shape);
+        error)
       return std::move(error.value());
     else
       return std::move(result);
@@ -147,9 +147,9 @@ struct Impl::GridderState {
 
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
-      auto error =
-        result.impl->set_convolution_function(host_device, std::move(cf));
-      if (error)
+      if (auto error =
+          result.impl->set_convolution_function(host_device, std::move(cf));
+          error)
         return std::move(error.value());
       else
         return std::move(result);
@@ -164,8 +164,8 @@ struct Impl::GridderState {
 
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
-      auto error = result.impl->set_model(host_device, std::move(gv));
-      if (error)
+      if (auto error = result.impl->set_model(host_device, std::move(gv));
+          error)
         return std::move(error.value());
       else
         return std::move(result);
@@ -255,8 +255,7 @@ struct Impl::GridderState {
   apply_grid_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    auto error = result.impl->apply_grid_fft(norm, sign, in_place);
-    if (error)
+    if (auto error = result.impl->apply_grid_fft(norm, sign, in_place); error)
       return std::move(error.value());
     else
       return std::move(result);
@@ -267,8 +266,7 @@ struct Impl::GridderState {
   apply_model_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    auto error = result.impl->apply_model_fft(norm, sign, in_place);
-    if (error)
+    if (auto error = result.impl->apply_model_fft(norm, sign, in_place); error)
       return std::move(error.value());
     else
       return std::move(result);

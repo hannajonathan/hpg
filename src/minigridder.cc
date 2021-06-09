@@ -186,8 +186,7 @@ parse_mueller_indexes(const std::string& s) {
   std::vector<std::vector<std::vector<int>>> result;
   for (auto& a : split_arg(s)) {
     if (a.front() == 'I') {
-      auto n = std::stoul(a.substr(1));
-      if (n == 1)
+      if (auto n = std::stoul(a.substr(1)); n == 1)
         result.push_back({{0}});
       else if (n == 2)
         result.push_back({{0, -1}, {-1, 1}});
@@ -202,8 +201,7 @@ parse_mueller_indexes(const std::string& s) {
       else
         throw std::runtime_error("invalid diagonal mueller size");
     } else if (a.front() == 'D') {
-      auto n = std::stoul(a.substr(1));
-      if (n == 1)
+      if (auto n = std::stoul(a.substr(1)); n == 1)
         result.push_back({{0}});
       else if (n == 2)
         result.push_back({{0, 1}, {2, 3}});

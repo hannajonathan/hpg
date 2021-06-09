@@ -964,9 +964,8 @@ struct HPG_EXPORT VisibilityGridder final {
                     vis.m_grid_cube)
                   * screen;
                 // loop over visibility polarizations
-                for (int C = 0; C < N; ++C) {
-                  const auto mindex = degridding_mindex(R, C);
-                  if (mindex >= 0) {
+                for (int C = 0; C < N; ++C)
+                  if (const auto mindex = degridding_mindex(R, C); mindex >= 0){
                     cf_t cfv =
                       cf(
                         X + vis.m_cf_major[0],
@@ -979,7 +978,6 @@ struct HPG_EXPORT VisibilityGridder final {
                     vis_array_l.vis[C] += cfv * mv;
                     vis_array_l.wgt[C] += cfv;
                   }
-                }
               }
             },
             K::Sum<decltype(va)>(va));
@@ -1021,9 +1019,8 @@ struct HPG_EXPORT VisibilityGridder final {
                 const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
                 gv_t gv(0);
                 // loop over visibility polarizations
-                for (int C = 0; C < N; ++C) {
-                  const auto mindex = gridding_mindex(R, C);
-                  if (mindex >= 0) {
+                for (int C = 0; C < N; ++C)
+                  if (const auto mindex = gridding_mindex(R, C); mindex >= 0) {
                     cf_t cfv =
                       cf(
                         X + vis.m_cf_major[0],
@@ -1036,7 +1033,6 @@ struct HPG_EXPORT VisibilityGridder final {
                     gv += gv_t(cfv * screen * vv.vals[C]);
                     grid_wgt_l.vals[C] += cfv;
                   }
-                }
                 pseudo_atomic_add<execution_space>(
                   grid(
                     X + vis.m_grid_coord[0],
@@ -1067,9 +1063,8 @@ struct HPG_EXPORT VisibilityGridder final {
                 cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
                 gv_t gv(0);
                 // loop over visibility polarizations
-                for (int C = 0; C < N; ++C) {
-                  const auto mindex = gridding_mindex(R, C);
-                  if (mindex >= 0) {
+                for (int C = 0; C < N; ++C)
+                  if (const auto mindex = gridding_mindex(R, C); mindex >= 0) {
                     cf_t cfv =
                       cf(
                         X + vis.m_cf_major[0],
@@ -1081,7 +1076,6 @@ struct HPG_EXPORT VisibilityGridder final {
                     cfv.imag() *= cf_im_factor;
                     gv += gv_t(cfv * screen * vv.vals[C]);
                   }
-                }
                 pseudo_atomic_add<execution_space>(
                   grid(
                     X + vis.m_grid_coord[0],
