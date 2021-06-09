@@ -687,18 +687,6 @@ compute_vis_coord(
     cf_minor = oversampling + fine_offset;
     cf_major = CFArray::padding - 1;
   }
-  // const double fine_origin = g_size / -(2.0 * (fine_scale / oversampling));
-  // const long fine =
-  //   std::lrint(
-  //     std::floor((coord * inv_lambda - fine_origin) * fine_scale)) -
-  //   (cf_size * oversampling) / 2;
-  // const long major = fine / oversampling;
-  // const long major_fine = major * oversampling;
-  // int major = std::lrint(major_fine / oversampling) - cf_radius + g_offset;
-  // int minor_shift =
-  //   ((fine_coord >= nearest_major_fine_coord) ? 0 : oversampling);
-  // int minor = fine_coord - (nearest_major_fine_coord - minor_shift);
-  // const long minor = fine - major_fine;
   assert(0 <= cf_minor && cf_minor < oversampling);
   return {grid_coord, cf_major, cf_minor, fine_offset};
 }
@@ -990,7 +978,9 @@ struct HPG_EXPORT VisibilityGridder final {
         for (int C = 0; C < N; ++C)
           result.vals[C] =
             (vis_array.vis[C]
-             / ((vis_array.wgt[C] != (acc_cf_t)0) ? vis_array.wgt[C] : (acc_cf_t)1))
+             / ((vis_array.wgt[C] != (acc_cf_t)0)
+                ? vis_array.wgt[C]
+                : (acc_cf_t)1))
             * conj_phasor;
       }
     }
@@ -1135,15 +1125,15 @@ struct HPG_EXPORT VisibilityGridder final {
       KOKKOS_LAMBDA(const member_type& team_member) {
         auto i = team_member.league_rank();
 
-        const unsigned& cf_cube = visibilities(i).m_cf_index[0];
-        const unsigned& cf_grp = visibilities(i).m_cf_index[1];
+        auto& visibility = visibilities(i);
+        const unsigned& cf_cube = visibility.m_cf_index[0];
+        const unsigned& cf_grp = visibility.m_cf_index[1];
         const auto& cf = cfs[cf_grp];
         const K::Array<int, 2>
           cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
         scratch_phscr_view phi_Y(team_member.team_scratch(0), max_cf_extent_y);
-        const auto& cf_gradient = visibilities(i).m_cf_phase_gradient;
+        const auto& cf_gradient = visibility.m_cf_phase_gradient;
 
-        auto& visibility = visibilities(i);
         GridVis<N, execution_space>
           gvis(visibility, grid_size, oversampling, cf_size, grid_scale);
         poln_array_type<float, N> rvis;
@@ -1170,8 +1160,8 @@ struct HPG_EXPORT VisibilityGridder final {
               weights,
               phi_Y);
         }
-        for (size_t i = 0; i < N; ++i)
-          visibility.m_values[i] = rvis.vals[i];
+        for (size_t p = 0; p < N; ++p)
+          visibility.m_values[p] = rvis.vals[p];
       });
   }
 
