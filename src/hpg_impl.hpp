@@ -846,6 +846,39 @@ namespace Core {
 // we're wrapping each kernel in a class in order to support partial
 // specialization of the kernel functions by execution space
 
+/** names for gridding kernel, specialized on boolean template parameters of
+ *  VisibilityGridder::grid_all()
+ */
+template <bool ugw, bool dd, bool dg>
+struct grid_all_name {
+  static constexpr const char* val = "gridding_???";
+};
+
+template <>
+struct grid_all_name<true, true, true> {
+  static constexpr const char* val = "gridding_WDG";
+};
+
+template <>
+struct grid_all_name<true, false, true> {
+  static constexpr const char* val = "gridding_WdG";
+};
+
+template <>
+struct grid_all_name<false, false, true> {
+  static constexpr const char* val = "gridding_wdG";
+};
+
+template <>
+struct grid_all_name<false, true, true> {
+  static constexpr const char* val = "gridding_wDG";
+};
+
+template <>
+struct grid_all_name<false, true, false> {
+  static constexpr const char* val = "gridding_wDg";
+};
+
 /** gridding kernel
  *
  * Note that the default implementation probably is optimal only for many-core
@@ -1119,7 +1152,7 @@ struct HPG_EXPORT VisibilityGridder final {
     auto shmem_size = scratch_phscr_view::shmem_size(max_cf_extent_y);
 
     K::parallel_for(
-      "gridding",
+      grid_all_name<update_grid_weights, do_degrid, do_grid>::val,
       K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
       .set_scratch_size(0, K::PerTeam(shmem_size)),
       KOKKOS_LAMBDA(const member_type& team_member) {
