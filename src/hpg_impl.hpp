@@ -3254,7 +3254,7 @@ public:
     m_mueller_indexes =
       init_mueller("mueller_indexes", mueller_indexes);
     m_conjugate_mueller_indexes =
-      init_mueller("conjugte_mueller_indexes", conjugate_mueller_indexes);
+      init_mueller("conjugate_mueller_indexes", conjugate_mueller_indexes);
     new_grid(true, true);
   }
 
