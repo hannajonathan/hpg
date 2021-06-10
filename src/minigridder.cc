@@ -258,6 +258,7 @@ parse_cfsizes(const std::string& s) {
  */
 struct TrialSpec {
   TrialSpec(
+    unsigned index_,
     const hpg::Device& device_,
     const int& streams_,
     const Op& op_,
@@ -272,7 +273,8 @@ struct TrialSpec {
     , const std::array<unsigned, 4> versions_
 #endif
     )
-    : device(device_)
+    : index(index_)
+    , device(device_)
     , streams(streams_)
     , op(op_)
     , sow(sow_)
@@ -289,6 +291,7 @@ struct TrialSpec {
      cfsize.push_back(static_cast<int>(s));
  }
 
+  unsigned index;
   hpg::Device device;
   Op op;
   bool sow;
@@ -781,6 +784,7 @@ run_hpg_trial_op(
         return elapsed.count();
       });
   // run trial, and print result
+  K::Profiling::pushRegion("Trial"s + std::to_string(spec.index));
   auto output =
     hpg::fold(
       time_trial(),
@@ -790,6 +794,7 @@ run_hpg_trial_op(
       [&spec](const hpg::Error& err) {
         return spec.skip(err.message());
       });
+  K::Profiling::popRegion();
   std::cout << output << std::endl;
 }
 
@@ -882,6 +887,7 @@ run_trials(
 
   using rand_pool_type = typename K::Random_XorShift64_Pool<K::OpenMP>;
 
+  unsigned trial_index = 0;
   std::cout << TrialSpec::id_header() << std::endl;
   for (auto& num_repeats : repeats) {
     for (auto& num_visibilities : visibilities) {
@@ -904,6 +910,7 @@ run_trials(
                     for (auto& device : devices) {
                       for (auto& stream : streams) {
                         TrialSpec spec(
+                          trial_index++,
                           device,
                           std::max(stream, 1u),
                           op,
