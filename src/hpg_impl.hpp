@@ -1112,11 +1112,9 @@ struct HPG_EXPORT VisibilityGridder final {
         // skip this visibility if all of the updated grid points are not
         // within grid bounds
         if ((0 <= gvis.m_grid_coord[0])
-            && (gvis.m_grid_coord[0] + cf_size[0]
-                <= grid.extent_int(static_cast<int>(GridAxis::x)))
+            && (gvis.m_grid_coord[0] + cf_size[0] <= grid_size[0])
             && (0 <= gvis.m_grid_coord[1])
-            && (gvis.m_grid_coord[1] + cf_size[1]
-                <= grid.extent_int(static_cast<int>(GridAxis::y)))){
+            && (gvis.m_grid_coord[1] + cf_size[1] <= grid_size[1])) {
           rvis =
             grid_vis(
               team_member,
