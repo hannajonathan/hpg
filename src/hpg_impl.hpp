@@ -737,7 +737,7 @@ mag(const K::complex<T>& v) {
  * visibility metadata values needed by gridding kernel
  */
 template <unsigned N, typename execution_space>
-struct GridVis final {
+struct Vis final {
 
   int m_grid_coord[2]; /**< grid coordinate */
   int m_cf_minor[2]; /**< CF minor coordinate */
@@ -749,9 +749,9 @@ struct GridVis final {
   int m_grid_cube; /**< grid cube index */
   bool m_pos_w; /**< true iff W coordinate is strictly positive */
 
-  KOKKOS_INLINE_FUNCTION GridVis() {};
+  KOKKOS_INLINE_FUNCTION Vis() {};
 
-  KOKKOS_INLINE_FUNCTION GridVis(
+  KOKKOS_INLINE_FUNCTION Vis(
     const VisData<N>& vis,
     const K::Array<int, 2>& grid_size,
     const K::Array<int, 2>& oversampling,
@@ -792,13 +792,13 @@ struct GridVis final {
     m_pos_w = vis.m_uvw[2] > 0;
   }
 
-  GridVis(GridVis const&) = default;
+  Vis(Vis const&) = default;
 
-  GridVis(GridVis&&) = default;
+  Vis(Vis&&) = default;
 
-  GridVis& operator=(GridVis const&) = default;
+  Vis& operator=(Vis const&) = default;
 
-  GridVis& operator=(GridVis&&) = default;
+  Vis& operator=(Vis&&) = default;
 };
 
 /** almost atomic complex addition
@@ -905,7 +905,7 @@ struct HPG_EXPORT VisibilityGridder final {
   static KOKKOS_FUNCTION poln_array_type<vis_t::value_type, N>
   grid_vis(
     const member_type& team_member,
-    const GridVis<N, execution_space>& vis,
+    const Vis<N, execution_space>& vis,
     const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
     const K::Array<int, 2>& cf_size,
@@ -1167,7 +1167,7 @@ struct HPG_EXPORT VisibilityGridder final {
         scratch_phscr_view phi_Y(team_member.team_scratch(0), max_cf_extent_y);
         const auto& cf_gradient = visibility.m_cf_phase_gradient;
 
-        GridVis<N, execution_space>
+        Vis<N, execution_space>
           gvis(visibility, grid_size, oversampling, cf_size, grid_scale);
         poln_array_type<float, N> rvis;
         // skip this visibility if all of the updated grid points are not
