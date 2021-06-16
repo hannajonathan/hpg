@@ -1270,6 +1270,213 @@ struct HPG_EXPORT VisibilityGridder final {
   }
 };
 
+/** experimental gridding kernel
+ *
+ * Note that this implementation probably is optimal only for many-core
+ * devices, probably not OpenMP (although it is correct on all devices).
+ */
+template <unsigned N, typename execution_space>
+struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
+
+  using DefaultVisibilityGridder = VisibilityGridder<N, execution_space, 0>;
+
+  using member_type = typename DefaultVisibilityGridder::member_type;
+
+  using scratch_phscr_view =
+    typename DefaultVisibilityGridder::scratch_phscr_view;
+
+  // function for gridding a single visibility
+  template <
+    typename cf_layout,
+    typename grid_layout,
+    typename memory_space>
+  static KOKKOS_FUNCTION void
+  grid_vis(
+    const member_type& team_member,
+    const Vis<N, execution_space>& vis,
+    const unsigned gpol,
+    const K::Array<int, 2>& oversampling,
+    const cf_view<cf_layout, memory_space>& cf,
+    const K::Array<int, 2>& cf_size,
+    const unsigned cf_cube,
+    const K::Array<cf_phase_gradient_fp, 2>& cf_gradient,
+    const const_mindex_view<memory_space>& mueller_indexes,
+    const const_mindex_view<memory_space>& conjugate_mueller_indexes,
+    const grid_view<grid_layout, memory_space>& grid,
+    const weight_view<typename execution_space::array_layout, memory_space>&
+      weights,
+    const scratch_phscr_view& phi_Y) {
+
+    const auto& N_X = cf_size[0];
+    const auto& N_Y = cf_size[1];
+
+    auto gridding_mindex =
+      K::subview(
+        (vis.m_pos_w ? mueller_indexes : conjugate_mueller_indexes),
+        gpol,
+        K::ALL);
+    cf_fp cf_im_factor = (vis.m_pos_w ? -1 : 1);
+
+    // phase screen constants at this visibility's location
+    const auto phi_X0 =
+      -cf_gradient[0]
+      * ((cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
+    const auto dphi_X = cf_gradient[0] * oversampling[0];
+    const auto phi_Y0 =
+      -cf_gradient[1]
+      * ((cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
+    const auto dphi_Y = cf_gradient[1] * oversampling[1];
+
+    // compute the values of the phase screen along the Y axis now and store the
+    // results in scratch memory because gridding on the Y axis accesses the
+    // phase screen values for every row of the Mueller matrix column
+    K::parallel_for(
+      K::TeamVectorRange(team_member, N_Y),
+      [=](const int Y) {
+        phi_Y(Y) = phi_Y0 + Y * dphi_Y;
+      });
+    team_member.team_barrier();
+
+    // accumulate to grid, and CF weights per visibility polarization
+
+    // serial loop over grid mrow
+    poln_array_type<acc_cf_t::value_type, N> grid_wgt;
+    // parallel loop over grid X
+    K::parallel_reduce(
+      K::TeamThreadRange(team_member, N_X),
+      [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
+        auto phi_X = phi_X0 + X * dphi_X;
+        // loop over grid Y
+        for (int Y = 0; Y < N_Y; ++Y) {
+          const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
+          gv_t gv(0);
+          // loop over visibility polarizations
+          for (int vpol = 0; vpol < N; ++vpol)
+            if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
+              cf_t cfv =
+                cf(
+                  X + vis.m_cf_major[0],
+                  Y + vis.m_cf_major[1],
+                  mindex,
+                  cf_cube,
+                  vis.m_cf_minor[0],
+                  vis.m_cf_minor[1]);
+              cfv.imag() *= cf_im_factor;
+              gv += gv_t(cfv * screen * vis.m_values[vpol]);
+              grid_wgt_l.vals[vpol] += cfv;
+            }
+          pseudo_atomic_add<execution_space>(
+            grid(
+              X + vis.m_grid_coord[0],
+              Y + vis.m_grid_coord[1],
+              gpol,
+              vis.m_grid_cube),
+            gv);
+        }
+      },
+      K::Sum<decltype(grid_wgt)>(grid_wgt));
+    // compute final weight and add it to weights
+    K::single(
+      K::PerTeam(team_member),
+      [&]() {
+        grid_value_fp twgt = 0;
+        for (int vpol = 0; vpol < N; ++vpol)
+          twgt += grid_value_fp(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]);
+        K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt);
+      });
+  }
+
+  template <
+    typename cf_layout,
+    typename grid_layout,
+    typename memory_space>
+  static void
+  kernel(
+    execution_space exec,
+    const K::Array<
+      cf_view<cf_layout, memory_space>,
+      HPG_MAX_NUM_CF_GROUPS>& cfs,
+    const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
+    unsigned max_cf_extent_y,
+    const_mindex_view<memory_space> mueller_indexes,
+    const_mindex_view<memory_space> conjugate_mueller_indexes,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool do_grid,
+    int num_visibilities,
+    const visdata_view<N, memory_space>& visibilities,
+    const K::Array<grid_scale_fp, 2>& grid_scale,
+    const const_grid_view<grid_layout, memory_space>& model,
+    const grid_view<grid_layout, memory_space>& grid,
+    const weight_view<typename execution_space::array_layout, memory_space>&
+      weights) {
+
+    ///// FIXME /////
+    assert(!update_grid_weights);
+    assert(!do_degrid);
+    assert(do_grid);
+    //////////
+
+    const K::Array<int, 2>
+      grid_size{
+        grid.extent_int(static_cast<int>(GridAxis::x)),
+        grid.extent_int(static_cast<int>(GridAxis::y))};
+    const K::Array<int, 2>
+      oversampling{
+        cfs[0].extent_int(static_cast<int>(CFAxis::x_minor)),
+        cfs[0].extent_int(static_cast<int>(CFAxis::y_minor))};
+
+    auto shmem_size = scratch_phscr_view::shmem_size(max_cf_extent_y);
+
+    const auto N_R = grid.extent_int(static_cast<int>(GridAxis::mrow));
+
+    K::parallel_for(
+      "gridding",
+      K::TeamPolicy<execution_space>(exec, N_R * num_visibilities, K::AUTO)
+      .set_scratch_size(0, K::PerTeam(shmem_size)),
+      KOKKOS_LAMBDA(const member_type& team_member) {
+        auto i = team_member.league_rank() / N_R;
+        auto gpol = team_member.league_rank() % N_R;
+
+        auto& visibility = visibilities(i);
+        const unsigned& cf_cube = visibility.m_cf_index[0];
+        const unsigned& cf_grp = visibility.m_cf_index[1];
+        const auto& cf = cfs[cf_grp];
+        const K::Array<int, 2>
+          cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
+        scratch_phscr_view phi_Y(team_member.team_scratch(0), max_cf_extent_y);
+        const auto& cf_gradient = visibility.m_cf_phase_gradient;
+
+        Vis<N, execution_space>
+          vis(visibility, grid_size, oversampling, cf_size, grid_scale);
+        // skip this visibility if all of the updated grid points are not
+        // within grid bounds
+        if ((0 <= vis.m_grid_coord[0])
+            && (vis.m_grid_coord[0] + cf_size[0] <= grid_size[0])
+            && (0 <= vis.m_grid_coord[1])
+            && (vis.m_grid_coord[1] + cf_size[1] <= grid_size[1])) {
+          grid_vis<cf_layout, grid_layout, memory_space>(
+            team_member,
+            vis,
+            gpol,
+            oversampling,
+            cf,
+            cf_size,
+            cf_cube,
+            cf_gradient,
+            mueller_indexes,
+            conjugate_mueller_indexes,
+            grid,
+            weights,
+            phi_Y);
+        }
+      });
+
+
+
+  }
+};
+
 /** grid normalization kernel
  */
 template <typename execution_space, unsigned version>
@@ -3479,6 +3686,43 @@ public:
 
   template <unsigned N>
   State::maybe_vis_t
+  grid_visibilities_4l(
+    Device /*host_device*/,
+    std::vector<::hpg::VisData<N>>&& visibilities,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool return_visibilities,
+    bool do_grid) {
+
+    auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    auto len =
+      exec_pre.copy_visibilities_to_device(std::move(visibilities));
+
+    auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
+    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
+    const_grid_view<typename GridLayout<D>::layout, memory_space> model
+      = m_model;
+    Core::VisibilityGridder<N, execution_space, 1>::kernel(
+      exec_grid.space,
+      cf.cf_d,
+      cf.cf_radii,
+      cf.max_cf_extent_y,
+      m_mueller_indexes,
+      m_conjugate_mueller_indexes,
+      update_grid_weights,
+      do_degrid,
+      do_grid,
+      len,
+      exec_grid.template visdata<N>(),
+      m_grid_scale,
+      model,
+      m_grid,
+      m_weights);
+    return exec_grid.copy_visibilities_to_host(return_visibilities);
+  }
+
+  template <unsigned N>
+  State::maybe_vis_t
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
@@ -3500,6 +3744,16 @@ public:
     case 0:
       return
         default_grid_visibilities(
+          host_device,
+          std::move(visibilities),
+          update_grid_weights,
+          do_degrid,
+          return_visibilities,
+          do_grid);
+      break;
+    case 1:
+      return
+        grid_visibilities_4l(
           host_device,
           std::move(visibilities),
           update_grid_weights,
