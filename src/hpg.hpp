@@ -1090,6 +1090,11 @@ protected:
   std::shared_ptr<Impl::State> impl; /**< state implementation */
 
 public:
+
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  static constexpr std::array<unsigned, 4> default_versions{0, 0, 0, 0};
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+
   /** default constructor
    *
    * the null state, most methods will fail when called on a target with this
@@ -1138,7 +1143,7 @@ protected:
     const IArrayVector& mueller_indexes,
     const IArrayVector& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
+    , const std::array<unsigned, 4>& implementation_versions = default_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     );
 
@@ -1185,7 +1190,7 @@ public:
     const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
     const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
+    , const std::array<unsigned, 4>& implementation_versions = default_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     ) noexcept {
 
@@ -2187,7 +2192,8 @@ public:
     const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
     const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions = {0, 0, 0, 0}
+    , const std::array<unsigned, 4>& implementation_versions =
+      GridderState::default_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     ) noexcept {
 
