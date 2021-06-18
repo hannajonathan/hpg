@@ -750,8 +750,8 @@ struct Vis final {
   int m_cf_major[2]; /**< CF major coordinate */
   int m_fine_offset[2]; /**< visibility position - nearest major grid */
   int m_cf_size[2]; /**< cf size */
-  const K::Array<vis_t, N>* m_values; /**< visibility values */
-  const K::Array<vis_weight_fp, N>* m_weights; /**< visibility weights */
+  const K::Array<vis_t, N>& m_values; /**< visibility values */
+  const K::Array<vis_weight_fp, N>& m_weights; /**< visibility weights */
   K::complex<vis_phase_fp> m_phasor;
   const int& m_grid_cube; /**< grid cube index */
   const int& m_cf_cube; /**< cf cube index */
@@ -764,13 +764,13 @@ struct Vis final {
 
   KOKKOS_INLINE_FUNCTION Vis(
     const VisData<N>& vis,
-    const K::Array<vis_t, N>* vals,
+    const K::Array<vis_t, N>& vals,
     const K::Array<int, 2>& grid_size,
     const K::Array<grid_scale_fp, 2>& grid_scale,
     const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     const K::Array<int, 2>& oversampling)
     : m_values(vals)
-    , m_weights(&(vis.m_weights))
+    , m_weights(vis.m_weights)
     , m_phasor(cphase<execution_space>(vis.m_d_phase))
     , m_grid_cube(vis.m_grid_cube)
     , m_cf_cube(vis.m_cf_index[0])
@@ -1017,8 +1017,8 @@ struct HPG_EXPORT VisibilityGridder final {
       // compute residual visibilities (result) and gridding values (vv)
       poln_array_type<vis_t::value_type, N> vv;
       for (int C = 0; C < N; ++C) {
-        result.vals[C] = (*vis.m_values)[C] - result.vals[C];
-        vv.vals[C] = result.vals[C] * vis.m_phasor * (*vis.m_weights)[C];
+        result.vals[C] = vis.m_values[C] - result.vals[C];
+        vv.vals[C] = result.vals[C] * vis.m_phasor * vis.m_weights[C];
       }
 
       // accumulate to grid, and CF weights per visibility polarization
@@ -1068,7 +1068,7 @@ struct HPG_EXPORT VisibilityGridder final {
               grid_value_fp twgt = 0;
               for (int C = 0; C < N; ++C)
                 twgt +=
-                  grid_value_fp(mag(grid_wgt.vals[C]) * (*vis.m_weights)[C]);
+                  grid_value_fp(mag(grid_wgt.vals[C]) * vis.m_weights[C]);
               K::atomic_add(&weights(R, vis.m_grid_cube), twgt);
             });
         } else {
@@ -1157,7 +1157,7 @@ struct HPG_EXPORT VisibilityGridder final {
 
         Vis<N, execution_space> gvis(
           visibility,
-          &visibility.m_values,
+          visibility.m_values,
           grid_size,
           grid_scale,
           cf_radii,
@@ -1443,7 +1443,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
               cf_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
-              gv += gv_t(cfv * screen * (*vis.m_values)[vpol]);
+              gv += gv_t(cfv * screen * vis.m_values[vpol]);
               grid_wgt_l.vals[vpol] += cfv;
             }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
@@ -1457,7 +1457,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
         grid_value_fp twgt = 0;
         for (int vpol = 0; vpol < N; ++vpol)
           twgt +=
-            grid_value_fp(mag(grid_wgt.vals[vpol]) * (*vis.m_weights)[vpol]);
+            grid_value_fp(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]);
         K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt);
       });
   }
@@ -1530,7 +1530,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
               cf_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
-              gv += gv_t(cfv * screen * (*vis.m_values)[vpol]);
+              gv += gv_t(cfv * screen * vis.m_values[vpol]);
             }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
         }
@@ -1582,7 +1582,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
 
           Vis<N, execution_space> vis(
             visibility,
-            &visibility.m_values,
+            visibility.m_values,
             grid_size,
             grid_scale,
             cf_radii,
@@ -1615,7 +1615,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
                     gvisbuff(i).vals[vpol] =
                       visibility.m_values[vpol]
                       * vis.m_phasor
-                      * (*vis.m_weights)[vpol];
+                      * vis.m_weights[vpol];
                   }
                 });
             else
@@ -1655,7 +1655,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
 
             Vis<N, execution_space> vis(
               visibilities(i),
-              reinterpret_cast<K::Array<vis_t, N>*>(gvisbuff(i).vals),
+              reinterpret_cast<K::Array<vis_t, N>&>(gvisbuff(i).vals),
               grid_size,
               grid_scale,
               cf_radii,
@@ -1691,7 +1691,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
 
             Vis<N, execution_space> vis(
               visibilities(i),
-              reinterpret_cast<K::Array<vis_t, N>*>(gvisbuff(i).vals),
+              reinterpret_cast<K::Array<vis_t, N>&>(gvisbuff(i).vals),
               grid_size,
               grid_scale,
               cf_radii,
