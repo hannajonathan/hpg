@@ -44,6 +44,16 @@ hpg::Device default_device = hpg::Device::Serial;
 
 using namespace std::complex_literals;
 
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+# ifndef HPG_GRIDDING_KERNEL_VERSION
+#  define HPG_GRIDDING_KERNEL_VERSION 0
+# endif
+static constexpr std::array<unsigned, 4>
+  impl_versions{HPG_GRIDDING_KERNEL_VERSION, 0, 0, 0};
+#else
+# undef HPG_DELTA_EXPERIMENTAL_ONLY
+#endif
+
 #undef SHOW_COORDINATES
 
 template <typename T>
@@ -561,6 +571,7 @@ values_eq(const T* array0, const T* array1) {
   return true;
 }
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState  constructor arguments are properly set
 TEST(GridderState, ConstructorArgs) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
@@ -626,7 +637,9 @@ TEST(GridderState, ConstructorArgs) {
     hpg::get_error(gs3_or_err).type(),
     hpg::ErrorType::InvalidNumberMuellerIndexRows);
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState copies have correct parameters
 TEST(GridderState, Copies) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
@@ -670,7 +683,9 @@ TEST(GridderState, Copies) {
     gs0.convolution_function_region_size(nullptr),
     gs2.convolution_function_region_size(nullptr));
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState moves have expected outcomes
 TEST(GridderState, Moves) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
@@ -711,7 +726,9 @@ TEST(GridderState, Moves) {
   EXPECT_EQ(gs2.max_visibility_batch_size(), batch_size);
   EXPECT_EQ(gs2.convolution_function_region_size(nullptr), cf_region_size);
 }
+#endif //HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState grid values and weights are properly initialized
 TEST(GridderState, InitValues) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
@@ -742,7 +759,9 @@ TEST(GridderState, InitValues) {
     EXPECT_EQ(weights->extent(i - 2), grid_size[i]);
   EXPECT_FALSE(has_non_zero(weights.get()));
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that model setting works properly
 TEST(GridderState, SetModel) {
   std::array<unsigned, 4> grid_size{6, 5, 4, 3};
@@ -781,7 +800,9 @@ TEST(GridderState, SetModel) {
     hpg::get_error(gs3_or_err).type(),
     hpg::ErrorType::InvalidModelGridSize);
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState methods have correct copy and move semantics
 TEST(GridderState, CopyOrMove) {
   std::array<unsigned, 4> grid_size{15, 14, 1, 3};
@@ -866,7 +887,9 @@ TEST(GridderState, CopyOrMove) {
     EXPECT_FALSE(gs2.is_null());
   }
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState::set_convolution_function() returns errors for
 // erroneous CFArray arguments
 TEST(GridderState, CFError) {
@@ -919,7 +942,9 @@ TEST(GridderState, CFError) {
     EXPECT_TRUE(hpg::is_error(error_or_gs));
   }
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState::reset_grid() correctly resets grid weights and values
 // for both copy and move method varieties
 TEST(GridderState, Reset) {
@@ -975,7 +1000,9 @@ TEST(GridderState, Reset) {
     EXPECT_FALSE(has_non_zero(weights9.get()));
   }
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState supports multiple calls to grid_visibilities()
 // interspersed by calls to set_convolution_function()
 TEST(GridderState, Sequences) {
@@ -1036,7 +1063,9 @@ TEST(GridderState, Sequences) {
     ASSERT_TRUE(hpg::is_value(err_or_gs6));
   }
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test error conditions in grid_visibilities()
 TEST(GridderState, GriddingError) {
   std::array<unsigned, 4> grid_size{16, 15, 2, 3};
@@ -1075,7 +1104,9 @@ TEST(GridderState, GriddingError) {
       hpg::ErrorType::InvalidNumberPolarizations);
   }
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState correctly serializes CF changes with gridding
 TEST(GridderState, Serialization) {
   std::array<unsigned, 4> grid_size{16, 15, 1, 3};
@@ -1170,7 +1201,9 @@ TEST(GridderState, Serialization) {
     EXPECT_TRUE(values_eq(w01.get(), w10.get()));
   }
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that exceeding visibility batch size limit produces error
 TEST(GridderState, Batching) {
   std::array<unsigned, 4> grid_size{16, 15, 1, 3};
@@ -1220,6 +1253,7 @@ TEST(GridderState, Batching) {
     EXPECT_FALSE(hpg::is_error(gs2_or_err));
   }
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
 TEST(GridderState, Gridding) {
   const std::array<unsigned, 4> grid_size{14, 14, 1, 1};
@@ -1247,7 +1281,11 @@ TEST(GridderState, Gridding) {
                 grid_size,
                 grid_scale,
                 {{0}},
-                {{0}});
+                {{0}}
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+                , impl_versions
+#endif
+                );
           })
         .and_then(
           [=](auto&& gs) {
@@ -1313,7 +1351,11 @@ TEST(GridderState, GridOne) {
                 grid_size,
                 grid_scale,
                 {{0}},
-                {{0}});
+                {{0}}
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+                , impl_versions
+#endif
+                );
           })
         .and_then(
           [=](auto&& gs) {
@@ -1375,7 +1417,11 @@ TEST(GridderState, ZeroModel) {
       grid_size,
       grid_scale,
       {{0, -1}, {-1, 0}},
-      {{0, -1}, {-1, 0}});
+      {{0, -1}, {-1, 0}}
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+      , impl_versions
+#endif
+      );
   ASSERT_TRUE(hpg::is_value(gs1_or_err));
   auto gs2_or_err =
     hpg::get_value(std::move(gs1_or_err))
@@ -1427,6 +1473,7 @@ TEST(GridderState, ZeroModel) {
   EXPECT_TRUE(values_eq(gv3.get(), gv5.get()));
 }
 
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test of FFT functionality through grid model
 TEST(GridderState, ModelFFT) {
   std::array<unsigned, 4> grid_size{64, 64, 4, 3};
@@ -1529,6 +1576,7 @@ TEST(GridderState, ModelFFT) {
     gs = std::move(gs4);
   }
 }
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
 // test residual visibility return functionality
 TEST(GridderState, ResidualVisibilities) {
@@ -1552,7 +1600,11 @@ TEST(GridderState, ResidualVisibilities) {
         grid_size,
         grid_scale,
         {{0, -1}, {-1, 0}},
-        {{0, -1}, {-1, 0}});
+        {{0, -1}, {-1, 0}}
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        , impl_versions
+#endif
+        );
     ASSERT_TRUE(hpg::is_value(gs1_or_err));
     auto gs2_or_err =
       hpg::get_value(std::move(gs1_or_err))

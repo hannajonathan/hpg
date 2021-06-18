@@ -18,6 +18,16 @@ target_link_libraries(GridderStateUnitTests hpg::hpg gtest)
 add_test(NAME GridderStateUnitTests COMMAND GridderStateUnitTests)
 set_tests_properties(GridderStateUnitTests PROPERTIES TIMEOUT 45)
 
+if(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
+  add_executable(ExpGridderStateUnitTests GridderStateUnitTests.cc)
+  target_link_libraries(ExpGridderStateUnitTests hpg::hpg gtest)
+  target_compile_definitions(ExpGridderStateUnitTests PRIVATE
+    HPG_GRIDDING_KERNEL_VERSION=1
+    HPG_DELTA_EXPERIMENTAL_ONLY)
+  add_test(NAME ExpGridderStateUnitTests COMMAND ExpGridderStateUnitTests)
+  set_tests_properties(ExpGridderStateUnitTests PROPERTIES TIMEOUT 45)
+endif()
+
 add_executable(GridderUnitTests GridderUnitTests.cc)
 target_link_libraries(GridderUnitTests hpg::hpg gtest)
 add_test(NAME GridderUnitTests COMMAND GridderUnitTests)
