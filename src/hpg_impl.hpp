@@ -756,8 +756,9 @@ struct Vis final {
   const int& m_grid_cube; /**< grid cube index */
   const int& m_cf_cube; /**< cf cube index */
   const int& m_cf_grp; /**< cf group index */
-  const K::Array<cf_phase_gradient_fp, 2>& m_cf_gradient; /**< cf phase gradient */
   bool m_pos_w; /**< true iff W coordinate is strictly positive */
+  cf_phase_gradient_fp m_phi0[2]; /**< phase screen value origin */
+  cf_phase_gradient_fp m_dphi[2]; /**< phase screen value increment */
 
   KOKKOS_INLINE_FUNCTION Vis() {};
 
@@ -774,39 +775,30 @@ struct Vis final {
     , m_grid_cube(vis.m_grid_cube)
     , m_cf_cube(vis.m_cf_index[0])
     , m_cf_grp(vis.m_cf_index[1])
-    , m_cf_gradient(vis.m_cf_phase_gradient) {
-
-    for (const auto d : {0, 1})
-      m_cf_size[d] = 2 * cf_radii[m_cf_grp][d] + 1;
+    , m_pos_w(vis.m_uvw[2] > 0) {
 
     static const vis_frequency_fp c = 299792458.0;
     auto inv_lambda = vis.m_freq / c;
-    // can't use std::tie here - CUDA doesn't support it
-    auto [g0, maj0, min0, f0] =
-      compute_vis_coord(
-        grid_size[0],
-        oversampling[0],
-        m_cf_size[0] / 2,
-        vis.m_uvw[0],
-        inv_lambda,
-        grid_scale[0]);
-    m_grid_coord[0] = g0;
-    m_cf_major[0] = maj0;
-    m_cf_minor[0] = min0;
-    m_fine_offset[0] = f0;
-    auto [g1, maj1, min1, f1] =
-      compute_vis_coord(
-        grid_size[1],
-        oversampling[1],
-        m_cf_size[1] / 2,
-        vis.m_uvw[1],
-        inv_lambda,
-        grid_scale[1]);
-    m_grid_coord[1] = g1;
-    m_cf_major[1] = maj1;
-    m_cf_minor[1] = min1;
-    m_fine_offset[1] = f1;
-    m_pos_w = vis.m_uvw[2] > 0;
+
+    for (const auto d : {0, 1}) {
+      m_cf_size[d] = 2 * cf_radii[m_cf_grp][d] + 1;
+      auto [g, maj, min, f] =
+        compute_vis_coord(
+          grid_size[d],
+          oversampling[d],
+          m_cf_size[d] / 2,
+          vis.m_uvw[d],
+          inv_lambda,
+          grid_scale[d]);
+      m_grid_coord[d] = g;
+      m_cf_major[d] = maj;
+      m_cf_minor[d] = min;
+      m_fine_offset[d] = f;
+      m_phi0[d] =
+        -vis.m_cf_phase_gradient[d]
+        * ((m_cf_size[d] / 2) * oversampling[d] - m_fine_offset[d]);
+      m_dphi[d] = vis.m_cf_phase_gradient[d] * oversampling[d];
+    }
   }
 
   Vis(Vis const&) = default;
@@ -923,7 +915,6 @@ struct HPG_EXPORT VisibilityGridder final {
   grid_vis(
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
-    const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
@@ -950,23 +941,13 @@ struct HPG_EXPORT VisibilityGridder final {
       degridding_mindex = mueller_indexes;
     }
 
-    // phase screen constants at this visibility's location
-    const auto phi_X0 =
-      -vis.m_cf_gradient[0]
-      * ((vis.m_cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
-    const auto dphi_X = vis.m_cf_gradient[0] * oversampling[0];
-    const auto phi_Y0 =
-      -vis.m_cf_gradient[1]
-      * ((vis.m_cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
-    const auto dphi_Y = vis.m_cf_gradient[1] * oversampling[1];
-
     // compute the values of the phase screen along the Y axis now and store the
     // results in scratch memory because gridding on the Y axis accesses the
     // phase screen values for every row of the Mueller matrix column
     K::parallel_for(
       K::TeamVectorRange(team_member, N_Y),
       [=](const int Y) {
-        phi_Y(Y) = phi_Y0 + Y * dphi_Y;
+        phi_Y(Y) = vis.m_phi0[1] + Y * vis.m_dphi[1];
       });
     team_member.team_barrier();
 
@@ -986,7 +967,7 @@ struct HPG_EXPORT VisibilityGridder final {
           K::parallel_reduce(
             K::TeamThreadRange(team_member, N_X),
             [=](const int X, decltype(vis_array)& vis_array_l) {
-              auto phi_X = phi_X0 + X * dphi_X;
+              auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
               // loop over grid Y
               for (int Y = 0; Y < N_Y; ++Y) {
                 auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
@@ -1050,7 +1031,7 @@ struct HPG_EXPORT VisibilityGridder final {
           K::parallel_reduce(
             K::TeamThreadRange(team_member, N_X),
             [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
-              auto phi_X = phi_X0 + X * dphi_X;
+              auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
               // loop over grid Y
               for (int Y = 0; Y < N_Y; ++Y) {
                 const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
@@ -1095,7 +1076,7 @@ struct HPG_EXPORT VisibilityGridder final {
           K::parallel_for(
             K::TeamVectorRange(team_member, N_X),
             [=](const int X) {
-              auto phi_X = phi_X0 + X * dphi_X;
+              auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
               // loop over grid Y
               for (int Y = 0; Y < N_Y; ++Y) {
                 cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
@@ -1304,7 +1285,6 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
   degrid_vis(
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
-    const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
@@ -1319,23 +1299,13 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
       vis.m_pos_w ? conjugate_mueller_indexes : mueller_indexes;
     cf_fp cf_im_factor = (vis.m_pos_w ? 1 : -1);
 
-    // phase screen constants at this visibility's location
-    const auto phi_X0 =
-      vis.m_cf_gradient[0]
-      * ((vis.m_cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
-    const auto dphi_X = -vis.m_cf_gradient[0] * oversampling[0];
-    const auto phi_Y0 =
-      vis.m_cf_gradient[1]
-      * ((vis.m_cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
-    const auto dphi_Y = -vis.m_cf_gradient[1] * oversampling[1];
-
     // compute the values of the phase screen along the Y axis now and store the
     // results in scratch memory because gridding on the Y axis accesses the
     // phase screen values for every row of the Mueller matrix column
     K::parallel_for(
       K::TeamVectorRange(team_member, N_Y),
       [=](const int Y) {
-        phi_Y(Y) = phi_Y0 + Y * dphi_Y;
+        phi_Y(Y) = vis.m_phi0[1] + Y * vis.m_dphi[1];
       });
     team_member.team_barrier();
 
@@ -1353,10 +1323,10 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
         K::parallel_reduce(
           K::TeamThreadRange(team_member, N_X),
           [=](const int X, decltype(vis_array)& vis_array_l) {
-            auto phi_X = phi_X0 + X * dphi_X;
+            auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
-              auto screen = cphase<execution_space>(phi_X + phi_Y(Y));
+              auto screen = cphase<execution_space>(-phi_X - phi_Y(Y));
               const auto mv =
                 model(
                   X + vis.m_grid_coord[0],
@@ -1410,7 +1380,6 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
     const unsigned gpol,
-    const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
@@ -1429,23 +1398,13 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
         K::ALL);
     cf_fp cf_im_factor = (vis.m_pos_w ? -1 : 1);
 
-    // phase screen constants at this visibility's location
-    const auto phi_X0 =
-      -vis.m_cf_gradient[0]
-      * ((vis.m_cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
-    const auto dphi_X = vis.m_cf_gradient[0] * oversampling[0];
-    const auto phi_Y0 =
-      -vis.m_cf_gradient[1]
-      * ((vis.m_cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
-    const auto dphi_Y = vis.m_cf_gradient[1] * oversampling[1];
-
     // compute the values of the phase screen along the Y axis now and store the
     // results in scratch memory because gridding on the Y axis accesses the
     // phase screen values for every row of the Mueller matrix column
     K::parallel_for(
       K::TeamVectorRange(team_member, N_Y),
       [=](const int Y) {
-        phi_Y(Y) = phi_Y0 + Y * dphi_Y;
+        phi_Y(Y) = vis.m_phi0[1] + Y * vis.m_dphi[1];
       });
     team_member.team_barrier();
 
@@ -1456,7 +1415,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     K::parallel_reduce(
       K::TeamThreadRange(team_member, N_X),
       [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
-        auto phi_X = phi_X0 + X * dphi_X;
+        auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
         // loop over grid Y
         for (int Y = 0; Y < N_Y; ++Y) {
           const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
@@ -1508,7 +1467,6 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
     const unsigned gpol,
-    const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
@@ -1525,23 +1483,13 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
         K::ALL);
     cf_fp cf_im_factor = (vis.m_pos_w ? -1 : 1);
 
-    // phase screen constants at this visibility's location
-    const auto phi_X0 =
-      -vis.m_cf_gradient[0]
-      * ((vis.m_cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
-    const auto dphi_X = vis.m_cf_gradient[0] * oversampling[0];
-    const auto phi_Y0 =
-      -vis.m_cf_gradient[1]
-      * ((vis.m_cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
-    const auto dphi_Y = vis.m_cf_gradient[1] * oversampling[1];
-
     // compute the values of the phase screen along the Y axis now and store the
     // results in scratch memory because gridding on the Y axis accesses the
     // phase screen values for every row of the Mueller matrix column
     K::parallel_for(
       K::TeamVectorRange(team_member, N_Y),
       [=](const int Y) {
-        phi_Y(Y) = phi_Y0 + Y * dphi_Y;
+        phi_Y(Y) = vis.m_phi0[1] + Y * vis.m_dphi[1];
       });
     team_member.team_barrier();
 
@@ -1549,7 +1497,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     K::parallel_for(
       K::TeamThreadRange(team_member, N_X),
       [=](const int X) {
-        auto phi_X = phi_X0 + X * dphi_X;
+        auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
         // loop over grid Y
         for (int Y = 0; Y < N_Y; ++Y) {
           const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
