@@ -761,9 +761,9 @@ struct Vis final {
     const VisData<N>& vis,
     const K::Array<vis_t, N>* vals,
     const K::Array<int, 2>& grid_size,
+    const K::Array<grid_scale_fp, 2>& grid_scale,
     const K::Array<int, 2>& oversampling,
-    const K::Array<int, 2>& cf_size,
-    const K::Array<grid_scale_fp, 2>& grid_scale)
+    const K::Array<int, 2>& cf_size)
     : m_values(vals)
     , m_weights(&(vis.m_weights))
     , m_phasor(cphase<execution_space>(vis.m_d_phase))
@@ -1179,9 +1179,9 @@ struct HPG_EXPORT VisibilityGridder final {
           visibility,
           &visibility.m_values,
           grid_size,
+          grid_scale,
           oversampling,
-          cf_size,
-          grid_scale);
+          cf_size);
         poln_array_type<float, N> rvis;
         // skip this visibility if all of the updated grid points are not
         // within grid bounds
@@ -1652,9 +1652,9 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             visibility,
             &visibility.m_values,
             grid_size,
+            grid_scale,
             oversampling,
-            cf_size,
-            grid_scale);
+            cf_size);
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
           if ((0 <= vis.m_grid_coord[0])
@@ -1736,9 +1736,9 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
                 visibility,
                 reinterpret_cast<K::Array<vis_t, N>*>(gvisbuff(i).vals),
                 grid_size,
+                grid_scale,
                 oversampling,
-                cf_size,
-                grid_scale);
+                cf_size);
             // skip this visibility if all of the updated grid points are not
             // within grid bounds
             if ((0 <= vis.m_grid_coord[0])
@@ -1784,9 +1784,9 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
               visibility,
               reinterpret_cast<K::Array<vis_t, N>*>(gvisbuff(i).vals),
               grid_size,
+              grid_scale,
               oversampling,
-              cf_size,
-              grid_scale);
+              cf_size);
             // skip this visibility if all of the updated grid points are not
             // within grid bounds
             if ((0 <= vis.m_grid_coord[0])
