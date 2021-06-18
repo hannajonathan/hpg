@@ -1310,6 +1310,26 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
       static_assert(std::is_same_v<acc_vis_t, acc_cf_t>);
       vis_array_type<acc_vis_t::value_type, N> vis_array;
 
+      // 3d (X, Y, Mueller) subspace of CF for this visibility
+      auto cf_vis =
+        K::subview(
+          cf,
+          std::make_pair(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
+          std::make_pair(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+          K::ALL,
+          vis.m_cf_cube,
+          vis.m_cf_minor[0],
+          vis.m_cf_minor[1]);
+
+      // 3d (X, Y, pol) subspace of model for this visibility
+      auto model_vis =
+        K::subview(
+          model,
+          std::make_pair(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+          std::make_pair(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+          K::ALL,
+          vis.m_grid_cube);
+
       // loop over model polarizations
       for (int gpol = 0; gpol < N_R; ++gpol) {
         decltype(vis_array) va;
@@ -1321,25 +1341,12 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
               auto screen = cphase<execution_space>(-phi_X - phi_Y(Y));
-              const auto mv =
-                model(
-                  X + vis.m_grid_coord[0],
-                  Y + vis.m_grid_coord[1],
-                  gpol,
-                  vis.m_grid_cube)
-                * screen;
+              const auto mv = model_vis(X, Y, gpol) * screen;
               // loop over visibility polarizations
               for (int vpol = 0; vpol < N; ++vpol)
                 if (const auto mindex = degridding_mindex(gpol, vpol);
                     mindex >= 0) {
-                  cf_t cfv =
-                    cf(
-                      X + vis.m_cf_major[0],
-                      Y + vis.m_cf_major[1],
-                      mindex,
-                      vis.m_cf_cube,
-                      vis.m_cf_minor[0],
-                      vis.m_cf_minor[1]);
+                  cf_t cfv = cf_vis(X, Y, mindex);
                   cfv.imag() *= cf_im_factor;
                   vis_array_l.vis[vpol] += cfv * mv;
                   vis_array_l.wgt[vpol] += cfv;
@@ -1399,8 +1406,28 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
       });
     team_member.team_barrier();
 
-    // accumulate to grid, and CF weights per visibility polarization
+    // 3d (X, Y, Mueller) subspace of CF for this visibility
+    auto cf_vis =
+      K::subview(
+        cf,
+        std::make_pair(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
+        std::make_pair(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+        K::ALL,
+        vis.m_cf_cube,
+        vis.m_cf_minor[0],
+        vis.m_cf_minor[1]);
 
+    // 2d (X, Y) subspace of grid for this visibility and grid polarization
+    // (gpol)
+    auto grd_vis =
+      K::subview(
+        grid,
+        std::make_pair(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+        std::make_pair(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        gpol,
+        vis.m_grid_cube);
+
+    // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
     // parallel loop over grid X
     K::parallel_reduce(
@@ -1414,25 +1441,12 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           // loop over visibility polarizations
           for (int vpol = 0; vpol < N; ++vpol)
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
-              cf_t cfv =
-                cf(
-                  X + vis.m_cf_major[0],
-                  Y + vis.m_cf_major[1],
-                  mindex,
-                  vis.m_cf_cube,
-                  vis.m_cf_minor[0],
-                  vis.m_cf_minor[1]);
+              cf_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
               gv += gv_t(cfv * screen * (*vis.m_values)[vpol]);
               grid_wgt_l.vals[vpol] += cfv;
             }
-          pseudo_atomic_add<execution_space>(
-            grid(
-              X + vis.m_grid_coord[0],
-              Y + vis.m_grid_coord[1],
-              gpol,
-              vis.m_grid_cube),
-            gv);
+          pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
         }
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt));
@@ -1481,6 +1495,27 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
       });
     team_member.team_barrier();
 
+    // 3d (X, Y, Mueller) subspace of CF for this visibility
+    auto cf_vis =
+      K::subview(
+        cf,
+        std::make_pair(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
+        std::make_pair(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+        K::ALL,
+        vis.m_cf_cube,
+        vis.m_cf_minor[0],
+        vis.m_cf_minor[1]);
+
+    // 2d (X, Y) subspace of grid for this visibility and grid polarization
+    // (gpol)
+    auto grd_vis =
+      K::subview(
+        grid,
+        std::make_pair(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+        std::make_pair(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        gpol,
+        vis.m_grid_cube);
+
     // parallel loop over grid X
     K::parallel_for(
       K::TeamThreadRange(team_member, N_X),
@@ -1493,24 +1528,11 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           // loop over visibility polarizations
           for (int vpol = 0; vpol < N; ++vpol)
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
-              cf_t cfv =
-                cf(
-                  X + vis.m_cf_major[0],
-                  Y + vis.m_cf_major[1],
-                  mindex,
-                  vis.m_cf_cube,
-                  vis.m_cf_minor[0],
-                  vis.m_cf_minor[1]);
+              cf_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
               gv += gv_t(cfv * screen * (*vis.m_values)[vpol]);
             }
-          pseudo_atomic_add<execution_space>(
-            grid(
-              X + vis.m_grid_coord[0],
-              Y + vis.m_grid_coord[1],
-              gpol,
-              vis.m_grid_cube),
-            gv);
+          pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
         }
       });
   }
