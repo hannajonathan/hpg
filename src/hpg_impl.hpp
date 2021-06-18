@@ -1153,9 +1153,7 @@ struct HPG_EXPORT VisibilityGridder final {
       .set_scratch_size(0, K::PerTeam(shmem_size)),
       KOKKOS_LAMBDA(const member_type& team_member) {
         auto i = team_member.league_rank();
-
         auto& visibility = visibilities(i);
-        scratch_phscr_view phi_Y(team_member.team_scratch(0), max_cf_extent_y);
 
         Vis<N, execution_space> gvis(
           visibility,
@@ -1176,14 +1174,13 @@ struct HPG_EXPORT VisibilityGridder final {
                      update_grid_weights, do_degrid, do_grid>(
               team_member,
               gvis,
-              oversampling,
               cfs[gvis.m_cf_grp],
               mueller_indexes,
               conjugate_mueller_indexes,
               model,
               grid,
               weights,
-              phi_Y);
+              scratch_phscr_view(team_member.team_scratch(0), max_cf_extent_y));
         }
         for (size_t p = 0; p < N; ++p)
           visibility.m_values[p] = rvis.vals[p];
@@ -1277,11 +1274,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
   using scratch_phscr_view =
     typename DefaultVisibilityGridder::scratch_phscr_view;
 
-  template <
-    typename cf_layout,
-    typename grid_layout,
-    typename memory_space>
-    static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
+  template <typename cf_layout, typename grid_layout, typename memory_space>
+  static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
   degrid_vis(
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
@@ -1371,10 +1365,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
   }
 
   // function for gridding a single visibility with sum of weights
-  template <
-    typename cf_layout,
-    typename grid_layout,
-    typename memory_space>
+  template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION void
   grid_vis(
     const member_type& team_member,
@@ -1458,10 +1449,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
   }
 
   // function for gridding a single visibility without sum of weights
-  template <
-    typename cf_layout,
-    typename grid_layout,
-    typename memory_space>
+  template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION void
   grid_vis_no_weights(
     const member_type& team_member,
@@ -1527,10 +1515,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
       });
   }
 
-  template <
-    typename cf_layout,
-    typename grid_layout,
-    typename memory_space>
+  template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
   kernel(
     execution_space exec,
@@ -1564,8 +1549,6 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
 
     auto shmem_size = scratch_phscr_view::shmem_size(max_cf_extent_y);
 
-    const auto N_R = grid.extent_int(static_cast<int>(GridAxis::mrow));
-
     if (do_degrid) {
       K::parallel_for(
         "degridding",
@@ -1573,11 +1556,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
         .set_scratch_size(0, K::PerTeam(shmem_size)),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto i = team_member.league_rank();
-          poln_array_type<visibility_fp, N> gvis;
-
           auto& visibility = visibilities(i);
-          scratch_phscr_view
-            phi_Y(team_member.team_scratch(0), max_cf_extent_y);
 
           Vis<N, execution_space> vis(
             visibility,
@@ -1586,6 +1565,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             grid_scale,
             cf_radii,
             oversampling);
+          poln_array_type<visibility_fp, N> gvis;
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
           if ((0 <= vis.m_grid_coord[0])
@@ -1596,12 +1576,13 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
               degrid_vis<cf_layout, grid_layout, memory_space>(
                 team_member,
                 vis,
-                oversampling,
                 cfs[vis.m_cf_grp],
                 mueller_indexes,
                 conjugate_mueller_indexes,
                 model,
-                phi_Y);
+                scratch_phscr_view(
+                  team_member.team_scratch(0),
+                  max_cf_extent_y));
             if (do_grid)
               // return residual visibilities, prepare values for gridding
               K::single(
@@ -1640,6 +1621,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     }
 
     if (do_grid) {
+      const auto N_R = grid.extent_int(static_cast<int>(GridAxis::mrow));
       if (update_grid_weights)
         K::parallel_for(
           "gridding",
@@ -1649,17 +1631,13 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
 
-            auto& visibility = visibilities(i);
-            scratch_phscr_view
-              phi_Y(team_member.team_scratch(0), max_cf_extent_y);
-
             Vis<N, execution_space> vis(
-                visibility,
-                reinterpret_cast<K::Array<vis_t, N>*>(gvisbuff(i).vals),
-                grid_size,
-                grid_scale,
-                cf_radii,
-                oversampling);
+              visibilities(i),
+              reinterpret_cast<K::Array<vis_t, N>*>(gvisbuff(i).vals),
+              grid_size,
+              grid_scale,
+              cf_radii,
+              oversampling);
             // skip this visibility if all of the updated grid points are not
             // within grid bounds
             if ((0 <= vis.m_grid_coord[0])
@@ -1670,13 +1648,14 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
                 team_member,
                 vis,
                 gpol,
-                oversampling,
                 cfs[vis.m_cf_grp],
                 mueller_indexes,
                 conjugate_mueller_indexes,
                 grid,
                 weights,
-                phi_Y);
+                scratch_phscr_view(
+                  team_member.team_scratch(0),
+                  max_cf_extent_y));
             }
           });
       else
@@ -1688,12 +1667,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
 
-            auto& visibility = visibilities(i);
-            scratch_phscr_view
-              phi_Y(team_member.team_scratch(0), max_cf_extent_y);
-
             Vis<N, execution_space> vis(
-              visibility,
+              visibilities(i),
               reinterpret_cast<K::Array<vis_t, N>*>(gvisbuff(i).vals),
               grid_size,
               grid_scale,
@@ -1709,12 +1684,13 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
                 team_member,
                 vis,
                 gpol,
-                oversampling,
                 cfs[vis.m_cf_grp],
                 mueller_indexes,
                 conjugate_mueller_indexes,
                 grid,
-                phi_Y);
+                scratch_phscr_view(
+                  team_member.team_scratch(0),
+                  max_cf_extent_y));
             }
           });
     }
