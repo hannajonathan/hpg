@@ -749,10 +749,13 @@ struct Vis final {
   int m_cf_minor[2]; /**< CF minor coordinate */
   int m_cf_major[2]; /**< CF major coordinate */
   int m_fine_offset[2]; /**< visibility position - nearest major grid */
+  int m_cf_size[2]; /**< cf size */
   const K::Array<vis_t, N>* m_values; /**< visibility values */
   const K::Array<vis_weight_fp, N>* m_weights; /**< visibility weights */
   K::complex<vis_phase_fp> m_phasor;
-  int m_grid_cube; /**< grid cube index */
+  const int& m_grid_cube; /**< grid cube index */
+  const int& m_cf_cube; /**< cf cube index */
+  const int& m_cf_grp; /**< cf group index */
   bool m_pos_w; /**< true iff W coordinate is strictly positive */
 
   KOKKOS_INLINE_FUNCTION Vis() {};
@@ -762,12 +765,17 @@ struct Vis final {
     const K::Array<vis_t, N>* vals,
     const K::Array<int, 2>& grid_size,
     const K::Array<grid_scale_fp, 2>& grid_scale,
-    const K::Array<int, 2>& oversampling,
-    const K::Array<int, 2>& cf_size)
+    const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
+    const K::Array<int, 2>& oversampling)
     : m_values(vals)
     , m_weights(&(vis.m_weights))
     , m_phasor(cphase<execution_space>(vis.m_d_phase))
-    , m_grid_cube(vis.m_grid_cube) {
+    , m_grid_cube(vis.m_grid_cube)
+    , m_cf_cube(vis.m_cf_index[0])
+    , m_cf_grp(vis.m_cf_index[1]) {
+
+    for (const auto d : {0, 1})
+      m_cf_size[d] = 2 * cf_radii[m_cf_grp][d] + 1;
 
     static const vis_frequency_fp c = 299792458.0;
     auto inv_lambda = vis.m_freq / c;
@@ -776,7 +784,7 @@ struct Vis final {
       compute_vis_coord(
         grid_size[0],
         oversampling[0],
-        cf_size[0] / 2,
+        m_cf_size[0] / 2,
         vis.m_uvw[0],
         inv_lambda,
         grid_scale[0]);
@@ -788,7 +796,7 @@ struct Vis final {
       compute_vis_coord(
         grid_size[1],
         oversampling[1],
-        cf_size[1] / 2,
+        m_cf_size[1] / 2,
         vis.m_uvw[1],
         inv_lambda,
         grid_scale[1]);
@@ -915,8 +923,6 @@ struct HPG_EXPORT VisibilityGridder final {
     const Vis<N, execution_space>& vis,
     const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
-    const K::Array<int, 2>& cf_size,
-    const unsigned cf_cube,
     const K::Array<cf_phase_gradient_fp, 2>& cf_gradient,
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
@@ -926,8 +932,8 @@ struct HPG_EXPORT VisibilityGridder final {
       weights,
     const scratch_phscr_view& phi_Y) {
 
-    const auto& N_X = cf_size[0];
-    const auto& N_Y = cf_size[1];
+    const auto& N_X = vis.m_cf_size[0];
+    const auto& N_Y = vis.m_cf_size[1];
     const auto N_R = grid.extent_int(static_cast<int>(GridAxis::mrow));
 
     cf_fp cf_im_factor;
@@ -946,11 +952,11 @@ struct HPG_EXPORT VisibilityGridder final {
     // phase screen constants at this visibility's location
     const auto phi_X0 =
       -cf_gradient[0]
-      * ((cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
+      * ((vis.m_cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
     const auto dphi_X = cf_gradient[0] * oversampling[0];
     const auto phi_Y0 =
       -cf_gradient[1]
-      * ((cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
+      * ((vis.m_cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
     const auto dphi_Y = cf_gradient[1] * oversampling[1];
 
     // compute the values of the phase screen along the Y axis now and store the
@@ -999,7 +1005,7 @@ struct HPG_EXPORT VisibilityGridder final {
                         X + vis.m_cf_major[0],
                         Y + vis.m_cf_major[1],
                         mindex,
-                        cf_cube,
+                        vis.m_cf_cube,
                         vis.m_cf_minor[0],
                         vis.m_cf_minor[1]);
                     cfv.imag() *= -cf_im_factor;
@@ -1056,7 +1062,7 @@ struct HPG_EXPORT VisibilityGridder final {
                         X + vis.m_cf_major[0],
                         Y + vis.m_cf_major[1],
                         mindex,
-                        cf_cube,
+                        vis.m_cf_cube,
                         vis.m_cf_minor[0],
                         vis.m_cf_minor[1]);
                     cfv.imag() *= cf_im_factor;
@@ -1101,7 +1107,7 @@ struct HPG_EXPORT VisibilityGridder final {
                         X + vis.m_cf_major[0],
                         Y + vis.m_cf_major[1],
                         mindex,
-                        cf_cube,
+                        vis.m_cf_cube,
                         vis.m_cf_minor[0],
                         vis.m_cf_minor[1]);
                     cfv.imag() *= cf_im_factor;
@@ -1167,11 +1173,6 @@ struct HPG_EXPORT VisibilityGridder final {
         auto i = team_member.league_rank();
 
         auto& visibility = visibilities(i);
-        const unsigned& cf_cube = visibility.m_cf_index[0];
-        const unsigned& cf_grp = visibility.m_cf_index[1];
-        const auto& cf = cfs[cf_grp];
-        const K::Array<int, 2>
-          cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
         scratch_phscr_view phi_Y(team_member.team_scratch(0), max_cf_extent_y);
         const auto& cf_gradient = visibility.m_cf_phase_gradient;
 
@@ -1180,24 +1181,22 @@ struct HPG_EXPORT VisibilityGridder final {
           &visibility.m_values,
           grid_size,
           grid_scale,
-          oversampling,
-          cf_size);
+          cf_radii,
+          oversampling);
         poln_array_type<float, N> rvis;
         // skip this visibility if all of the updated grid points are not
         // within grid bounds
         if ((0 <= gvis.m_grid_coord[0])
-            && (gvis.m_grid_coord[0] + cf_size[0] <= grid_size[0])
+            && (gvis.m_grid_coord[0] + gvis.m_cf_size[0] <= grid_size[0])
             && (0 <= gvis.m_grid_coord[1])
-            && (gvis.m_grid_coord[1] + cf_size[1] <= grid_size[1])) {
+            && (gvis.m_grid_coord[1] + gvis.m_cf_size[1] <= grid_size[1])) {
           rvis =
             grid_vis<cf_layout, grid_layout, memory_space,
                      update_grid_weights, do_degrid, do_grid>(
               team_member,
               gvis,
               oversampling,
-              cf,
-              cf_size,
-              cf_cube,
+              cfs[gvis.m_cf_grp],
               cf_gradient,
               mueller_indexes,
               conjugate_mueller_indexes,
@@ -1308,16 +1307,14 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const Vis<N, execution_space>& vis,
     const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
-    const K::Array<int, 2>& cf_size,
-    const unsigned cf_cube,
     const K::Array<cf_phase_gradient_fp, 2>& cf_gradient,
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const const_grid_view<grid_layout, memory_space>& model,
     const scratch_phscr_view& phi_Y) {
 
-    const auto& N_X = cf_size[0];
-    const auto& N_Y = cf_size[1];
+    const auto& N_X = vis.m_cf_size[0];
+    const auto& N_Y = vis.m_cf_size[1];
     const auto N_R = model.extent_int(static_cast<int>(GridAxis::mrow));
 
     auto degridding_mindex =
@@ -1327,11 +1324,11 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     // phase screen constants at this visibility's location
     const auto phi_X0 =
       cf_gradient[0]
-      * ((cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
+      * ((vis.m_cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
     const auto dphi_X = -cf_gradient[0] * oversampling[0];
     const auto phi_Y0 =
       cf_gradient[1]
-      * ((cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
+      * ((vis.m_cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
     const auto dphi_Y = -cf_gradient[1] * oversampling[1];
 
     // compute the values of the phase screen along the Y axis now and store the
@@ -1378,7 +1375,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
                       X + vis.m_cf_major[0],
                       Y + vis.m_cf_major[1],
                       mindex,
-                      cf_cube,
+                      vis.m_cf_cube,
                       vis.m_cf_minor[0],
                       vis.m_cf_minor[1]);
                   cfv.imag() *= cf_im_factor;
@@ -1417,8 +1414,6 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const unsigned gpol,
     const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
-    const K::Array<int, 2>& cf_size,
-    const unsigned cf_cube,
     const K::Array<cf_phase_gradient_fp, 2>& cf_gradient,
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
@@ -1427,8 +1422,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
       weights,
     const scratch_phscr_view& phi_Y) {
 
-    const auto& N_X = cf_size[0];
-    const auto& N_Y = cf_size[1];
+    const auto& N_X = vis.m_cf_size[0];
+    const auto& N_Y = vis.m_cf_size[1];
 
     auto gridding_mindex =
       K::subview(
@@ -1440,11 +1435,11 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     // phase screen constants at this visibility's location
     const auto phi_X0 =
       -cf_gradient[0]
-      * ((cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
+      * ((vis.m_cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
     const auto dphi_X = cf_gradient[0] * oversampling[0];
     const auto phi_Y0 =
       -cf_gradient[1]
-      * ((cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
+      * ((vis.m_cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
     const auto dphi_Y = cf_gradient[1] * oversampling[1];
 
     // compute the values of the phase screen along the Y axis now and store the
@@ -1477,7 +1472,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
                   X + vis.m_cf_major[0],
                   Y + vis.m_cf_major[1],
                   mindex,
-                  cf_cube,
+                  vis.m_cf_cube,
                   vis.m_cf_minor[0],
                   vis.m_cf_minor[1]);
               cfv.imag() *= cf_im_factor;
@@ -1518,16 +1513,14 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const unsigned gpol,
     const K::Array<int, 2>& oversampling,
     const cf_view<cf_layout, memory_space>& cf,
-    const K::Array<int, 2>& cf_size,
-    const unsigned cf_cube,
     const K::Array<cf_phase_gradient_fp, 2>& cf_gradient,
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const grid_view<grid_layout, memory_space>& grid,
     const scratch_phscr_view& phi_Y) {
 
-    const auto& N_X = cf_size[0];
-    const auto& N_Y = cf_size[1];
+    const auto& N_X = vis.m_cf_size[0];
+    const auto& N_Y = vis.m_cf_size[1];
 
     auto gridding_mindex =
       K::subview(
@@ -1539,11 +1532,11 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     // phase screen constants at this visibility's location
     const auto phi_X0 =
       -cf_gradient[0]
-      * ((cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
+      * ((vis.m_cf_size[0] / 2) * oversampling[0] - vis.m_fine_offset[0]);
     const auto dphi_X = cf_gradient[0] * oversampling[0];
     const auto phi_Y0 =
       -cf_gradient[1]
-      * ((cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
+      * ((vis.m_cf_size[1] / 2) * oversampling[1] - vis.m_fine_offset[1]);
     const auto dphi_Y = cf_gradient[1] * oversampling[1];
 
     // compute the values of the phase screen along the Y axis now and store the
@@ -1573,7 +1566,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
                   X + vis.m_cf_major[0],
                   Y + vis.m_cf_major[1],
                   mindex,
-                  cf_cube,
+                  vis.m_cf_cube,
                   vis.m_cf_minor[0],
                   vis.m_cf_minor[1]);
               cfv.imag() *= cf_im_factor;
@@ -1639,11 +1632,6 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           poln_array_type<visibility_fp, N> gvis;
 
           auto& visibility = visibilities(i);
-          const unsigned& cf_cube = visibility.m_cf_index[0];
-          const unsigned& cf_grp = visibility.m_cf_index[1];
-          const auto& cf = cfs[cf_grp];
-          const K::Array<int, 2>
-            cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
           scratch_phscr_view
             phi_Y(team_member.team_scratch(0), max_cf_extent_y);
           const auto& cf_gradient = visibility.m_cf_phase_gradient;
@@ -1653,22 +1641,20 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             &visibility.m_values,
             grid_size,
             grid_scale,
-            oversampling,
-            cf_size);
+            cf_radii,
+            oversampling);
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
           if ((0 <= vis.m_grid_coord[0])
-              && (vis.m_grid_coord[0] + cf_size[0] <= grid_size[0])
+              && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
               && (0 <= vis.m_grid_coord[1])
-              && (vis.m_grid_coord[1] + cf_size[1] <= grid_size[1])) {
+              && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1])) {
             gvis =
               degrid_vis<cf_layout, grid_layout, memory_space>(
                 team_member,
                 vis,
                 oversampling,
-                cf,
-                cf_size,
-                cf_cube,
+                cfs[vis.m_cf_grp],
                 cf_gradient,
                 mueller_indexes,
                 conjugate_mueller_indexes,
@@ -1722,12 +1708,6 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             auto gpol = team_member.league_rank() % N_R;
 
             auto& visibility = visibilities(i);
-
-            const unsigned& cf_cube = visibility.m_cf_index[0];
-            const unsigned& cf_grp = visibility.m_cf_index[1];
-            const auto& cf = cfs[cf_grp];
-            const K::Array<int, 2>
-              cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
             scratch_phscr_view
               phi_Y(team_member.team_scratch(0), max_cf_extent_y);
             const auto& cf_gradient = visibility.m_cf_phase_gradient;
@@ -1737,22 +1717,20 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
                 reinterpret_cast<K::Array<vis_t, N>*>(gvisbuff(i).vals),
                 grid_size,
                 grid_scale,
-                oversampling,
-                cf_size);
+                cf_radii,
+                oversampling);
             // skip this visibility if all of the updated grid points are not
             // within grid bounds
             if ((0 <= vis.m_grid_coord[0])
-                && (vis.m_grid_coord[0] + cf_size[0] <= grid_size[0])
+                && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
                 && (0 <= vis.m_grid_coord[1])
-                && (vis.m_grid_coord[1] + cf_size[1] <= grid_size[1])) {
+                && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1])) {
               grid_vis<cf_layout, grid_layout, memory_space>(
                 team_member,
                 vis,
                 gpol,
                 oversampling,
-                cf,
-                cf_size,
-                cf_cube,
+                cfs[vis.m_cf_grp],
                 cf_gradient,
                 mueller_indexes,
                 conjugate_mueller_indexes,
@@ -1771,11 +1749,6 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             auto gpol = team_member.league_rank() % N_R;
 
             auto& visibility = visibilities(i);
-            const unsigned& cf_cube = visibility.m_cf_index[0];
-            const unsigned& cf_grp = visibility.m_cf_index[1];
-            const auto& cf = cfs[cf_grp];
-            const K::Array<int, 2>
-              cf_size{2 * cf_radii[cf_grp][0] + 1, 2 * cf_radii[cf_grp][1] + 1};
             scratch_phscr_view
               phi_Y(team_member.team_scratch(0), max_cf_extent_y);
             const auto& cf_gradient = visibility.m_cf_phase_gradient;
@@ -1785,22 +1758,20 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
               reinterpret_cast<K::Array<vis_t, N>*>(gvisbuff(i).vals),
               grid_size,
               grid_scale,
-              oversampling,
-              cf_size);
+              cf_radii,
+              oversampling);
             // skip this visibility if all of the updated grid points are not
             // within grid bounds
             if ((0 <= vis.m_grid_coord[0])
-                && (vis.m_grid_coord[0] + cf_size[0] <= grid_size[0])
+                && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
                 && (0 <= vis.m_grid_coord[1])
-                && (vis.m_grid_coord[1] + cf_size[1] <= grid_size[1])) {
+                && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1])) {
               grid_vis_no_weights<cf_layout, grid_layout, memory_space>(
                 team_member,
                 vis,
                 gpol,
                 oversampling,
-                cf,
-                cf_size,
-                cf_cube,
+                cfs[vis.m_cf_grp],
                 cf_gradient,
                 mueller_indexes,
                 conjugate_mueller_indexes,
