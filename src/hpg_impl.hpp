@@ -1560,6 +1560,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     const weight_view<typename execution_space::array_layout, memory_space>&
       weights) {
 
+    K::Profiling::pushRegion("VisibilityGridder");
+
     const K::Array<int, 2>
       grid_size{
         grid.extent_int(static_cast<int>(GridAxis::x)),
@@ -1716,6 +1718,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
             }
           });
     }
+
+    K::Profiling::popRegion();
   }
 };
 
