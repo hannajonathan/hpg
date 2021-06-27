@@ -1578,6 +1578,45 @@ TEST(GridderState, ModelFFT) {
 }
 #endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+// test FFT result
+TEST(GridderState, OneFFT) {
+  const std::array<unsigned, 4> grid_size{2048, 2048, 1, 1};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.12, -0.34};
+  auto padding = 2 * hpg::CFArray::padding;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3 + padding, 3 + padding, 3, 3}};
+  MyCFArrayShape cf(10, cf_sizes);
+  auto gs =
+    hpg::get_value(
+      hpg::GridderState::create<1>(
+        default_device,
+        0,
+        15,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0}},
+        {{0}}));
+
+  AnyGridValueArray zero_model(grid_size);
+  auto gs1 =
+    hpg::get_value(
+      std::move(gs).set_model(default_host_device, std::move(zero_model)));
+  auto [gs2, model] = std::move(gs1).model_values();
+  (*model)(1024, 1108, 0, 0) = 0.825;
+  auto gs3 =
+    hpg::get_value(
+      std::move(gs2).set_model(default_host_device, std::move(*model)));
+  auto gs4_or_err = std::move(gs3).apply_model_fft();
+  ASSERT_TRUE(hpg::is_value(gs4_or_err));
+  auto gs4 = hpg::get_value(std::move(gs4_or_err));
+  auto gs5 = std::move(gs4).shift_model();
+  auto [gs6, modelf] = std::move(gs5).model_values();
+  auto val = (*modelf)(1070, 10, 0, 0);
+  std::cout << val << std::endl;
+  EXPECT_TRUE(val.imag() < 0);
+}
+
 // test residual visibility return functionality
 TEST(GridderState, ResidualVisibilities) {
   const std::array<unsigned, 4> grid_size{20, 20, 2, 1};
