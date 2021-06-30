@@ -4447,7 +4447,7 @@ private:
     const std::string& name,
     const std::vector<iarray<N>>& mindexes) {
 
-    auto& esp = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
+    auto& esp = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     mindex_view<memory_space> result(name);
     auto mueller_indexes_h = K::create_mirror_view(result);
     size_t mr = 0;
@@ -4463,7 +4463,6 @@ private:
       for (size_t mc = 0; mc < result.extent(1); ++mc)
         mueller_indexes_h(mr, mc) = -1;
     K::deep_copy(esp.space, result, mueller_indexes_h);
-    esp.fence();
     return result;
   }
 
