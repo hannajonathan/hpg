@@ -361,6 +361,8 @@ struct TrialSpec {
         for (size_t mc = 0; is_dense && mc < mrow.size(); ++mc)
           is_dense = mrow[mc] == idx++;
       }
+      is_dense =
+        is_dense && mueller_indexes.size() == mueller_indexes[0].size();
       if (is_dense) {
         oss << "D" << mueller_indexes.size();
       } else {
