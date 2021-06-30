@@ -750,12 +750,12 @@ struct Vis final {
   int m_cf_major[2]; /**< CF major coordinate */
   int m_fine_offset[2]; /**< visibility position - nearest major grid */
   int m_cf_size[2]; /**< cf size */
-  const K::Array<vis_t, N>& m_values; /**< visibility values */
-  const K::Array<vis_weight_fp, N>& m_weights; /**< visibility weights */
+  K::Array<vis_t, N> m_values; /**< visibility values */
+  K::Array<vis_weight_fp, N> m_weights; /**< visibility weights */
   K::complex<vis_phase_fp> m_phasor;
-  const int& m_grid_cube; /**< grid cube index */
-  const int& m_cf_cube; /**< cf cube index */
-  const int& m_cf_grp; /**< cf group index */
+  int m_grid_cube; /**< grid cube index */
+  int m_cf_cube; /**< cf cube index */
+  int m_cf_grp; /**< cf group index */
   bool m_pos_w; /**< true iff W coordinate is strictly positive */
   cf_phase_gradient_fp m_phi0[2]; /**< phase screen value origin */
   cf_phase_gradient_fp m_dphi[2]; /**< phase screen value increment */
@@ -1314,8 +1314,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
       auto cf_vis =
         K::subview(
           cf,
-          std::make_pair(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
-          std::make_pair(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+          K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
+          K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
           K::ALL,
           vis.m_cf_cube,
           vis.m_cf_minor[0],
@@ -1325,8 +1325,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
       auto model_vis =
         K::subview(
           model,
-          std::make_pair(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-          std::make_pair(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+          K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+          K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
           K::ALL,
           vis.m_grid_cube);
 
@@ -1410,8 +1410,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     auto cf_vis =
       K::subview(
         cf,
-        std::make_pair(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
-        std::make_pair(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+        K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
+        K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
         K::ALL,
         vis.m_cf_cube,
         vis.m_cf_minor[0],
@@ -1422,8 +1422,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     auto grd_vis =
       K::subview(
         grid,
-        std::make_pair(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-        std::make_pair(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
         gpol,
         vis.m_grid_cube);
 
@@ -1499,8 +1499,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     auto cf_vis =
       K::subview(
         cf,
-        std::make_pair(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
-        std::make_pair(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+        K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
+        K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
         K::ALL,
         vis.m_cf_cube,
         vis.m_cf_minor[0],
@@ -1511,8 +1511,8 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     auto grd_vis =
       K::subview(
         grid,
-        std::make_pair(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-        std::make_pair(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
         gpol,
         vis.m_grid_cube);
 
@@ -1654,11 +1654,10 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
-            auto vb = gvisbuff(i); // NB: needed by nvcc (to capture View?)
 
             Vis<N, execution_space> vis(
               visibilities(i),
-              reinterpret_cast<K::Array<vis_t, N>&>(vb.vals),
+              reinterpret_cast<K::Array<vis_t, N>&>(gvisbuff(i).vals),
               grid_size,
               grid_scale,
               cf_radii,
@@ -1691,11 +1690,10 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
-            auto vb = gvisbuff(i); // NB: needed by nvcc (to capture View?)
 
             Vis<N, execution_space> vis(
               visibilities(i),
-              reinterpret_cast<K::Array<vis_t, N>&>(vb.vals),
+              reinterpret_cast<K::Array<vis_t, N>&>(gvisbuff(i).vals),
               grid_size,
               grid_scale,
               cf_radii,
