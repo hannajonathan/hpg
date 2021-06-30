@@ -1654,10 +1654,11 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
+            auto vb = gvisbuff(i); // NB: needed by nvcc (to capture View?)
 
             Vis<N, execution_space> vis(
               visibilities(i),
-              reinterpret_cast<K::Array<vis_t, N>&>(gvisbuff(i).vals),
+              reinterpret_cast<K::Array<vis_t, N>&>(vb.vals),
               grid_size,
               grid_scale,
               cf_radii,
@@ -1690,10 +1691,11 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
+            auto vb = gvisbuff(i); // NB: needed by nvcc (to capture View?)
 
             Vis<N, execution_space> vis(
               visibilities(i),
-              reinterpret_cast<K::Array<vis_t, N>&>(gvisbuff(i).vals),
+              reinterpret_cast<K::Array<vis_t, N>&>(vb.vals),
               grid_size,
               grid_scale,
               cf_radii,
