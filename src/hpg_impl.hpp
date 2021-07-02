@@ -1343,7 +1343,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
               auto screen = cphase<execution_space>(-phi_X - phi_Y(Y));
               const auto mv = model_vis(X, Y, gpol) * screen;
               // loop over visibility polarizations
-              for (int vpol = 0; vpol < N; ++vpol)
+              for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = degridding_mindex(gpol, vpol);
                     mindex >= 0) {
                   cf_t cfv = cf_vis(X, Y, mindex);
@@ -1351,6 +1351,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
                   vis_array_l.vis[vpol] += cfv * mv;
                   vis_array_l.wgt[vpol] += cfv;
                 }
+              }
             }
           },
           K::Sum<decltype(va)>(va));
@@ -1439,13 +1440,14 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
           gv_t gv(0);
           // loop over visibility polarizations
-          for (int vpol = 0; vpol < N; ++vpol)
+          for (int vpol = 0; vpol < N; ++vpol) {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
               cf_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
               gv += gv_t(cfv * screen * vis.m_values[vpol]);
               grid_wgt_l.vals[vpol] += cfv;
             }
+          }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
         }
       },
@@ -1526,12 +1528,13 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
           const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
           gv_t gv(0);
           // loop over visibility polarizations
-          for (int vpol = 0; vpol < N; ++vpol)
+          for (int vpol = 0; vpol < N; ++vpol) {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
               cf_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
               gv += gv_t(cfv * screen * vis.m_values[vpol]);
             }
+          }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
         }
       });
