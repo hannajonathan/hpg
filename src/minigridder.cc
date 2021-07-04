@@ -697,7 +697,7 @@ run_hpg_trial_op(
   GridlikeFn gfn) {
 
   std::queue<InputData> ids;
-  for (unsigned i = 0; i <= spec.streams; ++i)
+  for (unsigned i = 0; i < spec.repeats; ++i)
     ids.push(input_data);
 
   std::unique_ptr<hpg::GridValueArray> model;
@@ -762,13 +762,8 @@ run_hpg_trial_op(
       // result tuple after each iteration
       spec.repeats,
       [&](auto&& t_gs) {
-        InputData id;
-        if (!ids.empty()) {
-          id = std::move(ids.front());
-          ids.pop();
-        } else {
-          id = input_data;
-        }
+        InputData id = std::move(ids.front());
+        ids.pop();
         return
           map(
             gfn(std::get<1>(std::move(t_gs)), std::move(id).visibilities),
