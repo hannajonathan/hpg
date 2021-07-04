@@ -1463,7 +1463,7 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    bool update_grid_weights = false) const &;
+    bool update_grid_weights = true) const &;
 
   /** grid visibilities, without degridding (template-free, rvalue reference
    * version)
@@ -1481,7 +1481,7 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    bool update_grid_weights = false) &&;
+    bool update_grid_weights = true) &&;
 
   /** grid visibilities, without degridding (templated, const version)
    *
@@ -1501,7 +1501,7 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    bool update_grid_weights = false) const & {
+    bool update_grid_weights = true) const & {
 
     return
       grid_visibilities(
@@ -1529,7 +1529,7 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    bool update_grid_weights = false) && {
+    bool update_grid_weights = true) && {
 
     return
       std::move(*this)
@@ -1554,7 +1554,7 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    bool update_grid_weights = false) const &;
+    bool update_grid_weights = true) const &;
 
   /** degrid and grid visibilities (template-free, rvalue reference version)
    *
@@ -1571,7 +1571,7 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    bool update_grid_weights = false) &&;
+    bool update_grid_weights = true) &&;
 
   /** degrid and grid visibilities (templated, const version)
    *
@@ -1591,7 +1591,7 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    bool update_grid_weights = false) const & {
+    bool update_grid_weights = true) const & {
 
     return
       degrid_grid_visibilities(
@@ -1618,7 +1618,7 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    bool update_grid_weights = false) && {
+    bool update_grid_weights = true) && {
 
     return
       std::move(*this).degrid_grid_visibilities(
@@ -1747,7 +1747,7 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    bool update_grid_weights = false) const &;
+    bool update_grid_weights = true) const &;
 
   /** degrid and grid visibilities, returning residual visibilities
    * (template-free, rvalue reference version)
@@ -1765,7 +1765,7 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    bool update_grid_weights = false) &&;
+    bool update_grid_weights = true) &&;
 
   /** degrid and grid visibilities, returning residual visibilities (templated,
    * const version)
@@ -1786,7 +1786,7 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    bool update_grid_weights = false) const & {
+    bool update_grid_weights = true) const & {
 
     auto tpl_or_err =
       degrid_grid_get_residual_visibilities(
@@ -2341,7 +2341,7 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    bool update_grid_weights = false);
+    bool update_grid_weights = true);
 
   /** grid visibilities (template version)
    *
@@ -2358,7 +2358,7 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    bool update_grid_weights = false) {
+    bool update_grid_weights = true) {
 
     return
       grid_visibilities(
@@ -2379,7 +2379,7 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    bool update_grid_weights = false);
+    bool update_grid_weights = true);
 
   /** degrid and grid visibilities (template version)
    *
@@ -2396,7 +2396,7 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    bool update_grid_weights = false) {
+    bool update_grid_weights = true) {
 
     return
       degrid_grid_visibilities(
@@ -2464,7 +2464,7 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
-    bool update_grid_weights = false);
+    bool update_grid_weights = true);
 
   /** degrid and grid visibilities, returning residual visibilities (template
    * version)
@@ -2484,7 +2484,7 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
-    bool update_grid_weights = false) {
+    bool update_grid_weights = true) {
 
     auto fvs_or_err =
       degrid_grid_get_residual_visibilities(
