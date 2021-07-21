@@ -1264,6 +1264,7 @@ struct HPG_EXPORT VisibilityGridder final {
  * Note that this implementation probably is optimal only for many-core
  * devices, probably not OpenMP (although it is correct on all devices).
  */
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 template <unsigned N, typename execution_space>
 struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
 
@@ -1725,6 +1726,7 @@ struct HPG_EXPORT VisibilityGridder<N, execution_space, 1> final {
     K::Profiling::popRegion();
   }
 };
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 
 /** grid normalization kernel
  */
