@@ -282,6 +282,10 @@ to_rval(std::variant<Error, T>&& t) {
     return rval<T>(std::get<Error>(std::move(t)));
 }
 
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+const std::array<unsigned, 4> GridderState::default_versions{0, 0, 0, 0};
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+
 GridderState::GridderState() {
 }
 

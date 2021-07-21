@@ -1092,7 +1092,7 @@ protected:
 public:
 
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  static constexpr std::array<unsigned, 4> default_versions{0, 0, 0, 0};
+  static const std::array<unsigned, 4> default_versions;
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 
   /** default constructor
