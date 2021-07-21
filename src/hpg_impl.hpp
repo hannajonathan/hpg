@@ -3944,6 +3944,7 @@ public:
     return exec_grid.copy_visibilities_to_host(return_visibilities);
   }
 
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   template <unsigned N>
   State::maybe_vis_t
   grid_visibilities_4l(
@@ -3981,6 +3982,7 @@ public:
       m_weights);
     return exec_grid.copy_visibilities_to_host(return_visibilities);
   }
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 
   template <unsigned N>
   State::maybe_vis_t
@@ -4012,6 +4014,7 @@ public:
           return_visibilities,
           do_grid);
       break;
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     case 1:
       return
         grid_visibilities_4l(
@@ -4022,6 +4025,7 @@ public:
           return_visibilities,
           do_grid);
       break;
+#endif
     default:
       assert(false);
       std::abort();
@@ -4398,7 +4402,9 @@ private:
         m_exec_space_indexes.push_back(i);
         auto& st_esp = ost->m_exec_spaces[i];
         K::deep_copy(esp.space, esp.visbuff, st_esp.visbuff);
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         K::deep_copy(esp.space, esp.gvisbuff, st_esp.gvisbuff);
+#endif
         if constexpr (std::is_same_v<K::HostSpace, memory_space>) {
           std::visit(
             overloaded {
