@@ -1915,6 +1915,32 @@ public:
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   grid_values() &&;
 
+  /** get a pointer to the grid values buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of grid values
+   */
+  std::shared_ptr<GridValueArray::value_type>
+  grid_values_ptr() const &;
+
+  /** get the number of elements in the span of the grid values buffer
+   *
+   * It is recommended that this method is used to get the size of the grid
+   * values buffer (instead of using the product of the grid dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of grid values
+   */
+  size_t
+  grid_values_span() const &;
+
   /** get copy of model values
    *
    * Invokes fence() on target.
@@ -1928,6 +1954,32 @@ public:
    */
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   model_values() &&;
+
+  /** get a pointer to the model values buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of model values
+   */
+  std::shared_ptr<GridValueArray::value_type>
+  model_values_ptr() const &;
+
+  /** get the number of elements in the span of the model values buffer
+   *
+   * It is recommended that this method is used to get the size of the model
+   * values buffer (instead of using the product of the model dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of model values
+   */
+  size_t
+  model_values_span() const &;
 
   /** reset grid values to zero
    *
@@ -2542,12 +2594,64 @@ public:
   std::unique_ptr<GridValueArray>
   grid_values() const;
 
+  /** get a pointer to the grid values buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of grid values
+   */
+  std::shared_ptr<GridValueArray::value_type>
+  grid_values_ptr() const &;
+
+  /** get the number of elements in the span of the grid values buffer
+   *
+   * It is recommended that this method is used to get the size of the grid
+   * values buffer (instead of using the product of the grid dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of grid values
+   */
+  size_t
+  grid_values_span() const &;
+
   /** get copy of model values
    *
    * Invokes fence() on target.
    */
   std::unique_ptr<GridValueArray>
   model_values() const;
+
+  /** get a pointer to the model values buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of model values
+   */
+  std::shared_ptr<GridValueArray::value_type>
+  model_values_ptr() const &;
+
+  /** get the number of elements in the span of the model values buffer
+   *
+   * It is recommended that this method is used to get the size of the model
+   * values buffer (instead of using the product of the model dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of model values
+   */
+  size_t
+  model_values_span() const &;
 
   /** reset grid values to zero
    *

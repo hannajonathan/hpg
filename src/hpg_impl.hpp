@@ -523,6 +523,26 @@ template <typename memory_space>
 using const_mindex_view =
   K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
 
+template <typename Layout, typename memory_space>
+struct GridValuePtr
+  : public std::enable_shared_from_this<GridValuePtr<Layout, memory_space>> {
+
+  grid_view<Layout, memory_space> m_gv;
+
+  GridValuePtr(const grid_view<Layout, memory_space>& gv)
+    : m_gv(gv) {}
+
+  std::shared_ptr<GridValueArray::value_type>
+  ptr() const {
+    return
+      std::shared_ptr<GridValueArray::value_type>(
+        this->shared_from_this(),
+        reinterpret_cast<GridValueArray::value_type*>(m_gv.data()));
+  }
+
+  virtual ~GridValuePtr() {}
+};
+
 /** ordered Grid array axes */
 enum class GridAxis {
   x,
@@ -2185,11 +2205,23 @@ struct State {
   virtual std::unique_ptr<GridValueArray>
   grid_values() const = 0;
 
-  virtual std::unique_ptr<GridValueArray>
-  model_values() const = 0;
+  virtual std::shared_ptr<GridValueArray::value_type>
+  grid_values_ptr() const = 0;
+
+  virtual size_t
+  grid_values_span() const = 0;
 
   virtual void
   reset_grid() = 0;
+
+  virtual std::unique_ptr<GridValueArray>
+  model_values() const = 0;
+
+  virtual std::shared_ptr<GridValueArray::value_type>
+  model_values_ptr() const = 0;
+
+  virtual size_t
+  model_values_span() const = 0;
 
   virtual void
   reset_model() = 0;
@@ -3800,6 +3832,19 @@ public:
     return std::make_unique<GridValueViewArray<D>>(grid_h);
   }
 
+  std::shared_ptr<GridValueArray::value_type>
+  grid_values_ptr() const override {
+    return
+      std::make_shared<GridValuePtr<
+        typename GridLayout<D>::layout,
+        memory_space>>(m_grid)->ptr();
+  }
+
+  size_t
+  grid_values_span() const override {
+    return m_grid.span();
+  }
+
   std::unique_ptr<GridValueArray>
   model_values() const override {
     std::scoped_lock lock(m_mtx);
@@ -3819,6 +3864,19 @@ public:
         static_cast<unsigned>(m_grid.extent(3))};
       return std::make_unique<UnallocatedModelValueArray>(ex);
     }
+  }
+
+  std::shared_ptr<GridValueArray::value_type>
+  model_values_ptr() const override {
+    return
+      std::make_shared<GridValuePtr<
+        typename GridLayout<D>::layout,
+        memory_space>>(m_model)->ptr();
+  }
+
+  size_t
+  model_values_span() const override {
+    return m_model.span();
   }
 
   void
