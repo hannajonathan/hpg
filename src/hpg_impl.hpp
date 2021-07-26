@@ -524,6 +524,26 @@ using const_mindex_view =
   K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
 
 template <typename Layout, typename memory_space>
+struct GridWeightPtr
+  : public std::enable_shared_from_this<GridWeightPtr<Layout, memory_space>> {
+
+  weight_view<Layout, memory_space> m_gw;
+
+  GridWeightPtr(const weight_view<Layout, memory_space>& gw)
+    : m_gw(gw) {}
+
+  std::shared_ptr<GridWeightArray::value_type>
+  ptr() const {
+    return
+      std::shared_ptr<GridWeightArray::value_type>(
+        this->shared_from_this(),
+        reinterpret_cast<GridWeightArray::value_type*>(m_gw.data()));
+  }
+
+  virtual ~GridWeightPtr() {}
+};
+
+template <typename Layout, typename memory_space>
 struct GridValuePtr
   : public std::enable_shared_from_this<GridValuePtr<Layout, memory_space>> {
 
@@ -2202,6 +2222,12 @@ struct State {
   virtual std::unique_ptr<GridWeightArray>
   grid_weights() const = 0;
 
+  virtual std::shared_ptr<GridWeightArray::value_type>
+  grid_weights_ptr() const = 0;
+
+  virtual size_t
+  grid_weights_span() const = 0;
+
   virtual std::unique_ptr<GridValueArray>
   grid_values() const = 0;
 
@@ -3818,6 +3844,19 @@ public:
     K::deep_copy(exec.space, wgts_h, m_weights);
     exec.fence();
     return std::make_unique<GridWeightViewArray<D>>(wgts_h);
+  }
+
+  std::shared_ptr<GridWeightArray::value_type>
+  grid_weights_ptr() const override {
+    return
+      std::make_shared<GridWeightPtr<
+        typename execution_space::array_layout,
+        memory_space>>(m_weights)->ptr();
+  }
+
+  size_t
+  grid_weights_span() const override {
+    return m_weights.span();
   }
 
   std::unique_ptr<GridValueArray>

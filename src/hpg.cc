@@ -768,6 +768,16 @@ GridderState::grid_weights() && {
   return {std::move(result), std::move(result.impl->grid_weights())};
 }
 
+std::shared_ptr<GridWeightArray::value_type>
+GridderState::grid_weights_ptr() const & {
+  return impl->grid_weights_ptr();
+}
+
+size_t
+GridderState::grid_weights_span() const & {
+  return impl->grid_weights_span();
+}
+
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::grid_values() const & {
 
@@ -1332,6 +1342,16 @@ Gridder::grid_weights() const {
   std::tie(const_cast<Gridder*>(this)->state, result) =
     std::move(const_cast<Gridder*>(this)->state).grid_weights();
   return result;
+}
+
+std::shared_ptr<GridWeightArray::value_type>
+Gridder::grid_weights_ptr() const & {
+  return state.grid_weights_ptr();
+}
+
+size_t
+Gridder::grid_weights_span() const & {
+  return state.grid_weights_span();
 }
 
 std::unique_ptr<GridValueArray>

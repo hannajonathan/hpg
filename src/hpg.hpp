@@ -1901,6 +1901,32 @@ public:
   std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
   grid_weights() &&;
 
+  /** get a pointer to the grid weights buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of grid weights
+   */
+  std::shared_ptr<GridWeightArray::value_type>
+  grid_weights_ptr() const &;
+
+  /** get the number of elements in the span of the grid weights buffer
+   *
+   * It is recommended that this method is used to get the size of the grid
+   * weights buffer (instead of using the product of the grid dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of grid weights
+   */
+  size_t
+  grid_weights_span() const &;
+
   /** get copy of grid values
    *
    * Invokes fence() on target.
@@ -2586,6 +2612,32 @@ public:
    */
   std::unique_ptr<GridWeightArray>
   grid_weights() const;
+
+  /** get a pointer to the grid weights buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of grid weights
+   */
+  std::shared_ptr<GridWeightArray::value_type>
+  grid_weights_ptr() const &;
+
+  /** get the number of elements in the span of the grid weights buffer
+   *
+   * It is recommended that this method is used to get the size of the grid
+   * values buffer (instead of using the product of the grid dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of grid weights
+   */
+  size_t
+  grid_weights_span() const &;
 
   /** get copy of grid values
    *
