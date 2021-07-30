@@ -1407,6 +1407,65 @@ TEST(GridderState, GridOne) {
     cf.verify_cf_footprint(0, g.get(), grid_size, grid_scale, vis, freq, uvw));
 }
 
+TEST(GridderState, GridNone) {
+  const std::array<unsigned, 4> grid_size{16384, 16384, 1, 1};
+  const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
+  constexpr unsigned cf_radius = 45;
+  constexpr unsigned cf_oversampling = 20;
+  constexpr hpg::vis_frequency_fp freq = 3.693e+09;
+
+  ConeCFArray cf(1, cf_oversampling, cf_radius);
+
+  auto test =
+    [=](hpg::vis_uvw_t uvw) {
+      return
+        hpg::RvalM<void, hpg::GridderState>::pure(
+          [=]() {
+            return
+              hpg::GridderState
+              ::create<1>(
+                default_device,
+                0,
+                1,
+                &cf,
+                grid_size,
+                grid_scale,
+                {{0}},
+                {{0}}
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+                , impl_versions
+#endif
+                );
+          })
+        .and_then(
+          [=](auto&& gs) {
+            return
+              std::move(gs)
+              .set_convolution_function(default_host_device, ConeCFArray(cf));
+          })
+        .and_then(
+          [=](auto&& gs) {
+            return
+              std::move(gs)
+              .grid_visibilities(
+                default_host_device,
+                std::vector<hpg::VisData<1>>{},
+                true);
+          })
+        .map(
+          [](auto&& gs) {
+            auto [gs1, gv] = std::move(gs).grid_values();
+            auto [gs2, gw] = std::move(gs1).grid_weights();
+            return std::make_tuple(std::move(gv), std::move(gw));
+          });
+        };
+  auto err_or_result = test(hpg::vis_uvw_t{2344.1, 638.066, -1826.55})();
+  ASSERT_TRUE(hpg::is_value(err_or_result));
+  auto [g, w] = hpg::get_value(std::move(err_or_result));
+  EXPECT_FALSE(has_non_zero(g.get()));
+  EXPECT_FALSE(has_non_zero(w.get()));
+}
+
 TEST(GridderState, ZeroModel) {
   const std::array<unsigned, 4> grid_size{8192, 8192, 2, 1};
   const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
@@ -1699,6 +1758,49 @@ TEST(GridderState, ResidualVisibilities) {
         visibilities.begin(), visibilities.end())
       == std::make_pair(resvis.end(), visibilities.end()));
   }
+}
+
+TEST(GridderState, EmptyCF) {
+  const std::array<unsigned, 4> grid_size{16384, 16384, 1, 1};
+  const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
+  constexpr unsigned cf_oversampling = 20;
+  constexpr hpg::vis_frequency_fp freq = 3.693e+09;
+
+  MyCFArray cf(cf_oversampling, {{31, 31, 0, 0}}, {});
+
+  auto test =
+    [=](hpg::vis_uvw_t uvw) {
+      return
+        hpg::RvalM<void, hpg::GridderState>::pure(
+          [=]() {
+            return
+              hpg::GridderState
+              ::create<1>(
+                default_device,
+                0,
+                1,
+                &cf,
+                grid_size,
+                grid_scale,
+                {{0}},
+                {{0}}
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+                , impl_versions
+#endif
+                );
+          })
+        .and_then(
+          [=](auto&& gs) {
+            return
+              std::move(gs)
+              .grid_visibilities(
+                default_host_device,
+                std::vector<hpg::VisData<1>>{},
+                true);
+          });
+        };
+  auto err_or_result = test(hpg::vis_uvw_t{2344.1, 638.066, -1826.55})();
+  EXPECT_TRUE(hpg::is_value(err_or_result));
 }
 
 int
