@@ -243,6 +243,19 @@ struct InvalidModelGridSizeError
   }
 };
 
+/** CF support exceeds grid size error
+ *
+ * CF support exceeds size of grid
+ */
+struct CFSupportExceedsGridError
+  : public Error {
+
+  CFSupportExceedsGridError()
+    : Error(
+      "CF support size exceeds grid size",
+      ErrorType::CFSupportExceedsGrid) {}
+};
+
 namespace Impl {
 
 /** accumulation value type for complex values
@@ -3843,7 +3856,7 @@ public:
           || (extents[CFArray::Axis::y] >
               m_grid_size[static_cast<int>(GridAxis::y)]
               * cf_array.oversampling()))
-        return Error("CF support size exceeds grid size");
+        return CFSupportExceedsGridError();
     }
 
     switch_cf_pool();

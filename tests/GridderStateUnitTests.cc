@@ -920,7 +920,10 @@ TEST(GridderState, CFError) {
       gs.set_convolution_function(
         default_host_device,
         create_cf(10, {cf_size}, rng));
-    EXPECT_TRUE(hpg::is_error(error_or_gs));
+    ASSERT_TRUE(hpg::is_error(error_or_gs));
+    EXPECT_EQ(
+      hpg::get_error(error_or_gs).type(),
+      hpg::ErrorType::CFSupportExceedsGrid);
   }
   {
     // Y dimension too large
@@ -929,17 +932,23 @@ TEST(GridderState, CFError) {
       gs.set_convolution_function(
         default_host_device,
         create_cf(10, {cf_size}, rng));
-    EXPECT_TRUE(hpg::is_error(error_or_gs));
+    ASSERT_TRUE(hpg::is_error(error_or_gs));
+    EXPECT_EQ(
+      hpg::get_error(error_or_gs).type(),
+      hpg::ErrorType::CFSupportExceedsGrid);
   }
   {
-    // error in one of a list of CFs
+    // support too big in one of a list of CFs
     const std::vector<std::array<unsigned, 4>>
       cf_sizes{{3, 3, 2, 4}, {12, 15, 2, 3}, {2, 2, 2, 4}};
     auto error_or_gs =
       gs.set_convolution_function(
         default_host_device,
         create_cf(10, cf_sizes, rng));
-    EXPECT_TRUE(hpg::is_error(error_or_gs));
+    ASSERT_TRUE(hpg::is_error(error_or_gs));
+    EXPECT_EQ(
+      hpg::get_error(error_or_gs).type(),
+      hpg::ErrorType::CFSupportExceedsGrid);
   }
 }
 #endif // HPG_DELTA_EXPERIMENTAL_ONLY
