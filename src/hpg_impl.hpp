@@ -3426,6 +3426,7 @@ struct CFPool final {
   void
   add_host_cfs(Device host_device, execution_space espace, CFArray&& cf_array) {
     prepare_pool(&cf_array);
+    num_cf_groups = 0;
     size_t offset = 0;
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
@@ -3476,6 +3477,7 @@ struct CFPool final {
   void
   add_device_cfs(execution_space espace, DeviceCFArray<D>&& cf_array) {
     prepare_pool(&cf_array);
+    num_cf_groups = 0;
     size_t offset = 0;
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
