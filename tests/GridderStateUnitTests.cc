@@ -880,9 +880,9 @@ TEST(GridderState, CopyOrMove) {
     EXPECT_FALSE(hpg::get_value(err_or_gs2).is_null());
   }
   {
-    auto gs1 = gs.shift_grid();
+    auto gs1 = gs.shift_grid(hpg::ShiftDirection::FORWARD);
     EXPECT_FALSE(gs.is_null());
-    auto gs2 = std::move(gs1).shift_grid();
+    auto gs2 = std::move(gs1).shift_grid(hpg::ShiftDirection::FORWARD);
     EXPECT_TRUE(gs1.is_null());
     EXPECT_FALSE(gs2.is_null());
   }
@@ -1678,7 +1678,7 @@ TEST(GridderState, OneFFT) {
   auto gs4_or_err = std::move(gs3).apply_model_fft();
   ASSERT_TRUE(hpg::is_value(gs4_or_err));
   auto gs4 = hpg::get_value(std::move(gs4_or_err));
-  auto gs5 = std::move(gs4).shift_model();
+  auto gs5 = std::move(gs4).shift_model(hpg::ShiftDirection::FORWARD);
   auto [gs6, modelf] = std::move(gs5).model_values();
   auto val = (*modelf)(1070, 10, 0, 0);
   std::cout << val << std::endl;

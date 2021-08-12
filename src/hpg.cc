@@ -895,34 +895,34 @@ GridderState::apply_model_fft(
 }
 
 GridderState
-GridderState::shift_grid() const & {
+GridderState::shift_grid(ShiftDirection direction) const & {
 
   GridderState result(*this);
-  result.impl->shift_grid();
+  result.impl->shift_grid(direction);
   return result;
 }
 
 GridderState
-GridderState::shift_grid() && {
+GridderState::shift_grid(ShiftDirection direction) && {
 
   GridderState result(std::move(*this));
-  result.impl->shift_grid();
+  result.impl->shift_grid(direction);
   return result;
 }
 
 GridderState
-GridderState::shift_model() const & {
+GridderState::shift_model(ShiftDirection direction) const & {
 
   GridderState result(*this);
-  result.impl->shift_model();
+  result.impl->shift_model(direction);
   return result;
 }
 
 GridderState
-GridderState::shift_model() && {
+GridderState::shift_model(ShiftDirection direction) && {
 
   GridderState result(std::move(*this));
-  result.impl->shift_model();
+  result.impl->shift_model(direction);
   return result;
 }
 
@@ -1388,13 +1388,13 @@ Gridder::apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
 }
 
 void
-Gridder::shift_grid() {
-  state = std::move(state).shift_grid();
+Gridder::shift_grid(ShiftDirection direction) {
+  state = std::move(state).shift_grid(direction);
 }
 
 void
-Gridder::shift_model() {
-  state = std::move(state).shift_model();
+Gridder::shift_model(ShiftDirection direction) {
+  state = std::move(state).shift_model(direction);
 }
 
 opt_t<Error>

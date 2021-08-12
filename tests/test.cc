@@ -273,7 +273,7 @@ dump_grids(
       }
     }
   }
-  g0.shift_grid();
+  g0.shift_grid(hpg::ShiftDirection::FORWARD);
   {
     std::cout << "after rotation" << std::endl;
     auto gval = g0.grid_values();

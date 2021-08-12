@@ -972,6 +972,19 @@ constexpr FFTSign model_fft_sign_dflt =
    ? FFTSign::NEGATIVE
    : FFTSign::POSITIVE);
 
+/** grid or model shift direction
+ *
+ * The values are defined such that a grid (or model) shift in one of the
+ * directions, followed by a shift in the other direction would restore the
+ * original grid. No definition of either value singly is provided. For those
+ * grid dimensions that have an even size, however, the two values are
+ * functionally identical.
+ */
+enum class HPG_EXPORT ShiftDirection {
+  FORWARD,
+  BACKWARD
+};
+
 /** future
  *
  * A type similar to a std::future, but with limitations to account for the fact
@@ -2020,33 +2033,41 @@ public:
     FFTSign sign = model_fft_sign_dflt,
     bool in_place = true) &&;
 
-  /** shift grid planes by half
+  /** shift grid planes by half grid size on X, Y axes
    *
-   * Primarily for use after application of FFT. May invoke fence() on target.
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
    */
   GridderState
-  shift_grid() const &;
+  shift_grid(ShiftDirection direction) const &;
 
-  /** shift grid planes by half
+  /** shift grid planes by half grid size on X, Y axes
    *
-   * Primarily for use after application of FFT. May invoke fence() on target.
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
    */
   GridderState
-  shift_grid() &&;
+  shift_grid(ShiftDirection direction) &&;
 
-  /** shift model planes by half
+  /** shift model planes by half grid size on X, Y axes
    *
-   * Primarily for use after application of FFT. May invoke fence() on target.
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
    */
   GridderState
-  shift_model() const &;
+  shift_model(ShiftDirection direction) const &;
 
-  /** shift model planes by half
+  /** shift model planes by half grid size on X, Y axes
    *
-   * Primarily for use after application of FFT. May invoke fence() on target.
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
    */
   GridderState
-  shift_model() &&;
+  shift_model(ShiftDirection direction) &&;
 
 protected:
   friend class Gridder;
@@ -2578,19 +2599,23 @@ public:
     FFTSign sign = model_fft_sign_dflt,
     bool in_place = true);
 
-  /** shift grid planes by half
+  /** shift grid planes by half grid size on X, Y axes
    *
-   * Primarily for use after application of FFT. May invoke fence() on target.
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
    */
   void
-  shift_grid();
+  shift_grid(ShiftDirection direction);
 
-  /** shift model planes by half
+  /** shift model planes by half grid size on X, Y axes
    *
-   * Primarily for use after application of FFT. May invoke fence() on target.
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
    */
   void
-  shift_model();
+  shift_model(ShiftDirection direction);
 
 protected:
 
