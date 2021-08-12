@@ -1412,7 +1412,6 @@ TEST(GridderState, GridNone) {
   const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
   constexpr unsigned cf_radius = 45;
   constexpr unsigned cf_oversampling = 20;
-  constexpr hpg::vis_frequency_fp freq = 3.693e+09;
 
   ConeCFArray cf(1, cf_oversampling, cf_radius);
 
@@ -1764,7 +1763,6 @@ TEST(GridderState, EmptyCF) {
   const std::array<unsigned, 4> grid_size{16384, 16384, 1, 1};
   const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
   constexpr unsigned cf_oversampling = 20;
-  constexpr hpg::vis_frequency_fp freq = 3.693e+09;
 
   MyCFArray cf(cf_oversampling, {{31, 31, 0, 0}}, {});
 
@@ -1802,6 +1800,74 @@ TEST(GridderState, EmptyCF) {
   auto err_or_result = test(hpg::vis_uvw_t{2344.1, 638.066, -1826.55})();
   EXPECT_TRUE(hpg::is_value(err_or_result));
 }
+
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
+TEST(GridderState, ShiftCycle) {
+  auto padding = 2 * hpg::CFArray::padding;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3 + padding, 3 + padding, 1, 1}};
+  std::mt19937 rng(42);
+  MyCFArray cf = create_cf(10, cf_sizes, rng);
+  size_t num_vis = 10000;
+  const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
+
+  auto test =
+    [&](const std::array<unsigned, 4>& grid_size) {
+      return
+        hpg::RvalM<void, hpg::GridderState>::pure(
+          [=]() {
+            return
+              hpg::GridderState::create<1>(
+                default_device,
+                0,
+                num_vis,
+                &cf,
+                grid_size,
+                grid_scale,
+                {{0}},
+                {{0}}
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+                , impl_versions
+#endif
+                ) ;
+          })
+        .and_then(
+          [&](auto&& gs) {
+            return
+              std::move(gs)
+              .set_convolution_function(default_host_device, MyCFArray(cf));
+          })
+        .and_then(
+          [&](auto&& gs) {
+            std::vector<hpg::VisData<1>> vis;
+            init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
+            return
+              std::move(gs)
+              .grid_visibilities(default_host_device, std::move(vis), false);
+          })
+        .map(
+          [](auto&& gs) {
+            auto [gs0, grid0] = std::move(gs).grid_values();
+            auto [gs1, grid1] =
+              std::move(gs0)
+              .shift_grid(hpg::ShiftDirection::FORWARD)
+              .shift_grid(hpg::ShiftDirection::BACKWARD)
+              .grid_values();
+            return std::make_tuple(std::move(grid0), std::move(grid1));
+          });
+    };
+
+  for (auto& asz : std::vector<std::array<unsigned, 2>>{
+      {20, 20}, {19, 19}, {18, 19}, {19, 18}}) {
+    auto grids_or_err = test({asz[0], asz[1], 1, 2})();
+    if (hpg::is_error(grids_or_err))
+      std::cout << hpg::get_error(grids_or_err).message() << std::endl;
+    ASSERT_TRUE(hpg::is_value(grids_or_err));
+    auto [g0, g1] = hpg::get_value(std::move(grids_or_err));
+    EXPECT_TRUE(values_eq(g0.get(), g1.get()));
+  }
+}
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
 int
 main(int argc, char **argv) {
