@@ -64,6 +64,17 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 namespace hpg {
 namespace Impl {
 
+/** scoped Kokkos profiling region value */
+struct ProfileRegion {
+  inline ProfileRegion(const char* nm) {
+    K::Profiling::pushRegion(nm);
+  }
+
+  inline ~ProfileRegion() {
+    K::Profiling::popRegion();
+  }
+};
+
 /** scalar type for all polarization products of a visibility value
  *
  * Values of this type can be used in Kokkos reductions
@@ -1243,7 +1254,7 @@ struct HPG_EXPORT VisibilityGridder final {
     const weight_view<typename execution_space::array_layout, memory_space>&
       weights) {
 
-    K::Profiling::pushRegion("VisibilityGridder");
+    ProfileRegion region("VisibilityGridder");
 
     const K::Array<int, 2>
       grid_size{
@@ -1401,8 +1412,6 @@ struct HPG_EXPORT VisibilityGridder final {
             }
           });
     }
-
-    K::Profiling::popRegion();
   }
 };
 
