@@ -63,7 +63,7 @@ struct InitArguments {
     , num_numa(-1)
     , device_id(-1)
     , ndevices(-1)
-    , skip_device(01)
+    , skip_device(-1)
     , disable_warnings(false)
     , cleanup_fftw(false) {}
 

@@ -344,7 +344,7 @@ initialize(const InitArguments& args) {
   kargs.num_numa = args.num_numa;
   kargs.device_id = args.device_id;
   kargs.ndevices = args.ndevices;
-  kargs.skip_device = args.skip_device;
+  kargs.skip_device = ((args.skip_device >= 0) ? args.skip_device : 9999);
   kargs.disable_warnings = args.disable_warnings;
   K::initialize(kargs);
 #ifdef HPG_ENABLE_OPENMP
