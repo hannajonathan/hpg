@@ -6,7 +6,7 @@ High performance gridding (kernel) implementation library.
 
 * [CMake](https://cmake.org) (v3.14 or later)
 * [Kokkos](https://github.com/kokkos/kokkos) (v3.2.00 or later)
-* [FFTW](http://fftw.org) (v3.3.8)
+* [FFTW](http://fftw.org) (v3.3.8 or later)
 * [CUDA](https://developer.nvidia.com/cuda-toolkit) (optional, v11.0.2 or later)
 * cuFFT (part of CUDA toolkit)
 
@@ -54,15 +54,18 @@ Installation of *HPG* *via* [Spack](https://spack.io) is
 supported. Building and installing *HPG* by this path is, in many
 ways, the simplest alternative, although *Spack* itself is naturally a
 prerequisite. The *Spack* package file for *HPG* is available in the
-`spack` sub-directory of this repository. To simply build and install
-*HPG* it is sufficient to copy the package file alone to a *Spack*
-repository. Alternatively, if one is intending to do development on
-*HPG*, cloning the *HPG* git repository is also necessary. As an
-example, the following single command is sufficient to build and
-install *HPG* built with serial, OpenMP and CUDA devices, together
-with all its dependencies (including *CMake*, *CUDA*, *FFTW*,
-*Kokkos*, plus all transitive dependencies), starting from a fresh
-*Spack* installation configured with *gcc* version 9.3.0
+[hpg-spack](https://gitlab.nrao.edu/mpokorny/hpg-spack) repository. To
+build and install *HPG* it is sufficient to copy the package file
+alone to a *Spack* repository, although cloning the
+[hpg-spack](https://gitlab.nrao.edu/mpokorny/hpg-spack) git repository
+into the *Spack* repository is nearly as simple. Alternatively, if one
+is intending to do development on *HPG*, cloning the *HPG* git
+repository is also necessary. As an example, the following single
+command is sufficient to build and install *HPG* built with serial,
+OpenMP and CUDA devices, together with all its dependencies (including
+*CMake*, *CUDA*, *FFTW*, *Kokkos*, plus all transitive dependencies),
+starting from a fresh *Spack* installation configured with *gcc*
+version 9.3.0
 
 ``` shell
 $ spack install \
