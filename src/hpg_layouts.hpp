@@ -26,6 +26,8 @@
 
 namespace hpg::layouts {
 
+namespace K = Kokkos;
+
 /** axis order for strided grid layout */
 static const std::array<int, 4> strided_grid_layout_order{
   static_cast<int>(core::GridAxis::y),

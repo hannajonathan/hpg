@@ -37,9 +37,9 @@
 # include <cufft.h>
 #endif
 
-namespace K = Kokkos;
-
 namespace hpg::core {
+
+namespace K = Kokkos;
 
 /** scoped Kokkos profiling region value */
 struct ProfileRegion {

@@ -38,8 +38,6 @@
 # include <fftw3.h>
 #endif
 
-namespace K = Kokkos;
-
 /** helper type for std::visit */
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 /** explicit deduction guide (not needed as of C++20) */
@@ -50,6 +48,8 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
  * HPG implementation header file
  */
 namespace hpg {
+
+namespace K = Kokkos;
 
 /** disabled host device error
  *
