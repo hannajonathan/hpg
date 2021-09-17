@@ -15,6 +15,8 @@
 //
 #pragma once
 #include "hpg.hpp"
+#include "hpg_export.h"
+
 #include <array>
 
 namespace hpg {

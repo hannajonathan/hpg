@@ -15,6 +15,7 @@
 //
 #pragma once
 
+#include "hpg_config.hpp"
 #include "hpg.hpp"
 #include "hpg_core.hpp"
 #include "hpg_layouts.hpp"
