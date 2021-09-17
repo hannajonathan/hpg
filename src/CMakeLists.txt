@@ -151,6 +151,7 @@ set(hpg_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_impl.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_core.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_layouts.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/hpg_runtime.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_indexing.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_rval.hpp

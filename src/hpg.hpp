@@ -333,20 +333,10 @@ struct VisData {
   }
 };
 
-namespace Impl {
+namespace runtime {
 struct HPG_EXPORT State;
 struct HPG_EXPORT GridderState;
-
-/** sign of a value
- *
- * @return -1, if less than 0; +1, if greater than 0; 0, if equal to 0
- */
-template <typename T>
-inline constexpr int
-sgn(T val) {
-  return (T(0) < val) - (val < T(0));
-}
-} // end namespace Impl
+} // end namespace runtime
 
 /** vector of elements parameterized by number of polarizations
  *
@@ -1097,10 +1087,10 @@ protected:
 class HPG_EXPORT GridderState {
 protected:
   friend class Gridder;
-  friend class Impl::GridderState;
+  friend class runtime::GridderState;
 
-  // state cannot be a unique_ptr since Impl::State is here an incomplete type
-  std::shared_ptr<Impl::State> impl; /**< state implementation */
+  // state cannot be a unique_ptr since runtime::State is here an incomplete type
+  std::shared_ptr<runtime::State> impl; /**< state implementation */
 
 public:
 

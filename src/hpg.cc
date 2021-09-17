@@ -14,6 +14,7 @@
 // limitations under the License.
 //
 #include "hpg_impl.hpp"
+#include "hpg_runtime.hpp"
 
 #include <optional>
 #include <variant>
@@ -42,47 +43,6 @@ struct InvalidNumberMuellerIndexRowsError
       "Number of rows of Mueller indexes does not match grid",
       ErrorType::InvalidNumberMuellerIndexRows) {}
 
-};
-
-/** invalid number of polarizations error
- *
- * Number of polarizations in visibility data does not equal number of columns
- * of Mueller indexes */
-struct InvalidNumberPolarizationsError
-  : public Error {
-
-  InvalidNumberPolarizationsError()
-    : Error(
-      "Number of visibility polarizations does not match Mueller matrix",
-      ErrorType::InvalidNumberPolarizations) {}
-
-};
-
-/** excessive number of visibilities error
- *
- * Number of visibilities exceeds configured maximum batch size of
- * GridderState
- */
-struct ExcessiveNumberVisibilitiesError
-  : public Error {
-
-  ExcessiveNumberVisibilitiesError()
-    : Error(
-      "Number of visibilities exceeds maximum batch size",
-      ErrorType::ExcessiveNumberVisibilities) {}
-};
-
-/** update weights without gridding error
- *
- * Grid weights cannot be updated without doing gridding
- */
-struct UpdateWeightsWithoutGriddingError
-  : public Error {
-
-  UpdateWeightsWithoutGriddingError()
-    : Error(
-      "Unable to update grid weights during degridding only",
-      ErrorType::UpdateWeightsWithoutGridding) {}
 };
 
 Error::Error(const std::string& msg, ErrorType err)
@@ -206,156 +166,6 @@ ScopeGuard::~ScopeGuard() {
     finalize();
 }
 
-/** helper class for calling methods of StateT member of GridderState
- * instances
- *
- * Manages calling the appropriate methods of StateT as well as updating the
- * StateT member */
-struct Impl::GridderState {
-
-  template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
-  allocate_convolution_function_region(GS&& st, const CFArrayShape* shape) {
-
-    ::hpg::GridderState result(std::forward<GS>(st));
-    if (auto error = result.impl->allocate_convolution_function_region(shape);
-        error)
-      return std::move(error.value());
-    else
-      return std::move(result);
-  }
-
-  template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
-  set_convolution_function(GS&& st, Device host_device, CFArray&& cf) {
-
-    if (host_devices().count(host_device) > 0) {
-      ::hpg::GridderState result(std::forward<GS>(st));
-      if (auto error =
-          result.impl->set_convolution_function(host_device, std::move(cf));
-          error)
-        return std::move(error.value());
-      else
-        return std::move(result);
-    } else {
-      return DisabledHostDeviceError();
-    }
-  }
-
-  template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
-  set_model(GS&& st, Device host_device, GridValueArray&& gv) {
-
-    if (host_devices().count(host_device) > 0) {
-      ::hpg::GridderState result(std::forward<GS>(st));
-      if (auto error = result.impl->set_model(host_device, std::move(gv));
-          error)
-        return std::move(error.value());
-      else
-        return std::move(result);
-    } else {
-      return DisabledHostDeviceError();
-    }
-  }
-
-  template <typename GS>
-  static std::variant<
-    Error,
-    std::tuple<::hpg::GridderState, future<VisDataVector>>>
-  grid_visibilities(
-    GS&& st,
-    Device host_device,
-    VisDataVector&& visibilities,
-    bool update_grid_weights,
-    bool do_degrid,
-    bool return_visibilities,
-    bool do_grid) {
-
-    if (host_devices().count(host_device) == 0)
-      return DisabledHostDeviceError();
-
-    if (visibilities.size() > st.impl->m_max_visibility_batch_size)
-      return ExcessiveNumberVisibilitiesError();
-
-    if (visibilities.m_npol != st.impl->m_num_polarizations)
-      return InvalidNumberPolarizationsError();
-
-    if (!do_grid && update_grid_weights)
-      return UpdateWeightsWithoutGriddingError();
-
-    ::hpg::GridderState result(std::forward<GS>(st));
-    auto err_or_maybevis =
-      result.impl->grid_visibilities(
-        host_device,
-        std::move(visibilities),
-        update_grid_weights,
-        do_degrid,
-        return_visibilities,
-        do_grid);
-    if (std::holds_alternative<Error>(err_or_maybevis)) {
-      return std::get<Error>(std::move(err_or_maybevis));
-    } else {
-      auto mvs = std::get<State::maybe_vis_t>(std::move(err_or_maybevis));
-#if HPG_API >= 17
-      return
-        std::make_tuple(
-          std::move(result),
-          future<VisDataVector>(
-            [mvs, result=opt_t<VisDataVector>()]() mutable
-            -> opt_t<VisDataVector>& {
-              if (!result) {
-                if (mvs) {
-                  auto mvs0 = std::atomic_load(&mvs);
-                  if (*mvs0 && (*mvs0)->has_value())
-                    result = std::move(**mvs0);
-                }
-              }
-              return result;
-            }));
-#else
-      return
-        std::make_tuple(
-          std::move(result),
-          future<VisDataVector>(
-            [mvs, result=opt_t<VisDataVector>()]() mutable
-            -> opt_t<VisDataVector>& {
-              if (!result) {
-                if (mvs) {
-                  auto mvs0 = std::atomic_load(&mvs);
-                  if (*mvs0 && (*mvs0)->has_value())
-                    result =
-                      opt_t<VisDataVector>(
-                        new VisDataVector(std::move(*mvs0)->value()));
-                }
-              }
-              return result;
-            }));
-#endif
-    }
-  }
-
-  template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
-  apply_grid_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
-
-    ::hpg::GridderState result(std::forward<GS>(st));
-    if (auto error = result.impl->apply_grid_fft(norm, sign, in_place); error)
-      return std::move(error.value());
-    else
-      return std::move(result);
-  }
-
-  template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
-  apply_model_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
-
-    ::hpg::GridderState result(std::forward<GS>(st));
-    if (auto error = result.impl->apply_model_fft(norm, sign, in_place); error)
-      return std::move(error.value());
-    else
-      return std::move(result);
-  }
-};
 
 template <typename T>
 static rval_t<T>
@@ -397,7 +207,7 @@ GridderState::GridderState(
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     impl =
-      std::make_shared<Impl::StateT<Device::Serial>>(
+      std::make_shared<runtime::StateT<Device::Serial>>(
         max_active_tasks,
         max_visibility_batch_size,
         init_cf_shape,
@@ -413,7 +223,7 @@ GridderState::GridderState(
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     impl =
-      std::make_shared<Impl::StateT<Device::OpenMP>>(
+      std::make_shared<runtime::StateT<Device::OpenMP>>(
         max_active_tasks,
         max_visibility_batch_size,
         init_cf_shape,
@@ -429,7 +239,7 @@ GridderState::GridderState(
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     impl =
-      std::make_shared<Impl::StateT<Device::Cuda>>(
+      std::make_shared<runtime::StateT<Device::Cuda>>(
         max_active_tasks,
         max_visibility_batch_size,
         init_cf_shape,
@@ -504,24 +314,24 @@ GridderState::operator=(const GridderState& rhs) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     impl =
-      std::make_shared<Impl::StateT<Device::Serial>>(
-        dynamic_cast<Impl::StateT<Device::Serial>*>(crhs.impl.get())
+      std::make_shared<runtime::StateT<Device::Serial>>(
+        dynamic_cast<runtime::StateT<Device::Serial>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     impl =
-      std::make_shared<Impl::StateT<Device::OpenMP>>(
-        dynamic_cast<Impl::StateT<Device::OpenMP>*>(crhs.impl.get())
+      std::make_shared<runtime::StateT<Device::OpenMP>>(
+        dynamic_cast<runtime::StateT<Device::OpenMP>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_OPENMP
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     impl =
-      std::make_shared<Impl::StateT<Device::Cuda>>(
-        dynamic_cast<Impl::StateT<Device::Cuda>*>(crhs.impl.get())
+      std::make_shared<runtime::StateT<Device::Cuda>>(
+        dynamic_cast<runtime::StateT<Device::Cuda>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_CUDA
@@ -594,7 +404,7 @@ GridderState::allocate_convolution_function_region(const CFArrayShape* shape)
 
   return
     to_rval(
-      Impl::GridderState::allocate_convolution_function_region(*this, shape));
+      runtime::GridderState::allocate_convolution_function_region(*this, shape));
 }
 
 rval_t<GridderState>
@@ -606,7 +416,7 @@ GridderState::allocate_convolution_function_region(const CFArrayShape* shape)
 
   return
     to_rval(
-      Impl::GridderState
+      runtime::GridderState
       ::allocate_convolution_function_region(std::move(*this), shape));
 }
 
@@ -618,7 +428,7 @@ GridderState::set_convolution_function(Device host_device, CFArray&& cf)
 
   return
     to_rval(
-      Impl::GridderState
+      runtime::GridderState
       ::set_convolution_function(*this, host_device, std::move(cf)));
 }
 
@@ -629,7 +439,7 @@ GridderState::set_convolution_function(Device host_device, CFArray&& cf) && {
 
   return
     to_rval(
-      Impl::GridderState
+      runtime::GridderState
       ::set_convolution_function(std::move(*this), host_device, std::move(cf)));
 }
 
@@ -640,7 +450,7 @@ GridderState::set_model(Device host_device, GridValueArray&& gv)
   core::ProfileRegion region("GridderState::set_model_const");
 
   return
-    to_rval(Impl::GridderState::set_model(*this, host_device, std::move(gv)));
+    to_rval(runtime::GridderState::set_model(*this, host_device, std::move(gv)));
 }
 
 rval_t<GridderState>
@@ -650,7 +460,7 @@ GridderState::set_model(Device host_device, GridValueArray&& gv) && {
 
   return
     to_rval(
-      Impl::GridderState
+      runtime::GridderState
       ::set_model(std::move(*this), host_device, std::move(gv)));
 }
 
@@ -667,7 +477,7 @@ GridderState::grid_visibilities_base(
 
   return
     to_rval(
-      Impl::GridderState::grid_visibilities(
+      runtime::GridderState::grid_visibilities(
         *this,
         host_device,
         std::move(visibilities),
@@ -690,7 +500,7 @@ GridderState::grid_visibilities_base(
 
   return
     to_rval(
-      Impl::GridderState::grid_visibilities(
+      runtime::GridderState::grid_visibilities(
         std::move(*this),
         std::move(host_device),
         std::move(visibilities),
@@ -1052,7 +862,7 @@ GridderState::apply_grid_fft(
   core::ProfileRegion region("GridderState::apply_grid_fft_const");
 
   return
-    to_rval(Impl::GridderState::apply_grid_fft(*this, norm, sign, in_place));
+    to_rval(runtime::GridderState::apply_grid_fft(*this, norm, sign, in_place));
 }
 
 rval_t<GridderState>
@@ -1065,7 +875,7 @@ GridderState::apply_grid_fft(
 
   return
     to_rval(
-      Impl::GridderState::apply_grid_fft(
+      runtime::GridderState::apply_grid_fft(
         std::move(*this),
         norm,
         sign,
@@ -1081,7 +891,7 @@ GridderState::apply_model_fft(
   core::ProfileRegion region("GridderState::apply_model_fft_const");
 
   return
-  to_rval(Impl::GridderState::apply_model_fft(*this, norm, sign, in_place));
+  to_rval(runtime::GridderState::apply_model_fft(*this, norm, sign, in_place));
 }
 
 rval_t<GridderState>
@@ -1094,7 +904,7 @@ GridderState::apply_model_fft(
 
   return
     to_rval(
-      Impl::GridderState::apply_model_fft(
+      runtime::GridderState::apply_model_fft(
         std::move(*this),
         norm,
         sign,
@@ -1707,17 +1517,17 @@ CFArray::copy_to(
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
-    Impl::layout_for_device<Device::Serial>(host_device, *this, grp, dst);
+    impl::layout_for_device<Device::Serial>(host_device, *this, grp, dst);
     break;
 #endif
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
-    Impl::layout_for_device<Device::OpenMP>(host_device, *this, grp, dst);
+    impl::layout_for_device<Device::OpenMP>(host_device, *this, grp, dst);
     break;
 #endif
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
-    Impl::layout_for_device<Device::Cuda>(host_device, *this, grp, dst);
+    impl::layout_for_device<Device::Cuda>(host_device, *this, grp, dst);
     break;
 #endif
   default:
@@ -1726,7 +1536,7 @@ CFArray::copy_to(
   }
   return
     rval(
-      Impl::construct_cf_layout_version(
+      impl::construct_cf_layout_version(
         layouts::cf_layout_version_number,
         device));
 }
@@ -1807,7 +1617,7 @@ DeviceCFArray::create(
     std::tuple<std::array<unsigned, rank - 1>, std::vector<value_type>>>&&
     arrays) {
 
-  auto opt_vn_dev = Impl::parsed_cf_layout_version(layout);
+  auto opt_vn_dev = impl::parsed_cf_layout_version(layout);
   if (!opt_vn_dev)
     return
       rval<std::unique_ptr<DeviceCFArray>>(
@@ -1821,7 +1631,7 @@ DeviceCFArray::create(
   case Device::Serial:
     return
       rval<std::unique_ptr<DeviceCFArray>>(
-        std::make_unique<Impl::DeviceCFArray<Device::Serial>>(
+        std::make_unique<impl::DeviceCFArray<Device::Serial>>(
           layout,
           oversampling,
           std::move(arrays)));
@@ -1831,7 +1641,7 @@ DeviceCFArray::create(
   case Device::OpenMP:
     return
       rval<std::unique_ptr<DeviceCFArray>>(
-        std::make_unique<Impl::DeviceCFArray<Device::OpenMP>>(
+        std::make_unique<impl::DeviceCFArray<Device::OpenMP>>(
           layout,
           oversampling,
           std::move(arrays)));
@@ -1841,7 +1651,7 @@ DeviceCFArray::create(
   case Device::Cuda:
     return
       rval<std::unique_ptr<DeviceCFArray>>(
-        std::make_unique<Impl::DeviceCFArray<Device::Cuda>>(
+        std::make_unique<impl::DeviceCFArray<Device::Cuda>>(
           layout,
           oversampling,
           std::move(arrays)));
