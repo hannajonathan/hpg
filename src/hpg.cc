@@ -1727,7 +1727,7 @@ CFArray::copy_to(
   return
     rval(
       Impl::construct_cf_layout_version(
-        Impl::cf_layout_version_number,
+        layouts::cf_layout_version_number,
         device));
 }
 
@@ -1742,7 +1742,7 @@ CFArray::min_buffer_size(Device device, unsigned grp) const {
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial: {
-    auto layout = Impl::CFLayout<Device::Serial>::dimensions(this, grp);
+    auto layout = layouts::CFLayout<Device::Serial>::dimensions(this, grp);
     alloc_sz =
       core::cf_view<
         typename core::DeviceT<Device::Serial>::kokkos_device::array_layout,
@@ -1759,7 +1759,7 @@ CFArray::min_buffer_size(Device device, unsigned grp) const {
 #endif
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP: {
-    auto layout = Impl::CFLayout<Device::OpenMP>::dimensions(this, grp);
+    auto layout = layouts::CFLayout<Device::OpenMP>::dimensions(this, grp);
     alloc_sz =
       core::cf_view<
         typename core::DeviceT<Device::OpenMP>::kokkos_device::array_layout,
@@ -1776,7 +1776,7 @@ CFArray::min_buffer_size(Device device, unsigned grp) const {
 #endif
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda: {
-    auto layout = Impl::CFLayout<Device::Cuda>::dimensions(this, grp);
+    auto layout = layouts::CFLayout<Device::Cuda>::dimensions(this, grp);
     alloc_sz =
       core::cf_view<
         typename core::DeviceT<Device::Cuda>::kokkos_device::array_layout,

@@ -17,6 +17,7 @@
 
 #include "hpg.hpp"
 #include "hpg_core.hpp"
+#include "hpg_layouts.hpp"
 
 #include <algorithm>
 #include <any>
@@ -35,10 +36,6 @@
 
 #if defined(HPG_ENABLE_SERIAL) || defined(HPG_ENABLE_OPENMP)
 # include <fftw3.h>
-#endif
-
-#ifdef __NVCC__
-# define WORKAROUND_NVCC_IF_CONSTEXPR_BUG
 #endif
 
 namespace K = Kokkos;
@@ -165,111 +162,6 @@ struct GridValuePtr
   }
 
   virtual ~GridValuePtr() {}
-};
-
-/** axis order for strided grid layout */
-static const std::array<int, 4> strided_grid_layout_order{
-  static_cast<int>(core::GridAxis::y),
-  static_cast<int>(core::GridAxis::mrow),
-  static_cast<int>(core::GridAxis::x),
-  static_cast<int>(core::GridAxis::cube)};
-
-/** device-specific grid array layout */
-template <Device D>
-struct GridLayout {
-
-  /** Kokkos layout type */
-  using layout =
-    std::conditional_t<
-      std::is_same_v<
-        typename core::DeviceT<D>::kokkos_device::array_layout,
-        K::LayoutLeft>,
-      K::LayoutLeft,
-      K::LayoutStride>;
-
-  /** create Kokkos layout using given grid dimensions
-   *
-   * logical index order matches GridAxis definition
-   */
-  static layout
-  dimensions(const std::array<int, 4>& dims) {
-    if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
-      return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3]);
-    } else {
-      return
-        K::LayoutStride::order_dimensions(
-          4,
-          strided_grid_layout_order.data(),
-          dims.data());
-    }
-#ifdef WORKAROUND_NVCC_IF_CONSTEXPR_BUG
-    return layout();
-#endif
-  }
-};
-
-/** CFLayout version number
- *
- * @todo make something useful of this, maybe add a value template parameter to
- * CFLayout?
- */
-static constexpr unsigned cf_layout_version_number = 0;
-
-/** axis order for strided CF array layout */
-static const std::array<int, 6> strided_cf_layout_order{
-  static_cast<int>(core::CFAxis::mueller),
-  static_cast<int>(core::CFAxis::y_major),
-  static_cast<int>(core::CFAxis::x_major),
-  static_cast<int>(core::CFAxis::cube),
-  static_cast<int>(core::CFAxis::x_minor),
-  static_cast<int>(core::CFAxis::y_minor)};
-
-/** device-specific constant-support CF array layout */
-template <Device D>
-struct CFLayout {
-
-  /** Kokkos layout type */
-  using layout =
-    std::conditional_t<
-      std::is_same_v<
-        typename core::DeviceT<D>::kokkos_device::array_layout,
-        K::LayoutLeft>,
-      K::LayoutLeft,
-      K::LayoutStride>;
-
-  /**
-   * create Kokkos layout using given CFArray slice
-   *
-   * logical index order matches CFAxis definition
-   *
-   * @todo: verify these layouts
-   */
-  static layout
-  dimensions(const CFArrayShape* cf, unsigned grp) {
-    auto extents = cf->extents(grp);
-    auto os = cf->oversampling();
-    std::array<int, 6> dims{
-      static_cast<int>((extents[CFArray::Axis::x] + os - 1) / os),
-      static_cast<int>((extents[CFArray::Axis::y] + os - 1) / os),
-      static_cast<int>(extents[CFArray::Axis::mueller]),
-      static_cast<int>(extents[CFArray::Axis::cube]),
-      static_cast<int>(os),
-      static_cast<int>(os)
-    };
-    if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
-      return
-        K::LayoutLeft(dims[0], dims[1], dims[2], dims[3], dims[4], dims[5]);
-    } else {
-      return
-        K::LayoutStride::order_dimensions(
-          6,
-          strided_cf_layout_order.data(),
-          dims.data());
-    }
-#ifdef WORKAROUND_NVCC_IF_CONSTEXPR_BUG
-    return layout();
-#endif
-  }
 };
 
 /** abstract base class for state implementations */
@@ -409,7 +301,7 @@ class HPG_EXPORT GridValueViewArray final
 public:
 
   using memory_space = typename core::DeviceT<D>::kokkos_device::memory_space;
-  using layout = typename GridLayout<D>::layout;
+  using layout = typename layouts::GridLayout<D>::layout;
   using grid_t = typename core::grid_view<layout, memory_space>::HostMirror;
 
   grid_t grid;
@@ -534,7 +426,7 @@ public:
       static_cast<int>(extents[3])};
     grid_t grid(
       K::ViewAllocateWithoutInitializing(name),
-      GridLayout<D>::dimensions(iext));
+      layouts::GridLayout<D>::dimensions(iext));
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
     // (otherwise, the following is broken, not least because it may result in
@@ -1096,7 +988,7 @@ layout_for_device(
   unsigned grp,
   CFArray::value_type* dst) {
 
-  auto layout = CFLayout<D>::dimensions(&cf, grp);
+  auto layout = layouts::CFLayout<D>::dimensions(&cf, grp);
   typename DeviceCFArray<D>::cfd_view_h
     cfd(reinterpret_cast<core::cf_t*>(dst), layout);
   switch (host_device) {
@@ -1282,7 +1174,7 @@ struct CFPool final {
 
   static size_t
   cf_size(const CFArrayShape* cf, unsigned grp) {
-    auto layout = CFLayout<D>::dimensions(cf, grp);
+    auto layout = layouts::CFLayout<D>::dimensions(cf, grp);
     // TODO: it would be best to use the following to compute
     // allocation size, but it is not implemented in Kokkos
     // 'auto alloc_sz = cfd_view::required_allocation_size(layout)'
@@ -1342,7 +1234,7 @@ struct CFPool final {
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
         pool.data() + offset,
-        CFLayout<D>::dimensions(&cf_array, grp));
+        layouts::CFLayout<D>::dimensions(&cf_array, grp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
                 << " " << cf_init.extent(1)
@@ -1393,7 +1285,7 @@ struct CFPool final {
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
         pool.data() + offset,
-        CFLayout<D>::dimensions(&cf_array, grp));
+        layouts::CFLayout<D>::dimensions(&cf_array, grp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
                 << " " << cf_init.extent(1)
@@ -1798,7 +1690,7 @@ public:
       m_model =
         decltype(m_model)(
           K::ViewAllocateWithoutInitializing("model"),
-          GridLayout<D>::dimensions(ig));
+          layouts::GridLayout<D>::dimensions(ig));
     }
 
     try {
@@ -2007,7 +1899,7 @@ public:
   grid_values_ptr() const override {
     return
       std::make_shared<GridValuePtr<
-        typename GridLayout<D>::layout,
+        typename layouts::GridLayout<D>::layout,
         memory_space>>(m_grid)->ptr();
   }
 
@@ -2041,7 +1933,7 @@ public:
   model_values_ptr() const override {
     return
       std::make_shared<GridValuePtr<
-        typename GridLayout<D>::layout,
+        typename layouts::GridLayout<D>::layout,
         memory_space>>(m_model)->ptr();
   }
 
@@ -2100,7 +1992,7 @@ public:
         break;
       }
     } else {
-      core::const_grid_view<typename GridLayout<D>::layout, memory_space> pre_grid
+      core::const_grid_view<typename layouts::GridLayout<D>::layout, memory_space> pre_grid
         = m_grid;
       new_grid(false, false);
       switch (fft_version()) {
@@ -2154,7 +2046,7 @@ public:
           break;
         }
       } else {
-        core::const_grid_view<typename GridLayout<D>::layout, memory_space> pre_model
+        core::const_grid_view<typename layouts::GridLayout<D>::layout, memory_space> pre_model
           = m_model;
         std::array<int, 4> ig{
           static_cast<int>(m_grid_size[0]),
@@ -2164,7 +2056,7 @@ public:
         m_model =
           decltype(m_model)(
             K::ViewAllocateWithoutInitializing("grid"),
-            GridLayout<D>::dimensions(ig));
+            layouts::GridLayout<D>::dimensions(ig));
         switch (fft_version()) {
         case 0:
           err =
@@ -2350,7 +2242,7 @@ private:
         m_model =
           decltype(m_model)(
             K::ViewAllocateWithoutInitializing("model"),
-            GridLayout<D>::dimensions(ig));
+            layouts::GridLayout<D>::dimensions(ig));
         K::deep_copy(m_exec_spaces[0].space, m_model, ost->m_model);
       }
     }
@@ -2470,14 +2362,14 @@ private:
       m_grid =
         decltype(m_grid)(
           K::ViewAllocateWithoutInitializing("grid"),
-          GridLayout<D>::dimensions(ig));
+          layouts::GridLayout<D>::dimensions(ig));
     else
       m_grid =
         decltype(m_grid)(
           K::view_alloc(
             "grid",
             m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
-          GridLayout<D>::dimensions(ig));
+          layouts::GridLayout<D>::dimensions(ig));
 #ifndef NDEBUG
     std::cout << "alloc grid sz " << m_grid.extent(0)
               << " " << m_grid.extent(1)
