@@ -129,7 +129,7 @@ struct MyCFArrayShape
 
   unsigned
   num_groups() const override {
-    return static_cast<unsigned>(m_extents.size());
+    return unsigned(m_extents.size());
   }
 
   std::array<unsigned, 4>
@@ -166,7 +166,7 @@ struct MyCFArray final
 
   unsigned
   num_groups() const override {
-    return static_cast<unsigned>(m_extents.size());
+    return unsigned(m_extents.size());
   }
 
   std::array<unsigned, 4>
@@ -225,7 +225,7 @@ struct ConeCFArray final
   std::array<unsigned, 4>
   extents(unsigned) const override {
     unsigned w = 2 * m_oversampled_radius + 1;
-    return {w, w, static_cast<unsigned>(m_nmueller), 1};
+    return {w, w, unsigned(m_nmueller), 1};
   }
 
   std::complex<hpg::cf_fp>

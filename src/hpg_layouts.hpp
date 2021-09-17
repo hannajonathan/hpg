@@ -30,10 +30,10 @@ namespace K = Kokkos;
 
 /** axis order for strided grid layout */
 static const std::array<int, 4> strided_grid_layout_order{
-  static_cast<int>(core::GridAxis::y),
-  static_cast<int>(core::GridAxis::mrow),
-  static_cast<int>(core::GridAxis::x),
-  static_cast<int>(core::GridAxis::cube)};
+  int(core::GridAxis::y),
+  int(core::GridAxis::mrow),
+  int(core::GridAxis::x),
+  int(core::GridAxis::cube)};
 
 /** device-specific grid array layout */
 template <Device D>
@@ -78,12 +78,12 @@ static const unsigned cf_layout_version_number = 0;
 
 /** axis order for strided CF array layout */
 static const std::array<int, 6> strided_cf_layout_order{
-  static_cast<int>(core::CFAxis::mueller),
-  static_cast<int>(core::CFAxis::y_major),
-  static_cast<int>(core::CFAxis::x_major),
-  static_cast<int>(core::CFAxis::cube),
-  static_cast<int>(core::CFAxis::x_minor),
-  static_cast<int>(core::CFAxis::y_minor)};
+  int(core::CFAxis::mueller),
+  int(core::CFAxis::y_major),
+  int(core::CFAxis::x_major),
+  int(core::CFAxis::cube),
+  int(core::CFAxis::x_minor),
+  int(core::CFAxis::y_minor)};
 
 /** device-specific constant-support CF array layout */
 template <Device D>
@@ -110,12 +110,12 @@ struct CFLayout {
     auto extents = cf->extents(grp);
     auto os = cf->oversampling();
     std::array<int, 6> dims{
-      static_cast<int>((extents[CFArray::Axis::x] + os - 1) / os),
-      static_cast<int>((extents[CFArray::Axis::y] + os - 1) / os),
-      static_cast<int>(extents[CFArray::Axis::mueller]),
-      static_cast<int>(extents[CFArray::Axis::cube]),
-      static_cast<int>(os),
-      static_cast<int>(os)
+      int((extents[CFArray::Axis::x] + os - 1) / os),
+      int((extents[CFArray::Axis::y] + os - 1) / os),
+      int(extents[CFArray::Axis::mueller]),
+      int(extents[CFArray::Axis::cube]),
+      int(os),
+      int(os)
     };
     if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
       return

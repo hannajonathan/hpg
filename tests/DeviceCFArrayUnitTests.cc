@@ -135,7 +135,7 @@ struct LargeCFArray final
 
   unsigned
   num_groups() const override {
-    return static_cast<unsigned>(m_extents.size());
+    return unsigned(m_extents.size());
   }
 
   std::array<unsigned, 4>
@@ -199,13 +199,13 @@ struct EncodedCFArray final
   static std::complex<float>
   encode(const std::array<unsigned, 3>& idx) {
     return
-      {static_cast<float>(idx[0]), static_cast<float>(4 * idx[1] + idx[2])};
+      {float(idx[0]), float(4 * idx[1] + idx[2])};
   }
 
   static std::array<unsigned, 3>
   decode(const std::complex<float>& v) {
-    unsigned ym = static_cast<unsigned>(v.imag());
-    return {static_cast<unsigned>(v.real()), ym / 4, ym % 4};
+    unsigned ym = unsigned(v.imag());
+    return {unsigned(v.real()), ym / 4, ym % 4};
   }
 
   std::complex<float>
@@ -596,7 +596,7 @@ TEST(DeviceCFArray, Efficiency) {
                 std::move(result));
           })
         .and_then_loop(
-          static_cast<unsigned>(cfs.size()),
+          unsigned(cfs.size()),
           [&](unsigned i, auto&& t0_gs) {
             return
               hpg::map(

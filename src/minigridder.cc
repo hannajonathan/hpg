@@ -288,7 +288,7 @@ struct TrialSpec {
 #endif
  {
    for (auto& s : cfsize_)
-     cfsize.push_back(static_cast<int>(s));
+     cfsize.push_back(int(s));
  }
 
   unsigned index;
@@ -473,7 +473,7 @@ struct CFArray final
 
   unsigned
   num_groups() const override {
-    return static_cast<unsigned>(m_extents.size());
+    return unsigned(m_extents.size());
   }
 
   std::array<unsigned, rank - 1>
@@ -607,7 +607,7 @@ create_input_data(
   const Generator& generator) {
 
   std::array<unsigned, 4>
-    gsize{glen, glen, static_cast<unsigned>(mueller_indexes.size()), 1};
+    gsize{glen, glen, unsigned(mueller_indexes.size()), 1};
 
   InputData result;
   result.gsize = gsize;
@@ -622,7 +622,7 @@ create_input_data(
   std::vector<std::array<unsigned, 4>> cf_sizes;
   std::vector<std::vector<std::complex<hpg::cf_fp>>> cf_values;
   for (auto& cfl : cflen) {
-    cf_sizes.push_back({cfl, cfl, static_cast<unsigned>(max_mindex + 1), 1});
+    cf_sizes.push_back({cfl, cfl, unsigned(max_mindex + 1), 1});
     cf_values.emplace_back(
       cfl * oversampling * cfl * oversampling * (max_mindex + 1));
   }

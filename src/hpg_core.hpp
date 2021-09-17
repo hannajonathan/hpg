@@ -643,7 +643,7 @@ struct HPG_EXPORT VisibilityGridder final {
 
     const auto& N_X = vis.m_cf_size[0];
     const auto& N_Y = vis.m_cf_size[1];
-    const auto N_R = model.extent_int(static_cast<int>(GridAxis::mrow));
+    const auto N_R = model.extent_int(int(GridAxis::mrow));
 
     auto degridding_mindex =
       vis.m_pos_w ? conjugate_mueller_indexes : mueller_indexes;
@@ -923,12 +923,12 @@ struct HPG_EXPORT VisibilityGridder final {
 
     const K::Array<int, 2>
       grid_size{
-      grid.extent_int(static_cast<int>(GridAxis::x)),
-      grid.extent_int(static_cast<int>(GridAxis::y))};
+      grid.extent_int(int(GridAxis::x)),
+      grid.extent_int(int(GridAxis::y))};
     const K::Array<int, 2>
       oversampling{
-      cfs[0].extent_int(static_cast<int>(CFAxis::x_minor)),
-      cfs[0].extent_int(static_cast<int>(CFAxis::y_minor))};
+      cfs[0].extent_int(int(CFAxis::x_minor)),
+      cfs[0].extent_int(int(CFAxis::y_minor))};
 
     auto shmem_size = scratch_phscr_view::shmem_size(max_cf_extent_y);
 
@@ -1004,7 +1004,7 @@ struct HPG_EXPORT VisibilityGridder final {
     }
 
     if (do_grid) {
-      const auto N_R = grid.extent_int(static_cast<int>(GridAxis::mrow));
+      const auto N_R = grid.extent_int(int(GridAxis::mrow));
       if (update_grid_weights)
         K::parallel_for(
           "gridding",
@@ -1095,10 +1095,10 @@ struct HPG_EXPORT GridNormalizer final {
       const grid_value_fp& wfactor) {
 
     static_assert(
-      static_cast<int>(GridAxis::x) == 0
-      && static_cast<int>(GridAxis::y) == 1
-      && static_cast<int>(GridAxis::mrow) == 2
-      && static_cast<int>(GridAxis::cube) == 3);
+      int(GridAxis::x) == 0
+      && int(GridAxis::y) == 1
+      && int(GridAxis::mrow) == 2
+      && int(GridAxis::cube) == 3);
     static_assert(
       GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::cube == 1);
 
@@ -1107,10 +1107,10 @@ struct HPG_EXPORT GridNormalizer final {
       K::MDRangePolicy<K::Rank<4>, execution_space>(
         exec,
         {0, 0, 0, 0},
-        {grid.extent_int(static_cast<int>(GridAxis::x)),
-         grid.extent_int(static_cast<int>(GridAxis::y)),
-         grid.extent_int(static_cast<int>(GridAxis::mrow)),
-         grid.extent_int(static_cast<int>(GridAxis::cube))}),
+        {grid.extent_int(int(GridAxis::x)),
+         grid.extent_int(int(GridAxis::y)),
+         grid.extent_int(int(GridAxis::mrow)),
+         grid.extent_int(int(GridAxis::cube))}),
       KOKKOS_LAMBDA(int x, int y, int mrow, int cube) {
         grid(x, y, mrow, cube) /= (wfactor * weights(mrow, cube));
       });
@@ -1124,10 +1124,10 @@ struct HPG_EXPORT GridNormalizer final {
       const grid_value_fp& norm) {
 
     static_assert(
-      static_cast<int>(GridAxis::x) == 0
-      && static_cast<int>(GridAxis::y) == 1
-      && static_cast<int>(GridAxis::mrow) == 2
-      && static_cast<int>(GridAxis::cube) == 3);
+      int(GridAxis::x) == 0
+      && int(GridAxis::y) == 1
+      && int(GridAxis::mrow) == 2
+      && int(GridAxis::cube) == 3);
 
     grid_value_fp inv_norm = (grid_value_fp)(1.0) / norm;
     K::parallel_for(
@@ -1135,10 +1135,10 @@ struct HPG_EXPORT GridNormalizer final {
       K::MDRangePolicy<K::Rank<4>, execution_space>(
         exec,
         {0, 0, 0, 0},
-        {grid.extent_int(static_cast<int>(GridAxis::x)),
-         grid.extent_int(static_cast<int>(GridAxis::y)),
-         grid.extent_int(static_cast<int>(GridAxis::mrow)),
-         grid.extent_int(static_cast<int>(GridAxis::cube))}),
+        {grid.extent_int(int(GridAxis::x)),
+         grid.extent_int(int(GridAxis::y)),
+         grid.extent_int(int(GridAxis::mrow)),
+         grid.extent_int(int(GridAxis::cube))}),
       KOKKOS_LAMBDA(int x, int y, int mrow, int cube) {
         grid(x, y, mrow, cube) *= inv_norm;
       });
@@ -1305,10 +1305,10 @@ struct HPG_EXPORT FFT final {
            igrid.extent(0) * igrid.extent(1)
            * igrid.extent(2) * igrid.extent(3));
     static_assert(
-      static_cast<int>(GridAxis::x) == 0
-      && static_cast<int>(GridAxis::y) == 1
-      && static_cast<int>(GridAxis::mrow) == 2
-      && static_cast<int>(GridAxis::cube) == 3);
+      int(GridAxis::x) == 0
+      && int(GridAxis::y) == 1
+      && int(GridAxis::mrow) == 2
+      && int(GridAxis::cube) == 3);
     int n[2]{igrid.extent_int(0), igrid.extent_int(1)};
     int stride = 1;
     int dist = igrid.extent_int(0) * igrid.extent_int(1) * igrid.extent_int(2);
@@ -1462,10 +1462,10 @@ struct HPG_EXPORT FFT<K::Cuda, 0> final {
     assert(grid.span() ==
            grid.extent(0) * grid.extent(1) * grid.extent(2) * grid.extent(3));
     static_assert(
-      static_cast<int>(GridAxis::x) == 0
-      && static_cast<int>(GridAxis::y) == 1
-      && static_cast<int>(GridAxis::mrow) == 2
-      && static_cast<int>(GridAxis::cube) == 3);
+      int(GridAxis::x) == 0
+      && int(GridAxis::y) == 1
+      && int(GridAxis::mrow) == 2
+      && int(GridAxis::cube) == 3);
     int n[2]{grid.extent_int(1), grid.extent_int(0)};
     cufftHandle result;
     auto rc =
@@ -1577,10 +1577,10 @@ struct HPG_EXPORT GridShifter final {
 
     // TODO: is this kernel valid for all possible GridAxis definitions?
     static_assert(
-      static_cast<int>(GridAxis::x) == 0
-      && static_cast<int>(GridAxis::y) == 1
-      && static_cast<int>(GridAxis::mrow) == 2
-      && static_cast<int>(GridAxis::cube) == 3);
+      int(GridAxis::x) == 0
+      && int(GridAxis::y) == 1
+      && int(GridAxis::mrow) == 2
+      && int(GridAxis::cube) == 3);
     int n_x = grid.extent_int(0);
     int n_y = grid.extent_int(1);
     int n_mrow = grid.extent_int(2);

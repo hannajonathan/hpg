@@ -1457,10 +1457,10 @@ GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
   static_assert(
-    static_cast<int>(core::GridAxis::x) == GridValueArray::Axis::x
-    && static_cast<int>(core::GridAxis::y) == GridValueArray::Axis::y
-    && static_cast<int>(core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && static_cast<int>(core::GridAxis::cube) == GridValueArray::Axis::cube);
+    int(core::GridAxis::x) == GridValueArray::Axis::x
+    && int(core::GridAxis::y) == GridValueArray::Axis::y
+    && int(core::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && int(core::GridAxis::cube) == GridValueArray::Axis::cube);
 
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
@@ -1480,10 +1480,10 @@ GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
   static_assert(
-    static_cast<int>(core::GridAxis::x) == GridValueArray::Axis::x
-    && static_cast<int>(core::GridAxis::y) == GridValueArray::Axis::y
-    && static_cast<int>(core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && static_cast<int>(core::GridAxis::cube) == GridValueArray::Axis::cube);
+    int(core::GridAxis::x) == GridValueArray::Axis::x
+    && int(core::GridAxis::y) == GridValueArray::Axis::y
+    && int(core::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && int(core::GridAxis::cube) == GridValueArray::Axis::cube);
 
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)

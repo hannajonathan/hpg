@@ -369,12 +369,12 @@ struct CFPool final {
     cf_d[num_cf_groups] = cfd;
     cf_h.push_back(cfh);
     cf_radii[num_cf_groups] =
-      {static_cast<int>(radii[0]), static_cast<int>(radii[1])};
+      {int(radii[0]), int(radii[1])};
     ++num_cf_groups;
     max_cf_extent_y =
       std::max(
         max_cf_extent_y,
-        static_cast<unsigned>(cfd.extent(static_cast<int>(core::CFAxis::y_major))));
+        unsigned(cfd.extent(int(core::CFAxis::y_major))));
   }
 
   void
@@ -801,10 +801,10 @@ public:
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       auto extents = cf_array.extents(grp);
       if ((extents[CFArray::Axis::x] >
-           m_grid_size[static_cast<int>(core::GridAxis::x)]
+           m_grid_size[int(core::GridAxis::x)]
            * cf_array.oversampling())
           || (extents[CFArray::Axis::y] >
-              m_grid_size[static_cast<int>(core::GridAxis::y)]
+              m_grid_size[int(core::GridAxis::y)]
               * cf_array.oversampling()))
         return CFSupportExceedsGridError();
     }
@@ -834,10 +834,10 @@ public:
 
     if (!m_model.is_allocated()) {
       std::array<int, 4> ig{
-        static_cast<int>(m_grid_size[0]),
-        static_cast<int>(m_grid_size[1]),
-        static_cast<int>(m_grid_size[2]),
-        static_cast<int>(m_grid_size[3])};
+        int(m_grid_size[0]),
+        int(m_grid_size[1]),
+        int(m_grid_size[2]),
+        int(m_grid_size[3])};
       m_model =
         decltype(m_model)(
           K::ViewAllocateWithoutInitializing("model"),
@@ -1072,10 +1072,10 @@ public:
       return std::make_unique<impl::GridValueViewArray<D>>(model_h);
     } else {
       std::array<unsigned, 4> ex{
-        static_cast<unsigned>(m_grid.extent(0)),
-        static_cast<unsigned>(m_grid.extent(1)),
-        static_cast<unsigned>(m_grid.extent(2)),
-        static_cast<unsigned>(m_grid.extent(3))};
+        unsigned(m_grid.extent(0)),
+        unsigned(m_grid.extent(1)),
+        unsigned(m_grid.extent(2)),
+        unsigned(m_grid.extent(3))};
       return std::make_unique<impl::UnallocatedModelValueArray>(ex);
     }
   }
@@ -1200,10 +1200,10 @@ public:
         core::const_grid_view<typename layouts::GridLayout<D>::layout, memory_space> pre_model
           = m_model;
         std::array<int, 4> ig{
-          static_cast<int>(m_grid_size[0]),
-          static_cast<int>(m_grid_size[1]),
-          static_cast<int>(m_grid_size[2]),
-          static_cast<int>(m_grid_size[3])};
+          int(m_grid_size[0]),
+          int(m_grid_size[1]),
+          int(m_grid_size[2]),
+          int(m_grid_size[3])};
         m_model =
           decltype(m_model)(
             K::ViewAllocateWithoutInitializing("grid"),
@@ -1386,10 +1386,10 @@ private:
       }
       if (ost->m_model.is_allocated()) {
         std::array<int, 4> ig{
-          static_cast<int>(m_grid_size[0]),
-          static_cast<int>(m_grid_size[1]),
-          static_cast<int>(m_grid_size[2]),
-          static_cast<int>(m_grid_size[3])};
+          int(m_grid_size[0]),
+          int(m_grid_size[1]),
+          int(m_grid_size[2]),
+          int(m_grid_size[3])};
         m_model =
           decltype(m_model)(
             K::ViewAllocateWithoutInitializing("model"),
@@ -1415,7 +1415,7 @@ private:
       auto& mi_row = mindexes[mr];
       size_t mc = 0;
       for (; mc < N; ++mc)
-        mueller_indexes_h(mr, mc) = static_cast<int>(mi_row[mc]);
+        mueller_indexes_h(mr, mc) = int(mi_row[mc]);
       for (; mc < result.extent(1); ++mc)
         mueller_indexes_h(mr, mc) = -1;
     }
@@ -1505,10 +1505,10 @@ private:
     // required, as there are code paths that never use a stream, and thus we
     // can avoid unnecessary stream switches
     std::array<int, 4> ig{
-      static_cast<int>(m_grid_size[0]),
-      static_cast<int>(m_grid_size[1]),
-      static_cast<int>(m_grid_size[2]),
-      static_cast<int>(m_grid_size[3])};
+      int(m_grid_size[0]),
+      int(m_grid_size[1]),
+      int(m_grid_size[2]),
+      int(m_grid_size[3])};
     if (create_without_init)
       m_grid =
         decltype(m_grid)(
@@ -1541,16 +1541,16 @@ private:
         m_weights =
           decltype(m_weights)(
             K::ViewAllocateWithoutInitializing("weights"),
-            static_cast<int>(m_grid_size[static_cast<int>(core::GridAxis::mrow)]),
-            static_cast<int>(m_grid_size[static_cast<int>(core::GridAxis::cube)]));
+            int(m_grid_size[int(core::GridAxis::mrow)]),
+            int(m_grid_size[int(core::GridAxis::cube)]));
       else
         m_weights =
           decltype(m_weights)(
             K::view_alloc(
               "weights",
               m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
-            static_cast<int>(m_grid_size[static_cast<int>(core::GridAxis::mrow)]),
-            static_cast<int>(m_grid_size[static_cast<int>(core::GridAxis::cube)]));
+            int(m_grid_size[int(core::GridAxis::mrow)]),
+            int(m_grid_size[int(core::GridAxis::cube)]));
     }
     if (std::holds_alternative<const StateT*>(source)) {
       auto st = std::get<const StateT*>(source);

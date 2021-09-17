@@ -116,7 +116,7 @@ struct MyCFArrayShape
 
   unsigned
   num_groups() const override {
-    return static_cast<unsigned>(m_extents.size());
+    return unsigned(m_extents.size());
   }
 
   std::array<unsigned, 4>
@@ -153,7 +153,7 @@ struct MyCFArray final
 
   unsigned
   num_groups() const override {
-    return static_cast<unsigned>(m_extents.size());
+    return unsigned(m_extents.size());
   }
 
   std::array<unsigned, 4>

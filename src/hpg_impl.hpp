@@ -208,10 +208,10 @@ public:
     const override {
 
     static_assert(
-      static_cast<int>(core::GridAxis::x) == 0
-      && static_cast<int>(core::GridAxis::y) == 1
-      && static_cast<int>(core::GridAxis::mrow) == 2
-      && static_cast<int>(core::GridAxis::cube) == 3);
+      int(core::GridAxis::x) == 0
+      && int(core::GridAxis::y) == 1
+      && int(core::GridAxis::mrow) == 2
+      && int(core::GridAxis::cube) == 3);
     return reinterpret_cast<const value_type&>(grid(x, y, mrow, cube));
   }
 
@@ -219,10 +219,10 @@ public:
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) override {
 
     static_assert(
-      static_cast<int>(core::GridAxis::x) == 0
-      && static_cast<int>(core::GridAxis::y) == 1
-      && static_cast<int>(core::GridAxis::mrow) == 2
-      && static_cast<int>(core::GridAxis::cube) == 3);
+      int(core::GridAxis::x) == 0
+      && int(core::GridAxis::y) == 1
+      && int(core::GridAxis::mrow) == 2
+      && int(core::GridAxis::cube) == 3);
     return reinterpret_cast<value_type&>(grid(x, y, mrow, cube));
   }
 
@@ -300,11 +300,8 @@ public:
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
-    std::array<int, rank> iext{
-      static_cast<int>(extents[0]),
-      static_cast<int>(extents[1]),
-      static_cast<int>(extents[2]),
-      static_cast<int>(extents[3])};
+    std::array<int, rank>
+      iext{int(extents[0]), int(extents[1]), int(extents[2]), int(extents[3])};
     grid_t grid(
       K::ViewAllocateWithoutInitializing(name),
       layouts::GridLayout<D>::dimensions(iext));
@@ -671,24 +668,24 @@ parsed_cf_layout_version(const std::string& layout) {
     if (dev == core::DeviceT<Device::Serial>::name)
       return
         std::make_tuple(
-          static_cast<unsigned>(vn.value()),
+          unsigned(vn.value()),
           std::optional<Device>(Device::Serial));
 #endif
 #ifdef HPG_ENABLE_OPENMP
     if (dev == core::DeviceT<Device::OpenMP>::name)
       return
         std::make_tuple(
-          static_cast<unsigned>(vn.value()),
+          unsigned(vn.value()),
           std::optional<Device>(Device::OpenMP));
 #endif
 #ifdef HPG_ENABLE_CUDA
     if (dev == core::DeviceT<Device::Cuda>::name)
       return
         std::make_tuple(
-          static_cast<unsigned>(vn.value()),
+          unsigned(vn.value()),
           std::optional<Device>(Device::Cuda));
 #endif
-    return std::make_tuple(static_cast<unsigned>(vn.value()), std::nullopt);
+    return std::make_tuple(unsigned(vn.value()), std::nullopt);
   }
   return std::nullopt;
 }
@@ -730,10 +727,10 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
       K::HostSpace>
     ::accessible);
   static_assert(
-    static_cast<int>(core::GridAxis::x) == 0
-    && static_cast<int>(core::GridAxis::y) == 1
-    && static_cast<int>(core::GridAxis::mrow) == 2
-    && static_cast<int>(core::GridAxis::cube) == 3);
+    int(core::GridAxis::x) == 0
+    && int(core::GridAxis::y) == 1
+    && int(core::GridAxis::mrow) == 2
+    && int(core::GridAxis::cube) == 3);
   static_assert(
     GridValueArray::Axis::x == 0
     && GridValueArray::Axis::y == 1
@@ -744,10 +741,10 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
     "init_model",
     K::MDRangePolicy<K::Rank<4>, typename core::DeviceT<D>::kokkos_device>(
       {0, 0, 0, 0},
-      {static_cast<int>(gv.extent(0)),
-       static_cast<int>(gv.extent(1)),
-       static_cast<int>(gv.extent(2)),
-       static_cast<int>(gv.extent(3))}),
+      {int(gv.extent(0)),
+       int(gv.extent(1)),
+       int(gv.extent(2)),
+       int(gv.extent(3))}),
     [&](int x, int y, int mr, int cb) {
       gv_h(x, y, mr, cb) = gv(x, y, mr, cb);
     });
@@ -830,12 +827,12 @@ public:
     const override {
 
     static_assert(
-      static_cast<int>(core::CFAxis::x_major) == 0
-      && static_cast<int>(core::CFAxis::y_major) == 1
-      && static_cast<int>(core::CFAxis::mueller) == 2
-      && static_cast<int>(core::CFAxis::cube) == 3
-      && static_cast<int>(core::CFAxis::x_minor) == 4
-      && static_cast<int>(core::CFAxis::y_minor) == 5);
+      int(core::CFAxis::x_major) == 0
+      && int(core::CFAxis::y_major) == 1
+      && int(core::CFAxis::mueller) == 2
+      && int(core::CFAxis::cube) == 3
+      && int(core::CFAxis::x_minor) == 4
+      && int(core::CFAxis::y_minor) == 5);
     return
       m_views[grp](
         x / m_oversampling,
@@ -862,12 +859,12 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
       K::HostSpace>
     ::accessible);
   static_assert(
-    static_cast<int>(core::CFAxis::x_major) == 0
-    && static_cast<int>(core::CFAxis::y_major) == 1
-    && static_cast<int>(core::CFAxis::mueller) == 2
-    && static_cast<int>(core::CFAxis::cube) == 3
-    && static_cast<int>(core::CFAxis::x_minor) == 4
-    && static_cast<int>(core::CFAxis::y_minor) == 5);
+    int(core::CFAxis::x_major) == 0
+    && int(core::CFAxis::y_major) == 1
+    && int(core::CFAxis::mueller) == 2
+    && int(core::CFAxis::cube) == 3
+    && int(core::CFAxis::x_minor) == 4
+    && int(core::CFAxis::y_minor) == 5);
   static_assert(
     CFArray::Axis::x == 0
     && CFArray::Axis::y == 1
@@ -881,10 +878,7 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
     "cf_init",
     K::MDRangePolicy<K::Rank<4>, typename core::DeviceT<D>::kokkos_device>(
       {0, 0, 0, 0},
-      {static_cast<int>(extents[0]),
-       static_cast<int>(extents[1]),
-       static_cast<int>(extents[2]),
-       static_cast<int>(extents[3])}),
+      {int(extents[0]), int(extents[1]), int(extents[2]), int(extents[3])}),
     [&](int i, int j, int mueller, int cube) {
       auto X = i / oversampling;
       auto x = i % oversampling;
@@ -935,10 +929,10 @@ GridValueArray::copy_from(
   Layout layout) {
 
   static_assert(
-    static_cast<int>(core::GridAxis::x) == GridValueArray::Axis::x
-    && static_cast<int>(core::GridAxis::y) == GridValueArray::Axis::y
-    && static_cast<int>(core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && static_cast<int>(core::GridAxis::cube) == GridValueArray::Axis::cube);
+    int(core::GridAxis::x) == GridValueArray::Axis::x
+    && int(core::GridAxis::y) == GridValueArray::Axis::y
+    && int(core::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && int(core::GridAxis::cube) == GridValueArray::Axis::cube);
 
   switch (target_device) {
 #ifdef HPG_ENABLE_SERIAL
