@@ -325,13 +325,13 @@ struct VisData {
 
   VisData(VisData const&) = default;
 
-  VisData(VisData&&) = default;
+  VisData(VisData&&) noexcept = default;
 
   ~VisData() = default;
 
   VisData& operator=(VisData const&) = default;
 
-  VisData& operator=(VisData&&) = default;
+  VisData& operator=(VisData&&) noexcept = default;
 
   K::Array<vis_t, N> m_values;
   K::Array<vis_weight_fp, N> m_weights;
@@ -865,11 +865,11 @@ struct Vis final {
 
   Vis(Vis const&) = default;
 
-  Vis(Vis&&) = default;
+  Vis(Vis&&) noexcept = default;
 
   Vis& operator=(Vis const&) = default;
 
-  Vis& operator=(Vis&&) = default;
+  Vis& operator=(Vis&&) noexcept = default;
 };
 
 /** almost atomic complex addition
@@ -2226,7 +2226,7 @@ struct State {
     bool do_grid) = 0;
 
   virtual void
-  fence() const = 0;
+  fence() const noexcept = 0;
 
   virtual std::unique_ptr<GridWeightArray>
   grid_weights() const = 0;
@@ -3089,7 +3089,7 @@ struct CFPool final {
 
   CFPool(const CFPool& other) = delete;
 
-  CFPool(CFPool&& other) {
+  CFPool(CFPool&& other) noexcept {
 
     if (other.state)
       other.state->fence();
@@ -3138,7 +3138,7 @@ struct CFPool final {
   }
 
   CFPool&
-  operator=(CFPool&& rhs) {
+  operator=(CFPool&& rhs) noexcept {
 
     if (state)
       state->fence();
@@ -3347,7 +3347,7 @@ struct ExecSpace final {
 
   ExecSpace(const ExecSpace&) = delete;
 
-  ExecSpace(ExecSpace&& other)
+  ExecSpace(ExecSpace&& other) noexcept
     : space(std::move(other).space)
     , visbuff(std::move(other).visbuff)
     , gvisbuff(std::move(other).gvisbuff)
@@ -3361,7 +3361,7 @@ struct ExecSpace final {
   virtual ~ExecSpace() {}
 
   ExecSpace&
-  operator=(ExecSpace&& rhs) {
+  operator=(ExecSpace&& rhs) noexcept {
     space = std::move(rhs).space;
     visbuff = std::move(rhs).visbuff;
     gvisbuff = std::move(rhs).gvisbuff;
@@ -3442,7 +3442,7 @@ struct ExecSpace final {
   }
 
   void
-  fence() {
+  fence() noexcept {
     space.fence();
     if (vis_promise) {
       std::visit(
@@ -3540,7 +3540,7 @@ public:
     new_grid(&st, true);
   }
 
-  StateT(StateT&& st)
+  StateT(StateT&& st) noexcept
     : State(D) {
 
     m_max_active_tasks = std::move(st).m_max_active_tasks;
@@ -3598,7 +3598,7 @@ public:
   }
 
   StateT&
-  operator=(StateT&& st) {
+  operator=(StateT&& st) noexcept {
     StateT tmp(std::move(st));
     this->swap(tmp);
     return *this;
@@ -3838,7 +3838,7 @@ public:
   }
 
   void
-  fence() const override {
+  fence() const noexcept override {
     std::scoped_lock lock(m_mtx);
     fence_unlocked();
   }
@@ -4106,7 +4106,7 @@ public:
 private:
 
   void
-  fence_unlocked() const {
+  fence_unlocked() const noexcept {
     for (auto& i : m_exec_space_indexes) {
       auto& exec = m_exec_spaces[i];
       exec.fence();
@@ -4115,7 +4115,7 @@ private:
   }
 
   void
-  swap(StateT& other) {
+  swap(StateT& other) noexcept {
     assert(m_max_active_tasks == other.m_max_active_tasks);
     std::swap(m_max_visibility_batch_size, other.m_max_visibility_batch_size);
     std::swap(m_grid_size, other.m_grid_size);

@@ -372,7 +372,7 @@ struct VectorNPol {
     , m_v1() {}
 
   /** construct instance by moving vector elements with N=1 */
-  VectorNPol(std::vector<E<1>>&& v)
+  VectorNPol(std::vector<E<1>>&& v) noexcept
     : m_npol(1)
     , m_v1(new std::vector<E<1>>(std::move(v))) {}
 
@@ -382,7 +382,7 @@ struct VectorNPol {
     , m_v1(new std::vector<E<1>>(v)) {}
 
   /** construct instance by moving vector elements with N=2 */
-  VectorNPol(std::vector<E<2>>&& v)
+  VectorNPol(std::vector<E<2>>&& v) noexcept
     : m_npol(2)
     , m_v2(new std::vector<E<2>>(std::move(v))) {}
 
@@ -392,7 +392,7 @@ struct VectorNPol {
     , m_v2(new std::vector<E<2>>(v)) {}
 
   /** construct instance by moving vector elements with N=3 */
-  VectorNPol(std::vector<E<3>>&& v)
+  VectorNPol(std::vector<E<3>>&& v) noexcept
     : m_npol(3)
     , m_v3(new std::vector<E<3>>(std::move(v))) {}
 
@@ -402,7 +402,7 @@ struct VectorNPol {
     , m_v3(new std::vector<E<3>>(v)) {}
 
   /** construct instance by moving vector elements with N=4 */
-  VectorNPol(std::vector<E<4>>&& v)
+  VectorNPol(std::vector<E<4>>&& v) noexcept
     : m_npol(4)
     , m_v4(new std::vector<E<4>>(std::move(v))) {}
 
@@ -441,7 +441,7 @@ struct VectorNPol {
   }
 
   /** move constructor */
-  VectorNPol(VectorNPol&& other)
+  VectorNPol(VectorNPol&& other) noexcept
     : m_npol(other.m_npol)
     , m_v1() {
     switch (m_npol) {
@@ -475,7 +475,7 @@ struct VectorNPol {
 
   /** move assignment operator */
   VectorNPol&
-  operator=(VectorNPol&& rhs) {
+  operator=(VectorNPol&& rhs) noexcept {
     VectorNPol tmp(std::move(rhs));
     swap(tmp);
     return *this;
@@ -561,7 +561,7 @@ private:
 
   /** take over the vector from another instance */
   void
-  takev(VectorNPol& other) {
+  takev(VectorNPol& other) noexcept {
     switch (other.m_npol) {
     case 0:
     case 1:
@@ -586,7 +586,7 @@ private:
 
   /** swap contents with another instance */
   void
-  swap(VectorNPol& other) {
+  swap(VectorNPol& other) noexcept {
     switch (other.m_npol) {
     case 0: {
       auto ov1 = std::move(other).m_v1;
@@ -1006,7 +1006,7 @@ public:
   future(const std::function<opt_t<T>&()>& f)
     : m_f(f) {}
 
-  future(future&& f)
+  future(future&& f) noexcept
     : m_f(std::move(f).m_f) {}
 
   future(const future& f)
@@ -1019,7 +1019,7 @@ public:
   }
 
   future&
-  operator=(future&& f) {
+  operator=(future&& f) noexcept {
     m_f = std::move(f).m_f;
     return *this;
   }
@@ -1231,7 +1231,7 @@ public:
 
   /** move constructor
    */
-  GridderState(GridderState&&);
+  GridderState(GridderState&&) noexcept;
 
   virtual ~GridderState();
 
@@ -1245,7 +1245,7 @@ public:
   /** move assignment
    */
   GridderState&
-  operator=(GridderState&&);
+  operator=(GridderState&&) noexcept;
 
   /** device */
   Device
@@ -2319,7 +2319,7 @@ public:
   Gridder(const Gridder& other);
 
   /** move constructor */
-  Gridder(Gridder&& other);
+  Gridder(Gridder&& other) noexcept;
 
   /** copy assignment
    *
@@ -2330,7 +2330,7 @@ public:
 
   /** move assignment*/
   Gridder&
-  operator=(Gridder&&);
+  operator=(Gridder&&) noexcept;
 
   virtual ~Gridder();
 
@@ -2776,7 +2776,7 @@ public:
 protected:
 
   /** move constructor */
-  Gridder(GridderState&& st);
+  Gridder(GridderState&& st) noexcept;
 };
 
 } // end namespace hpg

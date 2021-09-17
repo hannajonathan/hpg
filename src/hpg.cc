@@ -408,7 +408,7 @@ GridderState::GridderState(const GridderState& h) {
   *this = h;
 }
 
-GridderState::GridderState(GridderState&& h) {
+GridderState::GridderState(GridderState&& h) noexcept {
   *this = std::move(h);
 }
 
@@ -449,9 +449,9 @@ GridderState::operator=(const GridderState& rhs) {
 }
 
 GridderState&
-GridderState::operator=(GridderState&& rhs) {
+GridderState::operator=(GridderState&& rhs) noexcept {
 
-  impl = std::move(rhs).impl; // TODO: is this OK, or do I need another move()?
+  impl = std::move(rhs).impl;
   return *this;
 }
 
@@ -1143,10 +1143,10 @@ Gridder::Gridder(
 Gridder::Gridder(const Gridder& other)
   : state(other.state) {}
 
-Gridder::Gridder(Gridder&& other)
+Gridder::Gridder(Gridder&& other) noexcept
   : state(std::move(other).state) {}
 
-Gridder::Gridder(GridderState&& st)
+Gridder::Gridder(GridderState&& st) noexcept
   : state(std::move(st)) {}
 
 Gridder::~Gridder() {}
@@ -1194,7 +1194,7 @@ Gridder::operator=(const Gridder& rhs) {
 }
 
 Gridder&
-Gridder::operator=(Gridder&& rhs) {
+Gridder::operator=(Gridder&& rhs) noexcept {
   GridderState tmp(std::move(rhs).state);
   state.swap(tmp);
   return *this;
