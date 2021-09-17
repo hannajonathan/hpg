@@ -101,6 +101,90 @@ Error::type() const {
 
 Error::~Error() {}
 
+static bool hpg_initialized = false;
+static bool hpg_cleanup_fftw = false;
+
+bool
+hpg::is_initialized() noexcept {
+  return hpg_initialized;
+}
+
+bool
+hpg::initialize() {
+  return initialize(InitArguments());
+}
+
+bool
+hpg::initialize(const InitArguments& args) {
+  bool result = true;
+  K::InitArguments kargs;
+  kargs.num_threads = args.num_threads;
+  kargs.num_numa = args.num_numa;
+  kargs.device_id = args.device_id;
+  kargs.ndevices = args.ndevices;
+  kargs.skip_device = ((args.skip_device >= 0) ? args.skip_device : 9999);
+  kargs.disable_warnings = args.disable_warnings;
+  K::initialize(kargs);
+#ifdef HPG_ENABLE_OPENMP
+  auto rc = fftw_init_threads();
+  result = rc != 0;
+#endif
+#if defined(HPG_ENABLE_CUDA)                                    \
+  && (defined(HPG_ENABLE_OPENMP) || defined(HPG_ENABLE_SERIAL))
+  if (std::fegetround() != FE_TONEAREST)
+    std::cerr << "hpg::initialize() WARNING:"
+              << " Host rounding mode not set to FE_TONEAREST " << std::endl
+              << "  To avoid potential inconsistency in gridding on "
+              << "  host vs gridding on device,"
+              << "  set rounding mode to FE_TONEAREST" << std::endl;
+#endif
+  hpg_initialized = result;
+  hpg_cleanup_fftw = args.cleanup_fftw;
+  return result;
+}
+
+void
+hpg::finalize() {
+  K::finalize();
+  if (hpg_cleanup_fftw) {
+#ifdef HPG_ENABLE_SERIAL
+    fftw_cleanup();
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    fftw_cleanup_threads();
+#endif
+  }
+}
+
+const std::set<Device>&
+hpg::devices() noexcept {
+  static const std::set<Device> result{
+#ifdef HPG_ENABLE_SERIAL
+    Device::Serial,
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    Device::OpenMP,
+#endif
+#ifdef HPG_ENABLE_CUDA
+    Device::Cuda,
+#endif
+  };
+  return result;
+}
+
+const std::set<Device>&
+hpg::host_devices() noexcept {
+  static const std::set<Device> result{
+#ifdef HPG_ENABLE_SERIAL
+    Device::Serial,
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    Device::OpenMP,
+#endif
+  };
+  return result;
+}
+
 ScopeGuard::ScopeGuard()
   : init(false) {
   if (!is_initialized()) {
@@ -1606,55 +1690,6 @@ GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
 
 const char * const
 hpg::cf_layout_unspecified_version = "";
-
-bool
-hpg::initialize() {
-  return initialize(InitArguments());
-}
-
-bool
-hpg::initialize(const InitArguments& args) {
-  return Impl::initialize(args);
-}
-
-void
-hpg::finalize() {
-  Impl::finalize();
-}
-
-const std::set<Device>&
-hpg::devices() noexcept {
-  static const std::set<Device> result{
-#ifdef HPG_ENABLE_SERIAL
-    Device::Serial,
-#endif
-#ifdef HPG_ENABLE_OPENMP
-    Device::OpenMP,
-#endif
-#ifdef HPG_ENABLE_CUDA
-    Device::Cuda,
-#endif
-  };
-  return result;
-}
-
-const std::set<Device>&
-hpg::host_devices() noexcept {
-  static const std::set<Device> result{
-#ifdef HPG_ENABLE_SERIAL
-    Device::Serial,
-#endif
-#ifdef HPG_ENABLE_OPENMP
-    Device::OpenMP,
-#endif
-  };
-  return result;
-}
-
-bool
-hpg::is_initialized() noexcept {
-  return Impl::is_initialized();
-}
 
 rval_t<std::string>
 CFArray::copy_to(

@@ -22,7 +22,6 @@
 #include <any>
 #include <cassert>
 #include <cfenv>
-#include <cmath>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -127,59 +126,6 @@ namespace Impl {
 /** type for (plain) vector data */
 template <typename T>
 using vector_data = std::shared_ptr<std::vector<T>>;
-
-static bool hpg_impl_initialized = false;
-static bool hpg_impl_cleanup_fftw = false;
-
-/** implementation initialization function */
-bool
-initialize(const InitArguments& args) {
-  bool result = true;
-  Kokkos::InitArguments kargs;
-  kargs.num_threads = args.num_threads;
-  kargs.num_numa = args.num_numa;
-  kargs.device_id = args.device_id;
-  kargs.ndevices = args.ndevices;
-  kargs.skip_device = ((args.skip_device >= 0) ? args.skip_device : 9999);
-  kargs.disable_warnings = args.disable_warnings;
-  K::initialize(kargs);
-#ifdef HPG_ENABLE_OPENMP
-  auto rc = fftw_init_threads();
-  result = rc != 0;
-#endif
-#if defined(HPG_ENABLE_CUDA) \
-  && (defined(HPG_ENABLE_OPENMP) || defined(HPG_ENABLE_SERIAL))
-  if (std::fegetround() != FE_TONEAREST)
-    std::cerr << "hpg::initialize() WARNING:"
-              << " Host rounding mode not set to FE_TONEAREST " << std::endl
-              << "  To avoid potential inconsistency in gridding on "
-              << "  host vs gridding on device,"
-              << "  set rounding mode to FE_TONEAREST" << std::endl;
-#endif
-  hpg_impl_initialized = result;
-  hpg_impl_cleanup_fftw = args.cleanup_fftw;
-  return result;
-}
-
-/** implementation finalization function */
-void
-finalize() {
-  K::finalize();
-  if (hpg_impl_cleanup_fftw) {
-#ifdef HPG_ENABLE_SERIAL
-    fftw_cleanup();
-#endif
-#ifdef HPG_ENABLE_OPENMP
-    fftw_cleanup_threads();
-#endif
-  }
-}
-
-/** implementation initialization state */
-bool
-is_initialized() noexcept {
-  return hpg_impl_initialized;
-}
 
 template <typename Layout, typename memory_space>
 struct GridWeightPtr
