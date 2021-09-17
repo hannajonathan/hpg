@@ -496,7 +496,7 @@ size_t
 GridderState::convolution_function_region_size(const CFArrayShape* shape)
   const noexcept {
 
-  Impl::ProfileRegion region("GridderState::convolution_function_region_size");
+  core::ProfileRegion region("GridderState::convolution_function_region_size");
 
   return impl->convolution_function_region_size(shape);
 }
@@ -505,7 +505,7 @@ rval_t<GridderState>
 GridderState::allocate_convolution_function_region(const CFArrayShape* shape)
   const & {
 
-  Impl::ProfileRegion
+  core::ProfileRegion
     region("GridderState::allocate_convolution_function_region_const");
 
   return
@@ -517,7 +517,7 @@ rval_t<GridderState>
 GridderState::allocate_convolution_function_region(const CFArrayShape* shape)
   && {
 
-  Impl::ProfileRegion
+  core::ProfileRegion
     region("GridderState::allocate_convolution_function_region");
 
   return
@@ -530,7 +530,7 @@ rval_t<GridderState>
 GridderState::set_convolution_function(Device host_device, CFArray&& cf)
   const & {
 
-  Impl::ProfileRegion region("GridderState::set_convolution_function_const");
+  core::ProfileRegion region("GridderState::set_convolution_function_const");
 
   return
     to_rval(
@@ -541,7 +541,7 @@ GridderState::set_convolution_function(Device host_device, CFArray&& cf)
 rval_t<GridderState>
 GridderState::set_convolution_function(Device host_device, CFArray&& cf) && {
 
-  Impl::ProfileRegion region("GridderState::set_convolution_function");
+  core::ProfileRegion region("GridderState::set_convolution_function");
 
   return
     to_rval(
@@ -553,7 +553,7 @@ rval_t<GridderState>
 GridderState::set_model(Device host_device, GridValueArray&& gv)
   const & {
 
-  Impl::ProfileRegion region("GridderState::set_model_const");
+  core::ProfileRegion region("GridderState::set_model_const");
 
   return
     to_rval(Impl::GridderState::set_model(*this, host_device, std::move(gv)));
@@ -562,7 +562,7 @@ GridderState::set_model(Device host_device, GridValueArray&& gv)
 rval_t<GridderState>
 GridderState::set_model(Device host_device, GridValueArray&& gv) && {
 
-  Impl::ProfileRegion region("GridderState::set_model");
+  core::ProfileRegion region("GridderState::set_model");
 
   return
     to_rval(
@@ -579,7 +579,7 @@ GridderState::grid_visibilities_base(
   bool return_visibilities,
   bool do_grid) const & {
 
-  Impl::ProfileRegion region("GridderState::grid_visibilities_base_const");
+  core::ProfileRegion region("GridderState::grid_visibilities_base_const");
 
   return
     to_rval(
@@ -602,7 +602,7 @@ GridderState::grid_visibilities_base(
   bool return_visibilities,
   bool do_grid) && {
 
-  Impl::ProfileRegion region("GridderState::grid_visibilities_base");
+  core::ProfileRegion region("GridderState::grid_visibilities_base");
 
   return
     to_rval(
@@ -622,7 +622,7 @@ GridderState::grid_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) const & {
 
-  Impl::ProfileRegion region("GridderState::grid_visibilities_const");
+  core::ProfileRegion region("GridderState::grid_visibilities_const");
 
   return
     map(
@@ -644,7 +644,7 @@ GridderState::grid_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) && {
 
-  Impl::ProfileRegion region("GridderState::grid_visibilities");
+  core::ProfileRegion region("GridderState::grid_visibilities");
 
   return
     map(
@@ -666,7 +666,7 @@ GridderState::degrid_grid_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) const & {
 
-  Impl::ProfileRegion region("GridderState::degrid_grid_visibilities_const");
+  core::ProfileRegion region("GridderState::degrid_grid_visibilities_const");
 
   return
     map(
@@ -688,7 +688,7 @@ GridderState::degrid_grid_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) && {
 
-  Impl::ProfileRegion region("GridderState::degrid_grid_visibilities");
+  core::ProfileRegion region("GridderState::degrid_grid_visibilities");
 
   return
     map(
@@ -709,7 +709,7 @@ GridderState::degrid_get_predicted_visibilities(
   Device host_device,
   VisDataVector&& visibilities) const & {
 
-  Impl::ProfileRegion
+  core::ProfileRegion
     region("GridderState::degrid_get_predicted_visibilities_const");
 
   return
@@ -727,7 +727,7 @@ GridderState::degrid_get_predicted_visibilities(
   Device host_device,
   VisDataVector&& visibilities) && {
 
-  Impl::ProfileRegion region("GridderState::degrid_get_predicted_visibilities");
+  core::ProfileRegion region("GridderState::degrid_get_predicted_visibilities");
 
   return
     std::move(*this).grid_visibilities_base(
@@ -745,7 +745,7 @@ GridderState::degrid_grid_get_residual_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) const & {
 
-  Impl::ProfileRegion
+  core::ProfileRegion
     region("GridderState::degrid_grid_get_residual_visibilities_const");
 
   return
@@ -764,7 +764,7 @@ GridderState::degrid_grid_get_residual_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) && {
 
-  Impl::ProfileRegion
+  core::ProfileRegion
     region("GridderState::degrid_grid_get_residual_visibilities");
 
   return
@@ -780,7 +780,7 @@ GridderState::degrid_grid_get_residual_visibilities(
 GridderState
 GridderState::fence() const & {
 
-  Impl::ProfileRegion region("GridderState::fence_const");
+  core::ProfileRegion region("GridderState::fence_const");
 
   GridderState result(*this);
   result.impl->fence();
@@ -790,7 +790,7 @@ GridderState::fence() const & {
 GridderState
 GridderState::fence() && {
 
-  Impl::ProfileRegion region("GridderState::fence");
+  core::ProfileRegion region("GridderState::fence");
 
   GridderState result(std::move(*this));
   result.impl->fence();
@@ -800,7 +800,7 @@ GridderState::fence() && {
 std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
 GridderState::grid_weights() const & {
 
-  Impl::ProfileRegion region("GridderState::grid_weights_const");
+  core::ProfileRegion region("GridderState::grid_weights_const");
 
   GridderState result(*this);
   return {std::move(result), std::move(result.impl->grid_weights())};
@@ -809,7 +809,7 @@ GridderState::grid_weights() const & {
 std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
 GridderState::grid_weights() && {
 
-  Impl::ProfileRegion region("GridderState::grid_weights");
+  core::ProfileRegion region("GridderState::grid_weights");
 
   GridderState result(std::move(*this));
   return {std::move(result), std::move(result.impl->grid_weights())};
@@ -818,7 +818,7 @@ GridderState::grid_weights() && {
 std::shared_ptr<GridWeightArray::value_type>
 GridderState::grid_weights_ptr() const & {
 
-  Impl::ProfileRegion region("GridderState::grid_weights_ptr");
+  core::ProfileRegion region("GridderState::grid_weights_ptr");
 
   return impl->grid_weights_ptr();
 }
@@ -826,7 +826,7 @@ GridderState::grid_weights_ptr() const & {
 size_t
 GridderState::grid_weights_span() const & {
 
-  Impl::ProfileRegion region("GridderState::grid_weights_span");
+  core::ProfileRegion region("GridderState::grid_weights_span");
 
   return impl->grid_weights_span();
 }
@@ -834,7 +834,7 @@ GridderState::grid_weights_span() const & {
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::grid_values() const & {
 
-  Impl::ProfileRegion region("GridderState::grid_values_const");
+  core::ProfileRegion region("GridderState::grid_values_const");
 
   GridderState result(*this);
   return {std::move(result), std::move(result.impl->grid_values())};
@@ -843,7 +843,7 @@ GridderState::grid_values() const & {
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::grid_values() && {
 
-  Impl::ProfileRegion region("GridderState::grid_values");
+  core::ProfileRegion region("GridderState::grid_values");
 
   GridderState result(std::move(*this));
   return {std::move(result), std::move(result.impl->grid_values())};
@@ -852,7 +852,7 @@ GridderState::grid_values() && {
 std::shared_ptr<GridValueArray::value_type>
 GridderState::grid_values_ptr() const & {
 
-  Impl::ProfileRegion region("GridderState::grid_values_ptr");
+  core::ProfileRegion region("GridderState::grid_values_ptr");
 
   return impl->grid_values_ptr();
 }
@@ -860,7 +860,7 @@ GridderState::grid_values_ptr() const & {
 size_t
 GridderState::grid_values_span() const & {
 
-  Impl::ProfileRegion region("GridderState::grid_values_span");
+  core::ProfileRegion region("GridderState::grid_values_span");
 
   return impl->grid_values_span();
 }
@@ -868,7 +868,7 @@ GridderState::grid_values_span() const & {
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::model_values() const & {
 
-  Impl::ProfileRegion region("GridderState::model_values_const");
+  core::ProfileRegion region("GridderState::model_values_const");
 
   GridderState result(*this);
   return {std::move(result), std::move(result.impl->model_values())};
@@ -877,7 +877,7 @@ GridderState::model_values() const & {
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::model_values() && {
 
-  Impl::ProfileRegion region("GridderState::model_values");
+  core::ProfileRegion region("GridderState::model_values");
 
   GridderState result(std::move(*this));
   return {std::move(result), std::move(result.impl->model_values())};
@@ -886,7 +886,7 @@ GridderState::model_values() && {
 std::shared_ptr<GridValueArray::value_type>
 GridderState::model_values_ptr() const & {
 
-  Impl::ProfileRegion region("GridderState::model_values_ptr");
+  core::ProfileRegion region("GridderState::model_values_ptr");
 
   return impl->model_values_ptr();
 }
@@ -894,7 +894,7 @@ GridderState::model_values_ptr() const & {
 size_t
 GridderState::model_values_span() const & {
 
-  Impl::ProfileRegion region("GridderState::grid_values_span");
+  core::ProfileRegion region("GridderState::grid_values_span");
 
   return impl->model_values_span();
 }
@@ -902,7 +902,7 @@ GridderState::model_values_span() const & {
 GridderState
 GridderState::reset_grid() const & {
 
-  Impl::ProfileRegion region("GridderState::reset_grid_const");
+  core::ProfileRegion region("GridderState::reset_grid_const");
 
   GridderState result(*this);
   result.impl->reset_grid();
@@ -912,7 +912,7 @@ GridderState::reset_grid() const & {
 GridderState
 GridderState::reset_grid() && {
 
-  Impl::ProfileRegion region("GridderState::reset_grid");
+  core::ProfileRegion region("GridderState::reset_grid");
 
   GridderState result(std::move(*this));
   result.impl->reset_grid();
@@ -922,7 +922,7 @@ GridderState::reset_grid() && {
 GridderState
 GridderState::reset_model() const & {
 
-  Impl::ProfileRegion region("GridderState::reset_model_const");
+  core::ProfileRegion region("GridderState::reset_model_const");
 
   GridderState result(*this);
   result.impl->reset_model();
@@ -932,7 +932,7 @@ GridderState::reset_model() const & {
 GridderState
 GridderState::reset_model() && {
 
-  Impl::ProfileRegion region("GridderState::reset_model");
+  core::ProfileRegion region("GridderState::reset_model");
 
   GridderState result(std::move(*this));
   result.impl->reset_model();
@@ -942,7 +942,7 @@ GridderState::reset_model() && {
 GridderState
 GridderState::normalize_by_weights(grid_value_fp wfactor) const & {
 
-  Impl::ProfileRegion region("GridderState::normalize_by_weights_const");
+  core::ProfileRegion region("GridderState::normalize_by_weights_const");
 
   GridderState result(*this);
   result.impl->normalize_by_weights(wfactor);
@@ -952,7 +952,7 @@ GridderState::normalize_by_weights(grid_value_fp wfactor) const & {
 GridderState
 GridderState::normalize_by_weights(grid_value_fp wfactor) && {
 
-  Impl::ProfileRegion region("GridderState::normalize_by_weights");
+  core::ProfileRegion region("GridderState::normalize_by_weights");
 
   GridderState result(std::move(*this));
   result.impl->normalize_by_weights(wfactor);
@@ -965,7 +965,7 @@ GridderState::apply_grid_fft(
   FFTSign sign,
   bool in_place) const & {
 
-  Impl::ProfileRegion region("GridderState::apply_grid_fft_const");
+  core::ProfileRegion region("GridderState::apply_grid_fft_const");
 
   return
     to_rval(Impl::GridderState::apply_grid_fft(*this, norm, sign, in_place));
@@ -977,7 +977,7 @@ GridderState::apply_grid_fft(
   FFTSign sign,
   bool in_place) && {
 
-  Impl::ProfileRegion region("GridderState::apply_grid_fft");
+  core::ProfileRegion region("GridderState::apply_grid_fft");
 
   return
     to_rval(
@@ -994,7 +994,7 @@ GridderState::apply_model_fft(
   FFTSign sign,
   bool in_place) const & {
 
-  Impl::ProfileRegion region("GridderState::apply_model_fft_const");
+  core::ProfileRegion region("GridderState::apply_model_fft_const");
 
   return
   to_rval(Impl::GridderState::apply_model_fft(*this, norm, sign, in_place));
@@ -1006,7 +1006,7 @@ GridderState::apply_model_fft(
   FFTSign sign,
   bool in_place) && {
 
-  Impl::ProfileRegion region("GridderState::apply_model_fft");
+  core::ProfileRegion region("GridderState::apply_model_fft");
 
   return
     to_rval(
@@ -1020,7 +1020,7 @@ GridderState::apply_model_fft(
 GridderState
 GridderState::shift_grid(ShiftDirection direction) const & {
 
-  Impl::ProfileRegion region("GridderState::shift_grid_const");
+  core::ProfileRegion region("GridderState::shift_grid_const");
 
   GridderState result(*this);
   result.impl->shift_grid(direction);
@@ -1030,7 +1030,7 @@ GridderState::shift_grid(ShiftDirection direction) const & {
 GridderState
 GridderState::shift_grid(ShiftDirection direction) && {
 
-  Impl::ProfileRegion region("GridderState::shift_grid");
+  core::ProfileRegion region("GridderState::shift_grid");
 
   GridderState result(std::move(*this));
   result.impl->shift_grid(direction);
@@ -1040,7 +1040,7 @@ GridderState::shift_grid(ShiftDirection direction) && {
 GridderState
 GridderState::shift_model(ShiftDirection direction) const & {
 
-  Impl::ProfileRegion region("GridderState::shift_model_const");
+  core::ProfileRegion region("GridderState::shift_model_const");
 
   GridderState result(*this);
   result.impl->shift_model(direction);
@@ -1050,7 +1050,7 @@ GridderState::shift_model(ShiftDirection direction) const & {
 GridderState
 GridderState::shift_model(ShiftDirection direction) && {
 
-  Impl::ProfileRegion region("GridderState::shift_model");
+  core::ProfileRegion region("GridderState::shift_model");
 
   GridderState result(std::move(*this));
   result.impl->shift_model(direction);
@@ -1563,10 +1563,10 @@ GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
   static_assert(
-    static_cast<int>(Impl::GridAxis::x) == GridValueArray::Axis::x
-    && static_cast<int>(Impl::GridAxis::y) == GridValueArray::Axis::y
-    && static_cast<int>(Impl::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && static_cast<int>(Impl::GridAxis::cube) == GridValueArray::Axis::cube);
+    static_cast<int>(core::GridAxis::x) == GridValueArray::Axis::x
+    && static_cast<int>(core::GridAxis::y) == GridValueArray::Axis::y
+    && static_cast<int>(core::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && static_cast<int>(core::GridAxis::cube) == GridValueArray::Axis::cube);
 
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
@@ -1586,10 +1586,10 @@ GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
   static_assert(
-    static_cast<int>(Impl::GridAxis::x) == GridValueArray::Axis::x
-    && static_cast<int>(Impl::GridAxis::y) == GridValueArray::Axis::y
-    && static_cast<int>(Impl::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && static_cast<int>(Impl::GridAxis::cube) == GridValueArray::Axis::cube);
+    static_cast<int>(core::GridAxis::x) == GridValueArray::Axis::x
+    && static_cast<int>(core::GridAxis::y) == GridValueArray::Axis::y
+    && static_cast<int>(core::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && static_cast<int>(core::GridAxis::cube) == GridValueArray::Axis::cube);
 
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
@@ -1709,8 +1709,8 @@ CFArray::min_buffer_size(Device device, unsigned grp) const {
   case Device::Serial: {
     auto layout = Impl::CFLayout<Device::Serial>::dimensions(this, grp);
     alloc_sz =
-      Impl::cf_view<
-        typename Impl::DeviceT<Device::Serial>::kokkos_device::array_layout,
+      core::cf_view<
+        typename core::DeviceT<Device::Serial>::kokkos_device::array_layout,
         K::HostSpace>
       ::required_allocation_size(
         layout.dimension[0],
@@ -1726,8 +1726,8 @@ CFArray::min_buffer_size(Device device, unsigned grp) const {
   case Device::OpenMP: {
     auto layout = Impl::CFLayout<Device::OpenMP>::dimensions(this, grp);
     alloc_sz =
-      Impl::cf_view<
-        typename Impl::DeviceT<Device::OpenMP>::kokkos_device::array_layout,
+      core::cf_view<
+        typename core::DeviceT<Device::OpenMP>::kokkos_device::array_layout,
         K::HostSpace>
       ::required_allocation_size(
         layout.dimension[0],
@@ -1743,8 +1743,8 @@ CFArray::min_buffer_size(Device device, unsigned grp) const {
   case Device::Cuda: {
     auto layout = Impl::CFLayout<Device::Cuda>::dimensions(this, grp);
     alloc_sz =
-      Impl::cf_view<
-        typename Impl::DeviceT<Device::Cuda>::kokkos_device::array_layout,
+      core::cf_view<
+        typename core::DeviceT<Device::Cuda>::kokkos_device::array_layout,
         K::HostSpace>
       ::required_allocation_size(
         layout.dimension[0],
@@ -1761,7 +1761,7 @@ CFArray::min_buffer_size(Device device, unsigned grp) const {
     break;
   }
   return
-    rval<size_t>((alloc_sz + (sizeof(Impl::cf_t) - 1)) / sizeof(Impl::cf_t));
+    rval<size_t>((alloc_sz + (sizeof(core::cf_t) - 1)) / sizeof(core::cf_t));
 }
 
 rval_t<std::unique_ptr<DeviceCFArray>>
