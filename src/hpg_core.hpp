@@ -631,15 +631,15 @@ struct HPG_EXPORT VisibilityGridder final {
     typename execution_space::scratch_memory_space>;
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
-    static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
-    degrid_vis(
-      const member_type& team_member,
-      const Vis<N, execution_space>& vis,
-      const cf_view<cf_layout, memory_space>& cf,
-      const const_mindex_view<memory_space>& mueller_indexes,
-      const const_mindex_view<memory_space>& conjugate_mueller_indexes,
-      const const_grid_view<grid_layout, memory_space>& model,
-      const scratch_phscr_view& phi_Y) {
+  static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
+  degrid_vis(
+    const member_type& team_member,
+    const Vis<N, execution_space>& vis,
+    const cf_view<cf_layout, memory_space>& cf,
+    const const_mindex_view<memory_space>& mueller_indexes,
+    const const_mindex_view<memory_space>& conjugate_mueller_indexes,
+    const const_grid_view<grid_layout, memory_space>& model,
+    const scratch_phscr_view& phi_Y) {
 
     const auto& N_X = vis.m_cf_size[0];
     const auto& N_Y = vis.m_cf_size[1];
@@ -730,18 +730,18 @@ struct HPG_EXPORT VisibilityGridder final {
 
   // function for gridding a single visibility with sum of weights
   template <typename cf_layout, typename grid_layout, typename memory_space>
-    static KOKKOS_FUNCTION void
-    grid_vis(
-      const member_type& team_member,
-      const Vis<N, execution_space>& vis,
-      const unsigned gpol,
-      const cf_view<cf_layout, memory_space>& cf,
-      const const_mindex_view<memory_space>& mueller_indexes,
-      const const_mindex_view<memory_space>& conjugate_mueller_indexes,
-      const grid_view<grid_layout, memory_space>& grid,
-      const weight_view<typename execution_space::array_layout, memory_space>&
-      weights,
-      const scratch_phscr_view& phi_Y) {
+  static KOKKOS_FUNCTION void
+  grid_vis(
+    const member_type& team_member,
+    const Vis<N, execution_space>& vis,
+    const unsigned gpol,
+    const cf_view<cf_layout, memory_space>& cf,
+    const const_mindex_view<memory_space>& mueller_indexes,
+    const const_mindex_view<memory_space>& conjugate_mueller_indexes,
+    const grid_view<grid_layout, memory_space>& grid,
+    const weight_view<typename execution_space::array_layout, memory_space>&
+    weights,
+    const scratch_phscr_view& phi_Y) {
 
     const auto& N_X = vis.m_cf_size[0];
     const auto& N_Y = vis.m_cf_size[1];
@@ -822,16 +822,16 @@ struct HPG_EXPORT VisibilityGridder final {
 
   // function for gridding a single visibility without sum of weights
   template <typename cf_layout, typename grid_layout, typename memory_space>
-    static KOKKOS_FUNCTION void
-    grid_vis_no_weights(
-      const member_type& team_member,
-      const Vis<N, execution_space>& vis,
-      const unsigned gpol,
-      const cf_view<cf_layout, memory_space>& cf,
-      const const_mindex_view<memory_space>& mueller_indexes,
-      const const_mindex_view<memory_space>& conjugate_mueller_indexes,
-      const grid_view<grid_layout, memory_space>& grid,
-      const scratch_phscr_view& phi_Y) {
+  static KOKKOS_FUNCTION void
+  grid_vis_no_weights(
+    const member_type& team_member,
+    const Vis<N, execution_space>& vis,
+    const unsigned gpol,
+    const cf_view<cf_layout, memory_space>& cf,
+    const const_mindex_view<memory_space>& mueller_indexes,
+    const const_mindex_view<memory_space>& conjugate_mueller_indexes,
+    const grid_view<grid_layout, memory_space>& grid,
+    const scratch_phscr_view& phi_Y) {
 
     const auto& N_X = vis.m_cf_size[0];
     const auto& N_Y = vis.m_cf_size[1];
@@ -897,26 +897,25 @@ struct HPG_EXPORT VisibilityGridder final {
   }
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
-    static void
-    kernel(
-      execution_space exec,
-      const K::Array<
-      cf_view<cf_layout, memory_space>,
-      HPG_MAX_NUM_CF_GROUPS>& cfs,
-      const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
-      unsigned max_cf_extent_y,
-      const_mindex_view<memory_space> mueller_indexes,
-      const_mindex_view<memory_space> conjugate_mueller_indexes,
-      bool update_grid_weights,
-      bool do_degrid,
-      bool do_grid,
-      int num_visibilities,
-      const visdata_view<N, memory_space>& visibilities,
-      gvisbuff_view<memory_space>& gvisbuff,
-      const K::Array<grid_scale_fp, 2>& grid_scale,
-      const const_grid_view<grid_layout, memory_space>& model,
-      const grid_view<grid_layout, memory_space>& grid,
-      const weight_view<typename execution_space::array_layout, memory_space>&
+  static void
+  kernel(
+    execution_space exec,
+    const K::Array<cf_view<cf_layout, memory_space>, HPG_MAX_NUM_CF_GROUPS>&
+      cfs,
+    const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
+    unsigned max_cf_extent_y,
+    const_mindex_view<memory_space> mueller_indexes,
+    const_mindex_view<memory_space> conjugate_mueller_indexes,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool do_grid,
+    int num_visibilities,
+    const visdata_view<N, memory_space>& visibilities,
+    gvisbuff_view<memory_space>& gvisbuff,
+    const K::Array<grid_scale_fp, 2>& grid_scale,
+    const const_grid_view<grid_layout, memory_space>& model,
+    const grid_view<grid_layout, memory_space>& grid,
+    const weight_view<typename execution_space::array_layout, memory_space>&
       weights) {
 
     ProfileRegion region("VisibilityGridder");
@@ -1086,12 +1085,12 @@ template <typename execution_space, unsigned version>
 struct HPG_EXPORT GridNormalizer final {
 
   template <typename grid_layout, typename memory_space>
-    static void
-    kernel(
-      execution_space exec,
-      const grid_view<grid_layout, memory_space>& grid,
-      const const_weight_view<
-      typename execution_space::array_layout, memory_space>& weights,
+  static void
+  kernel(
+    execution_space exec,
+    const grid_view<grid_layout, memory_space>& grid,
+    const const_weight_view<
+    typename execution_space::array_layout, memory_space>& weights,
       const grid_value_fp& wfactor) {
 
     static_assert(
@@ -1117,11 +1116,11 @@ struct HPG_EXPORT GridNormalizer final {
   }
 
   template <typename grid_layout, typename memory_space>
-    static void
-    kernel(
-      execution_space exec,
-      const grid_view<grid_layout, memory_space>& grid,
-      const grid_value_fp& norm) {
+  static void
+  kernel(
+    execution_space exec,
+    const grid_view<grid_layout, memory_space>& grid,
+    const grid_value_fp& norm) {
 
     static_assert(
       int(GridAxis::x) == 0
@@ -1288,8 +1287,8 @@ struct HPG_EXPORT FFT final {
   // default implementation assumes FFTW3
 
   template <typename IG, typename OG>
-    static auto
-    grid_fft_handle(execution_space exec, FFTSign sign, IG& igrid, OG& ogrid) {
+  static auto
+  grid_fft_handle(execution_space exec, FFTSign sign, IG& igrid, OG& ogrid) {
 
     using scalar_t = typename OG::value_type::value_type;
 
@@ -1330,11 +1329,11 @@ struct HPG_EXPORT FFT final {
   /** in-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-    static std::optional<Error>
-    in_place_kernel(
-      execution_space exec,
-      FFTSign sign,
-      const grid_view<grid_layout, memory_space>& grid) {
+  static std::optional<Error>
+  in_place_kernel(
+    execution_space exec,
+    FFTSign sign,
+    const grid_view<grid_layout, memory_space>& grid) {
 
     using scalar_t =
       typename grid_view<grid_layout, memory_space>::value_type::value_type;
@@ -1357,12 +1356,12 @@ struct HPG_EXPORT FFT final {
   /** out-of-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-    static std::optional<Error>
-    out_of_place_kernel(
-      execution_space exec,
-      FFTSign sign,
-      const const_grid_view<grid_layout, memory_space>& pre_grid,
-      const grid_view<grid_layout, memory_space>& post_grid) {
+  static std::optional<Error>
+  out_of_place_kernel(
+    execution_space exec,
+    FFTSign sign,
+    const const_grid_view<grid_layout, memory_space>& pre_grid,
+    const grid_view<grid_layout, memory_space>& post_grid) {
 
     using scalar_t =
       typename grid_view<grid_layout, memory_space>::value_type::value_type;
@@ -1389,11 +1388,7 @@ struct HPG_EXPORT FFT final {
 #ifdef HPG_ENABLE_CUDA
 
 static Error
-cufft_error(const std::string& prefix, cufftResult rc) {
-  std::ostringstream oss(prefix);
-  oss << ": cufftResult code " << rc;
-  return Error(oss.str());
-}
+cufft_error(const std::string& prefix, cufftResult rc);
 
 /** cufft function class templated on fp precision */
 template <typename T>
@@ -1453,8 +1448,8 @@ template <>
 struct HPG_EXPORT FFT<K::Cuda, 0> final {
 
   template <typename G>
-    static std::tuple<cufftResult_t, cufftHandle>
-    grid_fft_handle(K::Cuda exec, G& grid) {
+  static std::tuple<cufftResult_t, cufftHandle>
+  grid_fft_handle(K::Cuda exec, G& grid) {
 
     using scalar_t = typename G::value_type::value_type;
 
@@ -1483,8 +1478,8 @@ struct HPG_EXPORT FFT<K::Cuda, 0> final {
   /** in-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-    static std::optional<Error>
-    in_place_kernel(
+  static std::optional<Error>
+  in_place_kernel(
       K::Cuda exec,
       FFTSign sign,
       const grid_view<grid_layout, memory_space>& grid) {
@@ -1507,12 +1502,12 @@ struct HPG_EXPORT FFT<K::Cuda, 0> final {
   /** out-of-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-    static std::optional<Error>
-    out_of_place_kernel(
-      K::Cuda exec,
-      FFTSign sign,
-      const const_grid_view<grid_layout, memory_space>& pre_grid,
-      const grid_view<grid_layout, memory_space>& post_grid) {
+  static std::optional<Error>
+  out_of_place_kernel(
+    K::Cuda exec,
+    FFTSign sign,
+    const const_grid_view<grid_layout, memory_space>& pre_grid,
+    const grid_view<grid_layout, memory_space>& post_grid) {
 
     using scalar_t =
       typename grid_view<grid_layout, memory_space>::value_type::value_type;
@@ -1564,11 +1559,11 @@ template <typename execution_space, unsigned version>
 struct HPG_EXPORT GridShifter final {
 
   template <typename grid_layout, typename memory_space>
-    static void
-    kernel(
-      ShiftDirection direction,
-      execution_space exec,
-      const grid_view<grid_layout, memory_space>& grid) {
+  static void
+  kernel(
+    ShiftDirection direction,
+    execution_space exec,
+    const grid_view<grid_layout, memory_space>& grid) {
 
     using scalar_t =
       typename grid_view<grid_layout, memory_space>::value_type::value_type;
