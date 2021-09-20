@@ -56,7 +56,7 @@ namespace hpg {
  * process does not share any cores with another process. Note that the default
  * value of each parameter is -1.
  */
-struct InitArguments {
+struct HPG_EXPORT InitArguments {
 
   InitArguments()
     : num_threads(-1)
