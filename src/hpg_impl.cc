@@ -35,21 +35,21 @@ hpg::impl::parsed_cf_layout_version(const std::string& layout) {
   if (vn) {
     std::string dev = layout.substr(dash + 1);
 #ifdef HPG_ENABLE_SERIAL
-    if (dev == core::DeviceT<Device::Serial>::name)
+    if (dev == impl::DeviceT<Device::Serial>::name)
       return
         std::make_tuple(
           unsigned(vn.value()),
           std::optional<Device>(Device::Serial));
 #endif
 #ifdef HPG_ENABLE_OPENMP
-    if (dev == core::DeviceT<Device::OpenMP>::name)
+    if (dev == impl::DeviceT<Device::OpenMP>::name)
       return
         std::make_tuple(
           unsigned(vn.value()),
           std::optional<Device>(Device::OpenMP));
 #endif
 #ifdef HPG_ENABLE_CUDA
-    if (dev == core::DeviceT<Device::Cuda>::name)
+    if (dev == impl::DeviceT<Device::Cuda>::name)
       return
         std::make_tuple(
           unsigned(vn.value()),
@@ -67,17 +67,17 @@ hpg::impl::construct_cf_layout_version(unsigned vn, Device device) {
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
-    oss << core::DeviceT<Device::Serial>::name;
+    oss << impl::DeviceT<Device::Serial>::name;
     break;
 #endif
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
-    oss << core::DeviceT<Device::OpenMP>::name;
+    oss << impl::DeviceT<Device::OpenMP>::name;
     break;
 #endif
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
-    oss << core::DeviceT<Device::Cuda>::name;
+    oss << impl::DeviceT<Device::Cuda>::name;
     break;
 #endif
   default:

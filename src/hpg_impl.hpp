@@ -18,7 +18,6 @@
 #include "hpg_config.hpp"
 #include "hpg.hpp"
 #include "hpg_core.hpp"
-#include "hpg_layouts.hpp"
 // #inlude "hpg_export.h"
 
 #include <cassert>
@@ -28,13 +27,18 @@
 #include <tuple>
 #include <vector>
 
+
+#include <Kokkos_Core.hpp>
+
+#ifdef __NVCC__
+# define WORKAROUND_NVCC_IF_CONSTEXPR_BUG
+#endif
+
 /** @file hpg_impl.hpp
  *
  * HPG implementation header file
  */
 namespace hpg {
-
-namespace K = Kokkos;
 
 /** disabled host device error
  *
@@ -105,6 +109,158 @@ struct CFSupportExceedsGridError
 
 namespace impl {
 
+namespace K = Kokkos;
+
+/** scoped Kokkos profiling region value */
+struct /*HPG_EXPORT*/ ProfileRegion {
+  inline ProfileRegion(const char* nm) {
+    K::Profiling::pushRegion(nm);
+  }
+
+  inline ~ProfileRegion() {
+    K::Profiling::popRegion();
+  }
+};
+
+/** type trait associating Kokkos device with hpg Device */
+template <Device D>
+struct /*HPG_EXPORT*/ DeviceT {
+  using kokkos_device = void;
+
+  static constexpr const char* const name = "";
+};
+
+#ifdef HPG_ENABLE_SERIAL
+/** Serial device type trait */
+template <>
+struct /*HPG_EXPORT*/ DeviceT<Device::Serial> {
+  using kokkos_device = K::Serial;
+
+  static constexpr const char* const name = "Serial";
+};
+#endif // HPG_ENABLE_SERIAL
+
+#ifdef HPG_ENABLE_OPENMP
+/** OpenMP device type trait */
+template <>
+struct /*HPG_EXPORT*/ DeviceT<Device::OpenMP> {
+  using kokkos_device = K::OpenMP;
+
+  static constexpr const char* const name = "OpenMP";
+};
+#endif // HPG_ENABLE_OPENMP
+
+#ifdef HPG_ENABLE_CUDA
+/** Cuda device type trait */
+template <>
+struct /*HPG_EXPORT*/ DeviceT<Device::Cuda> {
+  using kokkos_device = K::Cuda;
+
+  static constexpr const char* const name = "Cuda";
+};
+#endif // HPG_ENABLE_CUDA
+
+/** axis order for strided grid layout */
+static const std::array<int, 4> strided_grid_layout_order{
+  int(core::GridAxis::y),
+  int(core::GridAxis::mrow),
+  int(core::GridAxis::x),
+  int(core::GridAxis::cube)};
+
+/** device-specific grid array layout */
+template <typename Device>
+struct /*HPG_EXPORT*/ GridLayout {
+
+  /** Kokkos layout type */
+  using layout =
+    std::conditional_t<
+      std::is_same_v<typename Device::array_layout, K::LayoutLeft>,
+      K::LayoutLeft,
+      K::LayoutStride>;
+
+  /** create Kokkos layout using given grid dimensions
+   *
+   * logical index order matches GridAxis definition
+   */
+  static layout
+  dimensions(const std::array<int, 4>& dims) {
+    if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
+      return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3]);
+    } else {
+      return
+        K::LayoutStride::order_dimensions(
+          4,
+          strided_grid_layout_order.data(),
+          dims.data());
+    }
+#ifdef WORKAROUND_NVCC_IF_CONSTEXPR_BUG
+    return layout();
+#endif
+  }
+};
+
+/** CFLayout version number
+ *
+ * @todo make something useful of this, maybe add a value template parameter to
+ * CFLayout?
+ */
+static const unsigned cf_layout_version_number = 0;
+
+/** axis order for strided CF array layout */
+static const std::array<int, 6> strided_cf_layout_order{
+  int(core::CFAxis::mueller),
+  int(core::CFAxis::y_major),
+  int(core::CFAxis::x_major),
+  int(core::CFAxis::cube),
+  int(core::CFAxis::x_minor),
+  int(core::CFAxis::y_minor)};
+
+/** device-specific constant-support CF array layout */
+template <typename Device>
+struct /*HPG_EXPORT*/ CFLayout {
+
+  /** Kokkos layout type */
+  using layout =
+    std::conditional_t<
+      std::is_same_v<typename Device::array_layout, K::LayoutLeft>,
+      K::LayoutLeft,
+      K::LayoutStride>;
+
+  /**
+   * create Kokkos layout using given CFArray slice
+   *
+   * logical index order matches CFAxis definition
+   *
+   * @todo: verify these layouts
+   */
+  static layout
+  dimensions(const CFArrayShape* cf, unsigned grp) {
+    auto extents = cf->extents(grp);
+    auto os = cf->oversampling();
+    std::array<int, 6> dims{
+      int((extents[CFArray::Axis::x] + os - 1) / os),
+      int((extents[CFArray::Axis::y] + os - 1) / os),
+      int(extents[CFArray::Axis::mueller]),
+      int(extents[CFArray::Axis::cube]),
+      int(os),
+      int(os)
+    };
+    if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
+      return
+        K::LayoutLeft(dims[0], dims[1], dims[2], dims[3], dims[4], dims[5]);
+    } else {
+      return
+        K::LayoutStride::order_dimensions(
+          6,
+          strided_cf_layout_order.data(),
+          dims.data());
+    }
+#ifdef WORKAROUND_NVCC_IF_CONSTEXPR_BUG
+    return layout();
+#endif
+  }
+};
+
 /** sign of a value
  *
  * @return -1, if less than 0; +1, if greater than 0; 0, if equal to 0
@@ -165,9 +321,14 @@ class /*HPG_EXPORT*/ GridValueViewArray final
   : public GridValueArray {
 public:
 
-  using memory_space = typename core::DeviceT<D>::kokkos_device::memory_space;
-  using layout = typename layouts::GridLayout<D>::layout;
-  using grid_t = typename core::grid_view<layout, memory_space>::HostMirror;
+  using kokkos_device = typename DeviceT<D>::kokkos_device;
+  using memory_space = typename kokkos_device::memory_space;
+  using grid_layout = GridLayout<kokkos_device>;
+
+  using grid_t =
+    typename core::grid_view<
+      typename grid_layout::layout,
+      memory_space>::HostMirror;
 
   grid_t grid;
 
@@ -218,7 +379,7 @@ public:
     // (otherwise, the following is broken, not least because it may result in
     // an out-of-bounds access on dst)
 
-    auto espace = typename core::DeviceT<H>::kokkos_device::execution_space();
+    auto espace = typename DeviceT<H>::kokkos_device::execution_space();
 
     switch (lyo) {
     case Layout::Left: {
@@ -288,13 +449,13 @@ public:
       iext{int(extents[0]), int(extents[1]), int(extents[2]), int(extents[3])};
     grid_t grid(
       K::ViewAllocateWithoutInitializing(name),
-      layouts::GridLayout<D>::dimensions(iext));
+      grid_layout::dimensions(iext));
 
     // we're assuming that a K::LayoutLeft or K::LayoutRight copy has no padding
     // (otherwise, the following is broken, not least because it may result in
     // an out-of-bounds access on dst)
 
-    auto espace = typename core::DeviceT<H>::kokkos_device::execution_space();
+    auto espace = typename DeviceT<H>::kokkos_device::execution_space();
 
     switch (lyo) {
     case Layout::Left: {
@@ -363,8 +524,9 @@ class /*HPG_EXPORT*/ GridWeightViewArray final
   : public GridWeightArray {
  public:
 
-  using memory_space = typename core::DeviceT<D>::kokkos_device::memory_space;
-  using layout = typename core::DeviceT<D>::kokkos_device::array_layout;
+  using kokkos_device = typename DeviceT<D>::kokkos_device;
+  using memory_space = typename kokkos_device::memory_space;
+  using layout = typename kokkos_device::array_layout;
   using weight_t = typename core::weight_view<layout, memory_space>::HostMirror;
 
   weight_t weight;
@@ -399,7 +561,7 @@ class /*HPG_EXPORT*/ GridWeightViewArray final
     // (otherwise, the following is broken, not least because it may result in
     // an out-of-bounds access on dst)
 
-    auto espace = typename core::DeviceT<H>::kokkos_device::execution_space();
+    auto espace = typename DeviceT<H>::kokkos_device::execution_space();
 
     switch (lyo) {
     case Layout::Left: {
@@ -473,7 +635,7 @@ public:
     // (otherwise, the following is broken, not least because it may result in
     // an out-of-bounds access on dst)
 
-    auto espace = typename core::DeviceT<H>::kokkos_device::execution_space();
+    auto espace = typename DeviceT<H>::kokkos_device::execution_space();
 
     switch (lyo) {
     case Layout::Left: {
@@ -578,14 +740,14 @@ public:
     // (otherwise, the following is broken, not least because it may result in
     // an out-of-bounds access on dst)
 
-    auto espace = typename core::DeviceT<H>::kokkos_device::execution_space();
+    auto espace = typename DeviceT<H>::kokkos_device::execution_space();
 
     switch (lyo) {
     case Layout::Left: {
       K::View<
         core::gv_t****,
         K::LayoutLeft,
-        typename core::DeviceT<H>::kokkos_device::memory_space,
+        typename DeviceT<H>::kokkos_device::memory_space,
         K::MemoryTraits<K::Unmanaged>> dstv(
           reinterpret_cast<core::gv_t*>(dst),
           m_extents[0], m_extents[1], m_extents[2], m_extents[3]);
@@ -597,7 +759,7 @@ public:
       K::View<
         core::gv_t****,
         K::LayoutRight,
-        typename core::DeviceT<H>::kokkos_device::memory_space,
+        typename DeviceT<H>::kokkos_device::memory_space,
         K::MemoryTraits<K::Unmanaged>> dstv(
           reinterpret_cast<core::gv_t*>(dst),
           m_extents[0], m_extents[1], m_extents[2], m_extents[3]);
@@ -647,7 +809,7 @@ static void
 init_model(GVH& gv_h, const GridValueArray& gv) {
   static_assert(
     K::SpaceAccessibility<
-      typename core::DeviceT<D>::kokkos_device::memory_space,
+      typename DeviceT<D>::kokkos_device::memory_space,
       K::HostSpace>
     ::accessible);
   static_assert(
@@ -663,7 +825,7 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
 
   K::parallel_for(
     "init_model",
-    K::MDRangePolicy<K::Rank<4>, typename core::DeviceT<D>::kokkos_device>(
+    K::MDRangePolicy<K::Rank<4>, typename DeviceT<D>::kokkos_device>(
       {0, 0, 0, 0},
       {int(gv.extent(0)),
        int(gv.extent(1)),
@@ -680,9 +842,11 @@ class /*HPG_EXPORT*/ DeviceCFArray
   : public hpg::DeviceCFArray {
 public:
 
+  using kokkos_device = typename DeviceT<D>::kokkos_device;
+  using cflayout = CFLayout<kokkos_device>;
+
   // notice layout for device D, but in HostSpace
-  using cfd_view_h =
-    core::cf_view<typename layouts::CFLayout<D>::layout, K::HostSpace>;
+  using cfd_view_h = core::cf_view<typename cflayout::layout, K::HostSpace>;
 
   /** layout version string */
   std::string m_version;
@@ -709,7 +873,7 @@ public:
       m_arrays.push_back(std::get<1>(std::move(e_v)));
       m_views.emplace_back(
         reinterpret_cast<core::cf_t*>(m_arrays.back().data()),
-        layouts::CFLayout<D>::dimensions(this, m_extents.size() - 1));
+        cflayout::dimensions(this, m_extents.size() - 1));
     }
   }
 
@@ -775,13 +939,11 @@ public:
 };
 
 /** initialize CF array view from CFArray instance */
-template <Device D, typename CFH>
+template <typename D, typename CFH>
 static void
 init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
   static_assert(
-    K::SpaceAccessibility<
-    typename core::DeviceT<D>::kokkos_device::memory_space,
-      K::HostSpace>
+    K::SpaceAccessibility<typename D::memory_space, K::HostSpace>
     ::accessible);
   static_assert(
     int(core::CFAxis::x_major) == 0
@@ -801,7 +963,7 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
   auto oversampling = cf.oversampling();
   K::parallel_for(
     "cf_init",
-    K::MDRangePolicy<K::Rank<4>, typename core::DeviceT<D>::kokkos_device>(
+    K::MDRangePolicy<K::Rank<4>, D>(
       {0, 0, 0, 0},
       {int(extents[0]), int(extents[1]), int(extents[2]), int(extents[3])}),
     [&](int i, int j, int mueller, int cube) {
@@ -821,23 +983,27 @@ layout_for_device(
   unsigned grp,
   CFArray::value_type* dst) {
 
-  auto layout = layouts::CFLayout<D>::dimensions(&cf, grp);
+  using kokkos_device = typename DeviceT<D>::kokkos_device;
+
+  auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
   typename DeviceCFArray<D>::cfd_view_h
     cfd(reinterpret_cast<core::cf_t*>(dst), layout);
   switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    init_cf_host<Device::Serial>(cfd, cf, grp);
-    typename core::DeviceT<Device::Serial>::kokkos_device::execution_space()
-      .fence();
+  case Device::Serial: {
+    using host_device = DeviceT<Device::Serial>::kokkos_device;
+    init_cf_host<host_device>(cfd, cf, grp);
+    typename host_device::execution_space().fence();
     break;
+  }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    init_cf_host<Device::OpenMP>(cfd, cf, grp);
-    typename core::DeviceT<Device::OpenMP>::kokkos_device::execution_space()
-      .fence();
+  case Device::OpenMP: {
+    using host_device = DeviceT<Device::OpenMP>::kokkos_device;
+    init_cf_host<host_device>(cfd, cf, grp);
+    typename host_device::execution_space().fence();
     break;
+  }
 #endif // HPG_ENABLE_SERIAL
   default:
     assert(false);

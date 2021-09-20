@@ -17,6 +17,7 @@
 
 #include "hpg_config.hpp"
 #include "hpg_core.hpp"
+#include "hpg_impl.hpp"
 // #include "hpg_export.h"
 
 #include <any>
@@ -205,6 +206,63 @@ struct /*HPG_EXPORT*/ State {
   virtual ~State() {}
 };
 
+/** type trait associating Kokkos device with hpg Device */
+template <typename Device>
+struct /*HPG_EXPORT*/ DeviceTraits {
+  static constexpr unsigned active_task_limit = 0;
+
+  using stream_type = void;
+};
+
+#ifdef HPG_ENABLE_SERIAL
+/** Serial device type trait */
+template <>
+struct /*HPG_EXPORT*/ DeviceTraits<K::Serial> {
+  static constexpr unsigned active_task_limit = 1;
+
+  using stream_type = void;
+};
+#endif // HPG_ENABLE_SERIAL
+
+#ifdef HPG_ENABLE_OPENMP
+/** OpenMP device type trait */
+template <>
+struct /*HPG_EXPORT*/ DeviceTraits<K::OpenMP> {
+  static constexpr unsigned active_task_limit = 1;
+
+  using stream_type = void;
+};
+#endif // HPG_ENABLE_OPENMP
+
+#ifdef HPG_ENABLE_CUDA
+/** Cuda device type trait */
+template <>
+struct /*HPG_EXPORT*/ DeviceTraits<K::Cuda> {
+  // the maximum number of concurrent kernels for NVIDIA devices depends on
+  // compute capability; set a large value here, much larger than any capability
+  // through 8.6, and leave it to the user to limit the request
+  static constexpr unsigned active_task_limit = 1024;
+
+  using stream_type = cudaStream_t;
+
+  static bool
+  create_stream(stream_type& stream) {
+    auto rc = cudaStreamCreate(&stream);
+    return rc == cudaSuccess;
+  }
+
+  static bool
+  destroy_stream(stream_type& stream) {
+    bool result = true;
+    if (stream) {
+      auto rc = cudaStreamDestroy(stream);
+      result = rc == cudaSuccess;
+      stream = NULL;
+    }
+    return result;
+  }
+};
+#endif // HPG_ENABLE_CUDA
 
 /** names for stream states */
 enum class /*HPG_EXPORT*/ StreamPhase {
@@ -233,11 +291,11 @@ struct StateT;
 template <Device D>
 struct /*HPG_EXPORT*/ CFPool final {
 
-  using kokkos_device = typename core::DeviceT<D>::kokkos_device;
+  using kokkos_device = typename impl::DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
   using cfd_view =
-    core::cf_view<typename layouts::CFLayout<D>::layout, memory_space>;
+    core::cf_view<typename impl::CFLayout<kokkos_device>::layout, memory_space>;
   using cfh_view = typename cfd_view::HostMirror;
 
   StateT<D> *state;
@@ -338,13 +396,12 @@ struct /*HPG_EXPORT*/ CFPool final {
 
   static size_t
   cf_size(const CFArrayShape* cf, unsigned grp) {
-    auto layout = layouts::CFLayout<D>::dimensions(cf, grp);
+    auto layout = impl::CFLayout<kokkos_device>::dimensions(cf, grp);
     // TODO: it would be best to use the following to compute
     // allocation size, but it is not implemented in Kokkos
     // 'auto alloc_sz = cfd_view::required_allocation_size(layout)'
     auto alloc_sz =
-      core::cf_view<
-        typename core::DeviceT<D>::kokkos_device::array_layout, memory_space>
+      core::cf_view<typename kokkos_device::array_layout, memory_space>
       ::required_allocation_size(
         layout.dimension[0],
         layout.dimension[1],
@@ -399,7 +456,7 @@ struct /*HPG_EXPORT*/ CFPool final {
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
         pool.data() + offset,
-        layouts::CFLayout<D>::dimensions(&cf_array, grp));
+        impl::CFLayout<kokkos_device>::dimensions(&cf_array, grp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
                 << " " << cf_init.extent(1)
@@ -420,18 +477,22 @@ struct /*HPG_EXPORT*/ CFPool final {
       typename decltype(cf_init)::HostMirror cf_h;
       switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
-      case Device::Serial:
+      case Device::Serial: {
+        using host_device = impl::DeviceT<Device::Serial>::kokkos_device;
         cf_h = K::create_mirror_view(cf_init);
-        impl::init_cf_host<Device::Serial>(cf_h, cf_array, grp);
+        impl::init_cf_host<host_device>(cf_h, cf_array, grp);
         K::deep_copy(espace, cf_init, cf_h);
         break;
+      }
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
-      case Device::OpenMP:
+      case Device::OpenMP: {
+        using host_device = impl::DeviceT<Device::OpenMP>::kokkos_device;
         cf_h = K::create_mirror_view(cf_init);
-        impl::init_cf_host<Device::OpenMP>(cf_h, cf_array, grp);
+        impl::init_cf_host<host_device>(cf_h, cf_array, grp);
         K::deep_copy(espace, cf_init, cf_h);
         break;
+      }
 #endif // HPG_ENABLE_SERIAL
       default:
         assert(false);
@@ -443,14 +504,17 @@ struct /*HPG_EXPORT*/ CFPool final {
   }
 
   void
-  add_device_cfs(execution_space espace, impl::DeviceCFArray<D>&& cf_array) {
+  add_device_cfs(
+    execution_space espace,
+    typename impl::DeviceCFArray<D>&& cf_array) {
+
     prepare_pool(&cf_array);
     num_cf_groups = 0;
     size_t offset = 0;
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
         pool.data() + offset,
-        layouts::CFLayout<D>::dimensions(&cf_array, grp));
+        impl::CFLayout<kokkos_device>::dimensions(&cf_array, grp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
                 << " " << cf_init.extent(1)
@@ -496,7 +560,7 @@ struct /*HPG_EXPORT*/ CFPool final {
  * space*/
 template <Device D>
 struct /*HPG_EXPORT*/ ExecSpace final {
-  using kokkos_device = typename core::DeviceT<D>::kokkos_device;
+  using kokkos_device = typename impl::DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
 
@@ -650,17 +714,17 @@ struct /*HPG_EXPORT*/ StateT final
   : public State {
 public:
 
-  using kokkos_device = typename core::DeviceT<D>::kokkos_device;
+  using kokkos_device = typename impl::DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
-  using stream_type = typename core::DeviceT<D>::stream_type;
+  using device_traits = DeviceTraits<kokkos_device>;
+  using stream_type = typename device_traits::stream_type;
+  using grid_layout =  impl::GridLayout<kokkos_device>;
 
-  core::grid_view<typename layouts::GridLayout<D>::layout, memory_space>
-    m_grid;
+  core::grid_view<typename grid_layout::layout, memory_space> m_grid;
   core::weight_view<typename execution_space::array_layout, memory_space>
     m_weights;
-  core::grid_view<typename layouts::GridLayout<D>::layout, memory_space>
-    m_model;
+  core::grid_view<typename grid_layout::layout, memory_space> m_model;
   core::const_mindex_view<memory_space> m_mueller_indexes;
   core::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
 
@@ -692,7 +756,7 @@ public:
     const std::array<unsigned, 4>& implementation_versions)
     : State(
       D,
-      std::min(max_active_tasks, core::DeviceT<D>::active_task_limit),
+      std::min(max_active_tasks, device_traits::active_task_limit),
       max_visibility_batch_size,
       grid_size,
       grid_scale,
@@ -769,7 +833,7 @@ public:
     m_exec_spaces.clear();
     if constexpr(!std::is_void_v<stream_type>) {
       for (auto& str : m_streams) {
-        auto rc = core::DeviceT<D>::destroy_stream(str);
+        auto rc = device_traits::destroy_stream(str);
         assert(rc);
       }
     }
@@ -834,7 +898,7 @@ public:
     try {
       cf.add_device_cfs(
         exec.space,
-        std::move(dynamic_cast<impl::DeviceCFArray<D>&&>(cf_array)));
+        std::move(dynamic_cast<typename impl::DeviceCFArray<D>&&>(cf_array)));
     } catch (const std::bad_cast&) {
       cf.add_host_cfs(host_device, exec.space, std::move(cf_array));
     }
@@ -860,7 +924,7 @@ public:
       m_model =
         decltype(m_model)(
           K::ViewAllocateWithoutInitializing("model"),
-          layouts::GridLayout<D>::dimensions(ig));
+          grid_layout::dimensions(ig));
     }
 
     try {
@@ -905,7 +969,7 @@ public:
 
     auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
-    core::const_grid_view<typename layouts::GridLayout<D>::layout, memory_space>
+    core::const_grid_view<typename grid_layout::layout, memory_space>
       model = m_model;
     core::VisibilityGridder<N, execution_space, 0>::kernel(
       exec_grid.space,
@@ -1043,9 +1107,10 @@ public:
   std::shared_ptr<GridWeightArray::value_type>
   grid_weights_ptr() const override {
     return
-      std::make_shared<impl::GridWeightPtr<
-        typename execution_space::array_layout,
-        memory_space>>(m_weights)->ptr();
+      std::make_shared<
+        impl::GridWeightPtr<
+          typename execution_space::array_layout,
+          memory_space>>(m_weights)->ptr();
   }
 
   size_t
@@ -1068,9 +1133,9 @@ public:
   std::shared_ptr<GridValueArray::value_type>
   grid_values_ptr() const override {
     return
-      std::make_shared<impl::GridValuePtr<
-        typename layouts::GridLayout<D>::layout,
-        memory_space>>(m_grid)->ptr();
+      std::make_shared<
+        impl::GridValuePtr<typename grid_layout::layout, memory_space>>(m_grid)
+      ->ptr();
   }
 
   size_t
@@ -1102,9 +1167,9 @@ public:
   std::shared_ptr<GridValueArray::value_type>
   model_values_ptr() const override {
     return
-      std::make_shared<impl::GridValuePtr<
-        typename layouts::GridLayout<D>::layout,
-        memory_space>>(m_model)->ptr();
+      std::make_shared<
+        impl::GridValuePtr<typename grid_layout::layout, memory_space>>(m_model)
+      ->ptr();
   }
 
   size_t
@@ -1163,8 +1228,7 @@ public:
         break;
       }
     } else {
-      core::const_grid_view<
-        typename layouts::GridLayout<D>::layout, memory_space>
+      core::const_grid_view<typename grid_layout::layout, memory_space>
         pre_grid = m_grid;
       new_grid(false, false);
       switch (fft_version()) {
@@ -1218,8 +1282,7 @@ public:
           break;
         }
       } else {
-        core::const_grid_view<
-          typename layouts::GridLayout<D>::layout, memory_space>
+        core::const_grid_view<typename grid_layout::layout, memory_space>
           pre_model = m_model;
         std::array<int, 4> ig{
           int(m_grid_size[0]),
@@ -1229,7 +1292,7 @@ public:
         m_model =
           decltype(m_model)(
             K::ViewAllocateWithoutInitializing("grid"),
-            layouts::GridLayout<D>::dimensions(ig));
+            grid_layout::dimensions(ig));
         switch (fft_version()) {
         case 0:
           err =
@@ -1335,7 +1398,7 @@ private:
     m_cfs.resize(m_max_active_tasks);
     for (unsigned i = 0; i < m_max_active_tasks; ++i) {
       if constexpr (!std::is_void_v<stream_type>) {
-        auto rc = core::DeviceT<D>::create_stream(m_streams[i]);
+        auto rc = device_traits::create_stream(m_streams[i]);
         assert(rc);
         m_exec_spaces.emplace_back(execution_space(m_streams[i]));
         if (std::holds_alternative<const CFArrayShape*>(init)) {
@@ -1415,7 +1478,7 @@ private:
         m_model =
           decltype(m_model)(
             K::ViewAllocateWithoutInitializing("model"),
-            layouts::GridLayout<D>::dimensions(ig));
+            grid_layout::dimensions(ig));
         K::deep_copy(m_exec_spaces[0].space, m_model, ost->m_model);
       }
     }
@@ -1535,14 +1598,14 @@ private:
       m_grid =
         decltype(m_grid)(
           K::ViewAllocateWithoutInitializing("grid"),
-          layouts::GridLayout<D>::dimensions(ig));
+          grid_layout::dimensions(ig));
     else
       m_grid =
         decltype(m_grid)(
           K::view_alloc(
             "grid",
             m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
-          layouts::GridLayout<D>::dimensions(ig));
+          grid_layout::dimensions(ig));
 #ifndef NDEBUG
     std::cout << "alloc grid sz " << m_grid.extent(0)
               << " " << m_grid.extent(1)
