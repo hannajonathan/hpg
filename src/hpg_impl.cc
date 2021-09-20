@@ -15,11 +15,62 @@
 //
 #include "hpg_impl.hpp"
 
+#include <cfenv>
 #include <optional>
 #include <string>
 #include <tuple>
 
 using namespace hpg;
+
+static bool hpg_initialized = false;
+static bool hpg_cleanup_fftw = false;
+
+bool
+hpg::impl::is_initialized() noexcept {
+  return hpg_initialized;
+}
+
+bool
+hpg::impl::initialize(const InitArguments& args) {
+  bool result = true;
+  K::InitArguments kargs;
+  kargs.num_threads = args.num_threads;
+  kargs.num_numa = args.num_numa;
+  kargs.device_id = args.device_id;
+  kargs.ndevices = args.ndevices;
+  kargs.skip_device = ((args.skip_device >= 0) ? args.skip_device : 9999);
+  kargs.disable_warnings = args.disable_warnings;
+  K::initialize(kargs);
+#ifdef HPG_ENABLE_OPENMP
+  auto rc = fftw_init_threads();
+  result = rc != 0;
+#endif
+#if defined(HPG_ENABLE_CUDA)                                    \
+  && (defined(HPG_ENABLE_OPENMP) || defined(HPG_ENABLE_SERIAL))
+  if (std::fegetround() != FE_TONEAREST)
+    std::cerr << "hpg::initialize() WARNING:"
+              << " Host rounding mode not set to FE_TONEAREST " << std::endl
+              << "  To avoid potential inconsistency in gridding on "
+              << "  host vs gridding on device,"
+              << "  set rounding mode to FE_TONEAREST" << std::endl;
+#endif
+  hpg_initialized = result;
+  hpg_cleanup_fftw = args.cleanup_fftw;
+  return result;
+}
+
+void
+hpg::impl::finalize() {
+  K::finalize();
+  if (hpg_cleanup_fftw) {
+#ifdef HPG_ENABLE_SERIAL
+    fftw_cleanup();
+#endif
+#ifdef HPG_ENABLE_OPENMP
+    fftw_cleanup_threads();
+#endif
+  }
+}
 
 std::optional<std::tuple<unsigned, std::optional<Device>>>
 hpg::impl::parsed_cf_layout_version(const std::string& layout) {
@@ -85,6 +136,71 @@ hpg::impl::construct_cf_layout_version(unsigned vn, Device device) {
     break;
   }
   return oss.str();
+}
+
+rval_t<size_t>
+hpg::impl::min_cf_buffer_size(Device device, const CFArray& cf, unsigned grp) {
+
+  if (devices().count(device) == 0)
+    return rval<size_t>(DisabledDeviceError());
+
+  size_t alloc_sz;
+
+  switch (device) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial: {
+    using kokkos_device = impl::DeviceT<Device::Serial>::kokkos_device;
+    auto layout = impl::CFLayout<kokkos_device>::dimensions(&cf, grp);
+    alloc_sz =
+      core::cf_view<typename kokkos_device::array_layout, K::HostSpace>
+      ::required_allocation_size(
+        layout.dimension[0],
+        layout.dimension[1],
+        layout.dimension[2],
+        layout.dimension[3],
+        layout.dimension[4],
+        layout.dimension[5]);
+    break;
+  }
+#endif
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP: {
+    using kokkos_device = impl::DeviceT<Device::OpenMP>::kokkos_device;
+    auto layout = impl::CFLayout<kokkos_device>::dimensions(&cf, grp);
+    alloc_sz =
+      core::cf_view<typename kokkos_device::array_layout, K::HostSpace>
+      ::required_allocation_size(
+        layout.dimension[0],
+        layout.dimension[1],
+        layout.dimension[2],
+        layout.dimension[3],
+        layout.dimension[4],
+        layout.dimension[5]);
+    break;
+  }
+#endif
+#ifdef HPG_ENABLE_CUDA
+  case Device::Cuda: {
+    using kokkos_device = impl::DeviceT<Device::Cuda>::kokkos_device;
+    auto layout = impl::CFLayout<kokkos_device>::dimensions(&cf, grp);
+    alloc_sz =
+      core::cf_view<typename kokkos_device::array_layout, K::HostSpace>
+      ::required_allocation_size(
+        layout.dimension[0],
+        layout.dimension[1],
+        layout.dimension[2],
+        layout.dimension[3],
+        layout.dimension[4],
+        layout.dimension[5]);
+    break;
+  }
+#endif
+  default:
+    assert(false);
+    break;
+  }
+  return
+    rval<size_t>((alloc_sz + (sizeof(core::cf_t) - 1)) / sizeof(core::cf_t));
 }
 
 // Local Variables:

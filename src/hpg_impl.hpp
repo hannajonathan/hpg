@@ -27,7 +27,6 @@
 #include <tuple>
 #include <vector>
 
-
 #include <Kokkos_Core.hpp>
 
 #ifdef __NVCC__
@@ -39,6 +38,17 @@
  * HPG implementation header file
  */
 namespace hpg {
+
+/** disabled device error
+ *
+ * Device is not enabled in HPG configuration.
+ */
+struct DisabledDeviceError
+  : public Error {
+
+  DisabledDeviceError()
+    : Error("Requested device is not enabled", ErrorType::DisabledDevice) {}
+};
 
 /** disabled host device error
  *
@@ -121,6 +131,15 @@ struct /*HPG_EXPORT*/ ProfileRegion {
     K::Profiling::popRegion();
   }
 };
+
+bool
+is_initialized() noexcept;
+
+bool
+initialize(const InitArguments& args);
+
+void
+finalize();
 
 /** type trait associating Kokkos device with hpg Device */
 template <Device D>
@@ -1010,6 +1029,10 @@ layout_for_device(
     break;
   }
 }
+
+rval_t<size_t>
+min_cf_buffer_size(Device device, const CFArray& cf, unsigned grp);
+
 } // end namespace impl
 
 } // end namespace hpg
