@@ -26,12 +26,12 @@ static bool hpg_initialized = false;
 static bool hpg_cleanup_fftw = false;
 
 bool
-hpg::impl::is_initialized() noexcept {
+runtime::impl::is_initialized() noexcept {
   return hpg_initialized;
 }
 
 bool
-hpg::impl::initialize(const InitArguments& args) {
+runtime::impl::initialize(const InitArguments& args) {
   bool result = true;
   K::InitArguments kargs;
   kargs.num_threads = args.num_threads;
@@ -60,7 +60,7 @@ hpg::impl::initialize(const InitArguments& args) {
 }
 
 void
-hpg::impl::finalize() {
+runtime::impl::finalize() {
   K::finalize();
   if (hpg_cleanup_fftw) {
 #ifdef HPG_ENABLE_SERIAL
@@ -73,7 +73,7 @@ hpg::impl::finalize() {
 }
 
 std::optional<std::tuple<unsigned, std::optional<Device>>>
-hpg::impl::parsed_cf_layout_version(const std::string& layout) {
+runtime::impl::parsed_cf_layout_version(const std::string& layout) {
   auto dash = layout.find('-');
   std::optional<int> vn;
   if (dash != std::string::npos) {
@@ -86,21 +86,21 @@ hpg::impl::parsed_cf_layout_version(const std::string& layout) {
   if (vn) {
     std::string dev = layout.substr(dash + 1);
 #ifdef HPG_ENABLE_SERIAL
-    if (dev == impl::DeviceT<Device::Serial>::name)
+    if (dev == DeviceT<Device::Serial>::name)
       return
         std::make_tuple(
           unsigned(vn.value()),
           std::optional<Device>(Device::Serial));
 #endif
 #ifdef HPG_ENABLE_OPENMP
-    if (dev == impl::DeviceT<Device::OpenMP>::name)
+    if (dev == DeviceT<Device::OpenMP>::name)
       return
         std::make_tuple(
           unsigned(vn.value()),
           std::optional<Device>(Device::OpenMP));
 #endif
 #ifdef HPG_ENABLE_CUDA
-    if (dev == impl::DeviceT<Device::Cuda>::name)
+    if (dev == DeviceT<Device::Cuda>::name)
       return
         std::make_tuple(
           unsigned(vn.value()),
@@ -112,23 +112,23 @@ hpg::impl::parsed_cf_layout_version(const std::string& layout) {
 }
 
 std::string
-hpg::impl::construct_cf_layout_version(unsigned vn, Device device) {
+runtime::impl::construct_cf_layout_version(unsigned vn, Device device) {
   std::ostringstream oss;
   oss << vn << "-";
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
-    oss << impl::DeviceT<Device::Serial>::name;
+    oss << DeviceT<Device::Serial>::name;
     break;
 #endif
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
-    oss << impl::DeviceT<Device::OpenMP>::name;
+    oss << DeviceT<Device::OpenMP>::name;
     break;
 #endif
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
-    oss << impl::DeviceT<Device::Cuda>::name;
+    oss << DeviceT<Device::Cuda>::name;
     break;
 #endif
   default:
@@ -139,7 +139,10 @@ hpg::impl::construct_cf_layout_version(unsigned vn, Device device) {
 }
 
 rval_t<size_t>
-hpg::impl::min_cf_buffer_size(Device device, const CFArray& cf, unsigned grp) {
+runtime::impl::min_cf_buffer_size(
+  Device device,
+  const CFArray& cf,
+  unsigned grp) {
 
   if (devices().count(device) == 0)
     return rval<size_t>(DisabledDeviceError());
@@ -149,8 +152,8 @@ hpg::impl::min_cf_buffer_size(Device device, const CFArray& cf, unsigned grp) {
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial: {
-    using kokkos_device = impl::DeviceT<Device::Serial>::kokkos_device;
-    auto layout = impl::CFLayout<kokkos_device>::dimensions(&cf, grp);
+    using kokkos_device = DeviceT<Device::Serial>::kokkos_device;
+    auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
     alloc_sz =
       core::cf_view<typename kokkos_device::array_layout, K::HostSpace>
       ::required_allocation_size(
@@ -165,8 +168,8 @@ hpg::impl::min_cf_buffer_size(Device device, const CFArray& cf, unsigned grp) {
 #endif
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP: {
-    using kokkos_device = impl::DeviceT<Device::OpenMP>::kokkos_device;
-    auto layout = impl::CFLayout<kokkos_device>::dimensions(&cf, grp);
+    using kokkos_device = DeviceT<Device::OpenMP>::kokkos_device;
+    auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
     alloc_sz =
       core::cf_view<typename kokkos_device::array_layout, K::HostSpace>
       ::required_allocation_size(
@@ -181,8 +184,8 @@ hpg::impl::min_cf_buffer_size(Device device, const CFArray& cf, unsigned grp) {
 #endif
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda: {
-    using kokkos_device = impl::DeviceT<Device::Cuda>::kokkos_device;
-    auto layout = impl::CFLayout<kokkos_device>::dimensions(&cf, grp);
+    using kokkos_device = DeviceT<Device::Cuda>::kokkos_device;
+    auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
     alloc_sz =
       core::cf_view<typename kokkos_device::array_layout, K::HostSpace>
       ::required_allocation_size(

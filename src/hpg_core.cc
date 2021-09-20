@@ -24,7 +24,10 @@ using namespace hpg;
 #ifdef HPG_ENABLE_CUDA
 
 Error
-hpg::core::cufft_error(const std::string& prefix, cufftResult rc) {
+runtime::impl::core::cufft_error(
+  const std::string& prefix,
+  cufftResult rc) {
+
   std::ostringstream oss(prefix);
   oss << ": cufftResult code " << rc;
   return Error(oss.str());

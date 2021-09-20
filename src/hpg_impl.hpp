@@ -117,7 +117,7 @@ struct CFSupportExceedsGridError
       ErrorType::CFSupportExceedsGrid) {}
 };
 
-namespace impl {
+namespace runtime::impl {
 
 namespace K = Kokkos;
 
@@ -1033,7 +1033,7 @@ layout_for_device(
 rval_t<size_t>
 min_cf_buffer_size(Device device, const CFArray& cf, unsigned grp);
 
-} // end namespace impl
+} // end namespace runtime::impl
 
 } // end namespace hpg
 

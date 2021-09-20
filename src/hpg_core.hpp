@@ -38,7 +38,7 @@
 # include <cufft.h>
 #endif
 
-namespace hpg::core {
+namespace hpg::runtime::impl::core {
 
 namespace K = Kokkos;
 
@@ -163,45 +163,45 @@ namespace Kokkos { //reduction identities must be defined in Kokkos namespace
 /** reduction identity of poln_array_type */
 template<int N>
 struct /*HPG_EXPORT*/ reduction_identity<
-  hpg::core::poln_array_type<float, N>> {
+  hpg::runtime::impl::core::poln_array_type<float, N>> {
 
   KOKKOS_FORCEINLINE_FUNCTION static
-  hpg::core::poln_array_type<float, N> sum() {
-    return hpg::core::poln_array_type<float, N>();
+  hpg::runtime::impl::core::poln_array_type<float, N> sum() {
+    return hpg::runtime::impl::core::poln_array_type<float, N>();
   }
 };
 template<int N>
 struct /*HPG_EXPORT*/ reduction_identity<
-  hpg::core::poln_array_type<double, N>> {
+  hpg::runtime::impl::core::poln_array_type<double, N>> {
 
   KOKKOS_FORCEINLINE_FUNCTION static
-  hpg::core::poln_array_type<double, N> sum() {
-    return hpg::core::poln_array_type<double, N>();
+  hpg::runtime::impl::core::poln_array_type<double, N> sum() {
+    return hpg::runtime::impl::core::poln_array_type<double, N>();
   }
 };
 
 /** reduction identity of vis_array_type */
 template<int N>
 struct /*HPG_EXPORT*/ reduction_identity<
-  hpg::core::vis_array_type<float, N>> {
+  hpg::runtime::impl::core::vis_array_type<float, N>> {
 
   KOKKOS_FORCEINLINE_FUNCTION static
-  hpg::core::vis_array_type<float, N> sum() {
-    return hpg::core::vis_array_type<float, N>();
+  hpg::runtime::impl::core::vis_array_type<float, N> sum() {
+    return hpg::runtime::impl::core::vis_array_type<float, N>();
   }
 };
 template<int N>
 struct /*HPG_EXPORT*/ reduction_identity<
-  hpg::core::vis_array_type<double, N>> {
+  hpg::runtime::impl::core::vis_array_type<double, N>> {
 
   KOKKOS_FORCEINLINE_FUNCTION static
-  hpg::core::vis_array_type<double, N> sum() {
-    return hpg::core::vis_array_type<double, N>();
+  hpg::runtime::impl::core::vis_array_type<double, N> sum() {
+    return hpg::runtime::impl::core::vis_array_type<double, N>();
   }
 };
 }
 
-namespace hpg::core {
+namespace hpg::runtime::impl::core {
 
 /** accumulation value type for complex values
  *
@@ -1739,7 +1739,7 @@ struct /*HPG_EXPORT*/ GridShifter final {
   }
 };
 
-} // ena namespace hpg::core
+} // ena namespace hpg::runtime:impl::core
 
 // Local Variables:
 // mode: c++

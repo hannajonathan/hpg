@@ -24,6 +24,12 @@
 
 using namespace hpg;
 
+using ProfileRegion = runtime::impl::ProfileRegion;
+
+// don't do "using runtime" in file scope, since that namespace also has a class
+// named "GridderState", the use of which would then require disambiguation; I
+// prefer putting "using runtime" into method implementations where useful
+
 /** invalid number of Mueller index rows error
  *
  * Number of rows of Mueller indexes does not equal grid "mrow" axis size */
@@ -55,7 +61,7 @@ Error::~Error() {}
 
 bool
 hpg::is_initialized() noexcept {
-  return impl::is_initialized();
+  return runtime::impl::is_initialized();
 }
 
 bool
@@ -65,12 +71,12 @@ hpg::initialize() {
 
 bool
 hpg::initialize(const InitArguments& args) {
-  return impl::initialize(args);
+  return runtime::impl::initialize(args);
 }
 
 void
 hpg::finalize() {
-  impl::finalize();
+  runtime::impl::finalize();
 }
 
 const std::set<Device>&
@@ -154,6 +160,8 @@ GridderState::GridderState(
 #endif
   ) {
 
+  using namespace runtime;
+
 #ifndef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   std::array<unsigned, 4> implementation_versions{0, 0, 0, 0};
 #endif
@@ -164,7 +172,7 @@ GridderState::GridderState(
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     impl =
-      std::make_shared<runtime::StateT<Device::Serial>>(
+      std::make_shared<StateT<Device::Serial>>(
         max_active_tasks,
         max_visibility_batch_size,
         init_cf_shape,
@@ -180,7 +188,7 @@ GridderState::GridderState(
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     impl =
-      std::make_shared<runtime::StateT<Device::OpenMP>>(
+      std::make_shared<StateT<Device::OpenMP>>(
         max_active_tasks,
         max_visibility_batch_size,
         init_cf_shape,
@@ -196,7 +204,7 @@ GridderState::GridderState(
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     impl =
-      std::make_shared<runtime::StateT<Device::Cuda>>(
+      std::make_shared<StateT<Device::Cuda>>(
         max_active_tasks,
         max_visibility_batch_size,
         init_cf_shape,
@@ -266,29 +274,31 @@ GridderState::GridderState(GridderState&& h) noexcept {
 GridderState&
 GridderState::operator=(const GridderState& rhs) {
 
+  using namespace runtime;
+
   const GridderState& crhs = const_cast<const GridderState&>(rhs);
   switch (crhs.impl->m_device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     impl =
-      std::make_shared<runtime::StateT<Device::Serial>>(
-        dynamic_cast<runtime::StateT<Device::Serial>*>(crhs.impl.get())
+      std::make_shared<StateT<Device::Serial>>(
+        dynamic_cast<StateT<Device::Serial>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     impl =
-      std::make_shared<runtime::StateT<Device::OpenMP>>(
-        dynamic_cast<runtime::StateT<Device::OpenMP>*>(crhs.impl.get())
+      std::make_shared<StateT<Device::OpenMP>>(
+        dynamic_cast<StateT<Device::OpenMP>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_OPENMP
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     impl =
-      std::make_shared<runtime::StateT<Device::Cuda>>(
-        dynamic_cast<runtime::StateT<Device::Cuda>*>(crhs.impl.get())
+      std::make_shared<StateT<Device::Cuda>>(
+        dynamic_cast<StateT<Device::Cuda>*>(crhs.impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_CUDA
@@ -347,16 +357,16 @@ size_t
 GridderState::convolution_function_region_size(const CFArrayShape* shape)
   const noexcept {
 
-  impl::ProfileRegion region("GridderState::convolution_function_region_size");
+  ProfileRegion region("GridderState::convolution_function_region_size");
 
   return impl->convolution_function_region_size(shape);
 }
 
 rval_t<GridderState>
-GridderState::allocate_convolution_function_region(const CFArrayShape* shape)
-  const & {
+GridderState::allocate_convolution_function_region(
+  const CFArrayShape* shape) const & {
 
-  impl::ProfileRegion
+  ProfileRegion
     region("GridderState::allocate_convolution_function_region_const");
 
   return
@@ -370,57 +380,66 @@ rval_t<GridderState>
 GridderState::allocate_convolution_function_region(const CFArrayShape* shape)
   && {
 
-  impl::ProfileRegion
-    region("GridderState::allocate_convolution_function_region");
+  ProfileRegion region("GridderState::allocate_convolution_function_region");
 
   return
     to_rval(
-      runtime::GridderState
-      ::allocate_convolution_function_region(std::move(*this), shape));
+      runtime::GridderState::allocate_convolution_function_region(
+        std::move(*this),
+        shape));
 }
 
 rval_t<GridderState>
 GridderState::set_convolution_function(Device host_device, CFArray&& cf)
   const & {
 
-  impl::ProfileRegion region("GridderState::set_convolution_function_const");
+  ProfileRegion region("GridderState::set_convolution_function_const");
 
   return
     to_rval(
-      runtime::GridderState
-      ::set_convolution_function(*this, host_device, std::move(cf)));
+      runtime::GridderState::set_convolution_function(
+        *this,
+        host_device,
+        std::move(cf)));
 }
 
 rval_t<GridderState>
-GridderState::set_convolution_function(Device host_device, CFArray&& cf) && {
+GridderState::set_convolution_function(
+  Device host_device,
+  CFArray&& cf) && {
 
-  impl::ProfileRegion region("GridderState::set_convolution_function");
+  ProfileRegion region("GridderState::set_convolution_function");
 
   return
     to_rval(
-      runtime::GridderState
-      ::set_convolution_function(std::move(*this), host_device, std::move(cf)));
+      runtime::GridderState::set_convolution_function(
+        std::move(*this),
+        host_device,
+        std::move(cf)));
 }
 
 rval_t<GridderState>
 GridderState::set_model(Device host_device, GridValueArray&& gv)
   const & {
 
-  impl::ProfileRegion region("GridderState::set_model_const");
+  ProfileRegion region("GridderState::set_model_const");
 
   return
-    to_rval(runtime::GridderState::set_model(*this, host_device, std::move(gv)));
+    to_rval(
+      runtime::GridderState::set_model(*this, host_device, std::move(gv)));
 }
 
 rval_t<GridderState>
 GridderState::set_model(Device host_device, GridValueArray&& gv) && {
 
-  impl::ProfileRegion region("GridderState::set_model");
+  ProfileRegion region("GridderState::set_model");
 
   return
     to_rval(
-      runtime::GridderState
-      ::set_model(std::move(*this), host_device, std::move(gv)));
+      runtime::GridderState::set_model(
+        std::move(*this),
+        host_device,
+        std::move(gv)));
 }
 
 rval_t<std::tuple<GridderState, future<VisDataVector>>>
@@ -432,7 +451,7 @@ GridderState::grid_visibilities_base(
   bool return_visibilities,
   bool do_grid) const & {
 
-  impl::ProfileRegion region("GridderState::grid_visibilities_base_const");
+  ProfileRegion region("GridderState::grid_visibilities_base_const");
 
   return
     to_rval(
@@ -455,7 +474,7 @@ GridderState::grid_visibilities_base(
   bool return_visibilities,
   bool do_grid) && {
 
-  impl::ProfileRegion region("GridderState::grid_visibilities_base");
+  ProfileRegion region("GridderState::grid_visibilities_base");
 
   return
     to_rval(
@@ -475,7 +494,7 @@ GridderState::grid_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) const & {
 
-  impl::ProfileRegion region("GridderState::grid_visibilities_const");
+  ProfileRegion region("GridderState::grid_visibilities_const");
 
   return
     map(
@@ -497,7 +516,7 @@ GridderState::grid_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) && {
 
-  impl::ProfileRegion region("GridderState::grid_visibilities");
+  ProfileRegion region("GridderState::grid_visibilities");
 
   return
     map(
@@ -519,7 +538,7 @@ GridderState::degrid_grid_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) const & {
 
-  impl::ProfileRegion region("GridderState::degrid_grid_visibilities_const");
+  ProfileRegion region("GridderState::degrid_grid_visibilities_const");
 
   return
     map(
@@ -541,7 +560,7 @@ GridderState::degrid_grid_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) && {
 
-  impl::ProfileRegion region("GridderState::degrid_grid_visibilities");
+  ProfileRegion region("GridderState::degrid_grid_visibilities");
 
   return
     map(
@@ -562,7 +581,7 @@ GridderState::degrid_get_predicted_visibilities(
   Device host_device,
   VisDataVector&& visibilities) const & {
 
-  impl::ProfileRegion
+  ProfileRegion
     region("GridderState::degrid_get_predicted_visibilities_const");
 
   return
@@ -580,7 +599,7 @@ GridderState::degrid_get_predicted_visibilities(
   Device host_device,
   VisDataVector&& visibilities) && {
 
-  impl::ProfileRegion region("GridderState::degrid_get_predicted_visibilities");
+  ProfileRegion region("GridderState::degrid_get_predicted_visibilities");
 
   return
     std::move(*this).grid_visibilities_base(
@@ -598,7 +617,7 @@ GridderState::degrid_grid_get_residual_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) const & {
 
-  impl::ProfileRegion
+  ProfileRegion
     region("GridderState::degrid_grid_get_residual_visibilities_const");
 
   return
@@ -617,7 +636,7 @@ GridderState::degrid_grid_get_residual_visibilities(
   VisDataVector&& visibilities,
   bool update_grid_weights) && {
 
-  impl::ProfileRegion
+  ProfileRegion
     region("GridderState::degrid_grid_get_residual_visibilities");
 
   return
@@ -633,7 +652,7 @@ GridderState::degrid_grid_get_residual_visibilities(
 GridderState
 GridderState::fence() const & {
 
-  impl::ProfileRegion region("GridderState::fence_const");
+  ProfileRegion region("GridderState::fence_const");
 
   GridderState result(*this);
   result.impl->fence();
@@ -643,7 +662,7 @@ GridderState::fence() const & {
 GridderState
 GridderState::fence() && {
 
-  impl::ProfileRegion region("GridderState::fence");
+  ProfileRegion region("GridderState::fence");
 
   GridderState result(std::move(*this));
   result.impl->fence();
@@ -653,7 +672,7 @@ GridderState::fence() && {
 std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
 GridderState::grid_weights() const & {
 
-  impl::ProfileRegion region("GridderState::grid_weights_const");
+  ProfileRegion region("GridderState::grid_weights_const");
 
   GridderState result(*this);
   return {std::move(result), std::move(result.impl->grid_weights())};
@@ -662,7 +681,7 @@ GridderState::grid_weights() const & {
 std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
 GridderState::grid_weights() && {
 
-  impl::ProfileRegion region("GridderState::grid_weights");
+  ProfileRegion region("GridderState::grid_weights");
 
   GridderState result(std::move(*this));
   return {std::move(result), std::move(result.impl->grid_weights())};
@@ -671,7 +690,7 @@ GridderState::grid_weights() && {
 std::shared_ptr<GridWeightArray::value_type>
 GridderState::grid_weights_ptr() const & {
 
-  impl::ProfileRegion region("GridderState::grid_weights_ptr");
+  ProfileRegion region("GridderState::grid_weights_ptr");
 
   return impl->grid_weights_ptr();
 }
@@ -679,7 +698,7 @@ GridderState::grid_weights_ptr() const & {
 size_t
 GridderState::grid_weights_span() const & {
 
-  impl::ProfileRegion region("GridderState::grid_weights_span");
+  ProfileRegion region("GridderState::grid_weights_span");
 
   return impl->grid_weights_span();
 }
@@ -687,7 +706,7 @@ GridderState::grid_weights_span() const & {
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::grid_values() const & {
 
-  impl::ProfileRegion region("GridderState::grid_values_const");
+  ProfileRegion region("GridderState::grid_values_const");
 
   GridderState result(*this);
   return {std::move(result), std::move(result.impl->grid_values())};
@@ -696,7 +715,7 @@ GridderState::grid_values() const & {
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::grid_values() && {
 
-  impl::ProfileRegion region("GridderState::grid_values");
+  ProfileRegion region("GridderState::grid_values");
 
   GridderState result(std::move(*this));
   return {std::move(result), std::move(result.impl->grid_values())};
@@ -705,7 +724,7 @@ GridderState::grid_values() && {
 std::shared_ptr<GridValueArray::value_type>
 GridderState::grid_values_ptr() const & {
 
-  impl::ProfileRegion region("GridderState::grid_values_ptr");
+  ProfileRegion region("GridderState::grid_values_ptr");
 
   return impl->grid_values_ptr();
 }
@@ -713,7 +732,7 @@ GridderState::grid_values_ptr() const & {
 size_t
 GridderState::grid_values_span() const & {
 
-  impl::ProfileRegion region("GridderState::grid_values_span");
+  ProfileRegion region("GridderState::grid_values_span");
 
   return impl->grid_values_span();
 }
@@ -721,7 +740,7 @@ GridderState::grid_values_span() const & {
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::model_values() const & {
 
-  impl::ProfileRegion region("GridderState::model_values_const");
+  ProfileRegion region("GridderState::model_values_const");
 
   GridderState result(*this);
   return {std::move(result), std::move(result.impl->model_values())};
@@ -730,7 +749,7 @@ GridderState::model_values() const & {
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::model_values() && {
 
-  impl::ProfileRegion region("GridderState::model_values");
+  ProfileRegion region("GridderState::model_values");
 
   GridderState result(std::move(*this));
   return {std::move(result), std::move(result.impl->model_values())};
@@ -739,7 +758,7 @@ GridderState::model_values() && {
 std::shared_ptr<GridValueArray::value_type>
 GridderState::model_values_ptr() const & {
 
-  impl::ProfileRegion region("GridderState::model_values_ptr");
+  ProfileRegion region("GridderState::model_values_ptr");
 
   return impl->model_values_ptr();
 }
@@ -747,7 +766,7 @@ GridderState::model_values_ptr() const & {
 size_t
 GridderState::model_values_span() const & {
 
-  impl::ProfileRegion region("GridderState::grid_values_span");
+  ProfileRegion region("GridderState::grid_values_span");
 
   return impl->model_values_span();
 }
@@ -755,7 +774,7 @@ GridderState::model_values_span() const & {
 GridderState
 GridderState::reset_grid() const & {
 
-  impl::ProfileRegion region("GridderState::reset_grid_const");
+  ProfileRegion region("GridderState::reset_grid_const");
 
   GridderState result(*this);
   result.impl->reset_grid();
@@ -765,7 +784,7 @@ GridderState::reset_grid() const & {
 GridderState
 GridderState::reset_grid() && {
 
-  impl::ProfileRegion region("GridderState::reset_grid");
+  ProfileRegion region("GridderState::reset_grid");
 
   GridderState result(std::move(*this));
   result.impl->reset_grid();
@@ -775,7 +794,7 @@ GridderState::reset_grid() && {
 GridderState
 GridderState::reset_model() const & {
 
-  impl::ProfileRegion region("GridderState::reset_model_const");
+  ProfileRegion region("GridderState::reset_model_const");
 
   GridderState result(*this);
   result.impl->reset_model();
@@ -785,7 +804,7 @@ GridderState::reset_model() const & {
 GridderState
 GridderState::reset_model() && {
 
-  impl::ProfileRegion region("GridderState::reset_model");
+  ProfileRegion region("GridderState::reset_model");
 
   GridderState result(std::move(*this));
   result.impl->reset_model();
@@ -795,7 +814,7 @@ GridderState::reset_model() && {
 GridderState
 GridderState::normalize_by_weights(grid_value_fp wfactor) const & {
 
-  impl::ProfileRegion region("GridderState::normalize_by_weights_const");
+  ProfileRegion region("GridderState::normalize_by_weights_const");
 
   GridderState result(*this);
   result.impl->normalize_by_weights(wfactor);
@@ -805,7 +824,7 @@ GridderState::normalize_by_weights(grid_value_fp wfactor) const & {
 GridderState
 GridderState::normalize_by_weights(grid_value_fp wfactor) && {
 
-  impl::ProfileRegion region("GridderState::normalize_by_weights");
+  ProfileRegion region("GridderState::normalize_by_weights");
 
   GridderState result(std::move(*this));
   result.impl->normalize_by_weights(wfactor);
@@ -818,7 +837,7 @@ GridderState::apply_grid_fft(
   FFTSign sign,
   bool in_place) const & {
 
-  impl::ProfileRegion region("GridderState::apply_grid_fft_const");
+  ProfileRegion region("GridderState::apply_grid_fft_const");
 
   return
     to_rval(runtime::GridderState::apply_grid_fft(*this, norm, sign, in_place));
@@ -830,7 +849,7 @@ GridderState::apply_grid_fft(
   FFTSign sign,
   bool in_place) && {
 
-  impl::ProfileRegion region("GridderState::apply_grid_fft");
+  ProfileRegion region("GridderState::apply_grid_fft");
 
   return
     to_rval(
@@ -847,7 +866,7 @@ GridderState::apply_model_fft(
   FFTSign sign,
   bool in_place) const & {
 
-  impl::ProfileRegion region("GridderState::apply_model_fft_const");
+  ProfileRegion region("GridderState::apply_model_fft_const");
 
   return
   to_rval(runtime::GridderState::apply_model_fft(*this, norm, sign, in_place));
@@ -859,7 +878,7 @@ GridderState::apply_model_fft(
   FFTSign sign,
   bool in_place) && {
 
-  impl::ProfileRegion region("GridderState::apply_model_fft");
+  ProfileRegion region("GridderState::apply_model_fft");
 
   return
     to_rval(
@@ -873,7 +892,7 @@ GridderState::apply_model_fft(
 GridderState
 GridderState::shift_grid(ShiftDirection direction) const & {
 
-  impl::ProfileRegion region("GridderState::shift_grid_const");
+  ProfileRegion region("GridderState::shift_grid_const");
 
   GridderState result(*this);
   result.impl->shift_grid(direction);
@@ -883,7 +902,7 @@ GridderState::shift_grid(ShiftDirection direction) const & {
 GridderState
 GridderState::shift_grid(ShiftDirection direction) && {
 
-  impl::ProfileRegion region("GridderState::shift_grid");
+  ProfileRegion region("GridderState::shift_grid");
 
   GridderState result(std::move(*this));
   result.impl->shift_grid(direction);
@@ -893,7 +912,7 @@ GridderState::shift_grid(ShiftDirection direction) && {
 GridderState
 GridderState::shift_model(ShiftDirection direction) const & {
 
-  impl::ProfileRegion region("GridderState::shift_model_const");
+  ProfileRegion region("GridderState::shift_model_const");
 
   GridderState result(*this);
   result.impl->shift_model(direction);
@@ -903,7 +922,7 @@ GridderState::shift_model(ShiftDirection direction) const & {
 GridderState
 GridderState::shift_model(ShiftDirection direction) && {
 
-  impl::ProfileRegion region("GridderState::shift_model");
+  ProfileRegion region("GridderState::shift_model");
 
   GridderState result(std::move(*this));
   result.impl->shift_model(direction);
@@ -1415,11 +1434,13 @@ opt_t<Error>
 GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
+  using namespace runtime;
+
   static_assert(
-    int(core::GridAxis::x) == GridValueArray::Axis::x
-    && int(core::GridAxis::y) == GridValueArray::Axis::y
-    && int(core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(core::GridAxis::cube) == GridValueArray::Axis::cube);
+    int(impl::core::GridAxis::x) == GridValueArray::Axis::x
+    && int(impl::core::GridAxis::y) == GridValueArray::Axis::y
+    && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && int(impl::core::GridAxis::cube) == GridValueArray::Axis::cube);
 
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
@@ -1443,11 +1464,13 @@ GridValueArray::copy_from(
   const std::array<unsigned, GridValueArray::rank>& extents,
   Layout layout) {
 
+  using namespace runtime;
+
   static_assert(
-    int(core::GridAxis::x) == GridValueArray::Axis::x
-    && int(core::GridAxis::y) == GridValueArray::Axis::y
-    && int(core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(core::GridAxis::cube) == GridValueArray::Axis::cube);
+    int(impl::core::GridAxis::x) == GridValueArray::Axis::x
+    && int(impl::core::GridAxis::y) == GridValueArray::Axis::y
+    && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && int(impl::core::GridAxis::cube) == GridValueArray::Axis::cube);
 
   switch (target_device) {
 #ifdef HPG_ENABLE_SERIAL
@@ -1494,11 +1517,13 @@ opt_t<Error>
 GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
+  using namespace runtime;
+
   static_assert(
-    int(core::GridAxis::x) == GridValueArray::Axis::x
-    && int(core::GridAxis::y) == GridValueArray::Axis::y
-    && int(core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(core::GridAxis::cube) == GridValueArray::Axis::cube);
+    int(impl::core::GridAxis::x) == GridValueArray::Axis::x
+    && int(impl::core::GridAxis::y) == GridValueArray::Axis::y
+    && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && int(impl::core::GridAxis::cube) == GridValueArray::Axis::cube);
 
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
@@ -1522,6 +1547,8 @@ GridWeightArray::copy_from(
   const value_type* src,
   const std::array<unsigned, GridWeightArray::rank>& extents,
   Layout layout) {
+
+  using namespace runtime;
 
   switch (target_device) {
 #ifdef HPG_ENABLE_SERIAL
@@ -1574,6 +1601,8 @@ CFArray::copy_to(
   unsigned grp,
   value_type* dst) const {
 
+  using namespace runtime;
+
   if (host_devices().count(host_device) == 0)
     return rval<std::string>(DisabledHostDeviceError());
 
@@ -1610,7 +1639,7 @@ CFArray::copy_to(
 rval_t<size_t>
 CFArray::min_buffer_size(Device device, unsigned grp) const {
 
-  return impl::min_cf_buffer_size(device, *this, grp);
+  return runtime::impl::min_cf_buffer_size(device, *this, grp);
 }
 
 rval_t<std::unique_ptr<DeviceCFArray>>
@@ -1620,6 +1649,8 @@ DeviceCFArray::create(
   std::vector<
     std::tuple<std::array<unsigned, rank - 1>, std::vector<value_type>>>&&
     arrays) {
+
+  using namespace runtime;
 
   auto opt_vn_dev = impl::parsed_cf_layout_version(layout);
   if (!opt_vn_dev)
