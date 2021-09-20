@@ -17,6 +17,7 @@
 
 #include "hpg_config.hpp"
 #include "hpg_core.hpp"
+// #include "hpg_export.h"
 
 #include <optional>
 
@@ -64,7 +65,7 @@ struct UpdateWeightsWithoutGriddingError
 };
 
 /** abstract base class for state implementations */
-struct State {
+struct /*HPG_EXPORT*/ State {
 
   Device m_device; /**< device type */
   unsigned m_max_active_tasks; /**< maximum number of active tasks */
@@ -195,7 +196,7 @@ struct State {
 
 
 /** names for stream states */
-enum class StreamPhase {
+enum class /*HPG_EXPORT*/ StreamPhase {
   PRE_GRIDDING,
   GRIDDING
 };
@@ -219,12 +220,13 @@ struct StateT;
 
 /** memory pool and views therein for elements of a (sparse) CF */
 template <Device D>
-struct CFPool final {
+struct /*HPG_EXPORT*/ CFPool final {
 
   using kokkos_device = typename core::DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
-  using cfd_view = core::cf_view<typename layouts::CFLayout<D>::layout, memory_space>;
+  using cfd_view =
+    core::cf_view<typename layouts::CFLayout<D>::layout, memory_space>;
   using cfh_view = typename cfd_view::HostMirror;
 
   StateT<D> *state;
@@ -330,7 +332,8 @@ struct CFPool final {
     // allocation size, but it is not implemented in Kokkos
     // 'auto alloc_sz = cfd_view::required_allocation_size(layout)'
     auto alloc_sz =
-      core::cf_view<typename core::DeviceT<D>::kokkos_device::array_layout, memory_space>
+      core::cf_view<
+        typename core::DeviceT<D>::kokkos_device::array_layout, memory_space>
       ::required_allocation_size(
         layout.dimension[0],
         layout.dimension[1],
@@ -481,7 +484,7 @@ struct CFPool final {
 /** container for data and views associated with one stream of an execution
  * space*/
 template <Device D>
-struct ExecSpace final {
+struct /*HPG_EXPORT*/ ExecSpace final {
   using kokkos_device = typename core::DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
@@ -555,7 +558,8 @@ struct ExecSpace final {
         core::vector_view<core::VisData<N>>(
           reinterpret_cast<core::VisData<N>*>(in_vis.data()),
           num_visibilities);
-      auto hview = std::get<core::vector_view<core::VisData<N>>>(visibilities_h);
+      auto hview =
+        std::get<core::vector_view<core::VisData<N>>>(visibilities_h);
       if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
         visibilities =
           core::visdata_view<N, memory_space>(
@@ -592,7 +596,8 @@ struct ExecSpace final {
             if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
               constexpr unsigned N = v_t::value_type::npol;
               if (num_visibilities > 0) {
-                auto hview = std::get<core::vector_view<core::VisData<N>>>(visibilities_h);
+                auto hview =
+                  std::get<core::vector_view<core::VisData<N>>>(visibilities_h);
                 auto dview =
                   K::subview(
                     visdata<N>(),
@@ -630,7 +635,7 @@ struct ExecSpace final {
 
 /** Kokkos state implementation for a device type */
 template <Device D>
-struct HPG_EXPORT StateT final
+struct /*HPG_EXPORT*/ StateT final
   : public State {
 public:
 
@@ -639,9 +644,12 @@ public:
   using memory_space = typename execution_space::memory_space;
   using stream_type = typename core::DeviceT<D>::stream_type;
 
-  core::grid_view<typename layouts::GridLayout<D>::layout, memory_space> m_grid;
-  core::weight_view<typename execution_space::array_layout, memory_space> m_weights;
-  core::grid_view<typename layouts::GridLayout<D>::layout, memory_space> m_model;
+  core::grid_view<typename layouts::GridLayout<D>::layout, memory_space>
+    m_grid;
+  core::weight_view<typename execution_space::array_layout, memory_space>
+    m_weights;
+  core::grid_view<typename layouts::GridLayout<D>::layout, memory_space>
+    m_model;
   core::const_mindex_view<memory_space> m_mueller_indexes;
   core::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
 
@@ -886,8 +894,8 @@ public:
 
     auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
-    core::const_grid_view<typename layouts::GridLayout<D>::layout, memory_space> model
-      = m_model;
+    core::const_grid_view<typename layouts::GridLayout<D>::layout, memory_space>
+      model = m_model;
     core::VisibilityGridder<N, execution_space, 0>::kernel(
       exec_grid.space,
       cf.cf_d,
@@ -1107,7 +1115,8 @@ public:
 
   void
   normalize_by_weights(grid_value_fp wfactor) override {
-    core::const_weight_view<typename execution_space::array_layout, memory_space>
+    core::const_weight_view<
+      typename execution_space::array_layout, memory_space>
       cweights = m_weights;
     switch (grid_normalizer_version()) {
     case 0:
@@ -1143,8 +1152,9 @@ public:
         break;
       }
     } else {
-      core::const_grid_view<typename layouts::GridLayout<D>::layout, memory_space> pre_grid
-        = m_grid;
+      core::const_grid_view<
+        typename layouts::GridLayout<D>::layout, memory_space>
+        pre_grid = m_grid;
       new_grid(false, false);
       switch (fft_version()) {
       case 0:
@@ -1197,8 +1207,9 @@ public:
           break;
         }
       } else {
-        core::const_grid_view<typename layouts::GridLayout<D>::layout, memory_space> pre_model
-          = m_model;
+        core::const_grid_view<
+          typename layouts::GridLayout<D>::layout, memory_space>
+          pre_model = m_model;
         std::array<int, 4> ig{
           int(m_grid_size[0]),
           int(m_grid_size[1]),
@@ -1567,7 +1578,7 @@ private:
  *
  * Manages calling the appropriate methods of StateT as well as updating the
  * StateT member */
-struct GridderState {
+struct /*HPG_EXPORT*/ GridderState {
 
   template <typename GS>
   static std::variant<Error, ::hpg::GridderState>

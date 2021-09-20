@@ -16,8 +16,9 @@
 #pragma once
 
 #include "hpg_config.hpp"
+#include "hpg.hpp"
 #include "hpg_error.hpp"
-#include "hpg_export.h"
+// #include "hpg_export.h"
 
 #include <cassert>
 #include <cmath>
@@ -42,7 +43,7 @@ namespace hpg::core {
 namespace K = Kokkos;
 
 /** scoped Kokkos profiling region value */
-struct ProfileRegion {
+struct /*HPG_EXPORT*/ ProfileRegion {
   inline ProfileRegion(const char* nm) {
     K::Profiling::pushRegion(nm);
   }
@@ -53,7 +54,7 @@ struct ProfileRegion {
 };
 
 /** ordered Grid array axes */
-enum class GridAxis {
+enum class /*HPG_EXPORT*/ GridAxis {
   x,
   y,
   mrow,
@@ -61,7 +62,7 @@ enum class GridAxis {
 };
 
 /** ordered CF array axes */
-enum class CFAxis {
+enum class /*HPG_EXPORT*/ CFAxis {
   x_major,
   y_major,
   mueller,
@@ -78,7 +79,7 @@ enum class CFAxis {
  * @tparam N number of polarizations
  */
 template<typename T, int N>
-struct poln_array_type {
+struct /*HPG_EXPORT*/ poln_array_type {
 
   K::complex<T> vals[N];
 
@@ -119,7 +120,7 @@ struct poln_array_type {
  * @tparam N number of polarizations
  */
 template<typename T, int N>
-struct vis_array_type {
+struct /*HPG_EXPORT*/ vis_array_type {
 
   K::Array<K::complex<T>, N> vis;
   K::Array<K::complex<T>, N> wgt;
@@ -161,14 +162,18 @@ struct vis_array_type {
 namespace Kokkos { //reduction identities must be defined in Kokkos namespace
 /** reduction identity of poln_array_type */
 template<int N>
-struct reduction_identity<hpg::core::poln_array_type<float, N>> {
+struct /*HPG_EXPORT*/ reduction_identity<
+  hpg::core::poln_array_type<float, N>> {
+
   KOKKOS_FORCEINLINE_FUNCTION static
   hpg::core::poln_array_type<float, N> sum() {
     return hpg::core::poln_array_type<float, N>();
   }
 };
 template<int N>
-struct reduction_identity<hpg::core::poln_array_type<double, N>> {
+struct /*HPG_EXPORT*/ reduction_identity<
+  hpg::core::poln_array_type<double, N>> {
+
   KOKKOS_FORCEINLINE_FUNCTION static
   hpg::core::poln_array_type<double, N> sum() {
     return hpg::core::poln_array_type<double, N>();
@@ -177,16 +182,20 @@ struct reduction_identity<hpg::core::poln_array_type<double, N>> {
 
 /** reduction identity of vis_array_type */
 template<int N>
-struct reduction_identity<hpg::core::vis_array_type<float, N>> {
-  KOKKOS_FORCEINLINE_FUNCTION
-  static hpg::core::vis_array_type<float, N> sum() {
+struct /*HPG_EXPORT*/ reduction_identity<
+  hpg::core::vis_array_type<float, N>> {
+
+  KOKKOS_FORCEINLINE_FUNCTION static
+  hpg::core::vis_array_type<float, N> sum() {
     return hpg::core::vis_array_type<float, N>();
   }
 };
 template<int N>
-struct reduction_identity<hpg::core::vis_array_type<double, N>> {
-  KOKKOS_FORCEINLINE_FUNCTION
-  static hpg::core::vis_array_type<double, N> sum() {
+struct /*HPG_EXPORT*/ reduction_identity<
+  hpg::core::vis_array_type<double, N>> {
+
+  KOKKOS_FORCEINLINE_FUNCTION static
+  hpg::core::vis_array_type<double, N> sum() {
     return hpg::core::vis_array_type<double, N>();
   }
 };
@@ -224,7 +233,7 @@ using uvw_t = K::Array<vis_uvw_fp, 3>;
 
 /** visibilities plus metadata for gridding */
 template <unsigned N>
-struct VisData {
+struct /*HPG_EXPORT*/ VisData {
 
   static constexpr unsigned npol = N;
 
@@ -238,7 +247,8 @@ struct VisData {
     const uvw_t& uvw, /** < uvw coordinates */
     unsigned& grid_cube, /**< grid cube index */
     const K::Array<unsigned, 2>& cf_index, /**< cf (cube, grp) index */
-    const K::Array<cf_phase_gradient_fp, 2>& cf_phase_gradient/**< cf phase gradient */)
+    /** cf phase gradient */
+    const K::Array<cf_phase_gradient_fp, 2>& cf_phase_gradient)
     : m_values(values)
     , m_weights(weights)
     , m_freq(freq)
@@ -270,7 +280,7 @@ struct VisData {
 
 /** type trait associating Kokkos device with hpg Device */
 template <Device D>
-struct DeviceT {
+struct /*HPG_EXPORT*/ DeviceT {
   using kokkos_device = void;
 
   static constexpr unsigned active_task_limit = 0;
@@ -283,7 +293,7 @@ struct DeviceT {
 #ifdef HPG_ENABLE_SERIAL
 /** Serial device type trait */
 template <>
-struct DeviceT<Device::Serial> {
+struct /*HPG_EXPORT*/ DeviceT<Device::Serial> {
   using kokkos_device = K::Serial;
 
   static constexpr unsigned active_task_limit = 1;
@@ -297,7 +307,7 @@ struct DeviceT<Device::Serial> {
 #ifdef HPG_ENABLE_OPENMP
 /** OpenMP device type trait */
 template <>
-struct DeviceT<Device::OpenMP> {
+struct /*HPG_EXPORT*/ DeviceT<Device::OpenMP> {
   using kokkos_device = K::OpenMP;
 
   static constexpr unsigned active_task_limit = 1;
@@ -311,7 +321,7 @@ struct DeviceT<Device::OpenMP> {
 #ifdef HPG_ENABLE_CUDA
 /** Cuda device type trait */
 template <>
-struct DeviceT<Device::Cuda> {
+struct /*HPG_EXPORT*/ DeviceT<Device::Cuda> {
   using kokkos_device = K::Cuda;
 
   // the maximum number of concurrent kernels for NVIDIA devices depends on
@@ -369,7 +379,11 @@ using cf_view =
 /** View type for constant CF values */
 template <typename Layout, typename memory_space>
 using const_cf_view =
-  K::View<const cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
+  K::View<
+    const cf_t******,
+    Layout,
+    memory_space,
+    K::MemoryTraits<K::Unmanaged>>;
 
 /** view type for unmanaged view of vector data on host */
 template <typename T>
@@ -412,14 +426,14 @@ using const_mindex_view =
  * components are updated sequentially.
  */
 template <typename execution_space, typename T>
-KOKKOS_FORCEINLINE_FUNCTION void
+/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add(volatile K::complex<T>& acc, const K::complex<T>& val) {
   K::atomic_add(&acc, val);
 }
 
 #ifdef HPG_ENABLE_CUDA
 template <>
-KOKKOS_FORCEINLINE_FUNCTION void
+/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add<K::Cuda, double>(
   volatile K::complex<double>& acc, const K::complex<double>& val) {
 
@@ -428,7 +442,7 @@ pseudo_atomic_add<K::Cuda, double>(
 }
 
 template <>
-KOKKOS_FORCEINLINE_FUNCTION void
+/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add<K::Cuda, float>(
   volatile K::complex<float>& acc, const K::complex<float>& val) {
 
@@ -473,7 +487,7 @@ pseudo_atomic_add<K::Cuda, float>(
  *
  * @return tuple comprising four integer coordinates
  */
-KOKKOS_FUNCTION std::tuple<int, int, int, int>
+/*HPG_EXPORT*/ KOKKOS_INLINE_FUNCTION std::tuple<int, int, int, int>
 compute_vis_coord(
   int g_size,
   int oversampling,
@@ -503,7 +517,7 @@ compute_vis_coord(
  */
 #pragma nv_exec_check_disable
 template <typename execution_space, typename T>
-KOKKOS_FORCEINLINE_FUNCTION void
+/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
 sincos(T ph, T* sn, T* cs) {
   *sn = std::sin(ph);
   *cs = std::cos(ph);
@@ -511,12 +525,12 @@ sincos(T ph, T* sn, T* cs) {
 
 #ifdef KOKKOS_ENABLE_CUDA
 template <>
-__device__ __forceinline__ void
+/*HPG_EXPORT*/ __device__ __forceinline__ void
 sincos<K::Cuda, float>(float ph, float* sn, float* cs) {
   ::sincosf(ph, sn, cs);
 }
 template <>
-__device__ __forceinline__ void
+/*HPG_EXPORT*/ __device__ __forceinline__ void
 sincos<K::Cuda, double>(double ph, double* sn, double* cs) {
   ::sincos(ph, sn, cs);
 }
@@ -525,7 +539,7 @@ sincos<K::Cuda, double>(double ph, double* sn, double* cs) {
 /** convert phase to complex value
  */
 template <typename execution_space, typename T>
-KOKKOS_FORCEINLINE_FUNCTION K::complex<T>
+/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION K::complex<T>
 cphase(T ph) {
   K::complex<T> result;
   sincos<execution_space, T>(ph, &result.imag(), &result.real());
@@ -534,7 +548,7 @@ cphase(T ph) {
 
 /** magnitude of K::complex<T> value */
 template <typename T>
-KOKKOS_FORCEINLINE_FUNCTION T
+/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION T
 mag(const K::complex<T>& v) {
   return std::hypot(v.real(), v.imag());
 }
@@ -545,7 +559,7 @@ mag(const K::complex<T>& v) {
  * visibility metadata values needed by gridding kernel
  */
 template <unsigned N, typename execution_space>
-struct Vis final {
+struct /*HPG_EXPORT*/ Vis final {
 
   int m_grid_coord[2]; /**< grid coordinate */
   int m_cf_minor[2]; /**< CF minor coordinate */
@@ -621,7 +635,7 @@ struct Vis final {
  * devices, probably not OpenMP (although it is correct on all devices).
  */
 template <unsigned N, typename execution_space, unsigned version>
-struct HPG_EXPORT VisibilityGridder final {
+struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
@@ -1082,7 +1096,7 @@ struct HPG_EXPORT VisibilityGridder final {
 /** grid normalization kernel
  */
 template <typename execution_space, unsigned version>
-struct HPG_EXPORT GridNormalizer final {
+struct /*HPG_EXPORT*/ GridNormalizer final {
 
   template <typename grid_layout, typename memory_space>
   static void
@@ -1146,7 +1160,7 @@ struct HPG_EXPORT GridNormalizer final {
 
 /** fftw function class templated on fp precision */
 template <typename T>
-struct FFTW {
+struct /*HPG_EXPORT*/ FFTW {
 
   using complex_t = void;
   using plan_t = void;
@@ -1176,7 +1190,7 @@ struct FFTW {
 
 /** FFTW specialized for double precision */
 template <>
-struct FFTW<double> {
+struct /*HPG_EXPORT*/ FFTW<double> {
 
   using complex_t = fftw_complex;
   using plan_t = fftw_plan;
@@ -1225,7 +1239,7 @@ struct FFTW<double> {
 
 /** FFTW specialized for single precision */
 template <>
-struct FFTW<float> {
+struct /*HPG_EXPORT*/ FFTW<float> {
 
   using complex_t = fftwf_complex;
   using plan_t = fftwf_plan;
@@ -1282,7 +1296,7 @@ struct FFTW<float> {
  * Both in-place and out-of-place versions
  */
 template <typename execution_space, unsigned version>
-struct HPG_EXPORT FFT final {
+struct /*HPG_EXPORT*/ FFT final {
 
   // default implementation assumes FFTW3
 
@@ -1387,12 +1401,12 @@ struct HPG_EXPORT FFT final {
 
 #ifdef HPG_ENABLE_CUDA
 
-static Error
+/*HPG_EXPORT*/ Error
 cufft_error(const std::string& prefix, cufftResult rc);
 
 /** cufft function class templated on fp precision */
 template <typename T>
-struct CUFFT {
+struct /*HPG_EXPORT*/ CUFFT {
   //constexpr cufftType type;
   static cufftResult
   exec(cufftHandle, K::complex<T>*, K::complex<T>*, int) {
@@ -1402,7 +1416,7 @@ struct CUFFT {
 };
 
 template <>
-struct CUFFT<double> {
+struct /*HPG_EXPORT*/ CUFFT<double> {
 
   static constexpr cufftType type = CUFFT_Z2Z;
 
@@ -1423,7 +1437,7 @@ struct CUFFT<double> {
 };
 
 template <>
-struct CUFFT<float> {
+struct /*HPG_EXPORT*/ CUFFT<float> {
 
   static constexpr cufftType type = CUFFT_C2C;
 
@@ -1445,7 +1459,7 @@ struct CUFFT<float> {
 /** fft kernels for Cuda
  */
 template <>
-struct HPG_EXPORT FFT<K::Cuda, 0> final {
+struct /*HPG_EXPORT*/ FFT<K::Cuda, 0> final {
 
   template <typename G>
   static std::tuple<cufftResult_t, cufftHandle>
@@ -1534,14 +1548,14 @@ struct HPG_EXPORT FFT<K::Cuda, 0> final {
 /** swap visibility values */
 #pragma nv_exec_check_disable
 template <typename execution_space>
-KOKKOS_FORCEINLINE_FUNCTION void
+/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
 swap_gv(gv_t& a, gv_t&b) {
   std::swap(a, b);
 }
 
 #ifdef HPG_ENABLE_CUDA
 template <>
-KOKKOS_FORCEINLINE_FUNCTION void
+/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
 swap_gv<K::Cuda>(gv_t& a, gv_t&b) {
   gv_t tmp;
   tmp = a;
@@ -1556,7 +1570,7 @@ swap_gv<K::Cuda>(gv_t& a, gv_t&b) {
  * dimension
  */
 template <typename execution_space, unsigned version>
-struct HPG_EXPORT GridShifter final {
+struct /*HPG_EXPORT*/ GridShifter final {
 
   template <typename grid_layout, typename memory_space>
   static void

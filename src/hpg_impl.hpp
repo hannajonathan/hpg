@@ -19,6 +19,7 @@
 #include "hpg.hpp"
 #include "hpg_core.hpp"
 #include "hpg_layouts.hpp"
+// #inlude "hpg_export.h"
 
 #include <algorithm>
 #include <any>
@@ -136,7 +137,7 @@ template <typename T>
 using vector_data = std::shared_ptr<std::vector<T>>;
 
 template <typename Layout, typename memory_space>
-struct GridWeightPtr
+struct /*HPG_EXPORT*/ GridWeightPtr
   : public std::enable_shared_from_this<GridWeightPtr<Layout, memory_space>> {
 
   core::weight_view<Layout, memory_space> m_gw;
@@ -156,7 +157,7 @@ struct GridWeightPtr
 };
 
 template <typename Layout, typename memory_space>
-struct GridValuePtr
+struct /*HPG_EXPORT*/ GridValuePtr
   : public std::enable_shared_from_this<GridValuePtr<Layout, memory_space>> {
 
   core::grid_view<Layout, memory_space> m_gv;
@@ -177,7 +178,7 @@ struct GridValuePtr
 
 /** concrete sub-class of abstract GridValueArray */
 template <Device D>
-class HPG_EXPORT GridValueViewArray final
+class /*HPG_EXPORT*/ GridValueViewArray final
   : public GridValueArray {
 public:
 
@@ -375,7 +376,7 @@ public:
 
 /** concrete sub-class of abstract GridWeightArray */
 template <Device D>
-class HPG_EXPORT GridWeightViewArray final
+class /*HPG_EXPORT*/ GridWeightViewArray final
   : public GridWeightArray {
  public:
 
@@ -554,7 +555,7 @@ public:
 
 /** concrete sub-class of abstract GridValueArray for identically zero model
  * grids */
-class HPG_EXPORT UnallocatedModelValueArray final
+class /*HPG_EXPORT*/ UnallocatedModelValueArray final
   : public GridValueArray {
 public:
 
@@ -752,12 +753,13 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
 
 /** device-specific implementation sub-class of hpg::DeviceCFArray class */
 template <Device D>
-class DeviceCFArray
+class /*HPG_EXPORT*/ DeviceCFArray
   : public hpg::DeviceCFArray {
 public:
 
   // notice layout for device D, but in HostSpace
-  using cfd_view_h = core::cf_view<typename layouts::CFLayout<D>::layout, K::HostSpace>;
+  using cfd_view_h =
+    core::cf_view<typename layouts::CFLayout<D>::layout, K::HostSpace>;
 
   /** layout version string */
   std::string m_version;
@@ -903,13 +905,15 @@ layout_for_device(
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     init_cf_host<Device::Serial>(cfd, cf, grp);
-    typename core::DeviceT<Device::Serial>::kokkos_device::execution_space().fence();
+    typename core::DeviceT<Device::Serial>::kokkos_device::execution_space()
+      .fence();
     break;
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     init_cf_host<Device::OpenMP>(cfd, cf, grp);
-    typename core::DeviceT<Device::OpenMP>::kokkos_device::execution_space().fence();
+    typename core::DeviceT<Device::OpenMP>::kokkos_device::execution_space()
+      .fence();
     break;
 #endif // HPG_ENABLE_SERIAL
   default:

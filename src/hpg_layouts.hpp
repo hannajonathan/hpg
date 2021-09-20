@@ -15,6 +15,7 @@
 //
 #pragma once
 #include "hpg_core.hpp"
+// #include "hpg_export.h"
 
 #include <array>
 
@@ -37,7 +38,7 @@ static const std::array<int, 4> strided_grid_layout_order{
 
 /** device-specific grid array layout */
 template <Device D>
-struct GridLayout {
+struct /*HPG_EXPORT*/ GridLayout {
 
   /** Kokkos layout type */
   using layout =
@@ -87,7 +88,7 @@ static const std::array<int, 6> strided_cf_layout_order{
 
 /** device-specific constant-support CF array layout */
 template <Device D>
-struct CFLayout {
+struct /*HPG_EXPORT*/ CFLayout {
 
   /** Kokkos layout type */
   using layout =
