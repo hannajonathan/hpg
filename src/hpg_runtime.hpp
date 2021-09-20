@@ -19,9 +19,20 @@
 #include "hpg_core.hpp"
 // #include "hpg_export.h"
 
+#include <any>
+#include <deque>
+#include <mutex>
 #include <optional>
+#include <type_traits>
+#include <variant>
+#include <vector>
 
 namespace hpg::runtime {
+
+/** helper type for std::visit */
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+/** explicit deduction guide (not needed as of C++20) */
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 namespace K = Kokkos;
 /** invalid number of polarizations error

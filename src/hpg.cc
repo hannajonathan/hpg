@@ -16,8 +16,11 @@
 #include "hpg_impl.hpp"
 #include "hpg_runtime.hpp"
 
+#include <cfenv>
 #include <optional>
+#include <tuple>
 #include <variant>
+#include <vector>
 
 using namespace hpg;
 
@@ -1475,6 +1478,62 @@ GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
 #endif //HPG_API >= 17
 }
 
+std::unique_ptr<GridValueArray>
+GridValueArray::copy_from(
+  const std::string& name,
+  Device target_device,
+  Device host_device,
+  const value_type* src,
+  const std::array<unsigned, GridValueArray::rank>& extents,
+  Layout layout) {
+
+  static_assert(
+    int(core::GridAxis::x) == GridValueArray::Axis::x
+    && int(core::GridAxis::y) == GridValueArray::Axis::y
+    && int(core::GridAxis::mrow) == GridValueArray::Axis::mrow
+    && int(core::GridAxis::cube) == GridValueArray::Axis::cube);
+
+  switch (target_device) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial:
+    return
+      impl::GridValueViewArray<Device::Serial>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP:
+    return
+      impl::GridValueViewArray<Device::OpenMP>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_CUDA
+  case Device::Cuda:
+    return
+      impl::GridValueViewArray<Device::Cuda>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+  default:
+    assert(false);
+    return nullptr;
+    break;
+  }
+}
+
 opt_t<Error>
 GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
@@ -1496,6 +1555,57 @@ GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   unsafe_copy_to(host_device, dst, layout);
   return nullptr;
 #endif //HPG_API >= 17
+}
+
+
+std::unique_ptr<GridWeightArray>
+GridWeightArray::copy_from(
+  const std::string& name,
+  Device target_device,
+  Device host_device,
+  const value_type* src,
+  const std::array<unsigned, GridWeightArray::rank>& extents,
+  Layout layout) {
+
+  switch (target_device) {
+#ifdef HPG_ENABLE_SERIAL
+  case Device::Serial:
+    return
+      impl::GridWeightViewArray<Device::Serial>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_OPENMP
+  case Device::OpenMP:
+    return
+      impl::GridWeightViewArray<Device::OpenMP>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+#ifdef HPG_ENABLE_CUDA
+  case Device::Cuda:
+    return
+      impl::GridWeightViewArray<Device::Cuda>::copy_from(
+        name,
+        host_device,
+        src,
+        extents,
+        layout);
+    break;
+#endif
+  default:
+    assert(false);
+    return nullptr;
+    break;
+  }
 }
 
 const char * const

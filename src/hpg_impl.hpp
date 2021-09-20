@@ -21,29 +21,12 @@
 #include "hpg_layouts.hpp"
 // #inlude "hpg_export.h"
 
-#include <algorithm>
-#include <any>
 #include <cassert>
-#include <cfenv>
-#include <deque>
 #include <memory>
-#include <mutex>
-#include <type_traits>
-#include <variant>
+#include <optional>
+#include <ostream>
+#include <tuple>
 #include <vector>
-
-#ifndef NDEBUG
-# include <iostream>
-#endif
-
-#if defined(HPG_ENABLE_SERIAL) || defined(HPG_ENABLE_OPENMP)
-# include <fftw3.h>
-#endif
-
-/** helper type for std::visit */
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-/** explicit deduction guide (not needed as of C++20) */
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 /** @file hpg_impl.hpp
  *
@@ -652,71 +635,11 @@ protected:
   }
 };
 
-static std::optional<std::tuple<unsigned, std::optional<Device>>>
-parsed_cf_layout_version(const std::string& layout) {
-  auto dash = layout.find('-');
-  std::optional<int> vn;
-  if (dash != std::string::npos) {
-    try {
-      vn = std::stoi(layout.substr(0, dash));
-      if (vn.value() < 0)
-        vn.reset();
-    } catch (...) {}
-  }
-  if (vn) {
-    std::string dev = layout.substr(dash + 1);
-#ifdef HPG_ENABLE_SERIAL
-    if (dev == core::DeviceT<Device::Serial>::name)
-      return
-        std::make_tuple(
-          unsigned(vn.value()),
-          std::optional<Device>(Device::Serial));
-#endif
-#ifdef HPG_ENABLE_OPENMP
-    if (dev == core::DeviceT<Device::OpenMP>::name)
-      return
-        std::make_tuple(
-          unsigned(vn.value()),
-          std::optional<Device>(Device::OpenMP));
-#endif
-#ifdef HPG_ENABLE_CUDA
-    if (dev == core::DeviceT<Device::Cuda>::name)
-      return
-        std::make_tuple(
-          unsigned(vn.value()),
-          std::optional<Device>(Device::Cuda));
-#endif
-    return std::make_tuple(unsigned(vn.value()), std::nullopt);
-  }
-  return std::nullopt;
-}
+std::optional<std::tuple<unsigned, std::optional<Device>>>
+parsed_cf_layout_version(const std::string& layout);
 
-static std::string
-construct_cf_layout_version(unsigned vn, Device device) {
-  std::ostringstream oss;
-  oss << vn << "-";
-  switch (device) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    oss << core::DeviceT<Device::Serial>::name;
-    break;
-#endif
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    oss << core::DeviceT<Device::OpenMP>::name;
-    break;
-#endif
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    oss << core::DeviceT<Device::Cuda>::name;
-    break;
-#endif
-  default:
-    assert(false);
-    break;
-  }
-  return oss.str();
-}
+std::string
+construct_cf_layout_version(unsigned vn, Device device);
 
 /** initialize model visibilities view from GridValueArray instance */
 template <Device D, typename GVH>
@@ -922,112 +845,6 @@ layout_for_device(
   }
 }
 } // end namespace impl
-
-std::unique_ptr<GridValueArray>
-GridValueArray::copy_from(
-  const std::string& name,
-  Device target_device,
-  Device host_device,
-  const value_type* src,
-  const std::array<unsigned, GridValueArray::rank>& extents,
-  Layout layout) {
-
-  static_assert(
-    int(core::GridAxis::x) == GridValueArray::Axis::x
-    && int(core::GridAxis::y) == GridValueArray::Axis::y
-    && int(core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(core::GridAxis::cube) == GridValueArray::Axis::cube);
-
-  switch (target_device) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    return
-      impl::GridValueViewArray<Device::Serial>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    return
-      impl::GridValueViewArray<Device::OpenMP>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    return
-      impl::GridValueViewArray<Device::Cuda>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-  default:
-    assert(false);
-    return nullptr;
-    break;
-  }
-}
-
-std::unique_ptr<GridWeightArray>
-GridWeightArray::copy_from(
-  const std::string& name,
-  Device target_device,
-  Device host_device,
-  const value_type* src,
-  const std::array<unsigned, GridWeightArray::rank>& extents,
-  Layout layout) {
-
-  switch (target_device) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    return
-      impl::GridWeightViewArray<Device::Serial>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    return
-      impl::GridWeightViewArray<Device::OpenMP>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    return
-      impl::GridWeightViewArray<Device::Cuda>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-  default:
-    assert(false);
-    return nullptr;
-    break;
-  }
-}
 
 } // end namespace hpg
 
