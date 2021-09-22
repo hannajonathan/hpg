@@ -21,6 +21,7 @@
 
 #include <any>
 #include <deque>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <type_traits>
@@ -302,7 +303,8 @@ struct /*HPG_EXPORT*/ CFPool final {
   StateT<D> *state;
   K::View<impl::core::cf_t*, memory_space> pool;
   unsigned num_cf_groups;
-  unsigned max_cf_extent_y;
+  unsigned min_cf_size; // size used in convolution (i.e, no padding)
+  unsigned max_cf_size;
   K::Array<cfd_view, HPG_MAX_NUM_CF_GROUPS> cf_d; // unmanaged (in pool)
   std::vector<std::any> cf_h;
   K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS> cf_radii;
@@ -310,7 +312,8 @@ struct /*HPG_EXPORT*/ CFPool final {
   CFPool()
     : state(nullptr)
     , num_cf_groups(0)
-    , max_cf_extent_y(0) {
+    , min_cf_size(std::numeric_limits<decltype(min_cf_size)>::max())
+    , max_cf_size(std::numeric_limits<decltype(max_cf_size)>::min()) {
 
     for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i)
       cf_d[i] = cfd_view();
@@ -319,7 +322,8 @@ struct /*HPG_EXPORT*/ CFPool final {
   CFPool(StateT<D>* st)
     : state(st)
     , num_cf_groups(0)
-    , max_cf_extent_y(0) {
+    , min_cf_size(std::numeric_limits<decltype(min_cf_size)>::max())
+    , max_cf_size(std::numeric_limits<decltype(max_cf_size)>::min()) {
 
     for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i)
       cf_d[i] = cfd_view();
@@ -333,7 +337,8 @@ struct /*HPG_EXPORT*/ CFPool final {
       other.state->fence();
     std::swap(pool, other.pool);
     std::swap(num_cf_groups, other.num_cf_groups);
-    std::swap(max_cf_extent_y, other.max_cf_extent_y);
+    std::swap(min_cf_size, other.min_cf_size);
+    std::swap(max_cf_size, other.max_cf_size);
     std::swap(cf_d, other.cf_d);
     std::swap(cf_h, other.cf_h);
     std::swap(cf_radii, other.cf_radii);
@@ -345,7 +350,8 @@ struct /*HPG_EXPORT*/ CFPool final {
     // TODO: make this exception-safe?
     reset();
     num_cf_groups = rhs.num_cf_groups;
-    max_cf_extent_y = rhs.max_cf_extent_y;
+    min_cf_size = rhs.min_cf_size;
+    max_cf_size = rhs.max_cf_size;
     cf_radii = rhs.cf_radii;
     if (rhs.pool.extent(0) > 0) {
       pool =
@@ -384,7 +390,8 @@ struct /*HPG_EXPORT*/ CFPool final {
       rhs.state->fence();
     std::swap(pool, rhs.pool);
     std::swap(num_cf_groups, rhs.num_cf_groups);
-    std::swap(max_cf_extent_y, rhs.max_cf_extent_y);
+    std::swap(min_cf_size, rhs.min_cf_size);
+    std::swap(max_cf_size, rhs.max_cf_size);
     std::swap(cf_d, rhs.cf_d);
     std::swap(cf_h, rhs.cf_h);
     std::swap(cf_radii, rhs.cf_radii);
@@ -441,13 +448,12 @@ struct /*HPG_EXPORT*/ CFPool final {
     assert(num_cf_groups < HPG_MAX_NUM_CF_GROUPS);
     cf_d[num_cf_groups] = cfd;
     cf_h.push_back(cfh);
-    cf_radii[num_cf_groups] =
-      {int(radii[0]), int(radii[1])};
+    cf_radii[num_cf_groups] = {int(radii[0]), int(radii[1])};
     ++num_cf_groups;
-    max_cf_extent_y =
-      std::max(
-        max_cf_extent_y,
-        unsigned(cfd.extent(int(impl::core::CFAxis::y_major))));
+    max_cf_size =
+      std::max(max_cf_size, 2 * unsigned(std::max(radii[0], radii[1])) + 1);
+    min_cf_size =
+      std::min(min_cf_size, 2 * unsigned(std::min(radii[0], radii[1])) + 1);
   }
 
   void
@@ -979,7 +985,46 @@ public:
       exec_grid.space,
       cf.cf_d,
       cf.cf_radii,
-      cf.max_cf_extent_y,
+      cf.max_cf_size,
+      m_mueller_indexes,
+      m_conjugate_mueller_indexes,
+      update_grid_weights,
+      do_degrid,
+      do_grid,
+      len,
+      exec_grid.template visdata<N>(),
+      exec_grid.gvisbuff,
+      m_grid_scale,
+      model,
+      m_grid,
+      m_weights);
+    return exec_grid.copy_visibilities_to_host(return_visibilities);
+  }
+
+  template <unsigned N>
+  State::maybe_vis_t
+  alt1_grid_visibilities(
+    Device /*host_device*/,
+    std::vector<::hpg::VisData<N>>&& visibilities,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool return_visibilities,
+    bool do_grid) {
+
+    auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    auto len =
+      exec_pre.copy_visibilities_to_device(std::move(visibilities));
+
+    auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
+    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
+    impl::core::const_grid_view<typename grid_layout::layout, memory_space>
+      model = m_model;
+    impl::core::VisibilityGridder<N, execution_space, 1>::kernel(
+      exec_grid.space,
+      cf.cf_d,
+      cf.cf_radii,
+      cf.min_cf_size,
+      cf.max_cf_size,
       m_mueller_indexes,
       m_conjugate_mueller_indexes,
       update_grid_weights,
@@ -1107,14 +1152,13 @@ public:
       break;
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     case 1:
-      return
-        alt_grid_visibilities(
-          host_device,
-          std::move(visibilities),
-          update_grid_weights,
-          do_degrid,
-          return_visibilities,
-          do_grid);
+      return alt1_grid_visibilities(
+        host_device,
+        std::move(visibilities),
+        update_grid_weights,
+        do_degrid,
+        return_visibilities,
+        do_grid);
       break;
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     default:
