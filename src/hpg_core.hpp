@@ -157,7 +157,7 @@ struct /*HPG_EXPORT*/ vis_array_type {
     }
   }
 };
-} // end namespace hpg::core
+} // end namespace hpg::runtime::impl::core
 
 namespace Kokkos { //reduction identities must be defined in Kokkos namespace
 /** reduction identity of poln_array_type */
