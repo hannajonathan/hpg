@@ -1113,7 +1113,10 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
           ((n < max_blocks) ? (cfsz_min + block_size) : max_cf_size);
         K::parallel_for(
           kernel_name,
-          K::TeamPolicy<execution_space>(exec, league_size, n * block_size)
+          K::TeamPolicy<execution_space>(
+            exec,
+            league_size,
+            n * block_size)
           .set_scratch_size(0, K::PerTeam(shmem_size)),
           f(cfsz_min, cfsz_max));
       }
