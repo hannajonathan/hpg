@@ -532,8 +532,8 @@ init_visibilities(
   const double freq = 299792458.0 * inv_lambda;
   const double uscale = default_scale[0] * input_data.oversampling * inv_lambda;
   const double vscale = default_scale[1] * input_data.oversampling * inv_lambda;
-  const auto x0 = (input_data.oversampling * (input_data.gsize[0] - 2)) / 2;
-  const auto y0 = (input_data.oversampling * (input_data.gsize[1] - 2)) / 2;
+  const auto x0 = (input_data.oversampling * input_data.gsize[0]) / 2;
+  const auto y0 = (input_data.oversampling * input_data.gsize[1]) / 2;
   K::parallel_for(
     "init_vis",
     K::RangePolicy<K::OpenMP>(0, num_visdata),
@@ -544,8 +544,8 @@ init_visibilities(
       auto& cfsz = *(cf_sizes_p + grp);
       std::array<unsigned, 2> cf_index = {rstate.urand(0, cfsz[3]), grp};
 
-      float ulim = x0 / uscale;
-      float vlim = y0 / vscale;
+      float ulim = (x0 - (input_data.oversampling * cfsz[0]) / 2) / uscale;
+      float vlim = (y0 - (input_data.oversampling * cfsz[1]) / 2) / vscale;
 
       std::array<std::complex<hpg::visibility_fp>, N> visibilities;
       std::array<hpg::vis_weight_fp, N> weights;
