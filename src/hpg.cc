@@ -338,9 +338,69 @@ GridderState::grid_size() const noexcept {
   return impl->m_grid_size;
 }
 
+rval_t<GridderState>
+GridderState::set_grid_size(
+  const std::array<unsigned, 4>& grid_size,
+  IArrayVector&& mueller_indexes,
+  IArrayVector&& conjugate_mueller_indexes) const & {
+
+  ProfileRegion region("GridderState::set_grid_size_const");
+
+  if (grid_size[2] != mueller_indexes.size()
+      || grid_size[2] != conjugate_mueller_indexes.size())
+    return rval<GridderState>(InvalidNumberMuellerIndexRowsError());
+
+  GridderState result(*this);
+  result.impl->set_grid_size(
+    grid_size,
+    mueller_indexes,
+    conjugate_mueller_indexes);
+  return rval<GridderState>(std::move(result));
+}
+
+rval_t<GridderState>
+GridderState::set_grid_size(
+  const std::array<unsigned, 4>& grid_size,
+  IArrayVector&& mueller_indexes,
+  IArrayVector&& conjugate_mueller_indexes) && {
+
+  ProfileRegion region("GridderState::set_grid_size");
+
+  if (grid_size[2] != mueller_indexes.size()
+      || grid_size[2] != conjugate_mueller_indexes.size())
+    return rval<GridderState>(InvalidNumberMuellerIndexRowsError());
+
+  GridderState result(std::move(*this));
+  result.impl->set_grid_size(
+    grid_size,
+    mueller_indexes,
+    conjugate_mueller_indexes);
+  return rval<GridderState>(std::move(result));
+}
+
 std::array<grid_scale_fp, 2>
 GridderState::grid_scale() const noexcept {
   return {impl->m_grid_scale[0], impl->m_grid_scale[1]};
+}
+
+GridderState
+GridderState::set_grid_scale(
+  const std::array<grid_scale_fp, 2>& grid_scale) const & noexcept {
+
+  GridderState result(*this);
+  for (auto& i : {0, 1})
+    result.impl->m_grid_scale[i] = grid_scale[i];
+  return result;
+}
+
+GridderState
+GridderState::set_grid_scale(const std::array<grid_scale_fp, 2>& grid_scale) &&
+  noexcept {
+
+  GridderState result(std::move(*this));
+  for (auto& i : {0, 1})
+    result.impl->m_grid_scale[i] = grid_scale[i];
+  return result;
 }
 
 unsigned
@@ -1092,9 +1152,46 @@ Gridder::grid_size() const noexcept {
   return state.grid_size();
 }
 
+opt_t<Error>
+Gridder::set_grid_size(
+  const std::array<unsigned, 4>& grid_size,
+  IArrayVector&& mueller_indexes,
+  IArrayVector&& conjugate_mueller_indexes) {
+
+#if HPG_API >= 17
+  return
+    fold(
+      std::move(state).set_grid_size(
+        grid_size,
+        std::move(mueller_indexes),
+        std::move(conjugate_mueller_indexes)),
+      [this](auto&& gs) -> std::optional<Error> {
+        this->state = std::move(gs);
+        return std::nullopt;
+      },
+      [](auto&& err) -> std::optional<Error> {
+        return std::move(err);
+      });
+#else //HPG_API < 17
+  std::shared_ptr<Error> result;
+  std::tie(result, state) =
+    std::move(state).set_grid_size(
+      grid_size,
+      std::move(mueller_indexes),
+      std::move(conjugate_mueller_indexes));
+  return result;
+#endif //HPG_API >= 17
+}
+
 std::array<grid_scale_fp, 2>
 Gridder::grid_scale() const noexcept {
   return state.grid_scale();
+}
+
+void
+Gridder::set_grid_scale(const std::array<grid_scale_fp, 2>& grid_scale)
+  noexcept {
+  state = std::move(state).set_grid_scale(grid_scale);
 }
 
 bool

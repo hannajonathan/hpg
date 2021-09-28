@@ -1295,9 +1295,112 @@ public:
   const std::array<unsigned, 4>&
   grid_size() const noexcept;
 
+  /** set grid size
+   *
+   * @param grid_size grid size
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
+   *
+   * @return error, or new GridderState that is a copy of the target but with
+   * grid (and associated weights array) of given size, and no model
+   */
+  rval_t<GridderState>
+  set_grid_size(
+    const std::array<unsigned, 4>& grid_size,
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes) const &;
+
+  /** set grid size
+   *
+   * @param grid_size grid size
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
+   *
+   * @return error, or new GridderState that is a copy of the target but with
+   * grid (and associated weights array) of given size, and no model
+   */
+  template <unsigned N>
+  rval_t<GridderState>
+  set_grid_size(
+    const std::array<unsigned, 4>& grid_size,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes)
+    const & {
+
+    return
+      set_grid_size(
+        grid_size,
+        IArrayVector(mueller_indexes),
+        IArrayVector(conjugate_mueller_indexes));
+  }
+
+  /** set grid size
+   *
+   * @param grid_size grid size
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
+   *
+   * @return error, or new GridderState that is a copy of the target but with
+   * grid (and associated weights array) of given size, and no model
+   */
+  rval_t<GridderState>
+  set_grid_size(
+    const std::array<unsigned, 4>& grid_size,
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes) &&;
+
+  /** set grid size
+   *
+   * @param grid_size grid size
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
+   *
+   * @return error, or new GridderState that is a copy of the target but with
+   * grid (and associated weights array) of given size, and no model
+   */
+  template <unsigned N>
+  rval_t<GridderState>
+  set_grid_size(
+    const std::array<unsigned, 4>& grid_size,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes)
+    && {
+
+    return
+      std::move(*this).set_grid_size(
+        grid_size,
+        IArrayVector(mueller_indexes),
+        IArrayVector(conjugate_mueller_indexes));
+  }
+
   /** grid scale */
   std::array<grid_scale_fp, 2>
   grid_scale() const noexcept;
+
+  /** set grid scale
+   *
+   * @param grid_scale new grid scale
+   *
+   * @return new GridderState that is a copy of the target but with given grid
+   * scale
+   */
+  GridderState
+  set_grid_scale(const std::array<grid_scale_fp, 2>& grid_scale)
+    const & noexcept;
+
+  /** set grid scale
+   *
+   * @param grid_scale new grid scale
+   *
+   * @return new GridderState that is a copy of the target but with given grid
+   * scale
+   */
+  GridderState
+  set_grid_scale(const std::array<grid_scale_fp, 2>& grid_scale) && noexcept;
 
   /** number of visibility polarizations */
   unsigned
@@ -2382,9 +2485,56 @@ public:
   const std::array<unsigned, 4>&
   grid_size() const noexcept;
 
+  /** change grid shape, and set values to zero
+   *
+   * @param grid_size grid size
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
+   *
+   * Also resets grid plane weights shape, sets its values to zero, and
+   * deallocates any existing model. Invokes fence() on target.
+   */
+  opt_t<Error>
+  set_grid_size(
+    const std::array<unsigned, 4>& grid_size,
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes);
+
+  /** change grid shape, and set values to zero
+   *
+   * @param grid_size grid size
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
+   *
+   * Also resets grid plane weights shape, sets its values to zero, and
+   * deallocates any existing model. Invokes fence() on target.
+   */
+  template <unsigned N>
+  opt_t<Error>
+  set_grid_size(
+    const std::array<unsigned, 4>& grid_size,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes) {
+
+    return
+      set_grid_size(
+        grid_size,
+        IArrayVector(mueller_indexes),
+        IArrayVector(conjugate_mueller_indexes));
+  }
+
   /** grid scale */
   std::array<grid_scale_fp, 2>
   grid_scale() const noexcept;
+
+  /** change grid scale
+   *
+   * @param grid_scale new grid scale
+   */
+  void
+  set_grid_scale(const std::array<grid_scale_fp, 2>& grid_scale) noexcept;
 
   /** number of visibility polarizations */
   unsigned
@@ -2423,9 +2573,6 @@ public:
    * argument. Invokes fence() on the target.
    *
    * @param shape shape of CFArray for which to allocate memory (per task)
-   *
-   * @return new GridderState that is a copy of the target, but with memory
-   * allocated for convolution function, or error
    */
   opt_t<Error>
   allocate_convolution_function_region(const CFArrayShape* shape);

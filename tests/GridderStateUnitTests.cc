@@ -890,6 +890,52 @@ TEST(GridderState, CopyOrMove) {
 #endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
 #ifndef HPG_DELTA_EXPERIMENTAL_ONLY
+TEST(GridderState, GridChanges) {
+  std::array<unsigned, 4> grid_size{15, 14, 4, 3};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
+  auto padding = 2 * hpg::CFArray::padding;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3 + padding, 3 + padding, 3, 3}, {2 + padding, 2 + padding, 2, 2}};
+  MyCFArrayShape cf(10, cf_sizes);
+  auto gs =
+    hpg::get_value(
+      hpg::GridderState::create<1>(
+        default_device,
+        0,
+        10,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0}, {0}, {0}, {0}},
+        {{0}, {0}, {0}, {0}}));
+
+  {
+    std::array<unsigned, 4> new_grid_size{6, 8, 2, 4};
+    auto gs1_or_err =
+      gs.set_grid_size<1u>(new_grid_size, {{0}, {0}}, {{0}, {0}});
+    ASSERT_TRUE(hpg::is_value(gs1_or_err));
+    auto gs1 = hpg::get_value(std::move(gs1_or_err));
+    auto sz = gs1.grid_size();
+    EXPECT_EQ(new_grid_size, sz);
+  }
+  {
+    std::array<unsigned, 4> new_grid_size{6, 8, 2, 4};
+    auto gs1_or_err = gs.set_grid_size<1u>(new_grid_size, {{0}}, {{0}});
+    ASSERT_TRUE(hpg::is_error(gs1_or_err));
+    auto err = hpg::get_error(std::move(gs1_or_err));
+    EXPECT_EQ(
+      err.type(),
+      hpg::ErrorType::InvalidNumberMuellerIndexRows);
+  }
+  {
+    std::array<hpg::grid_scale_fp, 2> new_grid_scale{-0.1, 0.1};
+    auto gs1 = gs.set_grid_scale(new_grid_scale);
+    EXPECT_EQ(gs1.grid_scale(), new_grid_scale);
+  }
+}
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
+
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
 // test that GridderState::set_convolution_function() returns errors for
 // erroneous CFArray arguments
 TEST(GridderState, CFError) {

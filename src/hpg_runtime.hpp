@@ -175,6 +175,12 @@ struct /*HPG_EXPORT*/ State {
   virtual void
   reset_grid() = 0;
 
+  virtual void
+  set_grid_size(
+    const std::array<unsigned, 4>& grid_size,
+    const IArrayVector& mueller_indexes,
+    const IArrayVector& conjugate_mueller_indexes) = 0;
+
   virtual std::unique_ptr<GridValueArray>
   model_values() const = 0;
 
@@ -1185,6 +1191,22 @@ public:
   reset_grid() override {
     fence();
     new_grid(true, true);
+  }
+
+  void
+  set_grid_size(
+    const std::array<unsigned, 4>& grid_size,
+    const IArrayVector& mueller_indexes,
+    const IArrayVector& conjugate_mueller_indexes) override {
+
+    fence();
+    m_grid_size = grid_size;
+    new_grid(true, true);
+    m_model = decltype(m_model)();
+    m_mueller_indexes =
+      init_mueller("mueller_indexes", mueller_indexes);
+    m_conjugate_mueller_indexes =
+      init_mueller("conjugate_mueller_indexes", conjugate_mueller_indexes);
   }
 
   void
