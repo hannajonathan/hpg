@@ -99,5 +99,10 @@ target_link_libraries(MyLibrary PRIVATE hpg::hpg)
 Most client code should include only the header `hpg.hpp` (using
 `#include <hpg/hpg.hpp>`), which hides from the client code all use
 by the *HPG* implementation of *Kokkos* types and concepts. However,
-if direct access to the *Kokkos* kernels is desired, the header 
+if direct access to the *Kokkos* kernels is desired, the header
 `hpg_impl.h` may be used.
+
+## Getting help
+
+A Google Chat room exists for discussion of *HPG*. If you wish to be invited,
+please send your request to mpokorny at nrao dot edu.
