@@ -70,8 +70,13 @@ if(Hpg_ENABLE_CUDA)
   endif()
 endif()
 list(LENGTH ENABLED_DEVICES num_enabled_devices)
-if(${num_enabled_devices} EQUAL 0)
+if(num_enabled_devices EQUAL 0)
   message(FATAL_ERROR "No enabled devices")
+endif()
+# TODO: eventually, we'll be able to build without an enabled host device, but
+# until then...
+if((HAVE_SERIAL EQUAL -1) AND (HAVE_OPENMP EQUAL -1))
+  message(FATAL_ERROR "No host devices enabled")
 endif()
 kokkos_check(DEVICES ${ENABLED_DEVICES})
 
