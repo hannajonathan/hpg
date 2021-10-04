@@ -836,6 +836,19 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       });
   }
 
+  template <typename grid_layout, typename memory_space>
+  static KOKKOS_INLINE_FUNCTION bool
+  all_within_grid(
+    const Vis<N, execution_space>& vis,
+    const K::Array<int, 2>& grid_size) {
+
+    return
+      (0 <= vis.m_grid_coord[0])
+      && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
+      && (0 <= vis.m_grid_coord[1])
+      && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1]);
+  }
+
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static void
   kernel(
@@ -890,10 +903,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
           poln_array_type<visibility_fp, N> gvis;
           // skip this visibility if all of the updated grid points are not
           // within grid bounds
-          if ((0 <= vis.m_grid_coord[0])
-              && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
-              && (0 <= vis.m_grid_coord[1])
-              && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1])) {
+          if (all_within_grid(vis, grid_size)) {
             gvis =
               degrid_vis<cf_layout, grid_layout, memory_space>(
                 team_member,
@@ -962,10 +972,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
               oversampling);
             // skip this visibility if all of the updated grid points are not
             // within grid bounds
-            if ((0 <= vis.m_grid_coord[0])
-                && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
-                && (0 <= vis.m_grid_coord[1])
-                && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1])) {
+            if (all_within_grid(vis, grid_size)) {
               grid_vis<cf_layout, grid_layout, memory_space>(
                 team_member,
                 vis,
@@ -998,10 +1005,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
               oversampling);
             // skip this visibility if all of the updated grid points are not
             // within grid bounds
-            if ((0 <= vis.m_grid_coord[0])
-                && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
-                && (0 <= vis.m_grid_coord[1])
-                && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1])) {
+            if (all_within_grid(vis, grid_size)) {
               grid_vis_no_weights<cf_layout, grid_layout, memory_space>(
                 team_member,
                 vis,
