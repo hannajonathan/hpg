@@ -621,7 +621,7 @@ struct /*HPG_EXPORT*/ ExecSpace final {
 
   template <unsigned N>
   constexpr impl::core::visdata_view<N, memory_space>
-  visdata() const {
+  visdata() {
     return std::get<impl::core::visdata_view<N, memory_space>>(visibilities);
   }
 
@@ -658,7 +658,7 @@ struct /*HPG_EXPORT*/ ExecSpace final {
   }
 
   State::maybe_vis_t
-  copy_visibilities_to_host(bool return_visibilities) const {
+  copy_visibilities_to_host(bool return_visibilities) {
 
     State::maybe_vis_t result;
     if (return_visibilities) {
@@ -997,6 +997,86 @@ public:
 
   template <unsigned N>
   State::maybe_vis_t
+  alt_grid_visibilities(
+    Device /*host_device*/,
+    std::vector<::hpg::VisData<N>>&& visibilities,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool return_visibilities,
+    bool do_grid) {
+
+    auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    auto len = exec_pre.copy_visibilities_to_device(std::move(visibilities));
+
+    auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
+    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
+    impl::core::const_grid_view<typename grid_layout::layout, memory_space>
+      model = m_model;
+
+    {
+      using gridder =
+        typename impl::core::VisibilityGridder<N, execution_space, 1>;
+      auto espace = exec_grid.space;
+      auto vis = exec_grid.template visdata<N>();
+      auto& gvisbuff = exec_grid.gvisbuff;
+
+      if (do_degrid) {
+        gridder::degrid_all(
+          espace,
+          cf.cf_d,
+          cf.cf_radii,
+          cf.max_cf_extent_y,
+          m_mueller_indexes,
+          m_conjugate_mueller_indexes,
+          len,
+          vis,
+          gvisbuff,
+          m_grid_scale,
+          model,
+          m_grid);
+        if (do_grid)
+          gridder::vis_copy_residual_and_rescale(espace, len, vis, gvisbuff);
+        else
+          gridder::vis_copy_predicted(espace, len, vis, gvisbuff);
+      } else {
+        gridder::vis_rescale(espace, len, vis, gvisbuff);
+      }
+
+      if (do_grid) {
+        if (update_grid_weights)
+          gridder::grid_all(
+            espace,
+            cf.cf_d,
+            cf.cf_radii,
+            cf.max_cf_extent_y,
+            m_mueller_indexes,
+            m_conjugate_mueller_indexes,
+            len,
+            vis,
+            gvisbuff,
+            m_grid_scale,
+            m_grid,
+            m_weights);
+        else
+          gridder::grid_all_no_weights(
+            espace,
+            cf.cf_d,
+            cf.cf_radii,
+            cf.max_cf_extent_y,
+            m_mueller_indexes,
+            m_conjugate_mueller_indexes,
+            len,
+            vis,
+            gvisbuff,
+            m_grid_scale,
+            m_grid);
+      }
+    }
+    return exec_grid.copy_visibilities_to_host(return_visibilities);
+  }
+
+  template <unsigned N>
+  State::maybe_vis_t
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
@@ -1025,6 +1105,18 @@ public:
           return_visibilities,
           do_grid);
       break;
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    case 1:
+      return
+        alt_grid_visibilities(
+          host_device,
+          std::move(visibilities),
+          update_grid_weights,
+          do_degrid,
+          return_visibilities,
+          do_grid);
+      break;
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     default:
       assert(false);
       std::abort();
