@@ -855,10 +855,14 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
     });
 }
 
-/** device-specific implementation sub-class of hpg::DeviceCFArray class */
+rval_t<size_t>
+min_cf_buffer_size(Device device, const CFArrayShape& cf, unsigned grp);
+
+/** device-specific implementation sub-class of hpg::WritableDeviceCFArray
+ * class */
 template <Device D>
 class /*HPG_EXPORT*/ DeviceCFArray
-  : public hpg::DeviceCFArray {
+  : public hpg::WritableDeviceCFArray {
 public:
 
   using kokkos_device = typename DeviceT<D>::kokkos_device;
@@ -877,6 +881,20 @@ public:
   std::vector<std::vector<value_type>> m_arrays;
   /** Views of host memory buffers */
   std::vector<cfd_view_h> m_views;
+
+  DeviceCFArray(const CFArrayShape& shape)
+    : m_version(construct_cf_layout_version(cf_layout_version_number, D))
+    , m_oversampling(shape.oversampling()) {
+
+    for (unsigned grp = 0; grp < shape.num_groups(); ++grp) {
+      m_extents.push_back(shape.extents(grp));
+      m_arrays.emplace_back(
+        hpg::get_value(min_cf_buffer_size(D, shape, grp)));
+      m_views.emplace_back(
+        reinterpret_cast<core::cf_t*>(m_arrays.back().data()),
+        cflayout::dimensions(this, m_extents.size() - 1));
+    }
+  }
 
   DeviceCFArray(
     const std::string& version,
@@ -925,6 +943,34 @@ public:
     && CFArray::Axis::cube == 3
     && CFArray::Axis::group == 4);
 
+  std::complex<cf_fp>&
+  operator()(
+    unsigned x,
+    unsigned y,
+    unsigned mueller,
+    unsigned cube,
+    unsigned grp)
+    override {
+
+    static_assert(
+      int(core::CFAxis::x_major) == 0
+      && int(core::CFAxis::y_major) == 1
+      && int(core::CFAxis::mueller) == 2
+      && int(core::CFAxis::cube) == 3
+      && int(core::CFAxis::x_minor) == 4
+      && int(core::CFAxis::y_minor) == 5);
+
+    return
+      reinterpret_cast<std::complex<cf_fp>&>(
+        m_views[grp](
+          x / m_oversampling,
+          y / m_oversampling,
+          mueller,
+          cube,
+          x % m_oversampling,
+          y % m_oversampling));
+  }
+
   std::complex<cf_fp>
   operator()(
     unsigned x,
@@ -941,6 +987,7 @@ public:
       && int(core::CFAxis::cube) == 3
       && int(core::CFAxis::x_minor) == 4
       && int(core::CFAxis::y_minor) == 5);
+
     return
       m_views[grp](
         x / m_oversampling,
@@ -1029,9 +1076,6 @@ layout_for_device(
     break;
   }
 }
-
-rval_t<size_t>
-min_cf_buffer_size(Device device, const CFArray& cf, unsigned grp);
 
 } // end namespace runtime::impl
 

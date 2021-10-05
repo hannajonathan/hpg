@@ -773,6 +773,43 @@ public:
   virtual ~DeviceCFArray() {}
 };
 
+/** DeviceCFArray sub-class for stored (cached) values in optimized
+ * layout for devices
+ */
+class HPG_EXPORT WritableDeviceCFArray
+  : public DeviceCFArray {
+public:
+
+  /** create a WritableDeviceCFArray (sub-class) instance
+   *
+   * @param device target device
+   * @param shape CFArray instance shape
+   */
+  static rval_t<std::unique_ptr<WritableDeviceCFArray>>
+  create(Device device, const CFArrayShape& shape);
+
+  /** element access operator
+   *
+   * @param x X coordinate, relative to padded domain edge (oversampled units)
+   * @param y Y coordinate, relative to padded domain edge (oversampled units)
+   * @param mueller Mueller element index; selects an element of a Mueller
+   * matrix
+   * @param cube cube index
+   * @param group group index
+   *
+   * @return non-const element reference
+   */
+  virtual std::complex<cf_fp>&
+  operator()(
+    unsigned x,
+    unsigned y,
+    unsigned mueller,
+    unsigned cube,
+    unsigned group) = 0;
+
+  virtual ~WritableDeviceCFArray() {}
+};
+
 /** wrapper for access to copy of grid values
  *
  * @todo: replace with mdspan?

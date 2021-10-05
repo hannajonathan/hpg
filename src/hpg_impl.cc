@@ -141,7 +141,7 @@ runtime::impl::construct_cf_layout_version(unsigned vn, Device device) {
 rval_t<size_t>
 runtime::impl::min_cf_buffer_size(
   Device device,
-  const CFArray& cf,
+  const CFArrayShape& cf,
   unsigned grp) {
 
   if (devices().count(device) == 0)
