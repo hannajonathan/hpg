@@ -656,6 +656,198 @@ TEST(DeviceCFArray, Efficiency) {
   EXPECT_LT(t_devcf, t_cf);
 }
 
+// test equivalency of gridding with WritableDeviceCFArray
+TEST(DeviceCFArray, WritableGridding) {
+  // CF definition
+  const unsigned oversampling = 20;
+  ConeCFArray cf(1, oversampling, {10}); // TODO: more Mueller indexes
+
+  // create WritableDeviceCFArray
+  auto wdevcf_or_err = hpg::WritableDeviceCFArray::create(default_device, cf);
+  ASSERT_TRUE(hpg::is_value(wdevcf_or_err));
+  auto wdevcf = hpg::get_value(std::move(wdevcf_or_err));
+  for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
+    auto [nx, ny, nm, ncube] = cf.extents(grp);
+    for (unsigned cube = 0; cube < ncube; ++cube)
+      for (unsigned m = 0; m < nm; ++m)
+        for (unsigned y = 0; y < ny; ++y)
+          for (unsigned x = 0; x < nx; ++x)
+            (*wdevcf)(x, y, m, cube, grp) = cf(x, y, m, cube, grp);
+  }
+
+  // grid definition
+  std::array<unsigned, 4> grid_size{50, 50, 1, 1};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
+
+  // visibilities
+  unsigned num_vis = 1000;
+  std::mt19937 rng(42);
+  std::vector<hpg::VisData<1>> vis;
+
+  init_visibilities(num_vis, grid_size, grid_scale, &cf, rng, vis);
+
+  // cf GridderState
+  auto gs_cf =
+    hpg::get_value(
+      hpg::flatmap(
+        hpg::GridderState::create<1>(
+          default_device,
+          0,
+          num_vis,
+          &cf,
+          grid_size,
+          grid_scale,
+          {{0}},
+          {{0}}),
+        [&cf](auto&& gs) {
+          return
+            std::move(gs)
+            .set_convolution_function(default_host_device, std::move(cf));
+        }));
+
+  // devcf GridderState
+  auto gs_wdevcf =
+    hpg::get_value(
+      hpg::flatmap(
+        hpg::GridderState::create<1>(
+          default_device,
+          0,
+          num_vis,
+          wdevcf.get(),
+          grid_size,
+          grid_scale,
+          {{0}},
+          {{0}}),
+        [&wdevcf](auto&& gs) {
+          return
+            std::move(gs)
+            .set_convolution_function(
+              default_host_device,
+              std::move(*wdevcf));
+        }));
+
+  // function to grid visibilities and return gridded values
+  auto gridding =
+    hpg::RvalM<const hpg::GridderState&, hpg::GridderState>::pure(
+      [&](const hpg::GridderState& gs) {
+        return
+          gs.grid_visibilities(default_host_device, decltype(vis)(vis));
+      })
+    .map(
+      [](auto&& gs) {
+        return std::get<1>(std::move(gs).grid_values());
+      });
+
+  auto grid_cf = hpg::get_value(gridding(gs_cf));
+  ASSERT_TRUE(has_non_zero(grid_cf.get()));
+  auto grid_wdevcf_or_err = gridding(gs_wdevcf);
+  ASSERT_TRUE(hpg::is_value(grid_wdevcf_or_err));
+  auto grid_wdevcf = hpg::get_value(std::move(grid_wdevcf_or_err));
+  EXPECT_TRUE(values_eq(grid_cf.get(), grid_wdevcf.get()));
+}
+
+// test efficiency of WritableDeviceCFArray
+TEST(DeviceCFArray, WritableEfficiency) {
+  // create two versions of the following CFArray: one, the original; and two,
+  // the WritableDeviceCFArray equivalent
+  LargeCFArray cf(2);
+
+  // define test as a function of CFArray, to do timing of
+  // set_convolution_function() with given CFArray
+  auto time_set_cf =
+    [](std::vector<std::unique_ptr<hpg::CFArray>>& cfs) {
+      return
+        hpg::RvalM<void, hpg::GridderState>::pure(
+          [&]() {
+            // create the GridderState instance
+            return
+              hpg::GridderState::create<1>(
+                default_device,
+                0,
+                10,
+                cfs[0].get(),
+                {1000, 1000, 1, 1},
+                {0.1, 0.1},
+                {{0}},
+                {{0}});
+          })
+        .map(
+          [](auto&& gs) {
+            // start a timer
+            auto result = std::move(gs).fence();
+            return // (start-time, GridderState) tuple
+              std::make_tuple(
+                std::chrono::steady_clock::now(),
+                std::move(result));
+          })
+        .and_then_loop(
+          unsigned(cfs.size()),
+          [&](unsigned i, auto&& t0_gs) {
+            return
+              hpg::map(
+                // set CF
+                std::get<1>(std::move(t0_gs)).set_convolution_function(
+                  default_host_device,
+                  std::move(*cfs[i])),
+                // insert start time into returned tuple
+                [&](auto&& gs) {
+                  return
+                    std::make_tuple( // (start-time, GridderState) tuple
+                      std::get<0>(std::move(t0_gs)),
+                      std::move(gs));
+                });
+          })
+        .map(
+          [](auto&& t0_gs) {
+            // fence to complete CF transfer
+            std::get<1>(std::move(t0_gs)).fence();
+            // compute elapsed time
+            std::chrono::duration<double> elapsed =
+              std::chrono::steady_clock::now() - std::get<0>(std::move(t0_gs));
+            return elapsed.count();
+          });
+    };
+
+  // run test with a vector of each version of cf, but allocate the vectors one
+  // type at a time to conserve memory
+  const unsigned num_copies = 10;
+  double t_cf;
+  {
+    std::vector<std::unique_ptr<hpg::CFArray>> cfs;
+    for (unsigned i = 0; i < num_copies; ++i) {
+      cfs.emplace_back(new LargeCFArray(cf));
+    }
+    auto tcf_or_err = time_set_cf(cfs)();
+    ASSERT_TRUE(hpg::is_value(tcf_or_err));
+    t_cf = hpg::get_value(tcf_or_err);
+  }
+  double t_wdevcf;
+  {
+    std::vector<std::unique_ptr<hpg::CFArray>> wdevcfs;
+    for (unsigned i = 0; i < num_copies; ++i) {
+      // create WritableDeviceCFArray version of cf
+      auto wdevcf_or_err =
+        hpg::WritableDeviceCFArray::create(default_device, cf);
+      ASSERT_TRUE(hpg::is_value(wdevcf_or_err));
+      auto wdevcf = hpg::get_value(std::move(wdevcf_or_err));
+      for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
+        auto [nx, ny, nm, ncube] = cf.extents(grp);
+        for (unsigned cube = 0; cube < ncube; ++cube)
+          for (unsigned m = 0; m < nm; ++m)
+            for (unsigned y = 0; y < ny; ++y)
+              for (unsigned x = 0; x < nx; ++x)
+                (*wdevcf)(x, y, m, cube, grp) = cf(x, y, m, cube, grp);
+      }
+      wdevcfs.push_back(std::move(wdevcf));
+    }
+    auto twdevcf_or_err = time_set_cf(wdevcfs)();
+    ASSERT_TRUE(hpg::is_value(twdevcf_or_err));
+    t_wdevcf = hpg::get_value(twdevcf_or_err);
+  }
+  std::cout << "cf " << t_cf << "; wdevcf " << t_wdevcf << std::endl;
+  EXPECT_LT(t_wdevcf, t_cf);
+}
+
 int
 main(int argc, char **argv) {
   std::ostringstream oss;
