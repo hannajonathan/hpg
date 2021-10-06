@@ -1698,8 +1698,8 @@ DeviceCFArray::create(
   }
 }
 
-rval_t<std::unique_ptr<WritableDeviceCFArray>>
-WritableDeviceCFArray::create(Device device, const CFArrayShape& shape) {
+rval_t<std::unique_ptr<RWDeviceCFArray>>
+RWDeviceCFArray::create(Device device, const CFArrayShape& shape) {
 
   using namespace runtime;
 
@@ -1707,26 +1707,26 @@ WritableDeviceCFArray::create(Device device, const CFArrayShape& shape) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     return
-      rval<std::unique_ptr<WritableDeviceCFArray>>(
+      rval<std::unique_ptr<RWDeviceCFArray>>(
         std::make_unique<impl::DeviceCFArray<Device::Serial>>(shape));
     break;
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
     return
-      rval<std::unique_ptr<WritableDeviceCFArray>>(
+      rval<std::unique_ptr<RWDeviceCFArray>>(
         std::make_unique<impl::DeviceCFArray<Device::OpenMP>>(shape));
     break;
 #endif // HPG_ENABLE_OPENMP
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
     return
-      rval<std::unique_ptr<WritableDeviceCFArray>>(
+      rval<std::unique_ptr<RWDeviceCFArray>>(
         std::make_unique<impl::DeviceCFArray<Device::Cuda>>(shape));
     break;
 #endif //HPG_ENABLE_CUDA
   default:
-    return rval<std::unique_ptr<WritableDeviceCFArray>>(DisabledDeviceError());
+    return rval<std::unique_ptr<RWDeviceCFArray>>(DisabledDeviceError());
     break;
   }
 }

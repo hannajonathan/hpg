@@ -773,19 +773,19 @@ public:
   virtual ~DeviceCFArray() {}
 };
 
-/** DeviceCFArray sub-class for stored (cached) values in optimized
+/** writable DeviceCFArray sub-class for stored (cached) values in optimized
  * layout for devices
  */
-class HPG_EXPORT WritableDeviceCFArray
+class HPG_EXPORT RWDeviceCFArray
   : public DeviceCFArray {
 public:
 
-  /** create a WritableDeviceCFArray (sub-class) instance
+  /** create a RWDeviceCFArray (sub-class) instance
    *
    * @param device target device
    * @param shape CFArray instance shape
    */
-  static rval_t<std::unique_ptr<WritableDeviceCFArray>>
+  static rval_t<std::unique_ptr<RWDeviceCFArray>>
   create(Device device, const CFArrayShape& shape);
 
   /** element access operator
@@ -807,7 +807,7 @@ public:
     unsigned cube,
     unsigned group) = 0;
 
-  virtual ~WritableDeviceCFArray() {}
+  virtual ~RWDeviceCFArray() {}
 };
 
 /** wrapper for access to copy of grid values

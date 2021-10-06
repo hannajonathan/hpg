@@ -858,11 +858,11 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
 rval_t<size_t>
 min_cf_buffer_size(Device device, const CFArrayShape& cf, unsigned grp);
 
-/** device-specific implementation sub-class of hpg::WritableDeviceCFArray
+/** device-specific implementation sub-class of hpg::RWDeviceCFArray
  * class */
 template <Device D>
 class /*HPG_EXPORT*/ DeviceCFArray
-  : public hpg::WritableDeviceCFArray {
+  : public hpg::RWDeviceCFArray {
 public:
 
   using kokkos_device = typename DeviceT<D>::kokkos_device;

@@ -656,14 +656,14 @@ TEST(DeviceCFArray, Efficiency) {
   EXPECT_LT(t_devcf, t_cf);
 }
 
-// test equivalency of gridding with WritableDeviceCFArray
-TEST(DeviceCFArray, WritableGridding) {
+// test equivalency of gridding with RWDeviceCFArray
+TEST(DeviceCFArray, RWGridding) {
   // CF definition
   const unsigned oversampling = 20;
   ConeCFArray cf(1, oversampling, {10}); // TODO: more Mueller indexes
 
-  // create WritableDeviceCFArray
-  auto wdevcf_or_err = hpg::WritableDeviceCFArray::create(default_device, cf);
+  // create RWDeviceCFArray
+  auto wdevcf_or_err = hpg::RWDeviceCFArray::create(default_device, cf);
   ASSERT_TRUE(hpg::is_value(wdevcf_or_err));
   auto wdevcf = hpg::get_value(std::move(wdevcf_or_err));
   for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
@@ -746,10 +746,10 @@ TEST(DeviceCFArray, WritableGridding) {
   EXPECT_TRUE(values_eq(grid_cf.get(), grid_wdevcf.get()));
 }
 
-// test efficiency of WritableDeviceCFArray
-TEST(DeviceCFArray, WritableEfficiency) {
+// test efficiency of RWDeviceCFArray
+TEST(DeviceCFArray, RWEfficiency) {
   // create two versions of the following CFArray: one, the original; and two,
-  // the WritableDeviceCFArray equivalent
+  // the RWDeviceCFArray equivalent
   LargeCFArray cf(2);
 
   // define test as a function of CFArray, to do timing of
@@ -825,9 +825,9 @@ TEST(DeviceCFArray, WritableEfficiency) {
   {
     std::vector<std::unique_ptr<hpg::CFArray>> wdevcfs;
     for (unsigned i = 0; i < num_copies; ++i) {
-      // create WritableDeviceCFArray version of cf
+      // create RWDeviceCFArray version of cf
       auto wdevcf_or_err =
-        hpg::WritableDeviceCFArray::create(default_device, cf);
+        hpg::RWDeviceCFArray::create(default_device, cf);
       ASSERT_TRUE(hpg::is_value(wdevcf_or_err));
       auto wdevcf = hpg::get_value(std::move(wdevcf_or_err));
       for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
