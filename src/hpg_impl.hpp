@@ -878,7 +878,7 @@ public:
   /** extents by group */
   std::vector<std::array<unsigned, rank - 1>> m_extents;
   /** buffers in host memory with CF values */
-  std::vector<std::vector<value_type>> m_arrays;
+  std::vector<std::vector<core::cf_t>> m_arrays;
   /** Views of host memory buffers */
   std::vector<cfd_view_h> m_views;
 
@@ -888,10 +888,9 @@ public:
 
     for (unsigned grp = 0; grp < shape.num_groups(); ++grp) {
       m_extents.push_back(shape.extents(grp));
-      m_arrays.emplace_back(
-        hpg::get_value(min_cf_buffer_size(D, shape, grp)));
+      m_arrays.emplace_back(hpg::get_value(min_cf_buffer_size(D, shape, grp)));
       m_views.emplace_back(
-        reinterpret_cast<core::cf_t*>(m_arrays.back().data()),
+        m_arrays.back().data(),
         cflayout::dimensions(this, m_extents.size() - 1));
     }
   }
@@ -905,11 +904,17 @@ public:
     : m_version(version)
     , m_oversampling(oversampling) {
 
-    for (auto&& e_v : arrays) {
-      m_extents.push_back(std::get<0>(e_v));
-      m_arrays.push_back(std::get<1>(std::move(e_v)));
+    for (auto& [e, v] : arrays) {
+      m_extents.push_back(e);
+      // we unfortunately must copy values from `arrays` because `core::cf_t` is
+      // defined by the implementation, and is not the same type as `value_type`
+      // (Kokkos::complex type has different alignment than std::complex)
+      std::vector<core::cf_t> vals;
+      vals.reserve(v.size());
+      std::copy(v.begin(), v.end(), std::back_inserter(vals));
+      m_arrays.push_back(std::move(vals));
       m_views.emplace_back(
-        reinterpret_cast<core::cf_t*>(m_arrays.back().data()),
+        m_arrays.back().data(),
         cflayout::dimensions(this, m_extents.size() - 1));
     }
   }
