@@ -788,6 +788,8 @@ public:
   static rval_t<std::unique_ptr<RWDeviceCFArray>>
   create(Device device, const CFArrayShape& shape);
 
+  using CFArray::operator();
+
   /** element access operator
    *
    * @param x X coordinate, relative to padded domain edge (oversampled units)
