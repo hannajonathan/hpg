@@ -19,6 +19,7 @@ option(Hpg_ENABLE_ALL "Enable all devices enabled by Kokkos installation" ON)
 option(Hpg_ENABLE_SERIAL "Enable Serial device" ${Hpg_ENABLE_ALL})
 option(Hpg_ENABLE_OPENMP "Enable OpenMP device" ${Hpg_ENABLE_ALL})
 option(Hpg_ENABLE_CUDA "Enable CUDA device" ${Hpg_ENABLE_ALL})
+option(Hpg_ENABLE_MPI "Enable MPI runtime" OFF)
 set(Hpg_API 11 CACHE STRING "HPG API C++ standard")
 option(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   "Enable experimental kernel versions" OFF)
@@ -34,6 +35,16 @@ list(FIND HPG_API_OPTIONS ${Hpg_API} VALID_HPG_API)
 if(VALID_HPG_API LESS 0)
   message(FATAL_ERROR
     "Invalid Hpg_API; supported options are ${HPG_API_OPTIONS}")
+endif()
+
+# can only enable MPI when experimental implementations are enabled
+#
+# TODO: remove this when current experimental gridding implementation
+# is promoted to default
+#
+if(Hpg_ENABLE_MPI AND NOT Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
+  message(FATAL_ERROR
+    "MPI runtime may only be enabled when experimental implementations are enabled")
 endif()
 
 set(HAVE_SERIAL -1)
@@ -80,6 +91,15 @@ if((HAVE_SERIAL EQUAL -1) AND (HAVE_OPENMP EQUAL -1))
 endif()
 kokkos_check(DEVICES ${ENABLED_DEVICES})
 
+# find MPI
+#
+if(Hpg_ENABLE_MPI)
+  find_package(MPI REQUIRED COMPONENTS CXX)
+  if(${MPI_CXX_VERSION_MAJOR} VERSION_LESS 3)
+    message(FATAL_ERROR "HPG requires MPI 3 or later")
+  endif()
+endif()
+
 # find FFTW
 #
 if(HAVE_SERIAL GREATER -1 OR HAVE_OPENMP GREATER -1)
@@ -123,6 +143,10 @@ set_property(TARGET hpg_hpg APPEND PROPERTY
 target_link_libraries(hpg_hpg
   PRIVATE hpg::version)
 add_library(hpg::hpg ALIAS hpg_hpg)
+if(Hpg_ENABLE_MPI)
+  set(HPG_ENABLE_MPI ${Hpg_ENABLE_MPI})
+  target_link_libraries(hpg_hpg PUBLIC MPI::MPI_CXX)
+endif()
 if(HAVE_SERIAL GREATER -1)
   set(HPG_ENABLE_SERIAL ${Hpg_ENABLE_SERIAL})
   if(HAVE_OPENMP LESS 0)
@@ -148,6 +172,7 @@ endif()
 set(HPG_ENABLE_SERIAL ${HPG_ENABLE_SERIAL} PARENT_SCOPE)
 set(HPG_ENABLE_OPENMP ${HPG_ENABLE_OPENMP} PARENT_SCOPE)
 set(HPG_ENABLE_CUDA ${HPG_ENABLE_CUDA} PARENT_SCOPE)
+set(HPG_ENABLE_MPI ${HPG_ENABLE_MPI} PARENT_SCOPE)
 
 # use configuration file to save some variables that affect API
 configure_file(hpg_config.hpp.in hpg_config.hpp)
