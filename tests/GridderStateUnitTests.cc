@@ -1869,6 +1869,72 @@ TEST(GridderState, ShiftCycle) {
 }
 #endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
+#ifdef HPG_DELTA_EXPERIMENTAL_ONLY
+TEST(GridderState, CompareExp) {
+  const std::array<unsigned, 4> grid_size{16384, 16384, 1, 1};
+  const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
+  constexpr unsigned cf_radius = 45;
+  constexpr unsigned cf_oversampling = 20;
+  constexpr hpg::vis_frequency_fp freq = 3.693e+09;
+  constexpr std::complex<hpg::visibility_fp> vis(1.0, -1.0);
+  constexpr hpg::vis_weight_fp wgt = 1.0;
+
+  ConeCFArray cf(1, cf_oversampling, cf_radius);
+
+  auto test =
+    [=](const std::array<unsigned, 4>& vsns, hpg::vis_uvw_t uvw) {
+      return
+        hpg::RvalM<void, hpg::GridderState>::pure(
+          [=]() {
+            return
+              hpg::GridderState
+              ::create<1>(
+                default_device,
+                0,
+                1,
+                &cf,
+                grid_size,
+                grid_scale,
+                {{0}},
+                {{0}},
+                vsns);
+          })
+        .and_then(
+          [=](auto&& gs) {
+            return
+              std::move(gs)
+              .set_convolution_function(default_host_device, ConeCFArray(cf));
+          })
+        .and_then(
+          [=](auto&& gs) {
+            return
+              std::move(gs)
+              .grid_visibilities(
+                default_host_device,
+                std::vector<hpg::VisData<1>>{
+                  hpg::VisData<1>({vis}, {wgt}, freq, 0.0, uvw, 0, {0, 0})},
+                true);
+          })
+        .map(
+          [](auto&& gs) {
+            auto [gs1, gv] = std::move(gs).grid_values();
+            auto [gs2, gw] = std::move(gs1).grid_weights();
+            return std::make_tuple(std::move(gv), std::move(gw));
+          });
+        };
+
+  const hpg::vis_uvw_t uvw{2344.1, 638.066, -1826.55};
+  auto err_or_result_default = test({0, 0, 0, 0}, uvw)();
+  ASSERT_TRUE(hpg::is_value(err_or_result_default));
+  auto [g0, w0] = hpg::get_value(std::move(err_or_result_default));
+  auto err_or_result_exp = test(impl_versions, uvw)();
+  ASSERT_TRUE(hpg::is_value(err_or_result_exp));
+  auto [g1, w1] = hpg::get_value(std::move(err_or_result_exp));
+  EXPECT_TRUE(values_eq(g0.get(), g1.get()));
+  EXPECT_TRUE(values_eq(w0.get(), w1.get()));
+}
+#endif
+
 int
 main(int argc, char **argv) {
   std::ostringstream oss;
