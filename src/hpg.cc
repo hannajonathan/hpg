@@ -267,10 +267,6 @@ GridderState::GridderState(const GridderState& h) {
   *this = h;
 }
 
-GridderState::GridderState(GridderState&& h) noexcept {
-  *this = std::move(h);
-}
-
 GridderState&
 GridderState::operator=(const GridderState& rhs) {
 
@@ -306,13 +302,6 @@ GridderState::operator=(const GridderState& rhs) {
     assert(false);
     break;
   }
-  return *this;
-}
-
-GridderState&
-GridderState::operator=(GridderState&& rhs) noexcept {
-
-  impl = std::move(rhs).impl;
   return *this;
 }
 
@@ -1012,12 +1001,6 @@ Gridder::Gridder(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
       )) {}
 
-Gridder::Gridder(const Gridder& other)
-  : state(other.state) {}
-
-Gridder::Gridder(Gridder&& other) noexcept
-  : state(std::move(other).state) {}
-
 Gridder::Gridder(GridderState&& st) noexcept
   : state(std::move(st)) {}
 
@@ -1056,20 +1039,6 @@ Gridder::create(
     return rval(Gridder(get_value(std::move(err_or_gs))));
   else
     return rval<Gridder>(get_error(std::move(err_or_gs)));
-}
-
-Gridder&
-Gridder::operator=(const Gridder& rhs) {
-  GridderState tmp(rhs.state);
-  state.swap(tmp);
-  return *this;
-}
-
-Gridder&
-Gridder::operator=(Gridder&& rhs) noexcept {
-  GridderState tmp(std::move(rhs).state);
-  state.swap(tmp);
-  return *this;
 }
 
 Device

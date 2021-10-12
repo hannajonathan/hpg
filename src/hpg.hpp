@@ -1260,7 +1260,7 @@ public:
 
   /** move constructor
    */
-  GridderState(GridderState&&) noexcept;
+  GridderState(GridderState&&) noexcept = default;
 
   virtual ~GridderState();
 
@@ -1274,7 +1274,7 @@ public:
   /** move assignment
    */
   GridderState&
-  operator=(GridderState&&) noexcept;
+  operator=(GridderState&&) noexcept = default;
 
   /** device */
   Device
@@ -2345,21 +2345,21 @@ public:
    *
    * Invokes fence() on argument.
    */
-  Gridder(const Gridder& other);
+  Gridder(const Gridder& other) = default;
 
   /** move constructor */
-  Gridder(Gridder&& other) noexcept;
+  Gridder(Gridder&& other) noexcept = default;
 
   /** copy assignment
    *
    * Invokes fence() on argument
    */
   Gridder&
-  operator=(const Gridder&);
+  operator=(const Gridder&) = default;
 
   /** move assignment*/
   Gridder&
-  operator=(Gridder&&) noexcept;
+  operator=(Gridder&&) noexcept = default;
 
   virtual ~Gridder();
 
