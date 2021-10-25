@@ -574,6 +574,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   K::Array<int, 2> m_oversampling;
   size_t m_shmem_size;
 
+  unsigned m_cube_offset;
   /** constructor
    *
    * first argument is needed for complete class template argument deduction
@@ -595,7 +596,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const K::Array<GridScale, 2>& grid_scale,
     const GridView& grid,
     const GridWeightView& grid_weights,
-    const ModelView& model)
+    const ModelView& model,
+    unsigned cube_offset)
   : m_exec(exec)
   , m_cf_radii(cf_radii)
   , m_max_cf_extent_y(max_cf_extent_y)
@@ -774,17 +776,20 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
           m_max_cf_extent_y);
       compute_phase_screen(team_member, vis, phscr);
       for (int j = m_viswgt_row_index(i); j < m_viswgt_row_index(i + 1); ++j) {
-        auto v =
-          degrid_vis(
-            team_member,
-            vis,
-            m_viswgt_col_index(i),
-            m_cfs[vis.m_cf_grp],
-            m_mueller_indexes,
-            m_conjugate_mueller_indexes,
-            m_model,
-            phscr);
-        K::single(K::PerTeam(team_member), [&](){ gvis += v; });
+        if (m_cube_offset <= m_viswgt_col_index(j)
+            && m_viswgt_col_index(j) < m_cube_offset + m_cube_size FIXME) {
+          auto v =
+            degrid_vis(
+              team_member,
+              vis,
+              m_viswgt_col_index(j),
+              m_cfs[vis.m_cf_grp] - m_cube_offset,
+              m_mueller_indexes,
+              m_conjugate_mueller_indexes,
+              m_model,
+              phscr);
+          K::single(K::PerTeam(team_member), [&](){ gvis += v; });
+        }
       }
     } else {
       K::single(K::PerTeam(team_member), [&](){ gvis.set_nan(); });
@@ -1100,13 +1105,15 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
           m_max_cf_extent_y);
       compute_phase_screen(team_member, vis, phscr);
       for (int j = m_viswgt_row_index(i); j < m_viswgt_row_index(i + 1); ++j)
-        grid_one(
-          vis,
-          m_viswgt_col_index(j),
-          m_viswgts(j),
-          gpol,
-          m_cfs[vis.m_cf_grp],
-          phscr);
+        if (m_cube_offset <= m_viswgt_col_index(j)
+            && m_viswgt_col_index(j) < m_cube_offset + m_cube_size FIXME)
+          grid_one(
+            vis,
+            m_viswgt_col_index(j) - m_cube_offset,
+            m_viswgts(j),
+            gpol,
+            m_cfs[vis.m_cf_grp],
+            phscr);
       }
   }
 

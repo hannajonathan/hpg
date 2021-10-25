@@ -1120,7 +1120,8 @@ public:
         m_grid_scale,
         m_grid,
         m_grid_weights,
-        m_model);
+        m_model,
+        0);
 
     if (do_degrid) {
       gridder.degrid_all();
