@@ -832,7 +832,7 @@ struct /*HPG_EXPORT*/ ExecSpace final {
 
 /** Kokkos state implementation for a device type */
 template <Device D>
-struct /*HPG_EXPORT*/ StateT final
+struct /*HPG_EXPORT*/ StateT
   : public State {
 public:
 
@@ -984,7 +984,7 @@ public:
     return StateT(*this);
   }
 
-  size_t
+  virtual size_t
   convolution_function_region_size(const CFArrayShape* shape)
     const noexcept override {
     std::scoped_lock lock(m_mtx);
@@ -1272,13 +1272,13 @@ public:
     }
   }
 
-  void
+  virtual void
   fence() const noexcept override {
     std::scoped_lock lock(m_mtx);
     fence_unlocked();
   }
 
-  std::unique_ptr<GridWeightArray>
+  virtual std::unique_ptr<GridWeightArray>
   grid_weights() const override {
     std::scoped_lock lock(m_mtx);
     fence_unlocked();
@@ -1290,7 +1290,7 @@ public:
     return std::make_unique<impl::GridWeightViewArray<D>>(wgts_h);
   }
 
-  std::shared_ptr<GridWeightArray::value_type>
+  virtual std::shared_ptr<GridWeightArray::value_type>
   grid_weights_ptr() const override {
     return
       std::make_shared<
@@ -1299,12 +1299,12 @@ public:
           memory_space>>(m_grid_weights)->ptr();
   }
 
-  size_t
+  virtual size_t
   grid_weights_span() const override {
     return m_grid_weights.span();
   }
 
-  std::unique_ptr<GridValueArray>
+  virtual std::unique_ptr<GridValueArray>
   grid_values() const override {
     std::scoped_lock lock(m_mtx);
     fence_unlocked();
@@ -1316,7 +1316,7 @@ public:
     return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
   }
 
-  std::shared_ptr<GridValueArray::value_type>
+  virtual std::shared_ptr<GridValueArray::value_type>
   grid_values_ptr() const override {
     return
       std::make_shared<
@@ -1324,12 +1324,12 @@ public:
       ->ptr();
   }
 
-  size_t
+  virtual size_t
   grid_values_span() const override {
     return m_grid.span();
   }
 
-  std::unique_ptr<GridValueArray>
+  virtual std::unique_ptr<GridValueArray>
   model_values() const override {
     std::scoped_lock lock(m_mtx);
     fence_unlocked();
@@ -1350,7 +1350,7 @@ public:
     }
   }
 
-  std::shared_ptr<GridValueArray::value_type>
+  virtual std::shared_ptr<GridValueArray::value_type>
   model_values_ptr() const override {
     return
       std::make_shared<
@@ -1358,24 +1358,24 @@ public:
       ->ptr();
   }
 
-  size_t
+  virtual size_t
   model_values_span() const override {
     return m_model.span();
   }
 
-  void
+  virtual void
   reset_grid() override {
     fence();
     new_grid(true, true);
   }
 
-  void
+  virtual void
   reset_model() override {
     fence();
     m_model = decltype(m_model)();
   }
 
-  void
+  virtual void
   normalize_by_weights(grid_value_fp wfactor) override {
     impl::core::GridNormalizer(
       m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
@@ -1487,7 +1487,7 @@ public:
     return err;
   }
 
-  void
+  virtual void
   shift_grid(ShiftDirection direction) override {
     impl::core::GridShifter(
       m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
@@ -1496,7 +1496,7 @@ public:
       .shift();
   }
 
-  void
+  virtual void
   shift_model(ShiftDirection direction) override {
     impl::core::GridShifter(
       m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
@@ -1505,7 +1505,7 @@ public:
       .shift();
   }
 
-private:
+protected:
 
   void
   fence_unlocked() const noexcept {
@@ -1747,7 +1747,7 @@ protected:
     last = esp_idx;
   }
 
-private:
+protected:
 
   void
   new_grid(std::variant<const StateT*, bool> source, bool also_weights) {
