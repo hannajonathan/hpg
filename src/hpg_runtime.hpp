@@ -160,16 +160,16 @@ struct /*HPG_EXPORT*/ State {
   convolution_function_region_size(const CFArrayShape* shape)
     const noexcept = 0;
 
-  virtual std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   allocate_convolution_function_region(const CFArrayShape* shape) = 0;
 
-  virtual std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   set_convolution_function(Device host_device, CFArray&& cf) = 0;
 
-  virtual std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   set_model(Device host_device, GridValueArray&& gv) = 0;
 
-  virtual std::variant<Error, maybe_vis_t>
+  virtual std::variant<std::unique_ptr<Error>, maybe_vis_t>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
@@ -220,10 +220,10 @@ struct /*HPG_EXPORT*/ State {
   virtual void
   normalize_by_weights(grid_value_fp wfactor) = 0;
 
-  virtual std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) = 0;
 
-  virtual std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place) = 0;
 
   virtual void
@@ -994,7 +994,7 @@ public:
       : std::get<0>(m_cfs[m_cf_indexes.front()]).pool.extent(0);
   }
 
-  std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   allocate_convolution_function_region(const CFArrayShape* shape) override {
     fence();
     for (auto& [cf, last] : m_cfs) {
@@ -1004,7 +1004,7 @@ public:
     return std::nullopt;
   }
 
-  std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   set_convolution_function(Device host_device, CFArray&& cf_array) override {
 
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
@@ -1015,7 +1015,7 @@ public:
           || (extents[CFArray::Axis::y] >
               m_grid_size[int(impl::core::GridAxis::y)]
               * cf_array.oversampling()))
-        return CFSupportExceedsGridError();
+        return std::make_unique<CFSupportExceedsGridError>();
     }
 
     switch_cf_pool();
@@ -1031,12 +1031,12 @@ public:
     return std::nullopt;
   }
 
-  std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   set_model(Device host_device, GridValueArray&& gv) override {
     std::array<unsigned, 4>
       model_sz{gv.extent(0), gv.extent(1), gv.extent(2), gv.extent(3)};
     if (m_grid_size != model_sz)
-      return InvalidModelGridSizeError(model_sz, m_grid_size);
+      return std::make_unique<InvalidModelGridSizeError>(model_sz, m_grid_size);
 
     fence();
     auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
@@ -1071,7 +1071,7 @@ public:
         break;
 #endif
       default:
-        return DisabledHostDeviceError();
+        return std::make_unique<DisabledHostDeviceError>();
         break;
       }
       K::deep_copy(exec.space, m_model, model_h);
@@ -1199,7 +1199,7 @@ public:
     }
   }
 
-  std::variant<Error, State::maybe_vis_t>
+  virtual std::variant<std::unique_ptr<Error>, State::maybe_vis_t>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
@@ -1267,7 +1267,7 @@ public:
       break;
     default:
       assert(false);
-      return Error("Assertion violation");
+      return std::make_unique<Error>("Assertion violation");
       break;
     }
   }
@@ -1385,11 +1385,11 @@ public:
       .normalize();
   }
 
-  std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place)
     override {
 
-    std::optional<Error> err;
+    std::optional<std::unique_ptr<Error>> err;
     if (in_place) {
       switch (fft_version()) {
       case 0:
@@ -1431,11 +1431,11 @@ public:
     return err;
   }
 
-  std::optional<Error>
+  virtual std::optional<std::unique_ptr<Error>>
   apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place)
     override {
 
-    std::optional<Error> err;
+    std::optional<std::unique_ptr<Error>> err;
     if (m_model.is_allocated()){
       if (in_place) {
         switch (fft_version()) {
@@ -1824,7 +1824,7 @@ private:
 struct /*HPG_EXPORT*/ GridderState {
 
   template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
+  static std::variant<std::unique_ptr<Error>, ::hpg::GridderState>
   allocate_convolution_function_region(GS&& st, const CFArrayShape* shape) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
@@ -1836,7 +1836,7 @@ struct /*HPG_EXPORT*/ GridderState {
   }
 
   template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
+  static std::variant<std::unique_ptr<Error>, ::hpg::GridderState>
   set_convolution_function(GS&& st, Device host_device, CFArray&& cf) {
 
     if (host_devices().count(host_device) > 0) {
@@ -1848,12 +1848,12 @@ struct /*HPG_EXPORT*/ GridderState {
       else
         return std::move(result);
     } else {
-      return DisabledHostDeviceError();
+      return std::make_unique<DisabledHostDeviceError>();
     }
   }
 
   template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
+  static std::variant<std::unique_ptr<Error>, ::hpg::GridderState>
   set_model(GS&& st, Device host_device, GridValueArray&& gv) {
 
     if (host_devices().count(host_device) > 0) {
@@ -1864,13 +1864,13 @@ struct /*HPG_EXPORT*/ GridderState {
       else
         return std::move(result);
     } else {
-      return DisabledHostDeviceError();
+      return std::make_unique<DisabledHostDeviceError>();
     }
   }
 
   template <typename GS>
   static std::variant<
-    Error,
+    std::unique_ptr<Error>,
     std::tuple<::hpg::GridderState, future<VisDataVector>>>
   grid_visibilities(
     GS&& st,
@@ -1883,20 +1883,20 @@ struct /*HPG_EXPORT*/ GridderState {
     bool do_grid) {
 
     if (host_devices().count(host_device) == 0)
-      return DisabledHostDeviceError();
+      return std::make_unique<DisabledHostDeviceError>();
 
     auto num_visibilities = visibilities.size();
     if (num_visibilities > st.impl->m_visibility_batch_size)
-      return ExcessiveNumberVisibilitiesError();
+      return std::make_unique<ExcessiveNumberVisibilitiesError>();
 
     if (visibilities.m_npol != st.impl->m_num_polarizations)
-      return InvalidNumberPolarizationsError();
+      return std::make_unique<InvalidNumberPolarizationsError>();
 
     if (!do_grid && update_grid_weights)
-      return UpdateWeightsWithoutGriddingError();
+      return std::make_unique<UpdateWeightsWithoutGriddingError>();
 
     if (num_visibilities != grid_channel_maps.size())
-      return GridChannelMapsSizeError();
+      return std::make_unique<GridChannelMapsSizeError>();
 
     // convert channel map to matrix in CRS format
     size_t max_num_channels =
@@ -1915,7 +1915,7 @@ struct /*HPG_EXPORT*/ GridderState {
       }
     }
     if (col_index.size() > max_num_channels)
-      return ExcessiveVisibilityChannelsError();
+      return std::make_unique<ExcessiveVisibilityChannelsError>();
     row_index.push_back(col_index.size());
 
     ::hpg::GridderState result(std::forward<GS>(st));
@@ -1930,8 +1930,8 @@ struct /*HPG_EXPORT*/ GridderState {
         do_degrid,
         return_visibilities,
         do_grid);
-    if (std::holds_alternative<Error>(err_or_maybevis)) {
-      return std::get<Error>(std::move(err_or_maybevis));
+    if (std::holds_alternative<std::unique_ptr<Error>>(err_or_maybevis)) {
+      return std::get<std::unique_ptr<Error>>(std::move(err_or_maybevis));
     } else {
       auto mvs = std::get<State::maybe_vis_t>(std::move(err_or_maybevis));
 #if HPG_API >= 17
@@ -1973,7 +1973,7 @@ struct /*HPG_EXPORT*/ GridderState {
   }
 
   template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
+  static std::variant<std::unique_ptr<Error>, ::hpg::GridderState>
   apply_grid_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
@@ -1984,7 +1984,7 @@ struct /*HPG_EXPORT*/ GridderState {
   }
 
   template <typename GS>
-  static std::variant<Error, ::hpg::GridderState>
+  static std::variant<std::unique_ptr<Error>, ::hpg::GridderState>
   apply_model_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
 
     ::hpg::GridderState result(std::forward<GS>(st));

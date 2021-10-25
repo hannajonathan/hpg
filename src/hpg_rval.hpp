@@ -32,7 +32,7 @@ namespace hpg {
  */
 #if HPG_API >= 17
 template <typename T>
-using rval_t = std::variant<Error, T>;
+using rval_t = std::variant<std::unique_ptr<Error>, T>;
 #else // HPG_API < 17
 template <typename T>
 using rval_t = std::tuple<std::unique_ptr<Error>, T>;
@@ -44,7 +44,7 @@ template <typename T>
 HPG_EXPORT inline bool
 is_error(const rval_t<T>& rv) {
 #if HPG_API >= 17
-  return std::holds_alternative<Error>(rv);
+  return std::holds_alternative<std::unique_ptr<Error>>(rv);
 #else // HPG_API < 17
   return bool(std::get<0>(rv));
 #endif // HPG_API >= 17
@@ -107,35 +107,23 @@ get_value(RV&& rv) {
 template <typename RV>
 HPG_EXPORT inline auto
 get_error(RV&& rv) {
-# if HPG_API >= 17
   return std::get<0>(std::forward<RV>(rv));
-# else
-  return *std::get<0>(std::forward<RV>(rv));
-# endif
 }
 #else // __cplusplus < 201402L
 template <typename RV>
-HPG_EXPORT inline const Error&
+HPG_EXPORT inline const std::unique_ptr<Error>&
 get_error(const RV& rv) {
-# if HPG_API >= 17
-#  error "Unsupported c++ standard and HPG API version"
-# else // HPG_API < 17
-  return *std::get<0>(rv);
-# endif // HPG_API >= 17
+  return std::get<0>(rv);
 }
 template <typename RV>
-HPG_EXPORT inline Error&
+HPG_EXPORT inline std::unique_ptr<Error>&
 get_error(RV& rv) {
-# if HPG_API >= 17
-#  error "Unsupported c++ standard and HPG API version"
-# else // HPG_API < 17
-  return *std::get<0>(rv);
-# endif // HPG_API >= 17
+  return std::get<0>(rv);
 }
 template <typename RV>
-HPG_EXPORT inline Error
+HPG_EXPORT inline std::unique_ptr<Error>
 get_error(RV&& rv) {
-  return *std::get<0>(std::move(rv));
+  return std::get<0>(std::move(rv));
 }
 #endif // __cplusplus >= 201402L
 
@@ -155,11 +143,11 @@ rval(T&& t) {
  */
 template <typename T>
 HPG_EXPORT inline rval_t<T>
-rval(const Error& err) {
+rval(std::unique_ptr<Error>&& err) {
 #if HPG_API >= 17
-  return rval_t<T>(err);
+  return rval_t<T>(std::move(err));
 #else // HPG_API < 17
-  return {std::unique_ptr<Error>(new Error(err)), T()};
+  return {std::move(err), T()};
 #endif // HPG_API >= 17
 }
 
@@ -210,12 +198,12 @@ fold(RV&& rv, ValF vf, ErrF ef) {
   static_assert(
     std::is_same_v<
       std::invoke_result_t<ValF, typename rval_value<RV>::type>,
-      std::invoke_result_t<ErrF, Error>>);
+      std::invoke_result_t<ErrF, std::unique_ptr<Error>&&>>);
 #else // hpg_api < 17
   static_assert(
     std::is_same<
       typename std::result_of<ValF(typename rval_value<RV>::type)>::type,
-      typename std::result_of<ErrF(Error)>::type>::value);
+      typename std::result_of<ErrF(std::unique_ptr<Error>&&)>::type>::value);
 #endif // hpg_api >= 17
 
   if (is_value(rv))

@@ -30,35 +30,6 @@ using ProfileRegion = runtime::impl::ProfileRegion;
 // named "GridderState", the use of which would then require disambiguation; I
 // prefer putting "using runtime" into method implementations where useful
 
-/** invalid number of Mueller index rows error
- *
- * Number of rows of Mueller indexes does not equal grid "mrow" axis size */
-struct InvalidNumberMuellerIndexRowsError
-  : public Error {
-
-  InvalidNumberMuellerIndexRowsError()
-    : Error(
-      "Number of rows of Mueller indexes does not match grid",
-      ErrorType::InvalidNumberMuellerIndexRows) {}
-
-};
-
-Error::Error(const std::string& msg, ErrorType err)
-  : m_type(err)
-  , m_msg(msg) {}
-
-const std::string&
-Error::message() const {
-  return m_msg;
-}
-
-ErrorType
-Error::type() const {
-  return m_type;
-}
-
-Error::~Error() {}
-
 bool
 hpg::is_initialized() noexcept {
   return runtime::impl::is_initialized();
@@ -132,11 +103,11 @@ ScopeGuard::~ScopeGuard() {
 
 template <typename T>
 static rval_t<T>
-to_rval(std::variant<Error, T>&& t) {
+to_rval(std::variant<std::unique_ptr<Error>, T>&& t) {
   if (std::holds_alternative<T>(t))
     return rval<T>(std::get<T>(std::move(t)));
   else
-    return rval<T>(std::get<Error>(std::move(t)));
+    return rval<T>(std::get<std::unique_ptr<Error>>(std::move(t)));
 }
 
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
@@ -245,7 +216,9 @@ GridderState::create(
 
   if (grid_size[2] != mueller_indexes.size()
       || grid_size[2] != conjugate_mueller_indexes.size())
-    return rval<GridderState>(InvalidNumberMuellerIndexRowsError());
+    return
+      rval<GridderState>(
+        std::make_unique<InvalidNumberMuellerIndexRowsError>());
 
   if (devices().count(device) > 0)
     return
@@ -265,8 +238,7 @@ GridderState::create(
 #endif
           ));
   else
-    return rval<GridderState>(DisabledDeviceError());
-
+    return rval<GridderState>(std::make_unique<DisabledDeviceError>());
 }
 
 GridderState::GridderState(const GridderState& h) {
@@ -1124,70 +1096,76 @@ Gridder::convolution_function_region_size(const CFArrayShape* shape)
   return state.convolution_function_region_size(shape);
 }
 
-opt_t<Error>
+opt_error_t
 Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state).allocate_convolution_function_region(shape),
-      [this](auto&& gs) -> std::optional<Error> {
+      [this](auto&& gs) -> opt_error_t {
         this->state = std::move(gs);
         return std::nullopt;
       },
-      [](auto&& err) -> std::optional<Error> {
+      [](auto&& err) -> opt_error_t {
         return std::move(err);
       });
 #else //HPG_API < 17
-  std::shared_ptr<Error> result;
+  std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).allocate_convolution_function_region(shape);
-  return result;
+  if (result)
+    return std::make_shared<std::unique_ptr<Error>>(std::move(result));
+  return opt_error_t();
 #endif //HPG_API >= 17
 }
 
-opt_t<Error>
+opt_error_t
 Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state).set_convolution_function(host_device, std::move(cf)),
-      [this](auto&& gs) -> std::optional<Error> {
+      [this](auto&& gs) -> opt_error_t {
         this->state = std::move(gs);
         return std::nullopt;
       },
-      [](auto&& err) -> std::optional<Error> {
+      [](auto&& err) -> opt_error_t {
         return std::move(err);
       });
 #else // HPG_API < 17
-  std::shared_ptr<Error> result;
+  std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).set_convolution_function(host_device, std::move(cf));
-  return result;
+  if (result)
+    return std::make_shared<std::unique_ptr<Error>>(std::move(result));
+  return opt_error_t();
 #endif //HPG_API >= 17
 }
 
-opt_t<Error>
+opt_error_t
 Gridder::set_model(Device host_device, GridValueArray&& gv) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state).set_model(host_device, std::move(gv)),
-      [this](auto&& gs) -> std::optional<Error> {
+      [this](auto&& gs) -> opt_error_t {
         this->state = std::move(gs);
         return std::nullopt;
       },
-      [](auto&& err) -> std::optional<Error> {
+      [](auto&& err) -> opt_error_t {
         return std::move(err);
       });
 #else // HPG_API < 17
-  std::shared_ptr<Error> result;
+  std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).set_model(host_device, std::move(gv));
-  return result;
+  if (result)
+    return std::make_shared<std::unique_ptr<Error>>(std::move(result));
+  return opt_error_t();
 #endif //HPG_API >= 17
 }
 
-opt_t<Error>
+opt_error_t
 Gridder::grid_visibilities(
   Device host_device,
   VisDataVector&& visibilities,
@@ -1202,11 +1180,11 @@ Gridder::grid_visibilities(
         std::move(visibilities),
         grid_channel_maps,
         update_grid_weights),
-      [this](auto&& gs) -> std::optional<Error> {
+      [this](auto&& gs) -> opt_error_t {
         this->state = std::move(gs);
         return std::nullopt;
       },
-      [](auto&& err) -> std::optional<Error> {
+      [](auto&& err) -> opt_error_t {
         return std::move(err);
       });
 #else // HPG_API < 17
@@ -1217,13 +1195,14 @@ Gridder::grid_visibilities(
       std::move(visibilities),
       grid_channel_maps,
       update_grid_weights);
-  if (!err)
-    state = std::move(gs);
-  return std::move(err);
+  if (err)
+    return std::make_shared<std::unique_ptr<Error>>(std::move(err));
+  state = std::move(gs);
+  return opt_error_t();
 #endif // HPG_API >= 17
 }
 
-opt_t<Error>
+opt_error_t
 Gridder::degrid_grid_visibilities(
   Device host_device,
   VisDataVector&& visibilities,
@@ -1238,11 +1217,11 @@ Gridder::degrid_grid_visibilities(
         std::move(visibilities),
         grid_channel_maps,
         update_grid_weights),
-      [this](auto&& gs) -> std::optional<Error> {
+      [this](auto&& gs) -> opt_error_t {
         this->state = std::move(gs);
         return std::nullopt;
       },
-      [](auto&& err) -> std::optional<Error> {
+      [](auto&& err) -> opt_error_t {
         return std::move(err);
       });
 #else // HPG_API < 17
@@ -1253,9 +1232,10 @@ Gridder::degrid_grid_visibilities(
       std::move(visibilities),
       grid_channel_maps,
       update_grid_weights);
-  if (!err)
-    state = std::move(gs);
-  return std::move(err);
+  if (err)
+    return std::make_shared<std::unique_ptr<Error>>(std::move(err));
+  state = std::move(gs);
+  return opt_error_t();
 #endif // HPG_API >= 17
 }
 
@@ -1290,7 +1270,7 @@ Gridder::degrid_get_predicted_visibilities(
     state = std::get<0>(std::move(gs_fvs));
     return rval<future<VisDataVector>>(std::get<1>(std::move(gs_fvs)));
   }
-  return rval<future<VisDataVector>>(std::move(*err));
+  return rval<future<VisDataVector>>(std::move(err));
 #endif // HPG_API >= 17
 }
 
@@ -1326,7 +1306,7 @@ Gridder::degrid_grid_get_residual_visibilities(
     state = std::get<0>(std::move(gs_fvs));
     return rval<future<VisDataVector>>(std::get<1>(std::move(gs_fvs)));
   }
-  return rval<future<VisDataVector>>(std::move(*err));
+  return rval<future<VisDataVector>>(std::move(err));
 #endif // HPG_API >= 17
 }
 
@@ -1404,45 +1384,49 @@ Gridder::normalize_by_weights(grid_value_fp wgt_factor) {
   state = std::move(state).normalize_by_weights(wgt_factor);
 }
 
-opt_t<Error>
+opt_error_t
 Gridder::apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state).apply_grid_fft(norm, sign, in_place),
-      [this](auto&& gs) -> std::optional<Error> {
+      [this](auto&& gs) -> opt_error_t {
         this->state = std::move(gs);
         return std::nullopt;
       },
-      [](auto&& err) -> std::optional<Error> {
+      [](auto&& err) -> opt_error_t {
         return std::move(err);
       });
 #else // HPG_API < 17
-  std::shared_ptr<Error> result;
+  std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).apply_grid_fft(norm, sign, in_place);
-  return result;
+  if (result)
+    return std::make_shared<std::unique_ptr<Error>>(std::move(result));
+  return opt_error_t();
 #endif //HPG_API >= 17
 }
 
-opt_t<Error>
+opt_error_t
 Gridder::apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
 #if HPG_API >= 17
   return
     fold(
       std::move(state).apply_model_fft(norm, sign, in_place),
-      [this](auto&& gs) -> std::optional<Error> {
+      [this](auto&& gs) -> opt_error_t {
         this->state = std::move(gs);
         return std::nullopt;
       },
-      [](auto&& err) -> std::optional<Error> {
+      [](auto&& err) -> opt_error_t {
         return std::move(err);
       });
 #else // HPG_API < 17
-  std::shared_ptr<Error> result;
+  std::unique_ptr<Error> result;
   std::tie(result, state) =
     std::move(state).apply_model_fft(norm, sign, in_place);
-  return result;
+  if (result)
+    return std::make_shared<std::unique_ptr<Error>>(std::move(result));
+  return opt_error_t();
 #endif //HPG_API >= 17
 }
 
@@ -1456,7 +1440,7 @@ Gridder::shift_model(ShiftDirection direction) {
   state = std::move(state).shift_model(direction);
 }
 
-opt_t<Error>
+opt_error_t
 GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
@@ -1468,14 +1452,17 @@ GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
     && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
     && int(impl::core::GridAxis::channel) == GridValueArray::Axis::channel);
 
-#if HPG_API >= 17
+  std::unique_ptr<Error> err;
   if (host_devices().count(host_device) == 0)
-    return DisabledHostDeviceError();
+    err = std::make_unique<DisabledHostDeviceError>();
+#if HPG_API >= 17
+  if (err)
+    return std::move(err);
   unsafe_copy_to(host_device, dst, layout);
   return std::nullopt;
 #else // HPG_API < 17
-  if (host_devices().count(host_device) == 0)
-    return std::shared_ptr<Error>(new DisabledHostDeviceError());
+  if (err)
+    return std::make_shared<std::unique_ptr<Error>>(std::move(err));
   unsafe_copy_to(host_device, dst, layout);
   return nullptr;
 #endif //HPG_API >= 17
@@ -1539,7 +1526,7 @@ GridValueArray::copy_from(
   }
 }
 
-opt_t<Error>
+opt_error_t
 GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
   const {
 
@@ -1551,14 +1538,17 @@ GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
     && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
     && int(impl::core::GridAxis::channel) == GridValueArray::Axis::channel);
 
-#if HPG_API >= 17
+  std::unique_ptr<Error> err;
   if (host_devices().count(host_device) == 0)
-    return DisabledHostDeviceError();
+    err = std::make_unique<DisabledHostDeviceError>();
+#if HPG_API >= 17
+  if (err)
+    return std::move(err);
   unsafe_copy_to(host_device, dst, layout);
   return std::nullopt;
 #else // HPG_API < 17
-  if (host_devices().count(host_device) == 0)
-    return std::shared_ptr<Error>(new DisabledHostDeviceError());
+  if (err)
+    return std::make_shared<std::unique_ptr<Error>>(std::move(err));
   unsafe_copy_to(host_device, dst, layout);
   return nullptr;
 #endif //HPG_API >= 17
@@ -1630,10 +1620,10 @@ CFArray::copy_to(
   using namespace runtime;
 
   if (host_devices().count(host_device) == 0)
-    return rval<std::string>(DisabledHostDeviceError());
+    return rval<std::string>(std::make_unique<DisabledHostDeviceError>());
 
   if (devices().count(device) == 0)
-    return rval<std::string>(DisabledDeviceError());
+    return rval<std::string>(std::make_unique<DisabledDeviceError>());
 
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
@@ -1682,11 +1672,15 @@ DeviceCFArray::create(
   if (!opt_vn_dev)
     return
       rval<std::unique_ptr<DeviceCFArray>>(
-        Error("Provided layout is invalid", ErrorType::InvalidCFLayout));
+        std::make_unique<Error>(
+          "Provided layout is invalid",
+          ErrorType::InvalidCFLayout));
   auto& [vn, opt_dev] = opt_vn_dev.value();
   // require an exact device match in cf layout
   if (!opt_dev)
-    return rval<std::unique_ptr<DeviceCFArray>>(DisabledDeviceError());
+    return
+      rval<std::unique_ptr<DeviceCFArray>>(
+        std::make_unique<DisabledDeviceError>());
   switch (opt_dev.value()) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
@@ -1719,7 +1713,9 @@ DeviceCFArray::create(
     break;
 #endif //HPG_ENABLE_CUDA
   default:
-    return rval<std::unique_ptr<DeviceCFArray>>(DisabledDeviceError());
+    return
+      rval<std::unique_ptr<DeviceCFArray>>(
+        std::make_unique<DisabledDeviceError>());
     break;
   }
 }
@@ -1752,7 +1748,9 @@ RWDeviceCFArray::create(Device device, const CFArrayShape& shape) {
     break;
 #endif //HPG_ENABLE_CUDA
   default:
-    return rval<std::unique_ptr<RWDeviceCFArray>>(DisabledDeviceError());
+    return
+      rval<std::unique_ptr<RWDeviceCFArray>>(
+        std::make_unique<DisabledDeviceError>());
     break;
   }
 }

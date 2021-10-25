@@ -251,7 +251,7 @@ using opt_t = std::shared_ptr<T>;
 #endif //HPG_API >= 17
 
 /** type to represent a possible error */
-using opt_error_t = opt_t<Error>;
+using opt_error_t = opt_t<std::unique_ptr<Error>>;
 
 /** representation of visibility data
  *
@@ -837,7 +837,7 @@ public:
    *
    * @return an Error, iff host_device names a disabled host device
    */
-  opt_t<Error>
+  opt_error_t
   copy_to(
     Device host_device,
     value_type* dst,
@@ -922,7 +922,7 @@ public:
    *
    * @return an Error, iff host_device names a disabled host device
    */
-  opt_t<Error>
+  opt_error_t
   copy_to(
     Device host_device,
     value_type* dst,
@@ -2261,7 +2261,7 @@ protected:
 
 public:
 
-  /** default constructur */
+  /** default constructor */
   Gridder();
 
 protected:
@@ -2466,7 +2466,7 @@ public:
    * @return new GridderState that is a copy of the target, but with memory
    * allocated for convolution function, or error
    */
-  opt_t<Error>
+  opt_error_t
   allocate_convolution_function_region(const CFArrayShape* shape);
 
   /** set convolution function
@@ -2479,7 +2479,7 @@ public:
    * @param host_device device to use for changing array layout
    * @param cf convolution function array
    */
-  opt_t<Error>
+  opt_error_t
   set_convolution_function(Device host_device, CFArray&&);
 
   /** set visibility model
@@ -2493,7 +2493,7 @@ public:
    *
    * @sa Gridder::set_model()
    */
-  opt_t<Error>
+  opt_error_t
   set_model(Device host_device, GridValueArray&& gv);
 
   /** grid visibilities (template-free version)
@@ -2504,7 +2504,7 @@ public:
    * @param visibilities visibilities
    * @param update_grid_weights update grid weights or not
    */
-  opt_t<Error>
+  opt_error_t
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
@@ -2522,7 +2522,7 @@ public:
    * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
-  opt_t<Error>
+  opt_error_t
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
@@ -2545,7 +2545,7 @@ public:
    * @param visibilities visibilities
    * @param update_grid_weights update grid weights or not
    */
-  opt_t<Error>
+  opt_error_t
   degrid_grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
@@ -2563,7 +2563,7 @@ public:
    * @param update_grid_weights update grid weights or not
    */
   template <unsigned N>
-  opt_t<Error>
+  opt_error_t
   degrid_grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
@@ -2821,7 +2821,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-  opt_t<Error>
+  opt_error_t
   apply_grid_fft(
     grid_value_fp norm = 1,
     FFTSign sign = grid_fft_sign_dflt,
@@ -2835,7 +2835,7 @@ public:
    * @param sign sign of imaginary unit in FFT kernel
    * @param in_place run FFT in-place, without allocation of another grid
    */
-  opt_t<Error>
+  opt_error_t
   apply_model_fft(
     grid_value_fp norm = 1,
     FFTSign sign = model_fft_sign_dflt,

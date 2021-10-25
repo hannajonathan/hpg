@@ -50,30 +50,6 @@
  */
 namespace hpg {
 
-/** disabled device error
- *
- * Device is not enabled in HPG configuration.
- */
-struct DisabledDeviceError
-  : public Error {
-
-  DisabledDeviceError()
-    : Error("Requested device is not enabled", ErrorType::DisabledDevice) {}
-};
-
-/** disabled host device error
- *
- * Host device is not enabled by HPG configuration.
- */
-struct DisabledHostDeviceError
-  : public Error {
-
-  DisabledHostDeviceError()
-    : Error(
-      "Requested host device is not enabled",
-      ErrorType::DisabledHostDevice) {}
-};
-
 // TODO: reimplement CFIndex bounds checking
 // struct OutOfBoundsCFIndexError
 //   : public Error {
