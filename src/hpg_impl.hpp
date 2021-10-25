@@ -831,6 +831,8 @@ public:
 
   grid_t grid;
 
+  GridValueViewArray() {}
+
   GridValueViewArray(const grid_t& grid_)
     : grid(grid_) {}
 
@@ -1033,6 +1035,8 @@ class /*HPG_EXPORT*/ GridWeightViewArray final
 
   GridWeightViewArray(const grid_weight_t& grid_weight_)
     : grid_weight(grid_weight_) {}
+
+  GridWeightViewArray() {}
 
   virtual ~GridWeightViewArray() {}
 
@@ -1362,6 +1366,9 @@ public:
   std::vector<std::vector<cf_t>> m_arrays;
   /** Views of host memory buffers */
   std::vector<cfd_view_h> m_views;
+
+  DeviceCFArray()
+    : m_version(construct_cf_layout_version(cf_layout_version_number, D)) {}
 
   DeviceCFArray(const CFArrayShape& shape)
     : m_version(construct_cf_layout_version(cf_layout_version_number, D))
