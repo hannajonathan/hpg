@@ -450,8 +450,8 @@ TEST(DeviceCFArray, LayoutVersion) {
       oversampling,
       std::move(sized_arrays));
   ASSERT_TRUE(hpg::is_error(devcf_or_err));
-  auto err = hpg::get_error(devcf_or_err);
-  EXPECT_EQ(err.type(), hpg::ErrorType::InvalidCFLayout);
+  auto err = hpg::get_error(std::move(devcf_or_err));
+  EXPECT_EQ(err->type(), hpg::ErrorType::InvalidCFLayout);
   // It would be nice to have more tests of the layout version functionality,
   // but without having access to the string format, and being limited to the
   // enabled devices makes this difficult.

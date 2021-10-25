@@ -629,7 +629,7 @@ TEST(GridderState, ConstructorArgs) {
       {{0}, {0}, {0}, {0}});
   EXPECT_TRUE(hpg::is_error(gs2_or_err));
   EXPECT_EQ(
-    hpg::get_error(gs2_or_err).type(),
+    hpg::get_error(std::move(gs2_or_err))->type(),
     hpg::ErrorType::InvalidNumberMuellerIndexRows);
 
   auto gs3_or_err =
@@ -645,7 +645,7 @@ TEST(GridderState, ConstructorArgs) {
       {{0}, {0}, {0}});
   EXPECT_TRUE(hpg::is_error(gs3_or_err));
   EXPECT_EQ(
-    hpg::get_error(gs3_or_err).type(),
+    hpg::get_error(std::move(gs3_or_err))->type(),
     hpg::ErrorType::InvalidNumberMuellerIndexRows);
 }
 #endif // HPG_DELTA_EXPERIMENTAL_ONLY
@@ -815,7 +815,7 @@ TEST(GridderState, SetModel) {
     std::move(gs2).set_model(default_host_device, std::move(bad_grid));
   ASSERT_TRUE(hpg::is_error(gs3_or_err));
   EXPECT_EQ(
-    hpg::get_error(gs3_or_err).type(),
+    hpg::get_error(std::move(gs3_or_err))->type(),
     hpg::ErrorType::InvalidModelGridSize);
 }
 #endif // HPG_DELTA_EXPERIMENTAL_ONLY
@@ -945,7 +945,7 @@ TEST(GridderState, CFError) {
         create_cf(10, {cf_size}, rng));
     ASSERT_TRUE(hpg::is_error(error_or_gs));
     EXPECT_EQ(
-      hpg::get_error(error_or_gs).type(),
+      hpg::get_error(std::move(error_or_gs))->type(),
       hpg::ErrorType::CFSupportExceedsGrid);
   }
   {
@@ -957,7 +957,7 @@ TEST(GridderState, CFError) {
         create_cf(10, {cf_size}, rng));
     ASSERT_TRUE(hpg::is_error(error_or_gs));
     EXPECT_EQ(
-      hpg::get_error(error_or_gs).type(),
+      hpg::get_error(std::move(error_or_gs))->type(),
       hpg::ErrorType::CFSupportExceedsGrid);
   }
   {
@@ -970,7 +970,7 @@ TEST(GridderState, CFError) {
         create_cf(10, cf_sizes, rng));
     ASSERT_TRUE(hpg::is_error(error_or_gs));
     EXPECT_EQ(
-      hpg::get_error(error_or_gs).type(),
+      hpg::get_error(std::move(error_or_gs))->type(),
       hpg::ErrorType::CFSupportExceedsGrid);
   }
 }
@@ -1142,7 +1142,7 @@ TEST(GridderState, GriddingError) {
       gs1.grid_visibilities(default_host_device, decltype(vis)(vis), ch_maps);
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err).type(),
+      hpg::get_error(gs2_or_err)->type(),
       hpg::ErrorType::InvalidNumberPolarizations);
   }
   auto gs =
@@ -1175,7 +1175,7 @@ TEST(GridderState, GriddingError) {
         false); // do_grid
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err).type(),
+      hpg::get_error(gs2_or_err)->type(),
       hpg::ErrorType::UpdateWeightsWithoutGridding);
   }
   {
@@ -1187,7 +1187,7 @@ TEST(GridderState, GriddingError) {
       gs1.grid_visibilities(default_host_device, decltype(vis)(vis), chm1);
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err).type(),
+      hpg::get_error(gs2_or_err)->type(),
       hpg::ErrorType::GridChannelMapsSize);
   }
   {
@@ -1199,7 +1199,7 @@ TEST(GridderState, GriddingError) {
       gs1.grid_visibilities(default_host_device, std::move(vism1), ch_maps);
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err).type(),
+      hpg::get_error(gs2_or_err)->type(),
       hpg::ErrorType::GridChannelMapsSize);
   }
   {
@@ -1221,7 +1221,7 @@ TEST(GridderState, GriddingError) {
       gs1.grid_visibilities(default_host_device, decltype(vis)(vis), ch_maps);
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err).type(),
+      hpg::get_error(gs2_or_err)->type(),
       hpg::ErrorType::ExcessiveVisibilityChannels);
   }
 }
@@ -1372,7 +1372,7 @@ TEST(GridderState, Batching) {
       gs1.grid_visibilities(default_host_device, decltype(vis)(vis), ch_maps);
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err).type(),
+      hpg::get_error(std::move(gs2_or_err))->type(),
       hpg::ErrorType::ExcessiveNumberVisibilities);
   }
   // no error if number of visibilities does not exceed batch size
@@ -2012,8 +2012,6 @@ TEST(GridderState, ShiftCycle) {
   for (auto& asz : std::vector<std::array<unsigned, 2>>{
       {20, 20}, {19, 19}, {18, 19}, {19, 18}}) {
     auto grids_or_err = test({asz[0], asz[1], 1, 2})();
-    if (hpg::is_error(grids_or_err))
-      std::cout << hpg::get_error(grids_or_err).message() << std::endl;
     ASSERT_TRUE(hpg::is_value(grids_or_err));
     auto [g0, g1] = hpg::get_value(std::move(grids_or_err));
     EXPECT_TRUE(values_eq(g0.get(), g1.get()));

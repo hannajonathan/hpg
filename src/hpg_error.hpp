@@ -66,6 +66,35 @@ public:
   /** destructor */
   virtual ~Error();
 };
+
+/** invalid number of Mueller index rows error
+ *
+ * Number of rows of Mueller indexes does not equal grid "mrow" axis size */
+struct InvalidNumberMuellerIndexRowsError
+  : public Error {
+
+  InvalidNumberMuellerIndexRowsError();
+};
+
+/** disabled device error
+ *
+ * Device is not enabled in HPG configuration.
+ */
+struct DisabledDeviceError
+  : public Error {
+
+  DisabledDeviceError();
+};
+
+/** disabled host device error
+ *
+ * Host device is not enabled by HPG configuration.
+ */
+struct DisabledHostDeviceError
+  : public Error {
+
+  DisabledHostDeviceError();
+};
 }  // end namespace hpg
 
 // Local Variables:

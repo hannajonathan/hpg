@@ -147,7 +147,7 @@ runtime::impl::min_cf_buffer_size(
   unsigned grp) {
 
   if (devices().count(device) == 0)
-    return rval<size_t>(DisabledDeviceError());
+    return rval<size_t>(std::make_unique<DisabledDeviceError>());
 
   size_t alloc_sz;
 

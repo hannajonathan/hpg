@@ -795,8 +795,8 @@ run_hpg_trial_op(
       [&spec](const double& t) {
         return spec.run(t);
       },
-      [&spec](const hpg::Error& err) {
-        return spec.skip(err.message());
+      [&spec](std::unique_ptr<hpg::Error>&& err) {
+        return spec.skip(err->message());
       });
   K::Profiling::popRegion();
   std::cout << output << std::endl;
