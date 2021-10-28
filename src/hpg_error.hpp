@@ -95,6 +95,54 @@ struct DisabledHostDeviceError
 
   DisabledHostDeviceError();
 };
+
+/** invalid number of polarizations error
+ *
+ * Number of polarizations in visibility data does not equal number of columns
+ * of Mueller indexes */
+struct InvalidNumberPolarizationsError
+  : public Error {
+
+  InvalidNumberPolarizationsError();
+};
+
+/** excessive number of visibilities error
+ *
+ * Number of visibilities exceeds configured maximum batch size of
+ * GridderState
+ */
+struct ExcessiveNumberVisibilitiesError
+  : public Error {
+
+  ExcessiveNumberVisibilitiesError();
+};
+
+/** update weights without gridding error
+ *
+ * Grid weights cannot be updated without doing gridding
+ */
+struct UpdateWeightsWithoutGriddingError
+  : public Error {
+
+  UpdateWeightsWithoutGriddingError();
+};
+
+/** excessive number of channels in mapping error
+ *
+ * Total number of grid channels for visibilities exceeds configured maximum
+ */
+struct ExcessiveVisibilityChannelsError
+  : public Error {
+
+  ExcessiveVisibilityChannelsError();
+};
+
+struct GridChannelMapsSizeError
+  : public Error {
+
+  GridChannelMapsSizeError();
+};
+
 }  // end namespace hpg
 
 // Local Variables:

@@ -35,68 +35,6 @@ template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 namespace K = Kokkos;
-/** invalid number of polarizations error
- *
- * Number of polarizations in visibility data does not equal number of columns
- * of Mueller indexes */
-struct InvalidNumberPolarizationsError
-  : public Error {
-
-  InvalidNumberPolarizationsError()
-    : Error(
-      "Number of visibility polarizations does not match Mueller matrix",
-      ErrorType::InvalidNumberPolarizations) {}
-};
-
-/** excessive number of visibilities error
- *
- * Number of visibilities exceeds configured maximum batch size of
- * GridderState
- */
-struct ExcessiveNumberVisibilitiesError
-  : public Error {
-
-  ExcessiveNumberVisibilitiesError()
-    : Error(
-      "Number of visibilities exceeds batch size",
-      ErrorType::ExcessiveNumberVisibilities) {}
-};
-
-/** update weights without gridding error
- *
- * Grid weights cannot be updated without doing gridding
- */
-struct UpdateWeightsWithoutGriddingError
-  : public Error {
-
-  UpdateWeightsWithoutGriddingError()
-    : Error(
-      "Unable to update grid weights during degridding only",
-      ErrorType::UpdateWeightsWithoutGridding) {}
-};
-
-/** excessive number of channels in mapping error
- *
- * Total number of grid channels for visibilities exceeds configured maximum
- */
-struct ExcessiveVisibilityChannelsError
-  : public Error {
-
-  ExcessiveVisibilityChannelsError()
-    : Error(
-      "Total number of grid channel indexes for visibilities exceeds maximum",
-      ErrorType::ExcessiveVisibilityChannels) {}
-};
-
-struct GridChannelMapsSizeError
-  : public Error {
-
-  GridChannelMapsSizeError()
-    : Error(
-      "Size of grid channel maps vector does not equal "
-      "size of visibilites vector",
-      ErrorType::GridChannelMapsSize) {}
-};
 
 /** abstract base class for state implementations */
 struct /*HPG_EXPORT*/ State {
