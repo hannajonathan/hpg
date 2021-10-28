@@ -39,60 +39,41 @@ namespace K = Kokkos;
 /** abstract base class for state implementations */
 struct /*HPG_EXPORT*/ State {
 
-  Device m_device; /**< device type */
-  unsigned m_max_active_tasks; /**< maximum number of active tasks */
-  size_t m_visibility_batch_size; /**< batch size of visibilities to
-                                     send to gridding kernel at once */
-  size_t m_max_avg_channels_per_vis; /**< max avg number of channel indexes for
-                                          gridding */
-  std::array<unsigned, 4> m_grid_size; /**< grid size */
-  K::Array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
-  unsigned m_num_polarizations; /**< number of visibility polarizations */
-  std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
-
   using maybe_vis_t =
     std::shared_ptr<std::shared_ptr<std::optional<VisDataVector>>>;
 
-  State(Device device)
-    : m_device(device) {}
+  virtual Device
+  device() const noexcept = 0;
 
-  State(
-    Device device,
-    unsigned max_active_tasks,
-    size_t visibility_batch_size,
-    unsigned max_avg_channels_per_vis,
-    const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale,
-    unsigned num_polarizations,
-    const std::array<unsigned, 4>& implementation_versions)
-    : m_device(device)
-    , m_max_active_tasks(max_active_tasks)
-    , m_visibility_batch_size(visibility_batch_size)
-    , m_max_avg_channels_per_vis(max_avg_channels_per_vis)
-    , m_grid_size(grid_size)
-    , m_grid_scale({grid_scale[0], grid_scale[1]})
-    , m_num_polarizations(num_polarizations)
-    , m_implementation_versions(implementation_versions) {}
+  virtual unsigned
+  visibility_gridder_version() const noexcept = 0;
 
-  unsigned
-  visibility_gridder_version() const {
-    return m_implementation_versions[0];
-  }
+  virtual unsigned
+  grid_normalizer_version() const noexcept = 0;
 
-  unsigned
-  grid_normalizer_version() const {
-    return m_implementation_versions[1];
-  }
+  virtual unsigned
+  fft_version() const noexcept = 0;
 
-  unsigned
-  fft_version() const {
-    return m_implementation_versions[2];
-  }
+  virtual unsigned
+  grid_shifter_version() const noexcept = 0;
 
-  unsigned
-  grid_shifter_version() const {
-    return m_implementation_versions[3];
-  }
+  virtual unsigned
+  max_active_tasks() const noexcept = 0;
+
+  virtual size_t
+  max_visibility_batch_size() const noexcept = 0;
+
+  virtual size_t
+  max_avg_channels_per_vis() const noexcept = 0;
+
+  virtual std::array<unsigned, 4>
+  grid_size() const noexcept = 0;
+
+  virtual std::array<grid_scale_fp, 2>
+  grid_scale() const noexcept = 0;
+
+  virtual unsigned
+  num_polarizations() const noexcept = 0;
 
   virtual size_t
   convolution_function_region_size(const CFArrayShape* shape)
@@ -142,6 +123,12 @@ struct /*HPG_EXPORT*/ State {
 
   virtual void
   reset_grid() = 0;
+
+  virtual void
+  fill_grid(const impl::core::gv_t& val) = 0;
+
+  virtual void
+  fill_weights(const grid_value_fp& val) = 0;
 
   virtual std::unique_ptr<GridValueArray>
   model_values() const = 0;
@@ -761,8 +748,21 @@ struct /*HPG_EXPORT*/ ExecSpace final {
 /** Kokkos state implementation for a device type */
 template <Device D>
 struct /*HPG_EXPORT*/ StateT
-  : public State {
+  : virtual public State {
 public:
+
+  Device m_device; /**< device type */
+  unsigned m_max_active_tasks; /**< maximum number of active tasks */
+  size_t m_max_visibility_batch_size; /**< maximum number of visibilities to
+                                         sent to gridding kernel at once */
+  size_t m_max_avg_channels_per_vis; /**< max avg number of channel indexes for
+                                          gridding */
+  std::array<unsigned, 4> m_grid_size; /**< grid size */
+  K::Array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
+  unsigned m_num_polarizations; /**< number of visibility polarizations */
+  std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
+
+  using State::maybe_vis_t;
 
   using kokkos_device = typename impl::DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
@@ -783,7 +783,8 @@ public:
   std::vector<std::conditional_t<std::is_void_v<stream_type>, int, stream_type>>
     m_streams;
 
-private:
+protected:
+
   mutable std::mutex m_mtx;
   // access to the following members in const methods must be protected by m_mtx
   // (intentionally do not provide any thread safety guarantee outside of const
@@ -795,6 +796,7 @@ private:
   mutable StreamPhase m_current = StreamPhase::PRE_GRIDDING;
 
 public:
+
   StateT(
     unsigned max_active_tasks,
     size_t visibility_batch_size,
@@ -805,15 +807,15 @@ public:
     const IArrayVector& mueller_indexes,
     const IArrayVector& conjugate_mueller_indexes,
     const std::array<unsigned, 4>& implementation_versions)
-    : State(
-      D,
-      std::min(max_active_tasks, device_traits::active_task_limit),
-      visibility_batch_size,
-      max_avg_channels_per_vis,
-      grid_size,
-      grid_scale,
-      mueller_indexes.m_npol,
-      implementation_versions) {
+    : m_device(D)
+    , m_max_active_tasks(
+      std::min(max_active_tasks, device_traits::active_task_limit))
+    , m_max_visibility_batch_size(max_visibility_batch_size)
+    , m_max_avg_channels_per_vis(max_avg_channels_per_vis)
+    , m_grid_size(grid_size)
+    , m_grid_scale({grid_scale[0], grid_scale[1]})
+    , m_num_polarizations(mueller_indexes.m_npol)
+    , m_implementation_versions(implementation_versions) {
 
     init_state(init_cf_shape);
     m_mueller_indexes =
@@ -824,15 +826,14 @@ public:
   }
 
   StateT(const StateT& st)
-    : State(
-      D,
-      st.m_max_active_tasks,
-      st.m_visibility_batch_size,
-      st.m_max_avg_channels_per_vis,
-      st.m_grid_size,
-      {st.m_grid_scale[0], st.m_grid_scale[1]},
-      st.m_num_polarizations,
-      st.m_implementation_versions) {
+    : m_device(D)
+    , m_max_active_tasks(st.m_max_active_tasks)
+    , m_max_visibility_batch_size(st.m_max_visibility_batch_size)
+    , m_max_avg_channels_per_vis(st.m_max_avg_channels_per_vis)
+    , m_grid_size(st.m_grid_size)
+    , m_grid_scale(st.m_grid_scale)
+    , m_num_polarizations(st.m_num_polarizations)
+    , m_implementation_versions(st.m_implementation_versions) {
 
     std::scoped_lock lock(st.m_mtx);
     st.fence_unlocked();
@@ -843,7 +844,7 @@ public:
   }
 
   StateT(StateT&& st) noexcept
-    : State(D) {
+    : m_device(D) {
 
     m_max_active_tasks = std::move(st).m_max_active_tasks;
     m_visibility_batch_size = std::move(st).m_visibility_batch_size;
@@ -910,6 +911,61 @@ public:
   StateT
   copy() const {
     return StateT(*this);
+  }
+
+  Device
+  device() const noexcept override {
+    return m_device;
+  }
+
+  unsigned
+  visibility_gridder_version() const noexcept override {
+    return m_implementation_versions[0];
+  }
+
+  unsigned
+  grid_normalizer_version() const noexcept override {
+    return m_implementation_versions[1];
+  }
+
+  unsigned
+  fft_version() const noexcept override {
+    return m_implementation_versions[2];
+  }
+
+  unsigned
+  grid_shifter_version() const noexcept override {
+    return m_implementation_versions[3];
+  }
+
+  unsigned
+  max_active_tasks() const noexcept override {
+    return m_max_active_tasks;
+  }
+
+  size_t
+  max_visibility_batch_size() const noexcept override {
+    return m_max_visibility_batch_size;
+  }
+
+  size_t
+  max_avg_channels_per_vis() const noexcept override {
+    return m_max_avg_channels_per_vis;
+  }
+
+  std::array<unsigned, 4>
+  grid_size() const noexcept override {
+    return m_grid_size;
+  }
+
+  std::array<grid_scale_fp, 2>
+  grid_scale() const noexcept override {
+    return {m_grid_scale[0], m_grid_scale[1]};
+  }
+
+  unsigned
+  num_polarizations() const noexcept override {
+    return m_num_polarizations;
   }
 
   virtual size_t
@@ -1008,7 +1064,7 @@ public:
   }
 
   template <unsigned N>
-  State::maybe_vis_t
+  maybe_vis_t
   default_grid_visibilities(
     Device /*host_device*/,
     std::vector<::hpg::VisData<N>>&& visibilities,
@@ -1071,7 +1127,7 @@ public:
   }
 
   template <unsigned N>
-  State::maybe_vis_t
+  maybe_vis_t
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
@@ -1128,7 +1184,7 @@ public:
     }
   }
 
-  virtual std::variant<std::unique_ptr<Error>, State::maybe_vis_t>
+  virtual std::variant<std::unique_ptr<Error>, maybe_vis_t>
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
@@ -1815,10 +1871,10 @@ struct /*HPG_EXPORT*/ GridderState {
       return std::make_unique<DisabledHostDeviceError>();
 
     auto num_visibilities = visibilities.size();
-    if (num_visibilities > st.impl->m_visibility_batch_size)
+    if (num_visibilities > st.impl->m_visibility_batch_size())
       return std::make_unique<ExcessiveNumberVisibilitiesError>();
 
-    if (visibilities.m_npol != st.impl->m_num_polarizations)
+    if (visibilities.m_npol != st.impl->num_polarizations())
       return std::make_unique<InvalidNumberPolarizationsError>();
 
     if (!do_grid && update_grid_weights)
