@@ -47,6 +47,12 @@ target_link_libraries(DeviceCFArrayUnitTests hpg::hpg gtest_main)
 add_test(NAME DeviceCFArrayUnitTests COMMAND DeviceCFArrayUnitTests)
 set_tests_properties(DeviceCFArrayUnitTests PROPERTIES TIMEOUT 60)
 
+if(Hpg_ENABLE_MPI)
+  add_executable(MPIRuntimeUnitTests MPIRuntimeUnitTests.cc)
+  target_link_libraries(MPIRuntimeUnitTests hpg::hpg gtest_main)
+  add_test(NAME MPIRuntimeUnitTests COMMAND MPIRuntimeUnitTests)
+endif()
+
 # basic test application
 #
 add_executable(test0 test.cc)
