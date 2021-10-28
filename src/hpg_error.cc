@@ -46,6 +46,32 @@ DisabledHostDeviceError::DisabledHostDeviceError()
     "Requested host device is not enabled",
     ErrorType::DisabledHostDevice) {}
 
+InvalidNumberPolarizationsError::InvalidNumberPolarizationsError()
+  : Error(
+    "Number of visibility polarizations does not match Mueller matrix",
+    ErrorType::InvalidNumberPolarizations) {}
+
+ExcessiveNumberVisibilitiesError::ExcessiveNumberVisibilitiesError()
+  : Error(
+    "Number of visibilities exceeds maximum batch size",
+    ErrorType::ExcessiveNumberVisibilities) {}
+
+UpdateWeightsWithoutGriddingError::UpdateWeightsWithoutGriddingError()
+  : Error(
+    "Unable to update grid weights during degridding only",
+    ErrorType::UpdateWeightsWithoutGridding) {}
+
+ExcessiveVisibilityChannelsError::ExcessiveVisibilityChannelsError()
+  : Error(
+    "Total number of grid channel indexes for visibilities exceeds maximum",
+    ErrorType::ExcessiveVisibilityChannels) {}
+
+GridChannelMapsSizeError::GridChannelMapsSizeError()
+  : Error(
+    "Size of grid channel maps vector does not equal "
+    "size of visibilites vector",
+    ErrorType::GridChannelMapsSize) {}
+
 // Local Variables:
 // mode: c++
 // c-basic-offset: 2
