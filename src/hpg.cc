@@ -251,7 +251,7 @@ GridderState::operator=(const GridderState& rhs) {
   using namespace runtime;
 
   const GridderState& crhs = const_cast<const GridderState&>(rhs);
-  switch (crhs.impl->m_device) {
+  switch (crhs.impl->device()) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
     impl =
@@ -287,37 +287,37 @@ GridderState::~GridderState() {}
 
 Device
 GridderState::device() const noexcept {
-  return impl->m_device;
+  return impl->device();
 }
 
 unsigned
 GridderState::max_added_tasks() const noexcept {
-  return impl->m_max_active_tasks - 1;
+  return impl->max_active_tasks() - 1;
 }
 
 size_t
 GridderState::visibility_batch_size() const noexcept {
-  return impl->m_visibility_batch_size;
+  return impl->m_visibility_batch_size();
 }
 
 unsigned
 GridderState::max_avg_channels_per_vis() const noexcept {
-  return impl->m_max_avg_channels_per_vis;
+  return impl->m_max_avg_channels_per_vis();
 }
 
-const std::array<unsigned, 4>&
+std::array<unsigned, 4>
 GridderState::grid_size() const noexcept {
-  return impl->m_grid_size;
+  return impl->grid_size();
 }
 
 std::array<grid_scale_fp, 2>
 GridderState::grid_scale() const noexcept {
-  return {impl->m_grid_scale[0], impl->m_grid_scale[1]};
+  return impl->grid_scale();
 }
 
 unsigned
 GridderState::num_polarizations() const noexcept {
-  return impl->m_num_polarizations;
+  return impl->num_polarizations();
 }
 
 bool
@@ -1069,7 +1069,7 @@ Gridder::max_avg_channels_per_vis() const noexcept {
   return state.max_avg_channels_per_vis();
 }
 
-const std::array<unsigned, 4>&
+std::array<unsigned, 4>
 Gridder::grid_size() const noexcept {
   return state.grid_size();
 }

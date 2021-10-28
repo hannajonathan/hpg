@@ -1290,7 +1290,7 @@ public:
   max_avg_channels_per_vis() const noexcept;
 
   /** grid size */
-  const std::array<unsigned, 4>&
+  std::array<unsigned, 4>
   grid_size() const noexcept;
 
   /** grid scale */
@@ -2418,7 +2418,7 @@ public:
   max_avg_channels_per_vis() const noexcept;
 
   /** grid size */
-  const std::array<unsigned, 4>&
+  std::array<unsigned, 4>
   grid_size() const noexcept;
 
   /** grid scale */
