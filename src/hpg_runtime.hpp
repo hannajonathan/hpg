@@ -1355,6 +1355,24 @@ public:
   }
 
   virtual void
+  fill_grid(const impl::core::gv_t& val) override {
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto g_h = K::create_mirror_view(m_grid);
+    K::deep_copy(g_h, impl::core::gv_t(0));
+    K::deep_copy(exec.space, m_grid, g_h);
+  };
+
+  virtual void
+  fill_weights(const grid_value_fp& val) override {
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto w_h = K::create_mirror_view(m_weights);
+    K::deep_copy(w_h, grid_value_fp(0));
+    K::deep_copy(exec.space, m_weights, w_h);
+  };
+
+  virtual void
   reset_model() override {
     fence();
     m_model = decltype(m_model)();

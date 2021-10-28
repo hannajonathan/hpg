@@ -130,16 +130,22 @@ add_library(hpg::version ALIAS hpg_version)
 # libhpg
 #
 add_library(hpg_hpg hpg.cc hpg_impl.cc hpg_runtime.cc hpg_error.cc)
+if(Hpg_ENABLE_MPI)
+  target_sources(hpg_hpg PRIVATE hpg_mpi.cc)
+endif()
 set_target_properties(hpg_hpg PROPERTIES
   INTERFACE_ENABLE_SERIAL ${Hpg_ENABLE_SERIAL}
   INTERFACE_ENABLE_OPENMP ${Hpg_ENABLE_OPENMP}
-  INTERFACE_ENABLE_CUDA ${Hpg_ENABLE_CUDA})
+  INTERFACE_ENABLE_CUDA ${Hpg_ENABLE_CUDA}
+  INTERFACE_ENABLE_MPI ${Hpg_ENABLE_MPI})
 set_property(TARGET hpg_hpg APPEND PROPERTY
   COMPATIBLE_INTERFACE_BOOL ENABLE_SERIAL)
 set_property(TARGET hpg_hpg APPEND PROPERTY
   COMPATIBLE_INTERFACE_BOOL ENABLE_OPENMP)
 set_property(TARGET hpg_hpg APPEND PROPERTY
   COMPATIBLE_INTERFACE_BOOL ENABLE_CUDA)
+set_property(TARGET hpg_hpg APPEND PROPERTY
+  COMPATIBLE_INTERFACE_BOOL ENABLE_MPI)
 target_link_libraries(hpg_hpg
   PRIVATE hpg::version)
 add_library(hpg::hpg ALIAS hpg_hpg)
@@ -188,6 +194,11 @@ set(hpg_PUBLIC_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/hpg_version.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_config.hpp
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>/hpg_export.h)
+if(Hpg_ENABLE_MPI)
+  list(APPEND hpg_PUBLIC_HEADERS
+    ${CMAKE_CURRENT_SOURCE_DIR}/hpg_mpi.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hpg_mpi_runtime.hpp)
+endif()
 set_target_properties(hpg_hpg PROPERTIES
   VERSION ${hpg_VERSION}
   SOVERSION ${hpg_VERSION_MAJOR}
