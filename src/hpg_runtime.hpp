@@ -301,17 +301,7 @@ enum class /*HPG_EXPORT*/ StreamPhase {
 
 /** formatted output for StreamPhase value */
 std::ostream&
-operator<<(std::ostream& str, const StreamPhase& ph) {
-  switch (ph) {
-  case StreamPhase::PRE_GRIDDING:
-    str << "PRE_GRIDDING";
-    break;
-  case StreamPhase::GRIDDING:
-    str << "GRIDDING";
-    break;
-  }
-  return str;
-}
+operator<<(std::ostream& str, const StreamPhase& ph);
 
 template <Device D>
 struct StateT;

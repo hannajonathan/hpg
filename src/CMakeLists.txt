@@ -129,7 +129,7 @@ add_library(hpg::version ALIAS hpg_version)
 
 # libhpg
 #
-add_library(hpg_hpg hpg.cc hpg_impl.cc hpg_error.cc)
+add_library(hpg_hpg hpg.cc hpg_impl.cc hpg_runtime.cc hpg_error.cc)
 set_target_properties(hpg_hpg PROPERTIES
   INTERFACE_ENABLE_SERIAL ${Hpg_ENABLE_SERIAL}
   INTERFACE_ENABLE_OPENMP ${Hpg_ENABLE_OPENMP}
