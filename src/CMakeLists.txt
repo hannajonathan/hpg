@@ -173,6 +173,8 @@ if(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
     ${Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS})
 endif()
 
+target_link_libraries(hpg_hpg PRIVATE Kokkos::kokkoscore)
+
 # set the HPG_ENABLE_* variables in the parent scope based on
 # Hpg_ENABLE_* and what we found in Kokkos
 set(HPG_ENABLE_SERIAL ${HPG_ENABLE_SERIAL} PARENT_SCOPE)
@@ -205,7 +207,6 @@ set_target_properties(hpg_hpg PROPERTIES
   EXPORT_NAME hpg
   OUTPUT_NAME hpg
   PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}")
-target_link_libraries(hpg_hpg PRIVATE Kokkos::kokkoscore)
 target_include_directories(hpg_hpg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
