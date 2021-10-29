@@ -168,8 +168,7 @@ set_target_properties(hpg_hpg PROPERTIES
   SOVERSION ${hpg_VERSION_MAJOR}
   EXPORT_NAME hpg
   OUTPUT_NAME hpg
-  PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}"
-  COMPILE_DEFINITIONS HPG_MAX_NUM_CF_GROUPS=${Hpg_MAX_NUM_CF_GROUPS})
+  PUBLIC_HEADER "${hpg_PUBLIC_HEADERS}")
 target_link_libraries(hpg_hpg PRIVATE Kokkos::kokkoscore)
 target_include_directories(hpg_hpg PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
