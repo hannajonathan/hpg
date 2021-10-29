@@ -110,6 +110,34 @@ to_rval(std::variant<std::unique_ptr<Error>, T>&& t) {
     return rval<T>(std::get<std::unique_ptr<Error>>(std::move(t)));
 }
 
+unsigned
+CFArrayShape::oversampling() const {
+  return 1;
+}
+
+unsigned
+CFArrayShape::num_groups() const {
+  return 0;
+}
+
+std::array<unsigned, CFArrayShape::rank - 1>
+CFArrayShape::extents(unsigned) const {
+  static constexpr std::array<unsigned, rank - 1> result =
+    []() {
+      auto r = decltype(result){};
+      for (unsigned i = 0; i < rank - 1; ++i)
+        r[i] = 0;
+      return r;
+    }();
+  return result;
+}
+
+std::complex<cf_fp>
+CFArray::operator()(unsigned, unsigned, unsigned, unsigned, unsigned) const {
+  assert(false);
+  std::abort();
+}
+
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 const std::array<unsigned, 4> GridderState::default_versions{0, 0, 0, 0};
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
