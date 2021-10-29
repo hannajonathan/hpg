@@ -638,15 +638,18 @@ public:
 
   /** oversampling factor */
   virtual unsigned
-  oversampling() const = 0;
+  oversampling() const;
 
   /** number of CF groups */
   virtual unsigned
-  num_groups() const = 0;
+  num_groups() const;
 
   /** array extents for a given group */
   virtual std::array<unsigned, rank - 1>
-  extents(unsigned grp) const = 0;
+  extents(unsigned grp) const;
+
+  /** default constructor */
+  CFArrayShape() {}
 
   /** destructor */
   virtual ~CFArrayShape() {}
@@ -668,6 +671,9 @@ public:
   // note: changes in this must be coordinated with changes in the element
   // access operators
   enum Axis {x, y, mueller, channel, group};
+
+  CFArray()
+    : CFArrayShape() {}
 
   /** CF element layout identification */
   virtual const char*
@@ -691,7 +697,7 @@ public:
     unsigned mueller,
     unsigned channel,
     unsigned group)
-    const = 0;
+    const;
 
   /** half-widths of CF support domain for a given group index */
   std::array<unsigned, 2>
