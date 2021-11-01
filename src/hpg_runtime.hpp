@@ -1086,11 +1086,11 @@ public:
     bool do_grid) {
 
 // #ifndef NDEBUG
-//     for (auto& [cube, supp] : *cf_indexes) {
+//     for (auto& [channel, supp] : *cf_indexes) {
 //       auto& cfpool = std::get<0>(m_cfs[m_cf_indexes.front()]);
 //       if ((supp >= cfpool.num_cf_groups)
-//           || (cube >= cfpool.cf_d[supp].extent_int(5)))
-//         return OutOfBoundsCFIndexError({cube, supp});
+//           || (channel >= cfpool.cf_d[supp].extent_int(5)))
+//         return OutOfBoundsCFIndexError({channel, supp});
 //     }
 // #endif // NDEBUG
 
@@ -1717,14 +1717,14 @@ private:
 #endif // NDEBUG
 
     static_assert(
-      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::cube == 1);
+      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::channel == 1);
     if (also_weights) {
       if (create_without_init)
         m_weights =
           decltype(m_weights)(
             K::ViewAllocateWithoutInitializing("weights"),
             int(m_grid_size[int(impl::core::GridAxis::mrow)]),
-            int(m_grid_size[int(impl::core::GridAxis::cube)]));
+            int(m_grid_size[int(impl::core::GridAxis::channel)]));
       else
         m_weights =
           decltype(m_weights)(
@@ -1732,7 +1732,7 @@ private:
               "weights",
               m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
             int(m_grid_size[int(impl::core::GridAxis::mrow)]),
-            int(m_grid_size[int(impl::core::GridAxis::cube)]));
+            int(m_grid_size[int(impl::core::GridAxis::channel)]));
     }
     if (std::holds_alternative<const StateT*>(source)) {
       auto st = std::get<const StateT*>(source);

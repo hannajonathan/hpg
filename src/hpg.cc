@@ -1409,7 +1409,7 @@ GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
     int(impl::core::GridAxis::x) == GridValueArray::Axis::x
     && int(impl::core::GridAxis::y) == GridValueArray::Axis::y
     && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(impl::core::GridAxis::cube) == GridValueArray::Axis::cube);
+    && int(impl::core::GridAxis::channel) == GridValueArray::Axis::channel);
 
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)
@@ -1439,7 +1439,7 @@ GridValueArray::copy_from(
     int(impl::core::GridAxis::x) == GridValueArray::Axis::x
     && int(impl::core::GridAxis::y) == GridValueArray::Axis::y
     && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(impl::core::GridAxis::cube) == GridValueArray::Axis::cube);
+    && int(impl::core::GridAxis::channel) == GridValueArray::Axis::channel);
 
   switch (target_device) {
 #ifdef HPG_ENABLE_SERIAL
@@ -1492,7 +1492,7 @@ GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
     int(impl::core::GridAxis::x) == GridValueArray::Axis::x
     && int(impl::core::GridAxis::y) == GridValueArray::Axis::y
     && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(impl::core::GridAxis::cube) == GridValueArray::Axis::cube);
+    && int(impl::core::GridAxis::channel) == GridValueArray::Axis::channel);
 
 #if HPG_API >= 17
   if (host_devices().count(host_device) == 0)

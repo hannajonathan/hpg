@@ -485,7 +485,7 @@ struct CFArray final
     CFArray::Axis::x == 0
     && CFArray::Axis::y == 1
     && CFArray::Axis::mueller == 2
-    && CFArray::Axis::cube == 3
+    && CFArray::Axis::channel == 3
     && CFArray::Axis::group == 4);
 
   std::complex<hpg::cf_fp>
@@ -493,12 +493,12 @@ struct CFArray final
     unsigned x,
     unsigned y,
     unsigned mueller,
-    unsigned cube,
+    unsigned channel,
     unsigned grp)
     const override {
     auto& vals = m_values[grp];
     auto& ext = m_extents[grp];
-    return vals[((x * ext[1] + y) * ext[2] + mueller) * ext[3] + cube];
+    return vals[((x * ext[1] + y) * ext[2] + mueller) * ext[3] + channel];
   }
 };
 

@@ -82,7 +82,7 @@ public:
 
   /** CF index
    *
-   * array elements: (mueller, cube, grp)
+   * array elements: (mueller, channel, grp)
    */
   using cf_index_t = std::array<unsigned, 3>;
 
@@ -157,14 +157,14 @@ public:
 
 private:
 
-  /** accumulate index value to linearized cube or group index  */
+  /** accumulate index value to linearized channel or group index  */
   static void
   acc_index(cf_index_t& index, unsigned i, const axis_desc_t& ad) {
     unsigned& index_part = (ad.second ? index[2] : index[1]);
     index_part = index_part * ad.first + i;
   }
 
-  /** separate index value from linearized cube or group index */
+  /** separate index value from linearized channel or group index */
   static void
   sep_index(unsigned& index, cf_index_t& i, const axis_desc_t& ad) {
     unsigned& i_part = (ad.second ? i[2] : i[1]);
@@ -172,7 +172,7 @@ private:
     i_part /= ad.first;
   }
 
-  /** extent of linearized cube or group index */
+  /** extent of linearized channel or group index */
   static void
   ext_index(cf_index_t& index, const axis_desc_t& ad) {
     unsigned& index_part = (ad.second ? index[2] : index[1]);

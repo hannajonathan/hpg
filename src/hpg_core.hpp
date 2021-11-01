@@ -58,7 +58,7 @@ enum class /*HPG_EXPORT*/ GridAxis {
   x,
   y,
   mrow,
-  cube
+  channel
 };
 
 /** ordered CF array axes */
@@ -66,7 +66,7 @@ enum class /*HPG_EXPORT*/ CFAxis {
   x_major,
   y_major,
   mueller,
-  cube,
+  channel,
   x_minor,
   y_minor
 };
@@ -251,8 +251,8 @@ struct /*HPG_EXPORT*/ VisData {
     vis_frequency_fp freq, /**< frequency */
     vis_phase_fp d_phase, /**< phase angle */
     const uvw_t& uvw, /** < uvw coordinates */
-    unsigned& grid_cube, /**< grid cube index */
-    const K::Array<unsigned, 2>& cf_index, /**< cf (cube, grp) index */
+    unsigned& grid_channel, /**< grid channel index */
+    const K::Array<unsigned, 2>& cf_index, /**< cf (channel, grp) index */
     /** cf phase gradient */
     const K::Array<cf_phase_gradient_fp, 2>& cf_phase_gradient)
     : m_values(values)
@@ -260,7 +260,7 @@ struct /*HPG_EXPORT*/ VisData {
     , m_freq(freq)
     , m_d_phase(d_phase)
     , m_uvw(uvw)
-    , m_grid_cube(grid_cube)
+    , m_grid_channel(grid_channel)
     , m_cf_index(cf_index)
     , m_cf_phase_gradient(cf_phase_gradient) {}
 
@@ -279,7 +279,7 @@ struct /*HPG_EXPORT*/ VisData {
   vis_frequency_fp m_freq;
   vis_phase_fp m_d_phase;
   uvw_t m_uvw;
-  unsigned m_grid_cube;
+  unsigned m_grid_channel;
   K::Array<unsigned, 2> m_cf_index;
   K::Array<cf_phase_gradient_fp, 2> m_cf_phase_gradient;
 };
@@ -294,7 +294,7 @@ using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
 
 /** View type for weight values
  *
- * logical axis order: mrow, cube
+ * logical axis order: mrow, channel
  */
 template <typename Layout, typename memory_space>
 using weight_view = K::View<grid_value_fp**, Layout, memory_space>;
@@ -501,8 +501,8 @@ struct /*HPG_EXPORT*/ Vis final {
   K::Array<vis_t, N> m_values; /**< visibility values */
   K::Array<vis_weight_fp, N> m_weights; /**< visibility weights */
   K::complex<vis_phase_fp> m_phasor;
-  int m_grid_cube; /**< grid cube index */
-  int m_cf_cube; /**< cf cube index */
+  int m_grid_channel; /**< grid channel index */
+  int m_cf_channel; /**< cf channel index */
   int m_cf_grp; /**< cf group index */
   bool m_pos_w; /**< true iff W coordinate is strictly positive */
   cf_phase_gradient_fp m_phi0[2]; /**< phase screen value origin */
@@ -520,8 +520,8 @@ struct /*HPG_EXPORT*/ Vis final {
     : m_values(vals)
     , m_weights(vis.m_weights)
     , m_phasor(cphase<execution_space>(vis.m_d_phase))
-    , m_grid_cube(vis.m_grid_cube)
-    , m_cf_cube(vis.m_cf_index[0])
+    , m_grid_channel(vis.m_grid_channel)
+    , m_cf_channel(vis.m_cf_index[0])
     , m_cf_grp(vis.m_cf_index[1])
     , m_pos_w(vis.m_uvw[2] > 0) {
 
@@ -619,7 +619,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
           K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
           K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
           K::ALL,
-          vis.m_cf_cube,
+          vis.m_cf_channel,
           vis.m_cf_minor[0],
           vis.m_cf_minor[1]);
 
@@ -630,7 +630,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
           K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
           K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
           K::ALL,
-          vis.m_grid_cube);
+          vis.m_grid_channel);
 
       // loop over model polarizations
       for (int gpol = 0; gpol < N_R; ++gpol) {
@@ -716,7 +716,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
         K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
         K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
         K::ALL,
-        vis.m_cf_cube,
+        vis.m_cf_channel,
         vis.m_cf_minor[0],
         vis.m_cf_minor[1]);
 
@@ -728,7 +728,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
         K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
         K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
         gpol,
-        vis.m_grid_cube);
+        vis.m_grid_channel);
 
     // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
@@ -762,7 +762,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
         for (int vpol = 0; vpol < N; ++vpol)
           twgt +=
             grid_value_fp(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]);
-        K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt);
+        K::atomic_add(&weights(gpol, vis.m_grid_channel), twgt);
       });
   }
 
@@ -806,7 +806,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
         K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
         K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
         K::ALL,
-        vis.m_cf_cube,
+        vis.m_cf_channel,
         vis.m_cf_minor[0],
         vis.m_cf_minor[1]);
 
@@ -818,7 +818,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
         K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
         K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
         gpol,
-        vis.m_grid_cube);
+        vis.m_grid_channel);
 
     // parallel loop over grid X
     K::parallel_for(
@@ -1081,7 +1081,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
           K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
           K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
           K::ALL,
-          vis.m_cf_cube,
+          vis.m_cf_channel,
           vis.m_cf_minor[0],
           vis.m_cf_minor[1]);
 
@@ -1092,7 +1092,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
           K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
           K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
           K::ALL,
-          vis.m_grid_cube);
+          vis.m_grid_channel);
 
       // loop over model polarizations
       for (int gpol = 0; gpol < N_R; ++gpol) {
@@ -1317,7 +1317,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
         K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
         K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
         K::ALL,
-        vis.m_cf_cube,
+        vis.m_cf_channel,
         vis.m_cf_minor[0],
         vis.m_cf_minor[1]);
 
@@ -1329,7 +1329,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
         K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
         K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
         gpol,
-        vis.m_grid_cube);
+        vis.m_grid_channel);
 
     // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
@@ -1363,7 +1363,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
         for (int vpol = 0; vpol < N; ++vpol)
           twgt +=
             grid_value_fp(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]);
-        K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt);
+        K::atomic_add(&weights(gpol, vis.m_grid_channel), twgt);
       });
   }
 
@@ -1407,7 +1407,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
         K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
         K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
         K::ALL,
-        vis.m_cf_cube,
+        vis.m_cf_channel,
         vis.m_cf_minor[0],
         vis.m_cf_minor[1]);
 
@@ -1419,7 +1419,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
         K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
         K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
         gpol,
-        vis.m_grid_cube);
+        vis.m_grid_channel);
 
     // parallel loop over grid X
     K::parallel_for(
@@ -1617,9 +1617,9 @@ struct /*HPG_EXPORT*/ GridNormalizer final {
       int(GridAxis::x) == 0
       && int(GridAxis::y) == 1
       && int(GridAxis::mrow) == 2
-      && int(GridAxis::cube) == 3);
+      && int(GridAxis::channel) == 3);
     static_assert(
-      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::cube == 1);
+      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::channel == 1);
 
     K::parallel_for(
       "normalization",
@@ -1629,9 +1629,9 @@ struct /*HPG_EXPORT*/ GridNormalizer final {
         {grid.extent_int(int(GridAxis::x)),
          grid.extent_int(int(GridAxis::y)),
          grid.extent_int(int(GridAxis::mrow)),
-         grid.extent_int(int(GridAxis::cube))}),
-      KOKKOS_LAMBDA(int x, int y, int mrow, int cube) {
-        grid(x, y, mrow, cube) /= (wfactor * weights(mrow, cube));
+         grid.extent_int(int(GridAxis::channel))}),
+      KOKKOS_LAMBDA(int x, int y, int mrow, int channel) {
+        grid(x, y, mrow, channel) /= (wfactor * weights(mrow, channel));
       });
   }
 
@@ -1646,7 +1646,7 @@ struct /*HPG_EXPORT*/ GridNormalizer final {
       int(GridAxis::x) == 0
       && int(GridAxis::y) == 1
       && int(GridAxis::mrow) == 2
-      && int(GridAxis::cube) == 3);
+      && int(GridAxis::channel) == 3);
 
     grid_value_fp inv_norm = (grid_value_fp)(1.0) / norm;
     K::parallel_for(
@@ -1657,9 +1657,9 @@ struct /*HPG_EXPORT*/ GridNormalizer final {
         {grid.extent_int(int(GridAxis::x)),
          grid.extent_int(int(GridAxis::y)),
          grid.extent_int(int(GridAxis::mrow)),
-         grid.extent_int(int(GridAxis::cube))}),
-      KOKKOS_LAMBDA(int x, int y, int mrow, int cube) {
-        grid(x, y, mrow, cube) *= inv_norm;
+         grid.extent_int(int(GridAxis::channel))}),
+      KOKKOS_LAMBDA(int x, int y, int mrow, int channel) {
+        grid(x, y, mrow, channel) *= inv_norm;
       });
   }
 };
@@ -1827,7 +1827,7 @@ struct /*HPG_EXPORT*/ FFT final {
       int(GridAxis::x) == 0
       && int(GridAxis::y) == 1
       && int(GridAxis::mrow) == 2
-      && int(GridAxis::cube) == 3);
+      && int(GridAxis::channel) == 3);
     int n[2]{igrid.extent_int(0), igrid.extent_int(1)};
     int stride = 1;
     int dist = igrid.extent_int(0) * igrid.extent_int(1) * igrid.extent_int(2);
@@ -1980,7 +1980,7 @@ struct /*HPG_EXPORT*/ FFT<K::Cuda, 0> final {
       int(GridAxis::x) == 0
       && int(GridAxis::y) == 1
       && int(GridAxis::mrow) == 2
-      && int(GridAxis::cube) == 3);
+      && int(GridAxis::channel) == 3);
     int n[2]{grid.extent_int(1), grid.extent_int(0)};
     cufftHandle result;
     auto rc =
@@ -2095,11 +2095,11 @@ struct /*HPG_EXPORT*/ GridShifter final {
       int(GridAxis::x) == 0
       && int(GridAxis::y) == 1
       && int(GridAxis::mrow) == 2
-      && int(GridAxis::cube) == 3);
+      && int(GridAxis::channel) == 3);
     int n_x = grid.extent_int(0);
     int n_y = grid.extent_int(1);
     int n_mrow = grid.extent_int(2);
-    int n_cube = grid.extent_int(3);
+    int n_channel = grid.extent_int(3);
 
     int mid_x = n_x / 2;
     int mid_y = n_y / 2;
@@ -2109,7 +2109,7 @@ struct /*HPG_EXPORT*/ GridShifter final {
 
       K::parallel_for(
         "grid_shift_ee",
-        K::TeamPolicy<execution_space>(exec, n_mrow * n_cube, K::AUTO),
+        K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto gplane =
             K::subview(
@@ -2137,7 +2137,7 @@ struct /*HPG_EXPORT*/ GridShifter final {
       if (direction == ShiftDirection::FORWARD)
         K::parallel_for(
           "grid_rotation_oop",
-          K::TeamPolicy<execution_space>(exec, n_mrow * n_cube, K::AUTO),
+          K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto gplane =
               K::subview(
@@ -2165,7 +2165,7 @@ struct /*HPG_EXPORT*/ GridShifter final {
       else // direction == ShiftDirection::BACKWARD
         K::parallel_for(
           "grid_rotation_oon",
-          K::TeamPolicy<execution_space>(exec, n_mrow * n_cube, K::AUTO),
+          K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto gplane =
               K::subview(
@@ -2196,7 +2196,7 @@ struct /*HPG_EXPORT*/ GridShifter final {
       if (direction == ShiftDirection::FORWARD)
         K::parallel_for(
           "grid_rotation_genp",
-          K::TeamPolicy<execution_space>(exec, n_mrow * n_cube, K::AUTO),
+          K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto gplane =
               K::subview(
@@ -2257,7 +2257,7 @@ struct /*HPG_EXPORT*/ GridShifter final {
       else // direction == ShiftDirection::BACKWARD
         K::parallel_for(
           "grid_rotation_genn",
-          K::TeamPolicy<execution_space>(exec, n_mrow * n_cube, K::AUTO),
+          K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto gplane =
               K::subview(
