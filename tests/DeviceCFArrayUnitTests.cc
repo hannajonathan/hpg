@@ -148,12 +148,12 @@ struct LargeCFArray final
     unsigned x,
     unsigned y,
     unsigned mueller,
-    unsigned cube,
+    unsigned channel,
     unsigned grp)
     const override {
     auto& vals = m_values[grp];
     auto& ext = m_extents[grp];
-    return vals[((x * ext[1] + y) * ext[2] + mueller) * ext[3] + cube];
+    return vals[((x * ext[1] + y) * ext[2] + mueller) * ext[3] + channel];
   }
 };
 
@@ -231,7 +231,7 @@ init_visibilities(
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
-  std::uniform_int_distribution<unsigned> dist_gcube(0, grid_size[3] - 1);
+  std::uniform_int_distribution<unsigned> dist_gchannel(0, grid_size[3] - 1);
   std::uniform_int_distribution<unsigned> dist_gcopol(0, grid_size[2] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
@@ -245,7 +245,7 @@ init_visibilities(
   for (auto i = 0; i < num_vis; ++i) {
     auto grp = dist_cfgrp(gen);
     auto cfextents = cf->extents(grp);
-    std::uniform_int_distribution<unsigned> dist_cfcube(0, cfextents[3] - 1);
+    std::uniform_int_distribution<unsigned> dist_cfchannel(0, cfextents[3] - 1);
     double ulim = (x0 - (cfextents[0]) / 2) / uscale;
     double vlim = (y0 - (cfextents[1]) / 2) / vscale;
     std::uniform_real_distribution<hpg::vis_uvw_fp> dist_u(-ulim, ulim);
@@ -257,8 +257,8 @@ init_visibilities(
         freq,
         0.0,
         hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
-        dist_gcube(gen),
-        {dist_cfcube(gen), grp},
+        dist_gchannel(gen),
+        {dist_cfchannel(gen), grp},
         {dist_cfgrad(gen), dist_cfgrad(gen)}));
   }
 }
@@ -667,12 +667,12 @@ TEST(DeviceCFArray, RWGridding) {
   ASSERT_TRUE(hpg::is_value(wdevcf_or_err));
   auto wdevcf = hpg::get_value(std::move(wdevcf_or_err));
   for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
-    auto [nx, ny, nm, ncube] = cf.extents(grp);
-    for (unsigned cube = 0; cube < ncube; ++cube)
+    auto [nx, ny, nm, nchannel] = cf.extents(grp);
+    for (unsigned channel = 0; channel < nchannel; ++channel)
       for (unsigned m = 0; m < nm; ++m)
         for (unsigned y = 0; y < ny; ++y)
           for (unsigned x = 0; x < nx; ++x)
-            (*wdevcf)(x, y, m, cube, grp) = cf(x, y, m, cube, grp);
+            (*wdevcf)(x, y, m, channel, grp) = cf(x, y, m, channel, grp);
   }
 
   // grid definition
@@ -831,12 +831,12 @@ TEST(DeviceCFArray, RWEfficiency) {
       ASSERT_TRUE(hpg::is_value(wdevcf_or_err));
       auto wdevcf = hpg::get_value(std::move(wdevcf_or_err));
       for (unsigned grp = 0; grp < cf.num_groups(); ++grp) {
-        auto [nx, ny, nm, ncube] = cf.extents(grp);
-        for (unsigned cube = 0; cube < ncube; ++cube)
+        auto [nx, ny, nm, nchannel] = cf.extents(grp);
+        for (unsigned channel = 0; channel < nchannel; ++channel)
           for (unsigned m = 0; m < nm; ++m)
             for (unsigned y = 0; y < ny; ++y)
               for (unsigned x = 0; x < nx; ++x)
-                (*wdevcf)(x, y, m, cube, grp) = cf(x, y, m, cube, grp);
+                (*wdevcf)(x, y, m, channel, grp) = cf(x, y, m, channel, grp);
       }
       wdevcfs.push_back(std::move(wdevcf));
     }

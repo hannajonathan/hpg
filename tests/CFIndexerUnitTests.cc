@@ -25,24 +25,24 @@ TEST(CFSimpleIndexer, Extents) {
   const unsigned nm = 5;
 
   for (bool bv : {false, true}) {
-    unsigned cube = 1, grp = 1;
-    if (bv) grp = nb; else cube = nb;
+    unsigned channel = 1, grp = 1;
+    if (bv) grp = nb; else channel = nb;
     for (bool tv : {false, true}) {
-      if (tv) grp *= nt; else cube *= nt;
+      if (tv) grp *= nt; else channel *= nt;
       for (bool wv : {false, true}) {
-        if (wv) grp *= nw; else cube *= nw;
+        if (wv) grp *= nw; else channel *= nw;
         for (bool fv : {false, true}) {
-          if (fv) grp *= nf; else cube *= nf;
+          if (fv) grp *= nf; else channel *= nf;
           hpg::CFSimpleIndexer
             indexer({nb, bv}, {nt, tv}, {nw, wv}, {nf, fv}, nm);
           EXPECT_EQ(
             indexer.cf_extents(),
-            hpg::CFSimpleIndexer::cf_index_t({nm, cube, grp}));
-          if (fv) grp /= nf; else cube /= nf;
+            hpg::CFSimpleIndexer::cf_index_t({nm, channel, grp}));
+          if (fv) grp /= nf; else channel /= nf;
         }
-        if (wv) grp /= nw; else cube /= nw;
+        if (wv) grp /= nw; else channel /= nw;
       }
-      if (tv) grp /= nt; else cube /= nt;
+      if (tv) grp /= nt; else channel /= nt;
     }
   }
 }

@@ -184,7 +184,7 @@ static const std::array<int, 4> strided_grid_layout_order{
   int(core::GridAxis::y),
   int(core::GridAxis::mrow),
   int(core::GridAxis::x),
-  int(core::GridAxis::cube)};
+  int(core::GridAxis::channel)};
 
 /** device-specific grid array layout */
 template <typename Device>
@@ -230,7 +230,7 @@ static const std::array<int, 6> strided_cf_layout_order{
   int(core::CFAxis::mueller),
   int(core::CFAxis::y_major),
   int(core::CFAxis::x_major),
-  int(core::CFAxis::cube),
+  int(core::CFAxis::channel),
   int(core::CFAxis::x_minor),
   int(core::CFAxis::y_minor)};
 
@@ -260,7 +260,7 @@ struct /*HPG_EXPORT*/ CFLayout {
       int((extents[CFArray::Axis::x] + os - 1) / os),
       int((extents[CFArray::Axis::y] + os - 1) / os),
       int(extents[CFArray::Axis::mueller]),
-      int(extents[CFArray::Axis::cube]),
+      int(extents[CFArray::Axis::channel]),
       int(os),
       int(os)
     };
@@ -365,29 +365,29 @@ public:
     GridValueArray::Axis::x == 0
     && GridValueArray::Axis::y == 1
     && GridValueArray::Axis::mrow == 2
-    && GridValueArray::Axis::cube == 3);
+    && GridValueArray::Axis::channel == 3);
 
   const value_type&
-  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube)
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned channel)
     const override {
 
     static_assert(
       int(core::GridAxis::x) == 0
       && int(core::GridAxis::y) == 1
       && int(core::GridAxis::mrow) == 2
-      && int(core::GridAxis::cube) == 3);
-    return reinterpret_cast<const value_type&>(grid(x, y, mrow, cube));
+      && int(core::GridAxis::channel) == 3);
+    return reinterpret_cast<const value_type&>(grid(x, y, mrow, channel));
   }
 
   value_type&
-  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) override {
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned channel) override {
 
     static_assert(
       int(core::GridAxis::x) == 0
       && int(core::GridAxis::y) == 1
       && int(core::GridAxis::mrow) == 2
-      && int(core::GridAxis::cube) == 3);
-    return reinterpret_cast<value_type&>(grid(x, y, mrow, cube));
+      && int(core::GridAxis::channel) == 3);
+    return reinterpret_cast<value_type&>(grid(x, y, mrow, channel));
   }
 
   template <Device H>
@@ -561,15 +561,15 @@ class /*HPG_EXPORT*/ GridWeightViewArray final
   }
 
   const value_type&
-  operator()(unsigned mrow, unsigned cube) const override {
+  operator()(unsigned mrow, unsigned channel) const override {
 
-    return weight(mrow, cube);
+    return weight(mrow, channel);
   }
 
   value_type&
-  operator()(unsigned mrow, unsigned cube) override {
+  operator()(unsigned mrow, unsigned channel) override {
 
-    return weight(mrow, cube);
+    return weight(mrow, channel);
   }
 
   template <Device H>
@@ -835,12 +835,12 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
     int(core::GridAxis::x) == 0
     && int(core::GridAxis::y) == 1
     && int(core::GridAxis::mrow) == 2
-    && int(core::GridAxis::cube) == 3);
+    && int(core::GridAxis::channel) == 3);
   static_assert(
     GridValueArray::Axis::x == 0
     && GridValueArray::Axis::y == 1
     && GridValueArray::Axis::mrow == 2
-    && GridValueArray::Axis::cube == 3);
+    && GridValueArray::Axis::channel == 3);
 
   K::parallel_for(
     "init_model",
@@ -945,7 +945,7 @@ public:
     CFArray::Axis::x == 0
     && CFArray::Axis::y == 1
     && CFArray::Axis::mueller == 2
-    && CFArray::Axis::cube == 3
+    && CFArray::Axis::channel == 3
     && CFArray::Axis::group == 4);
 
   std::complex<cf_fp>&
@@ -953,7 +953,7 @@ public:
     unsigned x,
     unsigned y,
     unsigned mueller,
-    unsigned cube,
+    unsigned channel,
     unsigned grp)
     override {
 
@@ -961,7 +961,7 @@ public:
       int(core::CFAxis::x_major) == 0
       && int(core::CFAxis::y_major) == 1
       && int(core::CFAxis::mueller) == 2
-      && int(core::CFAxis::cube) == 3
+      && int(core::CFAxis::channel) == 3
       && int(core::CFAxis::x_minor) == 4
       && int(core::CFAxis::y_minor) == 5);
 
@@ -971,7 +971,7 @@ public:
           x / m_oversampling,
           y / m_oversampling,
           mueller,
-          cube,
+          channel,
           x % m_oversampling,
           y % m_oversampling));
   }
@@ -981,7 +981,7 @@ public:
     unsigned x,
     unsigned y,
     unsigned mueller,
-    unsigned cube,
+    unsigned channel,
     unsigned grp)
     const override {
 
@@ -989,7 +989,7 @@ public:
       int(core::CFAxis::x_major) == 0
       && int(core::CFAxis::y_major) == 1
       && int(core::CFAxis::mueller) == 2
-      && int(core::CFAxis::cube) == 3
+      && int(core::CFAxis::channel) == 3
       && int(core::CFAxis::x_minor) == 4
       && int(core::CFAxis::y_minor) == 5);
 
@@ -998,7 +998,7 @@ public:
         x / m_oversampling,
         y / m_oversampling,
         mueller,
-        cube,
+        channel,
         x % m_oversampling,
         y % m_oversampling);
   }
@@ -1020,14 +1020,14 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
     int(core::CFAxis::x_major) == 0
     && int(core::CFAxis::y_major) == 1
     && int(core::CFAxis::mueller) == 2
-    && int(core::CFAxis::cube) == 3
+    && int(core::CFAxis::channel) == 3
     && int(core::CFAxis::x_minor) == 4
     && int(core::CFAxis::y_minor) == 5);
   static_assert(
     CFArray::Axis::x == 0
     && CFArray::Axis::y == 1
     && CFArray::Axis::mueller == 2
-    && CFArray::Axis::cube == 3
+    && CFArray::Axis::channel == 3
     && CFArray::Axis::group == 4);
 
   auto extents = cf.extents(grp);
@@ -1037,12 +1037,12 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
     K::MDRangePolicy<K::Rank<4>, D>(
       {0, 0, 0, 0},
       {int(extents[0]), int(extents[1]), int(extents[2]), int(extents[3])}),
-    [&](int i, int j, int mueller, int cube) {
+    [&](int i, int j, int mueller, int channel) {
       auto X = i / oversampling;
       auto x = i % oversampling;
       auto Y = j / oversampling;
       auto y = j % oversampling;
-      cf_h(X, Y, mueller, cube, x, y) = cf(i, j, mueller, cube, grp);
+      cf_h(X, Y, mueller, channel, x, y) = cf(i, j, mueller, channel, grp);
     });
 }
 

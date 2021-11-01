@@ -58,11 +58,11 @@ struct MyCFArray final
   }
 
   std::complex<hpg::cf_fp>
-  operator()(unsigned x, unsigned y, unsigned mueller, unsigned cube, unsigned)
+  operator()(unsigned x, unsigned y, unsigned mueller, unsigned channel, unsigned)
     const override {
     return
       m_values[
-        ((x * m_extent[1] + y) * m_extent[2] + mueller) * m_extent[3] + cube];
+        ((x * m_extent[1] + y) * m_extent[2] + mueller) * m_extent[3] + channel];
   }
 };
 
@@ -96,8 +96,8 @@ init_visibilities(
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
-  std::uniform_int_distribution<unsigned> dist_gcube(0, grid_size[3] - 1);
-  std::uniform_int_distribution<unsigned> dist_cfcube(0, cf_size[3] - 1);
+  std::uniform_int_distribution<unsigned> dist_gchannel(0, grid_size[3] - 1);
+  std::uniform_int_distribution<unsigned> dist_cfchannel(0, cf_size[3] - 1);
   std::uniform_real_distribution<hpg::visibility_fp> dist_vis(-1.0, 1.0);
   std::uniform_real_distribution<hpg::vis_weight_fp> dist_weight(0.0, 1.0);
   double ulim =
@@ -118,8 +118,8 @@ init_visibilities(
         freq,
         0.0,
         hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
-        dist_gcube(gen),
-        {dist_cfcube(gen), 0}));
+        dist_gchannel(gen),
+        {dist_cfchannel(gen), 0}));
   }
 }
 
@@ -261,13 +261,13 @@ dump_grids(
   {
     std::cout << "after fft" << std::endl;
     auto gval = g0.grid_values();
-    for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
+    for (unsigned channel = 0; channel < grid_size[3]; ++channel) {
       for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
-        std::cout << "cube " << cube << ", sto " << sto << std::endl;
+        std::cout << "channel " << channel << ", sto " << sto << std::endl;
         for (unsigned y = 0; y < grid_size[1]; ++y) {
           std::cout << "  " << y << ": ";
           for (unsigned x = 0; x < grid_size[0]; ++x)
-            std::cout << (*gval)(x, y, sto, cube) << " ";
+            std::cout << (*gval)(x, y, sto, channel) << " ";
           std::cout << std::endl;
         }
       }
@@ -277,13 +277,13 @@ dump_grids(
   {
     std::cout << "after rotation" << std::endl;
     auto gval = g0.grid_values();
-    for (unsigned cube = 0; cube < grid_size[3]; ++cube) {
+    for (unsigned channel = 0; channel < grid_size[3]; ++channel) {
       for (unsigned sto = 0; sto < grid_size[2]; ++sto) {
-        std::cout << "cube " << cube << ", sto " << sto << std::endl;
+        std::cout << "channel " << channel << ", sto " << sto << std::endl;
         for (unsigned y = 0; y < grid_size[1]; ++y) {
           std::cout << "  " << y << ": ";
           for (unsigned x = 0; x < grid_size[0]; ++x)
-            std::cout << (*gval)(x, y, sto, cube) << " ";
+            std::cout << (*gval)(x, y, sto, channel) << " ";
           std::cout << std::endl;
         }
       }

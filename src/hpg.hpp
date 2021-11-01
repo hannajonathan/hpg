@@ -272,9 +272,9 @@ struct VisData {
   vis_phase_fp m_phase;
   /** visibility UVW coordinates */
   vis_uvw_t m_uvw;
-  /** grid cube index */
-  unsigned m_grid_cube;
-  /** cube and grp CFArray index components */
+  /** grid channel index */
+  unsigned m_grid_channel;
+  /** channel and grp CFArray index components */
   std::array<unsigned, 2> m_cf_index;
   /** phase gradient */
   cf_phase_gradient_t m_cf_phase_gradient;
@@ -286,7 +286,7 @@ struct VisData {
     const vis_frequency_fp& frequency,
     const vis_phase_fp& phase,
     const vis_uvw_t& uvw,
-    const unsigned& grid_cube,
+    const unsigned& grid_channel,
     const std::array<unsigned, 2>& cf_index,
     const cf_phase_gradient_t& cf_phase_gradient)
     : m_visibilities(visibilities)
@@ -294,7 +294,7 @@ struct VisData {
     , m_frequency(frequency)
     , m_phase(phase)
     , m_uvw(uvw)
-    , m_grid_cube(grid_cube)
+    , m_grid_channel(grid_channel)
     , m_cf_index(cf_index)
     , m_cf_phase_gradient(cf_phase_gradient) {}
 
@@ -305,14 +305,14 @@ struct VisData {
     const vis_frequency_fp& frequency,
     const vis_phase_fp& phase,
     const vis_uvw_t& uvw,
-    const unsigned& grid_cube,
+    const unsigned& grid_channel,
     const std::array<unsigned, 2>& cf_index)
     : m_visibilities(visibilities)
     , m_weights(weights)
     , m_frequency(frequency)
     , m_phase(phase)
     , m_uvw(uvw)
-    , m_grid_cube(grid_cube)
+    , m_grid_channel(grid_channel)
     , m_cf_index(cf_index)
     , m_cf_phase_gradient({0, 0}) {}
 
@@ -327,7 +327,7 @@ struct VisData {
       && m_frequency == rhs.m_frequency
       && m_phase == rhs.m_phase
       && m_uvw == rhs.m_uvw
-      && m_grid_cube == rhs.m_grid_cube
+      && m_grid_channel == rhs.m_grid_channel
       && m_cf_index == rhs.m_cf_index
       && m_cf_phase_gradient == rhs.m_cf_phase_gradient;
   }
@@ -680,7 +680,7 @@ public:
   /** ordered index axis names */
   // note: changes in this must be coordinated with changes in the element
   // access operators
-  enum Axis {x, y, mueller, cube, group};
+  enum Axis {x, y, mueller, channel, group};
 
   /** CF element layout identification */
   virtual const char*
@@ -694,7 +694,7 @@ public:
    * @param y Y coordinate, relative to padded domain edge (oversampled units)
    * @param mueller Mueller element index; selects an element of a Mueller
    * matrix
-   * @param cube cube index
+   * @param channel channel index
    * @param group group index
    */
   virtual std::complex<cf_fp>
@@ -702,7 +702,7 @@ public:
     unsigned x,
     unsigned y,
     unsigned mueller,
-    unsigned cube,
+    unsigned channel,
     unsigned group)
     const = 0;
 
@@ -796,7 +796,7 @@ public:
    * @param y Y coordinate, relative to padded domain edge (oversampled units)
    * @param mueller Mueller element index; selects an element of a Mueller
    * matrix
-   * @param cube cube index
+   * @param channel channel index
    * @param group group index
    *
    * @return non-const element reference
@@ -806,7 +806,7 @@ public:
     unsigned x,
     unsigned y,
     unsigned mueller,
-    unsigned cube,
+    unsigned channel,
     unsigned group) = 0;
 
   virtual ~RWDeviceCFArray() {}
@@ -828,7 +828,7 @@ public:
   /** ordered index axis names */
   // note: changes in this must be coordinated with changes in the element
   // access operators
-  enum Axis {x, y, mrow, cube};
+  enum Axis {x, y, mrow, channel};
 
   /** size of array on given dimension */
   virtual unsigned
@@ -836,11 +836,11 @@ public:
 
   /** const element access operator */
   virtual const value_type&
-  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) const = 0;
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned channel) const = 0;
 
   /** non-const element access operator */
   virtual value_type&
-  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) = 0;
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned channel) = 0;
 
   /** copy values to a buffer in requested layout
    *
@@ -913,7 +913,7 @@ public:
   /** ordered index axis names */
   // note: changes in this must be coordinated with changes in the element
   // access operators
-  enum Axis {mrow, cube};
+  enum Axis {mrow, channel};
 
   /** size of array on given dimension */
   virtual unsigned
@@ -921,11 +921,11 @@ public:
 
   /** const element access operator */
   virtual const value_type&
-  operator()(unsigned mrow, unsigned cube) const = 0;
+  operator()(unsigned mrow, unsigned channel) const = 0;
 
   /** non-const element access operator */
   virtual value_type&
-  operator()(unsigned mrow, unsigned cube) = 0;
+  operator()(unsigned mrow, unsigned channel) = 0;
 
   /** copy values to a buffer in requested layout
    *
@@ -1157,7 +1157,7 @@ protected:
    * calls to grid_visibilities()
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
-   * @param grid_size in logical axis order: X, Y, mrow, cube
+   * @param grid_size in logical axis order: X, Y, mrow, channel
    * @param grid_scale in X, Y order
    * @param mueller_indexes CFArray Mueller element indexes, by mrow
    * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
@@ -2247,7 +2247,7 @@ protected:
    * calls to grid_visibilities()
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
-   * @param grid_size in logical axis order: X, Y, mrow, cube
+   * @param grid_size in logical axis order: X, Y, mrow, channel
    * @param grid_scale in X, Y order
    * @param mueller_indexes CFArray Mueller element indexes, by mrow
    * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
