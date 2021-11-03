@@ -1006,70 +1006,44 @@ public:
     bool do_grid) {
 
     auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
-    auto len = exec_pre.copy_visibilities_to_device(std::move(visibilities));
-
-    auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
-    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
-    impl::core::const_grid_view<typename grid_layout::layout, memory_space>
-      model = m_model;
+    int len = exec_pre.copy_visibilities_to_device(std::move(visibilities));
 
     {
-      using gridder =
-        typename impl::core::VisibilityGridder<N, execution_space, 1>;
-      auto espace = exec_grid.space;
-      auto vis = exec_grid.template visdata<N>();
-      auto& gvisbuff = exec_grid.gvisbuff;
+      auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
+      auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
 
-      if (do_degrid) {
-        gridder::degrid_all(
-          espace,
+      auto gridder =
+        impl::core::GridderFunctor(
+          std::integral_constant<unsigned, N>(),
+          exec_grid.space,
           cf.cf_d,
           cf.cf_radii,
           cf.max_cf_extent_y,
           m_mueller_indexes,
           m_conjugate_mueller_indexes,
           len,
-          vis,
-          gvisbuff,
+          exec_grid.template visdata<N>(),
+          exec_grid.gvisbuff,
           m_grid_scale,
-          model,
-          m_grid);
+          m_grid,
+          m_weights,
+          m_model);
+
+      if (do_degrid) {
+        gridder.degrid_all();
         if (do_grid)
-          gridder::vis_copy_residual_and_rescale(espace, len, vis, gvisbuff);
+          gridder.vis_copy_residual_and_rescale();
         else
-          gridder::vis_copy_predicted(espace, len, vis, gvisbuff);
+          gridder.vis_copy_predicted();
       } else {
-        gridder::vis_rescale(espace, len, vis, gvisbuff);
+        gridder.vis_rescale();
       }
 
       if (do_grid) {
         if (update_grid_weights)
-          gridder::grid_all(
-            espace,
-            cf.cf_d,
-            cf.cf_radii,
-            cf.max_cf_extent_y,
-            m_mueller_indexes,
-            m_conjugate_mueller_indexes,
-            len,
-            vis,
-            gvisbuff,
-            m_grid_scale,
-            m_grid,
-            m_weights);
+          gridder.grid_all();
         else
-          gridder::grid_all_no_weights(
-            espace,
-            cf.cf_d,
-            cf.cf_radii,
-            cf.max_cf_extent_y,
-            m_mueller_indexes,
-            m_conjugate_mueller_indexes,
-            len,
-            vis,
-            gvisbuff,
-            m_grid_scale,
-            m_grid);
+          gridder.grid_all_no_weights();
       }
     }
     return exec_grid.copy_visibilities_to_host(return_visibilities);
