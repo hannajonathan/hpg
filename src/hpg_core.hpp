@@ -1750,70 +1750,113 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
 };
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 
-/** grid normalization kernel
+/** grid normalization
  */
-template <typename execution_space, unsigned version>
+template <
+  typename execution_space,
+  typename GridView,
+  typename WeightView>
 struct /*HPG_EXPORT*/ GridNormalizer final {
 
-  template <typename grid_layout, typename memory_space>
-  static void
-  kernel(
-    execution_space exec,
-    const grid_view<grid_layout, memory_space>& grid,
-    const const_weight_view<
-    typename execution_space::array_layout, memory_space>& weights,
-      const grid_value_fp& wfactor) {
+  static_assert(GridView::rank == 4);
+  static_assert(WeightView::rank == 2);
 
-    static_assert(
-      int(GridAxis::x) == 0
-      && int(GridAxis::y) == 1
-      && int(GridAxis::mrow) == 2
-      && int(GridAxis::channel) == 3);
-    static_assert(
-      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::channel == 1);
+  static_assert(
+    int(GridAxis::x) == 0
+    && int(GridAxis::y) == 1
+    && int(GridAxis::mrow) == 2
+    && int(GridAxis::channel) == 3);
+  static_assert(
+    GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::channel == 1);
 
-    K::parallel_for(
-      "normalization",
-      K::MDRangePolicy<K::Rank<4>, execution_space>(
-        exec,
-        {0, 0, 0, 0},
-        {grid.extent_int(int(GridAxis::x)),
-         grid.extent_int(int(GridAxis::y)),
-         grid.extent_int(int(GridAxis::mrow)),
-         grid.extent_int(int(GridAxis::channel))}),
-      KOKKOS_LAMBDA(int x, int y, int mrow, int channel) {
-        grid(x, y, mrow, channel) /= (wfactor * weights(mrow, channel));
-      });
+  using weight_const_view_t = typename WeightView::const_type;
+  using grid_value_t = typename GridView::non_const_value_type;
+  using weight_value_t = typename WeightView::non_const_value_type;
+
+  execution_space m_exec;
+  GridView m_grid;
+  weight_const_view_t m_weights;
+  weight_value_t m_inv_norm;
+
+  GridNormalizer(
+    const execution_space& exec,
+    const GridView& grid,
+    const WeightView& weights,
+    weight_value_t wfactor)
+    : m_exec(exec)
+    , m_grid(grid)
+    , m_weights(weights)
+    , m_inv_norm(weight_value_t(1) / wfactor) {}
+
+  GridNormalizer(
+    const execution_space& exec,
+    const GridView& grid,
+    weight_value_t norm)
+    : m_exec(exec)
+    , m_grid(grid)
+    , m_inv_norm(weight_value_t(1) / norm) {}
+
+  //
+  // ByWeights
+  //
+  // normalize grid by sum of weights
+  //
+
+  struct ByWeights{};
+
+  KOKKOS_INLINE_FUNCTION void
+  operator()(const ByWeights&, int x, int y, int mrow, int channel) const {
+
+    m_grid(x, y, mrow, channel) =
+      (m_grid(x, y, mrow, channel) * m_inv_norm) / m_weights(mrow, channel);
   }
 
-  template <typename grid_layout, typename memory_space>
-  static void
-  kernel(
-    execution_space exec,
-    const grid_view<grid_layout, memory_space>& grid,
-    const grid_value_fp& norm) {
+  //
+  // ByValue
+  //
+  // normalize grid by a value
+  //
 
-    static_assert(
-      int(GridAxis::x) == 0
-      && int(GridAxis::y) == 1
-      && int(GridAxis::mrow) == 2
-      && int(GridAxis::channel) == 3);
+  struct ByValue{};
 
-    grid_value_fp inv_norm = (grid_value_fp)(1.0) / norm;
-    K::parallel_for(
-      "normalization",
-      K::MDRangePolicy<K::Rank<4>, execution_space>(
-        exec,
-        {0, 0, 0, 0},
-        {grid.extent_int(int(GridAxis::x)),
-         grid.extent_int(int(GridAxis::y)),
-         grid.extent_int(int(GridAxis::mrow)),
-         grid.extent_int(int(GridAxis::channel))}),
-      KOKKOS_LAMBDA(int x, int y, int mrow, int channel) {
-        grid(x, y, mrow, channel) *= inv_norm;
-      });
+  KOKKOS_INLINE_FUNCTION void
+  operator()(const ByValue&, int x, int y, int mrow, int channel) const {
+
+    m_grid(x, y, mrow, channel) *= m_inv_norm;
+  }
+
+  void
+  normalize() const {
+    const K::Array<int, 4> begin{0, 0, 0, 0};
+    const K::Array<int, 4> end{
+      m_grid.extent_int(int(GridAxis::x)),
+      m_grid.extent_int(int(GridAxis::y)),
+      m_grid.extent_int(int(GridAxis::mrow)),
+      m_grid.extent_int(int(GridAxis::channel))};
+
+    if (m_weights.is_allocated())
+      K::parallel_for(
+        "normalize_by_weights",
+        K::MDRangePolicy<K::Rank<4>, execution_space, ByWeights>(
+          m_exec,
+          begin,
+          end),
+        *this);
+    else if (m_inv_norm != grid_value_fp(1))
+      K::parallel_for(
+        "normalize_by_value",
+        K::MDRangePolicy<K::Rank<4>, execution_space, ByValue>(
+          m_exec,
+          begin,
+          end),
+        *this);
   }
 };
+
+// deduction guide for "weights-less" constructor
+template <typename execution_space, typename GridView, typename T>
+GridNormalizer(const execution_space&, const GridView&, T) ->
+  GridNormalizer<execution_space, GridView, K::View<T**>>;
 
 /** fftw function class templated on fp precision */
 template <typename T>

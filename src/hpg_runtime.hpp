@@ -1264,18 +1264,13 @@ public:
     impl::core::const_weight_view<
       typename execution_space::array_layout, memory_space>
       cweights = m_weights;
-    switch (grid_normalizer_version()) {
-    case 0:
-      impl::core::GridNormalizer<execution_space, 0>::kernel(
-        m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
-        m_grid,
-        cweights,
-        wfactor);
-      break;
-    default:
-      assert(false);
-      break;
-    }
+
+    impl::core::GridNormalizer(
+      m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+      m_grid,
+      m_weights,
+      wfactor)
+      .normalize();
   }
 
   std::optional<Error>
@@ -1316,18 +1311,11 @@ public:
       }
     }
     // apply normalization
-    if (norm != 1)
-      switch (grid_normalizer_version()) {
-      case 0:
-        impl::core::GridNormalizer<execution_space, 0>::kernel(
-          m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
-          m_grid,
-          norm);
-        break;
-      default:
-        assert(false);
-        break;
-      }
+    impl::core::GridNormalizer(
+      m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+      m_grid,
+      norm)
+      .normalize();
     return err;
   }
 
@@ -1378,18 +1366,11 @@ public:
         }
       }
       // apply normalization
-      if (norm != 1)
-        switch (grid_normalizer_version()) {
-        case 0:
-          impl::core::GridNormalizer<execution_space, 0>::kernel(
-            m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space,
-            m_model,
-            norm);
-          break;
-        default:
-          assert(false);
-          break;
-        }
+      impl::core::GridNormalizer(
+        m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+        m_model,
+        norm)
+        .normalize();
     }
     return err;
   }
