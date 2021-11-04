@@ -28,16 +28,6 @@
 
 #include <Kokkos_Core.hpp>
 
-#if defined(HPG_ENABLE_SERIAL) || defined(HPG_ENABLE_OPENMP)
-# include <fftw3.h>
-# ifdef HPG_ENABLE_OPENMP
-#  include <omp.h>
-# endif
-#endif
-#ifdef HPG_ENABLE_CUDA
-# include <cufft.h>
-#endif
-
 namespace hpg::runtime::impl::core {
 
 namespace K = Kokkos;
@@ -52,6 +42,18 @@ struct /*HPG_EXPORT*/ ProfileRegion {
     K::Profiling::popRegion();
   }
 };
+
+/** accumulation value type for complex values
+ *
+ * @tparam C K::Complex<.> type
+ */
+template <typename C>
+using acc_cpx_t =
+  K::complex<
+    std::conditional_t<
+      std::is_same_v<typename C::value_type, float>,
+      double,
+      long double>>;
 
 /** ordered Grid array axes */
 enum class /*HPG_EXPORT*/ GridAxis {
@@ -209,52 +211,39 @@ struct /*HPG_EXPORT*/ reduction_identity<
 
 namespace hpg::runtime::impl::core {
 
-/** accumulation value type for complex values
- *
- * @tparam C K::Complex<.> type
- */
-template <typename C>
-using acc_cpx_t =
-  K::complex<
-    std::conditional_t<
-      std::is_same_v<typename C::value_type, float>,
-      double,
-      long double>>;
-
-/** visibility value type */
-using vis_t = K::complex<visibility_fp>;
-
-using acc_vis_t = acc_cpx_t<vis_t>;
-
-/** convolution function value type */
-using cf_t = K::complex<cf_fp>;
-
-using acc_cf_t = acc_cpx_t<cf_t>;
-
-/** gridded value type */
-using gv_t = K::complex<grid_value_fp>;
-
-/** portable UVW coordinates type */
-using uvw_t = K::Array<vis_uvw_fp, 3>;
-
 /** visibilities plus metadata for gridding */
-template <unsigned N>
+template <
+  unsigned N,
+  typename V,
+  typename W,
+  typename F,
+  typename P,
+  typename U,
+  typename G>
 struct /*HPG_EXPORT*/ VisData {
 
   static constexpr unsigned npol = N;
 
+  enum : bool { is_visdata = true };
+
+  using vis_t = V; // vis_t
+  using wgt_t = W; // vis_weight_fp
+  using freq_t = F; // vis_frequency_fp
+  using ph_t = P; // vis_phase_fp
+  using uvw_t = U; // impl::uvw_t
+  using phgrad_t = G; // cf_phase_gradient_fp
+
   KOKKOS_INLINE_FUNCTION VisData() {};
 
   KOKKOS_INLINE_FUNCTION VisData(
-    const K::Array<vis_t, N>& values, /**< visibility values */
-    const K::Array<vis_weight_fp, N> weights, /**< visibility weights */
-    vis_frequency_fp freq, /**< frequency */
-    vis_phase_fp d_phase, /**< phase angle */
-    const uvw_t& uvw, /** < uvw coordinates */
-    unsigned& grid_channel, /**< grid channel index */
-    const K::Array<unsigned, 2>& cf_index, /**< cf (channel, grp) index */
-    /** cf phase gradient */
-    const K::Array<cf_phase_gradient_fp, 2>& cf_phase_gradient)
+    const K::Array<V, N>& values,
+    const K::Array<W, N>& weights,
+    F freq,
+    P d_phase,
+    const U uvw,
+    unsigned& grid_channel,
+    const K::Array<unsigned, 2>& cf_index,
+    const K::Array<G, 2>& cf_phase_gradient)
     : m_values(values)
     , m_weights(weights)
     , m_freq(freq)
@@ -275,78 +264,14 @@ struct /*HPG_EXPORT*/ VisData {
   VisData& operator=(VisData&&) noexcept = default;
 
   K::Array<vis_t, N> m_values;
-  K::Array<vis_weight_fp, N> m_weights;
-  vis_frequency_fp m_freq;
-  vis_phase_fp m_d_phase;
+  K::Array<wgt_t, N> m_weights;
+  freq_t m_freq;
+  ph_t m_d_phase;
   uvw_t m_uvw;
   unsigned m_grid_channel;
   K::Array<unsigned, 2> m_cf_index;
-  K::Array<cf_phase_gradient_fp, 2> m_cf_phase_gradient;
+  K::Array<phgrad_t, 2> m_cf_phase_gradient;
 };
-
-/** View type for grid values */
-template <typename Layout, typename memory_space>
-using grid_view = K::View<gv_t****, Layout, memory_space>;
-
-/** View type for constant grid values */
-template <typename Layout, typename memory_space>
-using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
-
-/** View type for weight values
- *
- * logical axis order: mrow, channel
- */
-template <typename Layout, typename memory_space>
-using weight_view = K::View<grid_value_fp**, Layout, memory_space>;
-
-/** View type for constant weight values */
-template <typename Layout, typename memory_space>
-using const_weight_view = K::View<const grid_value_fp**, Layout, memory_space>;
-
-/** View type for CF values */
-template <typename Layout, typename memory_space>
-using cf_view =
-  K::View<cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
-
-/** View type for constant CF values */
-template <typename Layout, typename memory_space>
-using const_cf_view =
-  K::View<
-    const cf_t******,
-    Layout,
-    memory_space,
-    K::MemoryTraits<K::Unmanaged>>;
-
-/** view type for unmanaged view of vector data on host */
-template <typename T>
-using vector_view = K::View<T*, K::HostSpace, K::MemoryTraits<K::Unmanaged>>;
-
-/** view for VisData<N> */
-template <unsigned N, typename memory_space>
-using visdata_view =
-  K::View<VisData<N>*, memory_space, K::MemoryTraits<K::Unmanaged>>;
-
-/** View for constant VisData<N> */
-template <unsigned N, typename memory_space>
-using const_visdata_view =
-  K::View<const VisData<N>*, memory_space, K::MemoryTraits<K::Unmanaged>>;
-
-/** view for backing buffer of visdata views in ExecSpace */
-template <typename memory_space>
-using visbuff_view = K::View<VisData<4>*, memory_space>;
-
-/** view for backing buffer of gvisvals views in ExecSpace */
-template <typename memory_space>
-using gvisbuff_view = K::View<poln_array_type<visibility_fp, 4>*, memory_space>;
-
-/** view for Mueller element index matrix */
-template <typename memory_space>
-using mindex_view = K::View<int[4][4], memory_space>;
-
-/** view for constant Mueller element index matrix */
-template <typename memory_space>
-using const_mindex_view =
-  K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
 
 /** almost atomic complex addition
  *
@@ -419,16 +344,17 @@ pseudo_atomic_add<K::Cuda, float>(
  *
  * @return tuple comprising four integer coordinates
  */
+template <typename T>
 /*HPG_EXPORT*/ KOKKOS_INLINE_FUNCTION std::tuple<int, int, int, int>
 compute_vis_coord(
   int g_size,
   int oversampling,
   int cf_radius,
-  vis_uvw_fp coord,
-  vis_frequency_fp inv_lambda,
-  grid_scale_fp grid_scale) {
+  T coord,
+  T inv_lambda,
+  T grid_scale) {
 
-  const double position = grid_scale * coord * inv_lambda + g_size / 2.0;
+  const T position = grid_scale * coord * inv_lambda + g_size / 2.0;
   long grid_coord = std::lrint(position);
   const long fine_offset = std::lrint((grid_coord - position) * oversampling);
   grid_coord -= cf_radius;
@@ -490,31 +416,39 @@ mag(const K::complex<T>& v) {
  * Basically exists to encapsulate conversion from a Visibility value to several
  * visibility metadata values needed by gridding kernel
  */
-template <unsigned N, typename execution_space>
+template <typename execution_space, typename VD, typename GS>
 struct /*HPG_EXPORT*/ Vis final {
+
+  static constexpr unsigned npol = VD::npol;
+  using vis_t = typename VD::vis_t;
+  using wgt_t = typename VD::wgt_t;
+  using freq_t = typename VD::freq_t;
+  using ph_t = typename VD::ph_t;
+  using uvw_t = typename VD::uvw_t;
+  using phgrad_t = typename VD::phgrad_t;
 
   int m_grid_coord[2]; /**< grid coordinate */
   int m_cf_minor[2]; /**< CF minor coordinate */
   int m_cf_major[2]; /**< CF major coordinate */
   int m_fine_offset[2]; /**< visibility position - nearest major grid */
   int m_cf_size[2]; /**< cf size */
-  K::Array<vis_t, N> m_values; /**< visibility values */
-  K::Array<vis_weight_fp, N> m_weights; /**< visibility weights */
-  K::complex<vis_phase_fp> m_phasor;
+  K::Array<vis_t, npol> m_values; /**< visibility values */
+  K::Array<wgt_t, npol> m_weights; /**< visibility weights */
+  K::complex<ph_t> m_phasor;
   int m_grid_channel; /**< grid channel index */
   int m_cf_channel; /**< cf channel index */
   int m_cf_grp; /**< cf group index */
   bool m_pos_w; /**< true iff W coordinate is strictly positive */
-  cf_phase_gradient_fp m_phi0[2]; /**< phase screen value origin */
-  cf_phase_gradient_fp m_dphi[2]; /**< phase screen value increment */
+  phgrad_t m_phi0[2]; /**< phase screen value origin */
+  phgrad_t m_dphi[2]; /**< phase screen value increment */
 
   KOKKOS_INLINE_FUNCTION Vis() {};
 
   KOKKOS_INLINE_FUNCTION Vis(
-    const VisData<N>& vis,
-    const K::Array<vis_t, N>& vals,
+    const VD& vis,
+    const K::Array<vis_t, npol>& vals,
     const K::Array<int, 2>& grid_size,
-    const K::Array<grid_scale_fp, 2>& grid_scale,
+    const K::Array<GS, 2>& grid_scale,
     const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     const K::Array<int, 2>& oversampling)
     : m_values(vals)
@@ -525,7 +459,7 @@ struct /*HPG_EXPORT*/ Vis final {
     , m_cf_grp(vis.m_cf_index[1])
     , m_pos_w(vis.m_uvw[2] > 0) {
 
-    static const vis_frequency_fp c = 299792458.0;
+    static const freq_t c = 299792458.0;
     auto inv_lambda = vis.m_freq / c;
 
     for (const auto d : {0, 1}) {
@@ -566,519 +500,6 @@ struct /*HPG_EXPORT*/ Vis final {
  * Note that the default implementation probably is optimal only for many-core
  * devices, probably not OpenMP (although it is correct on all devices).
  */
-template <unsigned N, typename execution_space, unsigned version>
-struct /*HPG_EXPORT*/ VisibilityGridder final {
-
-  using member_type = typename K::TeamPolicy<execution_space>::member_type;
-
-  using scratch_phscr_view =
-    K::View<
-      cf_phase_gradient_fp*,
-      typename execution_space::scratch_memory_space>;
-
-  template <typename CFView, typename MIndexView, typename GridView>
-  static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
-  degrid_vis(
-    const member_type& team_member,
-    const Vis<N, execution_space>& vis,
-    CFView& cf,
-    MIndexView& mueller_indexes,
-    MIndexView& conjugate_mueller_indexes,
-    GridView& model,
-    const scratch_phscr_view& phi_Y) {
-
-    static_assert(std::is_same_v<typename CFView::non_const_value_type, cf_t>);
-    static_assert(CFView::rank == 6);
-    static_assert(
-      std::is_same_v<typename MIndexView::data_type, const int[4][4]>);
-    static_assert(std::is_same_v<typename GridView::value_type, const gv_t>);
-    static_assert(GridView::rank == 4);
-
-    const auto& N_X = vis.m_cf_size[0];
-    const auto& N_Y = vis.m_cf_size[1];
-    const auto N_R = model.extent_int(int(GridAxis::mrow));
-
-    auto degridding_mindex =
-      vis.m_pos_w ? conjugate_mueller_indexes : mueller_indexes;
-    cf_fp cf_im_factor = (vis.m_pos_w ? 1 : -1);
-
-    // compute the values of the phase screen along the Y axis now and store the
-    // results in scratch memory because gridding on the Y axis accesses the
-    // phase screen values for every row of the Mueller matrix column
-    K::parallel_for(
-      K::TeamVectorRange(team_member, N_Y),
-      [=](const int Y) {
-        phi_Y(Y) = vis.m_phi0[1] + Y * vis.m_dphi[1];
-      });
-    team_member.team_barrier();
-
-    poln_array_type<visibility_fp, N> result;
-
-    if (model.is_allocated()) {
-      // model degridding
-      static_assert(std::is_same_v<acc_vis_t, acc_cf_t>);
-      vis_array_type<acc_vis_t::value_type, N> vis_array;
-
-      // 3d (X, Y, Mueller) subspace of CF for this visibility
-      auto cf_vis =
-        K::subview(
-          cf,
-          K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
-          K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
-          K::ALL,
-          vis.m_cf_channel,
-          vis.m_cf_minor[0],
-          vis.m_cf_minor[1]);
-
-      // 3d (X, Y, pol) subspace of model for this visibility
-      auto model_vis =
-        K::subview(
-          model,
-          K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-          K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
-          K::ALL,
-          vis.m_grid_channel);
-
-      // loop over model polarizations
-      for (int gpol = 0; gpol < N_R; ++gpol) {
-        decltype(vis_array) va;
-        // parallel loop over grid X
-        K::parallel_reduce(
-          K::TeamThreadRange(team_member, N_X),
-          [=](const int X, decltype(vis_array)& vis_array_l) {
-            auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
-            // loop over grid Y
-            for (int Y = 0; Y < N_Y; ++Y) {
-              auto screen = cphase<execution_space>(-phi_X - phi_Y(Y));
-              const auto mv = model_vis(X, Y, gpol) * screen;
-              // loop over visibility polarizations
-              for (int vpol = 0; vpol < N; ++vpol) {
-                if (const auto mindex = degridding_mindex(gpol, vpol);
-                    mindex >= 0) {
-                  cf_t cfv = cf_vis(X, Y, mindex);
-                  cfv.imag() *= cf_im_factor;
-                  vis_array_l.vis[vpol] += cfv * mv;
-                  vis_array_l.wgt[vpol] += cfv;
-                }
-              }
-            }
-          },
-          K::Sum<decltype(va)>(va));
-        vis_array += va;
-      }
-
-      // apply weights and phasor to compute predicted visibilities
-      auto conj_phasor = vis.m_phasor;
-      conj_phasor.imag() *= -1;
-      for (int vpol = 0; vpol < N; ++vpol)
-        result.vals[vpol] =
-          (vis_array.vis[vpol]
-           / ((vis_array.wgt[vpol] != (acc_cf_t)0)
-              ? vis_array.wgt[vpol]
-              : (acc_cf_t)1))
-          * conj_phasor;
-    }
-    return result;
-  }
-
-  // function for gridding a single visibility with sum of weights
-  template <
-    typename CFView,
-    typename MIndexView,
-    typename GridView,
-    typename WeightView>
-  static KOKKOS_FUNCTION void
-  grid_vis(
-    const member_type& team_member,
-    const Vis<N, execution_space>& vis,
-    const unsigned gpol,
-    CFView& cf,
-    MIndexView& mueller_indexes,
-    MIndexView& conjugate_mueller_indexes,
-    GridView& grid,
-    WeightView& weights,
-    const scratch_phscr_view& phi_Y) {
-
-    static_assert(std::is_same_v<typename CFView::non_const_value_type, cf_t>);
-    static_assert(CFView::rank == 6);
-    static_assert(
-      std::is_same_v<typename MIndexView::data_type, const int[4][4]>);
-    static_assert(std::is_same_v<typename GridView::value_type, gv_t>);
-    static_assert(GridView::rank == 4);
-    static_assert(
-      std::is_same_v<typename WeightView::value_type, grid_value_fp>);
-    static_assert(WeightView::rank == 2);
-
-    const auto& N_X = vis.m_cf_size[0];
-    const auto& N_Y = vis.m_cf_size[1];
-
-    auto gridding_mindex =
-      K::subview(
-        (vis.m_pos_w ? mueller_indexes : conjugate_mueller_indexes),
-        gpol,
-        K::ALL);
-    cf_fp cf_im_factor = (vis.m_pos_w ? -1 : 1);
-
-    // compute the values of the phase screen along the Y axis now and store the
-    // results in scratch memory because gridding on the Y axis accesses the
-    // phase screen values for every row of the Mueller matrix column
-    K::parallel_for(
-      K::TeamVectorRange(team_member, N_Y),
-      [=](const int Y) {
-        phi_Y(Y) = vis.m_phi0[1] + Y * vis.m_dphi[1];
-      });
-    team_member.team_barrier();
-
-    // 3d (X, Y, Mueller) subspace of CF for this visibility
-    auto cf_vis =
-      K::subview(
-        cf,
-        K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
-        K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
-        K::ALL,
-        vis.m_cf_channel,
-        vis.m_cf_minor[0],
-        vis.m_cf_minor[1]);
-
-    // 2d (X, Y) subspace of grid for this visibility and grid polarization
-    // (gpol)
-    auto grd_vis =
-      K::subview(
-        grid,
-        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
-        gpol,
-        vis.m_grid_channel);
-
-    // accumulate to grid, and CF weights per visibility polarization
-    poln_array_type<acc_cf_t::value_type, N> grid_wgt;
-    // parallel loop over grid X
-    K::parallel_reduce(
-      K::TeamThreadRange(team_member, N_X),
-      [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
-        auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
-        // loop over grid Y
-        for (int Y = 0; Y < N_Y; ++Y) {
-          const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
-          gv_t gv(0);
-          // loop over visibility polarizations
-          for (int vpol = 0; vpol < N; ++vpol) {
-            if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
-              cf_t cfv = cf_vis(X, Y, mindex);
-              cfv.imag() *= cf_im_factor;
-              gv += gv_t(cfv * screen * vis.m_values[vpol]);
-              grid_wgt_l.vals[vpol] += cfv;
-            }
-          }
-          pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
-        }
-      },
-      K::Sum<decltype(grid_wgt)>(grid_wgt));
-    // compute final weight and add it to weights
-    K::single(
-      K::PerTeam(team_member),
-      [&]() {
-        grid_value_fp twgt = 0;
-        for (int vpol = 0; vpol < N; ++vpol)
-          twgt +=
-            grid_value_fp(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]);
-        K::atomic_add(&weights(gpol, vis.m_grid_channel), twgt);
-      });
-  }
-
-  // function for gridding a single visibility without sum of weights
-  template <typename CFView, typename MIndexView, typename GridView>
-  static KOKKOS_FUNCTION void
-  grid_vis_no_weights(
-    const member_type& team_member,
-    const Vis<N, execution_space>& vis,
-    const unsigned gpol,
-    CFView& cf,
-    MIndexView& mueller_indexes,
-    MIndexView& conjugate_mueller_indexes,
-    GridView& grid,
-    const scratch_phscr_view& phi_Y) {
-
-    static_assert(std::is_same_v<typename CFView::non_const_value_type, cf_t>);
-    static_assert(CFView::rank == 6);
-    static_assert(
-      std::is_same_v<typename MIndexView::data_type, const int[4][4]>);
-    static_assert(std::is_same_v<typename GridView::value_type, gv_t>);
-    static_assert(GridView::rank == 4);
-
-    const auto& N_X = vis.m_cf_size[0];
-    const auto& N_Y = vis.m_cf_size[1];
-
-    auto gridding_mindex =
-      K::subview(
-        (vis.m_pos_w ? mueller_indexes : conjugate_mueller_indexes),
-        gpol,
-        K::ALL);
-    cf_fp cf_im_factor = (vis.m_pos_w ? -1 : 1);
-
-    // compute the values of the phase screen along the Y axis now and store the
-    // results in scratch memory because gridding on the Y axis accesses the
-    // phase screen values for every row of the Mueller matrix column
-    K::parallel_for(
-      K::TeamVectorRange(team_member, N_Y),
-      [=](const int Y) {
-        phi_Y(Y) = vis.m_phi0[1] + Y * vis.m_dphi[1];
-      });
-    team_member.team_barrier();
-
-    // 3d (X, Y, Mueller) subspace of CF for this visibility
-    auto cf_vis =
-      K::subview(
-        cf,
-        K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
-        K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
-        K::ALL,
-        vis.m_cf_channel,
-        vis.m_cf_minor[0],
-        vis.m_cf_minor[1]);
-
-    // 2d (X, Y) subspace of grid for this visibility and grid polarization
-    // (gpol)
-    auto grd_vis =
-      K::subview(
-        grid,
-        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
-        gpol,
-        vis.m_grid_channel);
-
-    // parallel loop over grid X
-    K::parallel_for(
-      K::TeamThreadRange(team_member, N_X),
-      [=](const int X) {
-        auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
-        // loop over grid Y
-        for (int Y = 0; Y < N_Y; ++Y) {
-          const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
-          gv_t gv(0);
-          // loop over visibility polarizations
-          for (int vpol = 0; vpol < N; ++vpol) {
-            if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
-              cf_t cfv = cf_vis(X, Y, mindex);
-              cfv.imag() *= cf_im_factor;
-              gv += gv_t(cfv * screen * vis.m_values[vpol]);
-            }
-          }
-          pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
-        }
-      });
-  }
-
-  static KOKKOS_INLINE_FUNCTION bool
-  all_within_grid(
-    const Vis<N, execution_space>& vis,
-    const K::Array<int, 2>& grid_size) {
-
-    return
-      (0 <= vis.m_grid_coord[0])
-      && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
-      && (0 <= vis.m_grid_coord[1])
-      && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1]);
-  }
-
-  template <
-    typename CFView,
-    typename MIndexView,
-    typename VisdataView,
-    typename GVisbuffView,
-    typename ModelView,
-    typename GridView,
-    typename WeightView>
-  static void
-  kernel(
-    execution_space exec,
-    const K::Array<CFView, HPG_MAX_NUM_CF_GROUPS>& cfs,
-    const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
-    unsigned max_cf_extent_y,
-    MIndexView mueller_indexes,
-    MIndexView conjugate_mueller_indexes,
-    bool update_grid_weights,
-    bool do_degrid,
-    bool do_grid,
-    int num_visibilities,
-    VisdataView visibilities,
-    GVisbuffView& gvisbuff,
-    const K::Array<grid_scale_fp, 2>& grid_scale,
-    ModelView& model,
-    GridView& grid,
-    WeightView& weights) {
-
-    static_assert(std::is_same_v<typename CFView::non_const_value_type, cf_t>);
-    static_assert(CFView::rank == 6);
-    static_assert(std::is_same_v<typename VisdataView::value_type, VisData<N>>);
-    static_assert(VisdataView::rank == 1);
-    static_assert(
-      std::is_same_v<
-        typename GVisbuffView::value_type,
-        poln_array_type<visibility_fp, 4>>);
-    static_assert(
-      std::is_same_v<typename MIndexView::data_type, const int[4][4]>);
-    static_assert(std::is_same_v<typename ModelView::value_type, const gv_t>);
-    static_assert(ModelView::rank == 4);
-    static_assert(std::is_same_v<typename GridView::value_type, gv_t>);
-    static_assert(GridView::rank == 4);
-    static_assert(
-      std::is_same_v<typename WeightView::value_type, grid_value_fp>);
-    static_assert(WeightView::rank == 2);
-
-    ProfileRegion region("VisibilityGridder");
-
-    const K::Array<int, 2>
-      grid_size{
-      grid.extent_int(int(GridAxis::x)),
-      grid.extent_int(int(GridAxis::y))};
-    const K::Array<int, 2>
-      oversampling{
-      cfs[0].extent_int(int(CFAxis::x_minor)),
-      cfs[0].extent_int(int(CFAxis::y_minor))};
-
-    auto shmem_size = scratch_phscr_view::shmem_size(max_cf_extent_y);
-
-    if (do_degrid) {
-      K::parallel_for(
-        "degridding",
-        K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
-        .set_scratch_size(0, K::PerTeam(shmem_size)),
-        KOKKOS_LAMBDA(const member_type& team_member) {
-          auto i = team_member.league_rank();
-          auto& visibility = visibilities(i);
-
-          Vis<N, execution_space> vis(
-            visibility,
-            visibility.m_values,
-            grid_size,
-            grid_scale,
-            cf_radii,
-            oversampling);
-          poln_array_type<visibility_fp, N> gvis;
-          // skip this visibility if all of the updated grid points are not
-          // within grid bounds
-          if (all_within_grid(vis, grid_size)) {
-            gvis =
-              degrid_vis(
-                team_member,
-                vis,
-                cfs[vis.m_cf_grp],
-                mueller_indexes,
-                conjugate_mueller_indexes,
-                model,
-                scratch_phscr_view(
-                  team_member.team_scratch(0),
-                  max_cf_extent_y));
-            if (do_grid)
-              // return residual visibilities, prepare values for gridding
-              K::single(
-                K::PerTeam(team_member),
-                [&]() {
-                  for (int vpol = 0; vpol < N; ++vpol) {
-                    visibility.m_values[vpol] -= gvis.vals[vpol];
-                    gvisbuff(i).vals[vpol] =
-                      visibility.m_values[vpol]
-                      * vis.m_phasor
-                      * vis.m_weights[vpol];
-                  }
-                });
-            else
-              // return predicted visibilities
-              K::single(
-                K::PerTeam(team_member),
-                [&]() {
-                  for (int vpol = 0; vpol < N; ++vpol)
-                    visibility.m_values[vpol] = gvis.vals[vpol];
-                });
-          }
-        });
-    } else {
-      K::parallel_for(
-        "gvis_init",
-        K::RangePolicy<execution_space>(exec, 0, num_visibilities),
-        KOKKOS_LAMBDA(const int i) {
-          auto& vis = visibilities(i);
-          auto phasor = cphase<execution_space>(vis.m_d_phase);
-          for (int vpol = 0; vpol < N; ++vpol) {
-            gvisbuff(i).vals[vpol] =
-              vis.m_values[vpol] * phasor * vis.m_weights[vpol];
-          }
-        });
-    }
-
-    if (do_grid) {
-      const auto N_R = grid.extent_int(int(GridAxis::mrow));
-      if (update_grid_weights)
-        K::parallel_for(
-          "gridding",
-          K::TeamPolicy<execution_space>(exec, N_R * num_visibilities, K::AUTO)
-          .set_scratch_size(0, K::PerTeam(shmem_size)),
-          KOKKOS_LAMBDA(const member_type& team_member) {
-            auto i = team_member.league_rank() / N_R;
-            auto gpol = team_member.league_rank() % N_R;
-
-            Vis<N, execution_space> vis(
-              visibilities(i),
-              reinterpret_cast<K::Array<vis_t, N>&>(gvisbuff(i).vals),
-              grid_size,
-              grid_scale,
-              cf_radii,
-              oversampling);
-            // skip this visibility if all of the updated grid points are not
-            // within grid bounds
-            if (all_within_grid(vis, grid_size)) {
-              grid_vis(
-                team_member,
-                vis,
-                gpol,
-                cfs[vis.m_cf_grp],
-                mueller_indexes,
-                conjugate_mueller_indexes,
-                grid,
-                weights,
-                scratch_phscr_view(
-                  team_member.team_scratch(0),
-                  max_cf_extent_y));
-            }
-          });
-      else
-        K::parallel_for(
-          "gridding_no_weights",
-          K::TeamPolicy<execution_space>(exec, N_R * num_visibilities, K::AUTO)
-          .set_scratch_size(0, K::PerTeam(shmem_size)),
-          KOKKOS_LAMBDA(const member_type& team_member) {
-            auto i = team_member.league_rank() / N_R;
-            auto gpol = team_member.league_rank() % N_R;
-
-            Vis<N, execution_space> vis(
-              visibilities(i),
-              reinterpret_cast<K::Array<vis_t, N>&>(gvisbuff(i).vals),
-              grid_size,
-              grid_scale,
-              cf_radii,
-              oversampling);
-            // skip this visibility if all of the updated grid points are not
-            // within grid bounds
-            if (all_within_grid(vis, grid_size)) {
-              grid_vis_no_weights(
-                team_member,
-                vis,
-                gpol,
-                cfs[vis.m_cf_grp],
-                mueller_indexes,
-                conjugate_mueller_indexes,
-                grid,
-                scratch_phscr_view(
-                  team_member.team_scratch(0),
-                  max_cf_extent_y));
-            }
-          });
-    }
-  }
-};
-
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 template <
   unsigned N,
   typename execution_space,
@@ -1086,42 +507,49 @@ template <
   typename MIndexView,
   typename VisdataView,
   typename GVisbuffView,
+  typename GridScale,
   typename GridView,
   typename WeightView,
   typename ModelView>
-struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
+struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   static_assert(CFView::rank == 6);
-  static_assert(std::is_same_v<typename VisdataView::value_type, VisData<N>>);
+  static_assert(VisdataView::value_type::is_visdata);
+  static_assert(VisdataView::value_type::npol == N);
   static_assert(VisdataView::rank == 1);
+  using visdata_t = typename VisdataView::value_type;
+  using visibility_t = typename visdata_t::vis_t;
+  using visibility_fp_t = typename visibility_t::value_type;
   static_assert(
     std::is_same_v<
       typename GVisbuffView::value_type,
-      poln_array_type<visibility_fp, 4>>);
+      poln_array_type<visibility_fp_t, 4>>);
+  static_assert(GVisbuffView::rank == 1);
   static_assert(
     std::is_same_v<typename MIndexView::non_const_data_type, int[4][4]>);
   static_assert(ModelView::rank == 4);
   static_assert(GridView::rank == 4);
   static_assert(WeightView::rank == 2);
 
-  using member_type =
-    typename VisibilityGridder<N, execution_space, 0>::member_type;
+  using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
   using scratch_phscr_view =
-    typename VisibilityGridder<N, execution_space, 0>::scratch_phscr_view;
+    K::View<
+      typename visdata_t::phgrad_t*,
+      typename execution_space::scratch_memory_space>;
 
   using cf_const_view = typename CFView::const_type;
   using mindex_const_view = typename MIndexView::const_type;
   using model_const_view = typename ModelView::const_type;
 
   using cf_value_t = typename CFView::non_const_value_type;
+  using acc_vis_value_t = acc_cpx_t<visibility_t>;
   using acc_cf_value_t = acc_cpx_t<cf_value_t>;
   using grid_value_t = typename GridView::non_const_value_type;
   using model_value_t = typename ModelView::non_const_value_type;
   using weight_value_t = typename WeightView::non_const_value_type;
 
-  // TODO: have visibility value type be dependent on VisdataView and
-  // GVisbuffView (now fixed to vis_t)
+  using vis_t = Vis<execution_space, visdata_t, GridScale>;
 
   execution_space m_exec;
   K::Array<cf_const_view, HPG_MAX_NUM_CF_GROUPS> m_cfs;
@@ -1132,7 +560,7 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
   int m_num_visibilities;
   VisdataView m_visibilities;
   GVisbuffView m_gvisbuff;
-  K::Array<grid_scale_fp, 2> m_grid_scale;
+  K::Array<GridScale, 2> m_grid_scale;
   GridView m_grid;
   WeightView m_weights;
   model_const_view m_model;
@@ -1145,7 +573,7 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
    *
    * first argument is needed for complete class template argument deduction
    */
-  GridderFunctor(
+  VisibilityGridder(
     const std::integral_constant<unsigned, N>&,
     const execution_space& exec,
     const K::Array<CFView, HPG_MAX_NUM_CF_GROUPS>& cfs,
@@ -1156,7 +584,7 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
     int num_visibilities,
     const VisdataView& visibilities,
     const GVisbuffView& gvisbuff,
-    const K::Array<grid_scale_fp, 2>& grid_scale,
+    const K::Array<GridScale, 2>& grid_scale,
     const GridView& grid,
     const WeightView& weights,
     const ModelView& model)
@@ -1184,10 +612,22 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
     m_shmem_size = scratch_phscr_view::shmem_size(m_max_cf_extent_y);
   }
 
-  static KOKKOS_INLINE_FUNCTION poln_array_type<visibility_fp, N>
+  static KOKKOS_INLINE_FUNCTION bool
+  all_within_grid(
+    const vis_t& vis,
+    const K::Array<int, 2>& grid_size) {
+
+    return
+      (0 <= vis.m_grid_coord[0])
+      && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
+      && (0 <= vis.m_grid_coord[1])
+      && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1]);
+  }
+
+  static KOKKOS_INLINE_FUNCTION poln_array_type<visibility_fp_t, N>
   degrid_vis(
     const member_type& team_member,
-    const Vis<N, execution_space>& vis,
+    const vis_t& vis,
     const cf_const_view& cf,
     const mindex_const_view& mueller_indexes,
     const mindex_const_view& conjugate_mueller_indexes,
@@ -1212,12 +652,12 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
       });
     team_member.team_barrier();
 
-    poln_array_type<visibility_fp, N> result;
+    poln_array_type<visibility_fp_t, N> result;
 
     if (model.is_allocated()) {
       // model degridding
-      static_assert(std::is_same_v<acc_vis_t, acc_cf_value_t>);
-      vis_array_type<acc_vis_t::value_type, N> vis_array;
+      static_assert(std::is_same_v<acc_vis_value_t, acc_cf_value_t>);
+      vis_array_type<typename acc_vis_value_t::value_type, N> vis_array;
 
       // 3d (X, Y, Mueller) subspace of CF for this visibility
       auto cf_vis =
@@ -1300,16 +740,15 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
     auto i = team_member.league_rank();
     auto& visibility = m_visibilities(i);
 
-    Vis<N, execution_space> vis(
+    vis_t vis(
       visibility,
       visibility.m_values,
       m_grid_size,
       m_grid_scale,
       m_cf_radii,
       m_oversampling);
-    poln_array_type<visibility_fp, N> gvis;
-    if (VisibilityGridder<N, execution_space, 0>
-        ::all_within_grid(vis, m_grid_size))
+    poln_array_type<visibility_fp_t, N> gvis;
+    if (all_within_grid(vis, m_grid_size))
       gvis =
         degrid_vis(
           team_member,
@@ -1326,7 +765,7 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
     K::single(
       K::PerTeam(team_member),
       [&]() {
-        reinterpret_cast<poln_array_type<visibility_fp, N>&>(m_gvisbuff(i)) =
+        reinterpret_cast<poln_array_type<visibility_fp_t, N>&>(m_gvisbuff(i)) =
           gvis;
       });
   }
@@ -1466,7 +905,7 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
   static KOKKOS_INLINE_FUNCTION void
   grid_vis(
     const member_type& team_member,
-    const Vis<N, execution_space>& vis,
+    const vis_t& vis,
     const unsigned gpol,
     const cf_const_view& cf,
     const mindex_const_view& mueller_indexes,
@@ -1556,7 +995,7 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
   static KOKKOS_INLINE_FUNCTION void
   grid_vis_no_weights(
     const member_type& team_member,
-    const Vis<N, execution_space>& vis,
+    const vis_t& vis,
     const unsigned gpol,
     const cf_const_view& cf,
     const mindex_const_view& mueller_indexes,
@@ -1635,17 +1074,16 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
     auto i = team_member.league_rank() / N_R;
     auto gpol = team_member.league_rank() % N_R;
 
-    Vis<N, execution_space> vis(
+    vis_t vis(
       m_visibilities(i),
-      reinterpret_cast<K::Array<vis_t, N>&>(m_gvisbuff(i).vals),
+      reinterpret_cast<K::Array<visibility_t, N>&>(m_gvisbuff(i).vals),
       m_grid_size,
       m_grid_scale,
       m_cf_radii,
       m_oversampling);
     // skip this visibility if all of the updated grid points are not
     // within grid bounds
-    if (VisibilityGridder<N, execution_space, 0>
-        ::all_within_grid(vis, m_grid_size))
+    if (all_within_grid(vis, m_grid_size))
       grid_one(
         vis,
         gpol,
@@ -1673,7 +1111,7 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
     for_all_vis_on_grid(
       team_member,
       [&](
-        const Vis<N, execution_space>& vis,
+        const vis_t& vis,
         int gpol,
         const cf_const_view& cf,
         const scratch_phscr_view& phi_Y) {
@@ -1719,7 +1157,7 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
     for_all_vis_on_grid(
       team_member,
       [&](
-        const Vis<N, execution_space>& vis,
+        const vis_t& vis,
         int gpol,
         const cf_const_view& cf,
         const scratch_phscr_view& phi_Y) {
@@ -1748,7 +1186,6 @@ struct /*HPG_EXPORT*/ GridderFunctor final { // TODO: rename
       *this);
   }
 };
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 
 /** grid normalization
  */
@@ -1858,397 +1295,6 @@ template <typename execution_space, typename GridView, typename T>
 GridNormalizer(const execution_space&, const GridView&, T) ->
   GridNormalizer<execution_space, GridView, K::View<T**>>;
 
-/** fftw function class templated on fp precision */
-template <typename T>
-struct /*HPG_EXPORT*/ FFTW {
-
-  using complex_t = void;
-  using plan_t = void;
-
-  // static void
-  // exec(const plan_t plan, K::complex<T>* in, K::complex<T>* out) {
-  // }
-
-#ifdef HPG_ENABLE_OPENMP
-  static void
-  plan_with_nthreads(int n) {
-  }
-#endif // HPG_ENABLE_OPENMP
-
-  // static std::tuple<plan_t, plan_t>
-  // plan_many(
-  //   int rank, const int *n, int howmany,
-  //   const K::complex<T> *in, const int *inembed,
-  //   int istride, int idist,
-  //   K::complex<T> *out, const int *onembed,
-  //   int ostride, int odist,
-  //   int sign, unsigned flags);
-
-  // static void
-  // destroy_plan(std::tuple<plan_t, plan_t> plan);
-};
-
-/** FFTW specialized for double precision */
-template <>
-struct /*HPG_EXPORT*/ FFTW<double> {
-
-  using complex_t = fftw_complex;
-  using plan_t = fftw_plan;
-
-  static void
-  exec(const plan_t plan, K::complex<double>* in, K::complex<double>* out) {
-    fftw_execute_dft(
-      plan,
-      reinterpret_cast<complex_t*>(in),
-      reinterpret_cast<complex_t*>(out));
-  }
-
-#ifdef HPG_ENABLE_OPENMP
-  static void
-  plan_with_nthreads(int n) {
-    fftw_plan_with_nthreads(n);
-  }
-#endif // HPG_ENABLE_OPENMP
-
-  static std::tuple<plan_t, plan_t>
-  plan_many(
-    int rank, const int *n, int howmany,
-    K::complex<double> *in, const int *inembed,
-    int istride, int idist,
-    K::complex<double> *out, const int *onembed,
-    int ostride, int odist,
-    int /*sstride*/,
-    int sign, unsigned flags) {
-
-    static_assert(sizeof(*in) == 16);
-
-    auto plan =
-      fftw_plan_many_dft(
-        rank, n, howmany,
-        reinterpret_cast<complex_t*>(in), inembed, istride, idist,
-        reinterpret_cast<complex_t*>(out), onembed, ostride, odist,
-        sign, flags);
-    return {plan, plan};
-  }
-
-  static void
-  destroy_plan(std::tuple<plan_t, plan_t> plans) {
-    fftw_destroy_plan(std::get<0>(plans));
-  }
-};
-
-/** FFTW specialized for single precision */
-template <>
-struct /*HPG_EXPORT*/ FFTW<float> {
-
-  using complex_t = fftwf_complex;
-  using plan_t = fftwf_plan;
-
-  static void
-  exec(const plan_t plan, K::complex<float>* in, K::complex<float>* out) {
-    fftwf_execute_dft(
-      plan,
-      reinterpret_cast<complex_t*>(in),
-      reinterpret_cast<complex_t*>(out));
-  }
-
-#ifdef HPG_ENABLE_OPENMP
-  static void
-  plan_with_nthreads(int n) {
-    fftwf_plan_with_nthreads(n);
-  }
-#endif // HPG_ENABLE_OPENMP
-
-  static std::tuple<plan_t, plan_t>
-  plan_many(
-    int rank, const int *n, int howmany,
-    K::complex<float> *in, const int *inembed,
-    int istride, int idist,
-    K::complex<float> *out, const int *onembed,
-    int ostride, int odist,
-    int sstride,
-    int sign, unsigned flags) {
-
-    static_assert(sizeof(*in) == 8);
-
-    return
-      {fftwf_plan_many_dft(
-          rank, n, howmany,
-          reinterpret_cast<complex_t*>(in), inembed, istride, idist,
-          reinterpret_cast<complex_t*>(out), onembed, ostride, odist,
-          sign, flags),
-       fftwf_plan_many_dft(
-         rank, n, howmany,
-         reinterpret_cast<complex_t*>(in + sstride), inembed, istride, idist,
-         reinterpret_cast<complex_t*>(out + sstride), onembed, ostride, odist,
-         sign, flags)};
-  }
-
-  static void
-  destroy_plan(std::tuple<plan_t, plan_t> plans) {
-    fftwf_destroy_plan(std::get<0>(plans));
-    fftwf_destroy_plan(std::get<1>(plans));
-  }
-};
-
-/** FFT kernels
- *
- * Both in-place and out-of-place versions
- *
- * Because the implementations depend on specific grid layouts, we don't
- * generalize these kernels to more general grid view types (as we have done for
- * GridNormalizer, for example).
- */
-template <typename execution_space, unsigned version>
-struct /*HPG_EXPORT*/ FFT final {
-
-  // default implementation assumes FFTW3
-
-  template <typename IG, typename OG>
-  static auto
-  grid_fft_handle(execution_space exec, FFTSign sign, IG& igrid, OG& ogrid) {
-
-    using scalar_t = typename OG::value_type::value_type;
-
-#ifdef HPG_ENABLE_OPENMP
-    if constexpr (std::is_same_v<execution_space, K::Serial>)
-                   FFTW<scalar_t>::plan_with_nthreads(1);
-    else
-      FFTW<scalar_t>::plan_with_nthreads(omp_get_max_threads());
-#endif // HPG_ENABLE_OPENMP
-
-    // this assumes there is no padding in grid
-    assert(igrid.span() ==
-           igrid.extent(0) * igrid.extent(1)
-           * igrid.extent(2) * igrid.extent(3));
-    static_assert(
-      int(GridAxis::x) == 0
-      && int(GridAxis::y) == 1
-      && int(GridAxis::mrow) == 2
-      && int(GridAxis::channel) == 3);
-    int n[2]{igrid.extent_int(0), igrid.extent_int(1)};
-    int stride = 1;
-    int dist = igrid.extent_int(0) * igrid.extent_int(1) * igrid.extent_int(2);
-    int nembed[2]{
-                igrid.extent_int(0) * igrid.extent_int(2),
-                  igrid.extent_int(1)};
-    auto result =
-      FFTW<scalar_t>::plan_many(
-        2, n, igrid.extent_int(3),
-        const_cast<K::complex<scalar_t>*>(&igrid(0, 0, 0, 0)),
-        nembed, stride, dist,
-        &ogrid(0, 0, 0, 0), nembed, stride, dist,
-        igrid.extent_int(1),
-        ((sign == FFTSign::NEGATIVE) ? FFTW_FORWARD : FFTW_BACKWARD),
-        FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
-    return result;
-  }
-
-  /** in-place FFT kernel
-   */
-  template <typename grid_layout, typename memory_space>
-  static std::optional<Error>
-  in_place_kernel(
-    execution_space exec,
-    FFTSign sign,
-    const grid_view<grid_layout, memory_space>& grid) {
-
-    using scalar_t =
-      typename grid_view<grid_layout, memory_space>::value_type::value_type;
-
-    auto handles = grid_fft_handle(exec, sign, grid, grid);
-    auto& [h0, h1] = handles;
-    std::optional<Error> result;
-    if (h0 == nullptr || h1 == nullptr)
-      result = Error("fftw in_place_kernel() failed");
-    if (!result) {
-      for (int mrow = 0; mrow < grid.extent_int(2); ++mrow) {
-        FFTW<scalar_t>::exec(h0, &grid(0, 0, mrow, 0), &grid(0, 0, mrow, 0));
-        std::swap(h0, h1);
-      }
-      FFTW<scalar_t>::destroy_plan(handles);
-    }
-    return result;
-  }
-
-  /** out-of-place FFT kernel
-   */
-  template <typename grid_layout, typename memory_space>
-  static std::optional<Error>
-  out_of_place_kernel(
-    execution_space exec,
-    FFTSign sign,
-    const const_grid_view<grid_layout, memory_space>& pre_grid,
-    const grid_view<grid_layout, memory_space>& post_grid) {
-
-    using scalar_t =
-      typename grid_view<grid_layout, memory_space>::value_type::value_type;
-
-    auto handles = grid_fft_handle(exec, sign, pre_grid, post_grid);
-    auto& [h0, h1] = handles;
-    std::optional<Error> result;
-    if (h0 == nullptr || h1 == nullptr)
-      result = Error("fftw in_place_kernel() failed");
-    if (!result) {
-      for (int mrow = 0; mrow < pre_grid.extent_int(2); ++mrow) {
-        FFTW<scalar_t>::exec(
-          h0,
-          const_cast<K::complex<scalar_t>*>(&pre_grid(0, 0, mrow, 0)),
-          &post_grid(0, 0, mrow, 0));
-        std::swap(h0, h1);
-      }
-      FFTW<scalar_t>::destroy_plan(handles);
-    }
-    return result;
-  }
-};
-
-#ifdef HPG_ENABLE_CUDA
-
-/*HPG_EXPORT*/ Error
-cufft_error(const std::string& prefix, cufftResult rc);
-
-/** cufft function class templated on fp precision */
-template <typename T>
-struct /*HPG_EXPORT*/ CUFFT {
-  //constexpr cufftType type;
-  static cufftResult
-  exec(cufftHandle, K::complex<T>*, K::complex<T>*, int) {
-    assert(false);
-    return CUFFT_NOT_SUPPORTED;
-  }
-};
-
-template <>
-struct /*HPG_EXPORT*/ CUFFT<double> {
-
-  static constexpr cufftType type = CUFFT_Z2Z;
-
-  static cufftResult
-  exec(
-    cufftHandle plan,
-    FFTSign sign,
-    K::complex<double>* idata,
-    K::complex<double>* odata) {
-
-    return
-      cufftExecZ2Z(
-        plan,
-        reinterpret_cast<cufftDoubleComplex*>(idata),
-        reinterpret_cast<cufftDoubleComplex*>(odata),
-        ((sign == FFTSign::NEGATIVE) ? CUFFT_FORWARD : CUFFT_INVERSE));
-  }
-};
-
-template <>
-struct /*HPG_EXPORT*/ CUFFT<float> {
-
-  static constexpr cufftType type = CUFFT_C2C;
-
-  static cufftResult
-  exec(
-    cufftHandle plan,
-    FFTSign sign,
-    K::complex<float>* idata,
-    K::complex<float>* odata) {
-    return
-      cufftExecC2C(
-        plan,
-        reinterpret_cast<cufftComplex*>(idata),
-        reinterpret_cast<cufftComplex*>(odata),
-        ((sign == FFTSign::NEGATIVE) ? CUFFT_FORWARD : CUFFT_INVERSE));
-  }
-};
-
-/** fft kernels for Cuda
- */
-template <>
-struct /*HPG_EXPORT*/ FFT<K::Cuda, 0> final {
-
-  template <typename G>
-  static std::tuple<cufftResult_t, cufftHandle>
-  grid_fft_handle(K::Cuda exec, G& grid) {
-
-    using scalar_t = typename G::value_type::value_type;
-
-    // this assumes there is no padding in grid
-    assert(grid.span() ==
-           grid.extent(0) * grid.extent(1) * grid.extent(2) * grid.extent(3));
-    static_assert(
-      int(GridAxis::x) == 0
-      && int(GridAxis::y) == 1
-      && int(GridAxis::mrow) == 2
-      && int(GridAxis::channel) == 3);
-    int n[2]{grid.extent_int(1), grid.extent_int(0)};
-    cufftHandle result;
-    auto rc =
-      cufftPlanMany(
-        &result, 2, n,
-        NULL, 1, 1,
-        NULL, 1, 1,
-        CUFFT<scalar_t>::type,
-        grid.extent_int(2) * grid.extent_int(3));
-    if (rc == CUFFT_SUCCESS)
-      rc = cufftSetStream(result, exec.cuda_stream());
-    return {rc, result};
-  }
-
-  /** in-place FFT kernel
-   */
-  template <typename grid_layout, typename memory_space>
-  static std::optional<Error>
-  in_place_kernel(
-      K::Cuda exec,
-      FFTSign sign,
-      const grid_view<grid_layout, memory_space>& grid) {
-
-    using scalar_t =
-      typename grid_view<grid_layout, memory_space>::value_type::value_type;
-
-    auto [rc, handle] = grid_fft_handle(exec, grid);
-    if (rc == CUFFT_SUCCESS) {
-      rc = CUFFT<scalar_t>::exec(handle, sign, grid.data(), grid.data());
-      auto rc0 = cufftDestroy(handle);
-      assert(rc0 == CUFFT_SUCCESS);
-    }
-    std::optional<Error> result;
-    if (rc != CUFFT_SUCCESS)
-      result = cufft_error("Cuda in_place_kernel() failed: ", rc);
-    return result;
-  }
-
-  /** out-of-place FFT kernel
-   */
-  template <typename grid_layout, typename memory_space>
-  static std::optional<Error>
-  out_of_place_kernel(
-    K::Cuda exec,
-    FFTSign sign,
-    const const_grid_view<grid_layout, memory_space>& pre_grid,
-    const grid_view<grid_layout, memory_space>& post_grid) {
-
-    using scalar_t =
-      typename grid_view<grid_layout, memory_space>::value_type::value_type;
-
-    auto [rc, handle] = grid_fft_handle(exec, post_grid);
-    if (rc == CUFFT_SUCCESS) {
-      rc =
-        CUFFT<scalar_t>::exec(
-          handle,
-          sign,
-          const_cast<K::complex<scalar_t>*>(pre_grid.data()),
-          post_grid.data());
-      auto rc0 = cufftDestroy(handle);
-      assert(rc0 == CUFFT_SUCCESS);
-    }
-    std::optional<Error> result;
-    if (rc != CUFFT_SUCCESS)
-      result = cufft_error("cuda out_of_place_kernel() failed: ", rc);
-    return result;
-  }
-};
-#endif // HPG_ENABLE_CUDA
-
 /** swap visibility values */
 #pragma nv_exec_check_disable
 template <typename execution_space, typename T>
@@ -2288,7 +1334,6 @@ swap_gv<K::Cuda, K::complex<double>>(
 template <typename execution_space, typename GridView>
 struct /*HPG_EXPORT*/ GridShifter final {
 
-  static_assert(std::is_same_v<typename GridView::non_const_value_type, gv_t>);
   static_assert(GridView::rank == 4);
 
   using member_type = typename K::TeamPolicy<execution_space>::member_type;

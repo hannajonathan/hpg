@@ -14,9 +14,11 @@
 // limitations under the License.
 //
 #include "hpg_impl.hpp"
+#include "hpg_error.hpp"
 
 #include <cfenv>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <tuple>
 
@@ -155,7 +157,7 @@ runtime::impl::min_cf_buffer_size(
     using kokkos_device = DeviceT<Device::Serial>::kokkos_device;
     auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
     alloc_sz =
-      core::cf_view<typename kokkos_device::array_layout, K::HostSpace>
+      cf_view<typename kokkos_device::array_layout, K::HostSpace>
       ::required_allocation_size(
         layout.dimension[0],
         layout.dimension[1],
@@ -171,7 +173,7 @@ runtime::impl::min_cf_buffer_size(
     using kokkos_device = DeviceT<Device::OpenMP>::kokkos_device;
     auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
     alloc_sz =
-      core::cf_view<typename kokkos_device::array_layout, K::HostSpace>
+      cf_view<typename kokkos_device::array_layout, K::HostSpace>
       ::required_allocation_size(
         layout.dimension[0],
         layout.dimension[1],
@@ -187,7 +189,7 @@ runtime::impl::min_cf_buffer_size(
     using kokkos_device = DeviceT<Device::Cuda>::kokkos_device;
     auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
     alloc_sz =
-      core::cf_view<typename kokkos_device::array_layout, K::HostSpace>
+      cf_view<typename kokkos_device::array_layout, K::HostSpace>
       ::required_allocation_size(
         layout.dimension[0],
         layout.dimension[1],
@@ -202,9 +204,23 @@ runtime::impl::min_cf_buffer_size(
     assert(false);
     break;
   }
-  return
-    rval<size_t>((alloc_sz + (sizeof(core::cf_t) - 1)) / sizeof(core::cf_t));
+  return rval<size_t>((alloc_sz + (sizeof(cf_t) - 1)) / sizeof(cf_t));
 }
+
+#ifdef HPG_ENABLE_CUDA
+
+Error
+runtime::impl::cufft_error(
+  const std::string& prefix,
+  cufftResult rc) {
+
+  std::ostringstream oss(prefix);
+  oss << ": cufftResult code " << rc;
+  return Error(oss.str());
+}
+
+#endif // HPG_ENABLE_CUDA
+
 
 // Local Variables:
 // mode: c++

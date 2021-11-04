@@ -294,13 +294,13 @@ struct /*HPG_EXPORT*/ CFPool final {
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
   using cfd_view =
-    impl::core::cf_view<
+    impl::cf_view<
       typename impl::CFLayout<kokkos_device>::layout,
       memory_space>;
   using cfh_view = typename cfd_view::HostMirror;
 
   StateT<D> *state;
-  K::View<impl::core::cf_t*, memory_space> pool;
+  K::View<impl::cf_t*, memory_space> pool;
   unsigned num_cf_groups;
   unsigned max_cf_extent_y;
   K::Array<cfd_view, HPG_MAX_NUM_CF_GROUPS> cf_d; // unmanaged (in pool)
@@ -402,7 +402,7 @@ struct /*HPG_EXPORT*/ CFPool final {
     // allocation size, but it is not implemented in Kokkos
     // 'auto alloc_sz = cfd_view::required_allocation_size(layout)'
     auto alloc_sz =
-      impl::core::cf_view<typename kokkos_device::array_layout, memory_space>
+      impl::cf_view<typename kokkos_device::array_layout, memory_space>
       ::required_allocation_size(
         layout.dimension[0],
         layout.dimension[1],
@@ -410,8 +410,7 @@ struct /*HPG_EXPORT*/ CFPool final {
         layout.dimension[3],
         layout.dimension[4],
         layout.dimension[5]);
-    return ((alloc_sz + (sizeof(impl::core::cf_t) - 1))
-            / sizeof(impl::core::cf_t));
+    return ((alloc_sz + (sizeof(impl::cf_t) - 1)) / sizeof(impl::cf_t));
   }
 
   static size_t
@@ -567,18 +566,18 @@ struct /*HPG_EXPORT*/ ExecSpace final {
   using memory_space = typename execution_space::memory_space;
 
   execution_space space;
-  impl::core::visbuff_view<memory_space> visbuff;
-  impl::core::gvisbuff_view<memory_space> gvisbuff;
+  impl::visbuff_view<memory_space> visbuff;
+  impl::gvisbuff_view<memory_space> gvisbuff;
   std::variant<
-    impl::core::visdata_view<1, memory_space>,
-    impl::core::visdata_view<2, memory_space>,
-    impl::core::visdata_view<3, memory_space>,
-    impl::core::visdata_view<4, memory_space>> visibilities;
+    impl::visdata_view<1, memory_space>,
+    impl::visdata_view<2, memory_space>,
+    impl::visdata_view<3, memory_space>,
+    impl::visdata_view<4, memory_space>> visibilities;
   std::variant<
-    impl::core::vector_view<impl::core::VisData<1>>,
-    impl::core::vector_view<impl::core::VisData<2>>,
-    impl::core::vector_view<impl::core::VisData<3>>,
-    impl::core::vector_view<impl::core::VisData<4>>> visibilities_h;
+    impl::vector_view<impl::visdata_t<1>>,
+    impl::vector_view<impl::visdata_t<2>>,
+    impl::vector_view<impl::visdata_t<3>>,
+    impl::vector_view<impl::visdata_t<4>>> visibilities_h;
   std::variant<
     std::vector<::hpg::VisData<1>>,
     std::vector<::hpg::VisData<2>>,
@@ -620,9 +619,9 @@ struct /*HPG_EXPORT*/ ExecSpace final {
   }
 
   template <unsigned N>
-  constexpr impl::core::visdata_view<N, memory_space>
+  constexpr impl::visdata_view<N, memory_space>
   visdata() {
-    return std::get<impl::core::visdata_view<N, memory_space>>(visibilities);
+    return std::get<impl::visdata_view<N, memory_space>>(visibilities);
   }
 
   template <unsigned N>
@@ -632,24 +631,24 @@ struct /*HPG_EXPORT*/ ExecSpace final {
     num_visibilities = in_vis.size();
     if (num_visibilities > 0) {
       visibilities_h =
-        impl::core::vector_view<impl::core::VisData<N>>(
-          reinterpret_cast<impl::core::VisData<N>*>(in_vis.data()),
+        impl::vector_view<impl::visdata_t<N>>(
+          reinterpret_cast<impl::visdata_t<N>*>(in_vis.data()),
           num_visibilities);
       auto hview =
-        std::get<impl::core::vector_view<impl::core::VisData<N>>>(
+        std::get<impl::vector_view<impl::visdata_t<N>>>(
           visibilities_h);
       if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
         visibilities =
-          impl::core::visdata_view<N, memory_space>(
-            reinterpret_cast<impl::core::VisData<N>*>(visbuff.data()),
+          impl::visdata_view<N, memory_space>(
+            reinterpret_cast<impl::visdata_t<N>*>(visbuff.data()),
             num_visibilities);
         auto dview =
           K::subview(visdata<N>(), std::pair((size_t)0, num_visibilities));
         K::deep_copy(space, dview, hview);
       } else {
         visibilities =
-          impl::core::visdata_view<N, memory_space>(
-            reinterpret_cast<impl::core::VisData<N>*>(&hview(0)),
+          impl::visdata_view<N, memory_space>(
+            reinterpret_cast<impl::visdata_t<N>*>(&hview(0)),
             num_visibilities);
       }
     }
@@ -675,7 +674,7 @@ struct /*HPG_EXPORT*/ ExecSpace final {
               constexpr unsigned N = v_t::value_type::npol;
               if (num_visibilities > 0) {
                 auto hview =
-                  std::get<impl::core::vector_view<impl::core::VisData<N>>>(
+                  std::get<impl::vector_view<impl::visdata_t<N>>>(
                     visibilities_h);
                 auto dview =
                   K::subview(
@@ -725,12 +724,12 @@ public:
   using stream_type = typename device_traits::stream_type;
   using grid_layout =  impl::GridLayout<kokkos_device>;
 
-  impl::core::grid_view<typename grid_layout::layout, memory_space> m_grid;
-  impl::core::weight_view<typename execution_space::array_layout, memory_space>
+  impl::grid_view<typename grid_layout::layout, memory_space> m_grid;
+  impl::weight_view<typename execution_space::array_layout, memory_space>
     m_weights;
-  impl::core::grid_view<typename grid_layout::layout, memory_space> m_model;
-  impl::core::const_mindex_view<memory_space> m_mueller_indexes;
-  impl::core::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
+  impl::grid_view<typename grid_layout::layout, memory_space> m_model;
+  impl::const_mindex_view<memory_space> m_mueller_indexes;
+  impl::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
@@ -968,83 +967,43 @@ public:
     bool do_grid) {
 
     auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
-    auto len =
-      exec_pre.copy_visibilities_to_device(std::move(visibilities));
+    int len = exec_pre.copy_visibilities_to_device(std::move(visibilities));
 
     auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
-    impl::core::const_grid_view<typename grid_layout::layout, memory_space>
-      model = m_model;
-    impl::core::VisibilityGridder<N, execution_space, 0>::kernel(
-      exec_grid.space,
-      cf.cf_d,
-      cf.cf_radii,
-      cf.max_cf_extent_y,
-      m_mueller_indexes,
-      m_conjugate_mueller_indexes,
-      update_grid_weights,
-      do_degrid,
-      do_grid,
-      len,
-      exec_grid.template visdata<N>(),
-      exec_grid.gvisbuff,
-      m_grid_scale,
-      model,
-      m_grid,
-      m_weights);
-    return exec_grid.copy_visibilities_to_host(return_visibilities);
-  }
 
-  template <unsigned N>
-  State::maybe_vis_t
-  alt_grid_visibilities(
-    Device /*host_device*/,
-    std::vector<::hpg::VisData<N>>&& visibilities,
-    bool update_grid_weights,
-    bool do_degrid,
-    bool return_visibilities,
-    bool do_grid) {
+    auto gridder =
+      impl::core::VisibilityGridder(
+        std::integral_constant<unsigned, N>(),
+        exec_grid.space,
+        cf.cf_d,
+        cf.cf_radii,
+        cf.max_cf_extent_y,
+        m_mueller_indexes,
+        m_conjugate_mueller_indexes,
+        len,
+        exec_grid.template visdata<N>(),
+        exec_grid.gvisbuff,
+        m_grid_scale,
+        m_grid,
+        m_weights,
+        m_model);
 
-    auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
-    int len = exec_pre.copy_visibilities_to_device(std::move(visibilities));
+    if (do_degrid) {
+      gridder.degrid_all();
+      if (do_grid)
+        gridder.vis_copy_residual_and_rescale();
+      else
+        gridder.vis_copy_predicted();
+    } else {
+      gridder.vis_rescale();
+    }
 
-    {
-      auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
-      auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
-
-      auto gridder =
-        impl::core::GridderFunctor(
-          std::integral_constant<unsigned, N>(),
-          exec_grid.space,
-          cf.cf_d,
-          cf.cf_radii,
-          cf.max_cf_extent_y,
-          m_mueller_indexes,
-          m_conjugate_mueller_indexes,
-          len,
-          exec_grid.template visdata<N>(),
-          exec_grid.gvisbuff,
-          m_grid_scale,
-          m_grid,
-          m_weights,
-          m_model);
-
-      if (do_degrid) {
-        gridder.degrid_all();
-        if (do_grid)
-          gridder.vis_copy_residual_and_rescale();
-        else
-          gridder.vis_copy_predicted();
-      } else {
-        gridder.vis_rescale();
-      }
-
-      if (do_grid) {
-        if (update_grid_weights)
-          gridder.grid_all();
-        else
-          gridder.grid_all_no_weights();
-      }
+    if (do_grid) {
+      if (update_grid_weights)
+        gridder.grid_all();
+      else
+        gridder.grid_all_no_weights();
     }
     return exec_grid.copy_visibilities_to_host(return_visibilities);
   }
@@ -1082,7 +1041,7 @@ public:
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     case 1:
       return
-        alt_grid_visibilities(
+        default_grid_visibilities(
           host_device,
           std::move(visibilities),
           update_grid_weights,
@@ -1261,10 +1220,6 @@ public:
 
   void
   normalize_by_weights(grid_value_fp wfactor) override {
-    impl::core::const_weight_view<
-      typename execution_space::array_layout, memory_space>
-      cweights = m_weights;
-
     impl::core::GridNormalizer(
       m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
       m_grid,
@@ -1282,8 +1237,7 @@ public:
       switch (fft_version()) {
       case 0:
         err =
-          impl::core::FFT<execution_space, 0>
-          ::in_place_kernel(
+          impl::FFT<execution_space>::in_place_kernel(
             m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
             sign,
             m_grid);
@@ -1293,13 +1247,13 @@ public:
         break;
       }
     } else {
-      impl::core::const_grid_view<typename grid_layout::layout, memory_space>
+      impl::const_grid_view<typename grid_layout::layout, memory_space>
         pre_grid = m_grid;
       new_grid(false, false);
       switch (fft_version()) {
       case 0:
         err =
-          impl::core::FFT<execution_space, 0>::out_of_place_kernel(
+          impl::FFT<execution_space>::out_of_place_kernel(
             m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
             sign,
             pre_grid,
@@ -1329,8 +1283,7 @@ public:
         switch (fft_version()) {
         case 0:
           err =
-            impl::core::FFT<execution_space, 0>
-            ::in_place_kernel(
+            impl::FFT<execution_space>::in_place_kernel(
               m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space,
               sign,
               m_model);
@@ -1340,7 +1293,7 @@ public:
           break;
         }
       } else {
-        impl::core::const_grid_view<typename grid_layout::layout, memory_space>
+        impl::const_grid_view<typename grid_layout::layout, memory_space>
           pre_model = m_model;
         std::array<int, 4> ig{
           int(m_grid_size[0]),
@@ -1354,7 +1307,7 @@ public:
         switch (fft_version()) {
         case 0:
           err =
-            impl::core::FFT<execution_space, 0>::out_of_place_kernel(
+            impl::FFT<execution_space>::out_of_place_kernel(
               m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space,
               sign,
               pre_model,
@@ -1493,9 +1446,8 @@ private:
                 using v_t = std::remove_reference_t<decltype(v)>;
                 constexpr unsigned N = v_t::value_type::npol;
                 esp.visibilities =
-                  impl::core::visdata_view<N, memory_space>(
-                    reinterpret_cast<impl::core::VisData<N>*>(
-                      esp.visbuff.data()),
+                  impl::visdata_view<N, memory_space>(
+                    reinterpret_cast<impl::visdata_t<N>*>(esp.visbuff.data()),
                     v.extent(0));
               }
             },
@@ -1527,13 +1479,13 @@ private:
 
   /** copy Mueller indexes to device */
   template <size_t N>
-    impl::core::mindex_view<memory_space>
+  impl::mindex_view<memory_space>
   copy_mueller_indexes(
     const std::string& name,
     const std::vector<iarray<N>>& mindexes) {
 
     auto& esp = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
-    impl::core::mindex_view<memory_space> result(name);
+    impl::mindex_view<memory_space> result(name);
     auto mueller_indexes_h = K::create_mirror_view(result);
     size_t mr = 0;
     for (; mr < mindexes.size(); ++mr) {
@@ -1551,7 +1503,7 @@ private:
     return result;
   }
 
-  impl::core::mindex_view<memory_space>
+  impl::mindex_view<memory_space>
   init_mueller(const std::string& name, const IArrayVector& mueller_indexes) {
 
     switch (mueller_indexes.m_npol) {
@@ -1569,7 +1521,7 @@ private:
       break;
     default:
       assert(false);
-      return impl::core::mindex_view<memory_space>(name);
+      return impl::mindex_view<memory_space>(name);
       break;
     }
   }
