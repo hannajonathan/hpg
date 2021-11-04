@@ -1082,7 +1082,6 @@ layout_for_device(
   }
 }
 
-template <typename execution_space, typename GridView>
 } // end namespace runtime::impl
 
 } // end namespace hpg

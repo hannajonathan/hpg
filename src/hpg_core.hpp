@@ -2247,268 +2247,346 @@ struct /*HPG_EXPORT*/ FFT<K::Cuda, 0> final {
 
 /** swap visibility values */
 #pragma nv_exec_check_disable
-template <typename execution_space>
+template <typename execution_space, typename T>
 /*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
-swap_gv(gv_t& a, gv_t&b) {
+swap_gv(T& a, T&b) {
   std::swap(a, b);
 }
 
 #ifdef HPG_ENABLE_CUDA
 template <>
 /*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
-swap_gv<K::Cuda>(gv_t& a, gv_t&b) {
-  gv_t tmp;
-  tmp = a;
+swap_gv<K::Cuda, K::complex<float>>(
+  K::complex<float>& a,
+  K::complex<float>& b) {
+
+  auto tmp = a;
+  a = b;
+  b = tmp;
+}
+template <>
+/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
+swap_gv<K::Cuda, K::complex<double>>(
+  K::complex<double>& a,
+  K::complex<double>& b) {
+
+  auto tmp = a;
   a = b;
   b = tmp;
 }
 #endif // HPG_ENABLE_CUDA
 
-/** grid rotation kernel
+/** grid rotation
  *
  * Useful after FFT to shift grid planes by half the grid plane size in each
  * dimension
  */
-template <typename execution_space, unsigned version>
+template <typename execution_space, typename GridView>
 struct /*HPG_EXPORT*/ GridShifter final {
 
-  template <typename grid_layout, typename memory_space>
-  static void
-  kernel(
+  static_assert(std::is_same_v<typename GridView::non_const_value_type, gv_t>);
+  static_assert(GridView::rank == 4);
+
+  using member_type = typename K::TeamPolicy<execution_space>::member_type;
+
+  using grid_value_t = typename GridView::non_const_value_type;
+
+  execution_space m_exec;
+  ShiftDirection m_direction;
+  GridView m_grid;
+
+  int m_n_x;
+  int m_n_y;
+  int m_n_mrow;
+  int m_n_channel;
+  int m_mid_x;
+  int m_mid_y;
+
+  // TODO: is this kernel valid for all possible GridAxis definitions?
+  static_assert(
+    int(GridAxis::x) == 0
+    && int(GridAxis::y) == 1
+    && int(GridAxis::mrow) == 2
+    && int(GridAxis::channel) == 3);
+
+  GridShifter(
+    const execution_space& exec,
     ShiftDirection direction,
-    execution_space exec,
-    const grid_view<grid_layout, memory_space>& grid) {
+    const GridView& grid)
+    : m_exec(exec)
+    , m_direction(direction)
+    , m_grid(grid)
+    , m_n_x(m_grid.extent_int(0))
+    , m_n_y(m_grid.extent_int(1))
+    , m_n_mrow(m_grid.extent_int(2))
+    , m_n_channel(m_grid.extent_int(3))
+    , m_mid_x(m_n_x / 2)
+    , m_mid_y(m_n_y / 2) {}
 
-    using scalar_t =
-      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+  int
+  league_size() const {
+    return m_n_mrow * m_n_channel;
+  }
 
-    using member_type = typename K::TeamPolicy<execution_space>::member_type;
+  //
+  // EvenEven
+  //
+  // both x and y dimensions of grid have even length
+  //
 
-    // TODO: is this kernel valid for all possible GridAxis definitions?
-    static_assert(
-      int(GridAxis::x) == 0
-      && int(GridAxis::y) == 1
-      && int(GridAxis::mrow) == 2
-      && int(GridAxis::channel) == 3);
-    int n_x = grid.extent_int(0);
-    int n_y = grid.extent_int(1);
-    int n_mrow = grid.extent_int(2);
-    int n_channel = grid.extent_int(3);
+  struct EvenEven{};
 
-    int mid_x = n_x / 2;
-    int mid_y = n_y / 2;
+  KOKKOS_INLINE_FUNCTION void
+  operator()(const EvenEven&, const member_type& team_member) const {
+    auto i = team_member.league_rank();
+    auto gplane =
+      K::subview(m_grid, K::ALL, K::ALL, i % m_n_mrow, i / m_n_mrow);
+    K::parallel_for(
+      K::TeamVectorRange(team_member, m_n_x / 2),
+      [=](int x) {
+        for (int y = 0; y < m_n_y / 2; ++y) {
+          swap_gv<execution_space>(
+            gplane(x, y),
+            gplane(x + m_mid_x, y + m_mid_y));
+          swap_gv<execution_space>(
+            gplane(x + m_mid_x, y),
+            gplane(x, y + m_mid_y));
+        }
+      });
+  }
 
-    if (n_x % 2 == 0 && n_y % 2 == 0) {
-      // simpler (faster?) algorithm when both grid side lengths are even
+  //
+  // OddSquareForward
+  //
+  // both x and y dimensions of grid have same length, and are odd; rotate
+  // "forward"
+  //
 
+  struct OddSquareForward{};
+
+  KOKKOS_INLINE_FUNCTION void
+  operator()(const OddSquareForward&, const member_type& team_member) const {
+    auto i = team_member.league_rank();
+    auto gplane =
+      K::subview(m_grid, K::ALL, K::ALL, i % m_n_mrow, i / m_n_mrow);
+    K::parallel_for(
+      K::TeamVectorRange(team_member, m_n_x),
+      [=](int x) {
+        grid_value_t tmp;
+        int y = 0;
+        for (int i = 0; i <= m_n_y; ++i) {
+          swap_gv<execution_space>(tmp, gplane(x, y));
+          x += m_mid_x;
+          if (x >= m_n_x)
+            x -= m_n_x;
+          y += m_mid_y;
+          if (y >= m_n_y)
+            y -= m_n_y;
+        }
+      });
+  }
+
+  //
+  // OddSquareBackward
+  //
+  // both x and y dimensions of grid have same length, and are odd; rotate
+  // "backward"
+  //
+
+  struct OddSquareBackward{};
+
+  KOKKOS_INLINE_FUNCTION void
+  operator()(const OddSquareBackward&, const member_type& team_member) const {
+    auto i = team_member.league_rank();
+    auto gplane =
+      K::subview(m_grid, K::ALL, K::ALL, i % m_n_mrow, i / m_n_mrow);
+    K::parallel_for(
+      K::TeamVectorRange(team_member, m_n_x),
+      [=](int x) {
+        grid_value_t tmp;
+        int y = 0;
+        for (int i = 0; i <= m_n_y; ++i) {
+          swap_gv<execution_space>(tmp, gplane(x, y));
+          x -= m_mid_x;
+          if (x < 0)
+            x += m_n_x;
+          y -= m_mid_y;
+          if (y < 0)
+            y += m_n_y;
+        }
+      });
+  }
+
+  //
+  // GenForward
+  //
+  // generic shift "forward" algorithm
+  //
+
+  struct GenForward{};
+
+  KOKKOS_INLINE_FUNCTION void
+  operator()(const GenForward&, const member_type& team_member) const {
+    auto i = team_member.league_rank();
+    auto gplane =
+      K::subview(m_grid, K::ALL, K::ALL, i % m_n_mrow, i / m_n_mrow);
+
+    // first pass, parallel over x
+    if (m_n_y % 2 == 1)
+      K::parallel_for(
+        K::TeamThreadRange(team_member, m_n_x),
+        [=](int x) {
+          grid_value_t tmp;
+          int y = 0;
+          for (int i = 0; i <= m_n_y; ++i) {
+            swap_gv<execution_space>(tmp, gplane(x, y));
+            y += m_mid_y;
+            if (y >= m_n_y)
+              y -= m_n_y;
+          }
+        });
+    else
+      K::parallel_for(
+        K::TeamThreadRange(team_member, m_n_x),
+        [=](int x) {
+          for (int y = 0; y < m_mid_y; ++y)
+            swap_gv<execution_space>(
+              gplane(x, y),
+              gplane(x, y + m_mid_y));
+        });
+
+    // second pass, parallel over y
+    if (m_n_x % 2 == 1)
+      K::parallel_for(
+        K::TeamThreadRange(team_member, m_n_y),
+        [=](int y) {
+          grid_value_t tmp;
+          int x = 0;
+          for (int i = 0; i <= m_n_x; ++i) {
+            swap_gv<execution_space>(tmp, gplane(x, y));
+            x += m_mid_x;
+            if (x >= m_n_x)
+              x -= m_n_x;
+          }
+        });
+    else
+      K::parallel_for(
+        K::TeamThreadRange(team_member, m_n_y),
+        [=](int y) {
+          for (int x = 0; x < m_mid_x; ++x)
+            swap_gv<execution_space>(
+              gplane(x, y),
+              gplane(x + m_mid_x, y));
+        });
+  }
+
+  //
+  // GenBackward
+  //
+  // generic shift "backward" algorithm
+  //
+
+  struct GenBackward{};
+
+  KOKKOS_INLINE_FUNCTION void
+  operator()(const GenBackward&, const member_type& team_member) const {
+    auto i = team_member.league_rank();
+    auto gplane =
+      K::subview(m_grid, K::ALL, K::ALL, i % m_n_mrow, i / m_n_mrow);
+
+    // first pass, parallel over x
+    if (m_n_y % 2 == 1)
+      K::parallel_for(
+        K::TeamThreadRange(team_member, m_n_x),
+        [=](int x) {
+          grid_value_t tmp;
+          int y = 0;
+          for (int i = 0; i <= m_n_y; ++i) {
+            swap_gv<execution_space>(tmp, gplane(x, y));
+            y -= m_mid_y;
+            if (y < 0)
+              y += m_n_y;
+          }
+        });
+    else
+      K::parallel_for(
+        K::TeamThreadRange(team_member, m_n_x),
+        [=](int x) {
+          for (int y = m_mid_y; y < m_n_y; ++y)
+            swap_gv<execution_space>(
+              gplane(x, y),
+              gplane(x, y - m_mid_y));
+        });
+
+    // second pass, parallel over y
+    if (m_n_x % 2 == 1)
+      K::parallel_for(
+        K::TeamThreadRange(team_member, m_n_y),
+        [=](int y) {
+          grid_value_t tmp;
+          int x = 0;
+          for (int i = 0; i <= m_n_x; ++i) {
+            swap_gv<execution_space>(tmp, gplane(x, y));
+            x -= m_mid_x;
+            if (x < 0)
+              x += m_n_x;
+          }
+        });
+    else
+      K::parallel_for(
+        K::TeamThreadRange(team_member, m_n_y),
+        [=](int y) {
+          for (int x = m_mid_x; x < m_n_x; ++x)
+            swap_gv<execution_space>(
+              gplane(x, y),
+              gplane(x - m_mid_x, y));
+        });
+  }
+
+  void
+  shift() const {
+    if (m_n_x % 2 == 0 && m_n_y % 2 == 0)
       K::parallel_for(
         "grid_shift_ee",
-        K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
-        KOKKOS_LAMBDA(const member_type& team_member) {
-          auto gplane =
-            K::subview(
-              grid,
-              K::ALL,
-              K::ALL,
-              team_member.league_rank() % n_mrow,
-              team_member.league_rank() / n_mrow);
-          K::parallel_for(
-            K::TeamVectorRange(team_member, n_x / 2),
-            [=](int x) {
-              for (int y = 0; y < n_y / 2; ++y) {
-                swap_gv<execution_space>(
-                  gplane(x, y),
-                  gplane(x + mid_x, y + mid_y));
-                swap_gv<execution_space>(
-                  gplane(x + mid_x, y),
-                  gplane(x, y + mid_y));
-              }
-            });
-        });
-    } else if (n_x == n_y) {
-      // single-pass algorithm for odd-length, square grid
-
-      if (direction == ShiftDirection::FORWARD)
+        K::TeamPolicy<execution_space, EvenEven>(
+          m_exec,
+          league_size(),
+          K::AUTO),
+        *this);
+    else if (m_n_x == m_n_y) {
+      if (m_direction == ShiftDirection::FORWARD)
         K::parallel_for(
-          "grid_rotation_oop",
-          K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
-          KOKKOS_LAMBDA(const member_type& team_member) {
-            auto gplane =
-              K::subview(
-                grid,
-                K::ALL,
-                K::ALL,
-                team_member.league_rank() % n_mrow,
-                team_member.league_rank() / n_mrow);
-            K::parallel_for(
-              K::TeamVectorRange(team_member, n_x),
-              [=](int x) {
-                gv_t tmp;
-                int y = 0;
-                for (int i = 0; i <= n_y; ++i) {
-                  swap_gv<execution_space>(tmp, gplane(x, y));
-                  x += mid_x;
-                  if (x >= n_x)
-                    x -= n_x;
-                  y += mid_y;
-                  if (y >= n_y)
-                    y -= n_y;
-                }
-              });
-          });
-      else // direction == ShiftDirection::BACKWARD
+          "grid_shift_osf",
+          K::TeamPolicy<execution_space, OddSquareForward>(
+            m_exec,
+            league_size(),
+            K::AUTO),
+          *this);
+      else // m_direction == ShiftDirection::BACKWARD
         K::parallel_for(
-          "grid_rotation_oon",
-          K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
-          KOKKOS_LAMBDA(const member_type& team_member) {
-            auto gplane =
-              K::subview(
-                grid,
-                K::ALL,
-                K::ALL,
-                team_member.league_rank() % n_mrow,
-                team_member.league_rank() / n_mrow);
-            K::parallel_for(
-              K::TeamVectorRange(team_member, n_x),
-              [=](int x) {
-                gv_t tmp;
-                int y = 0;
-                for (int i = 0; i <= n_y; ++i) {
-                  swap_gv<execution_space>(tmp, gplane(x, y));
-                  x -= mid_x;
-                  if (x < 0)
-                    x += n_x;
-                  y -= mid_y;
-                  if (y < 0)
-                    y += n_y;
-                }
-              });
-          });
+          "grid_shift_osb",
+          K::TeamPolicy<execution_space, OddSquareBackward>(
+            m_exec,
+            league_size(),
+            K::AUTO),
+          *this);
     } else {
-      // two-pass algorithm for the general case
-
-      if (direction == ShiftDirection::FORWARD)
+      if (m_direction == ShiftDirection::FORWARD)
         K::parallel_for(
-          "grid_rotation_genp",
-          K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
-          KOKKOS_LAMBDA(const member_type& team_member) {
-            auto gplane =
-              K::subview(
-                grid,
-                K::ALL,
-                K::ALL,
-                team_member.league_rank() % n_mrow,
-                team_member.league_rank() / n_mrow);
-
-            // first pass, parallel over x
-            if (n_y % 2 == 1)
-              K::parallel_for(
-                K::TeamThreadRange(team_member, n_x),
-                [=](int x) {
-                  gv_t tmp;
-                  int y = 0;
-                  for (int i = 0; i <= n_y; ++i) {
-                    swap_gv<execution_space>(tmp, gplane(x, y));
-                    y += mid_y;
-                    if (y >= n_y)
-                      y -= n_y;
-                  }
-                });
-            else
-              K::parallel_for(
-                K::TeamThreadRange(team_member, n_x),
-                [=](int x) {
-                  for (int y = 0; y < mid_y; ++y)
-                    swap_gv<execution_space>(
-                      gplane(x, y),
-                      gplane(x, y + mid_y));
-                });
-
-            // second pass, parallel over y
-            if (n_x % 2 == 1)
-              K::parallel_for(
-                K::TeamThreadRange(team_member, n_y),
-                [=](int y) {
-                  gv_t tmp;
-                  int x = 0;
-                  for (int i = 0; i <= n_x; ++i) {
-                    swap_gv<execution_space>(tmp, gplane(x, y));
-                    x += mid_x;
-                    if (x >= n_x)
-                      x -= n_x;
-                  }
-                });
-            else
-              K::parallel_for(
-                K::TeamThreadRange(team_member, n_y),
-                [=](int y) {
-                  for (int x = 0; x < mid_x; ++x)
-                    swap_gv<execution_space>(
-                      gplane(x, y),
-                      gplane(x + mid_x, y));
-                });
-          });
-      else // direction == ShiftDirection::BACKWARD
+          "grid_shift_genf",
+          K::TeamPolicy<execution_space, GenForward>(
+            m_exec,
+            league_size(),
+            K::AUTO),
+          *this);
+      else // m_direction == ShiftDirection::BACKWARD
         K::parallel_for(
-          "grid_rotation_genn",
-          K::TeamPolicy<execution_space>(exec, n_mrow * n_channel, K::AUTO),
-          KOKKOS_LAMBDA(const member_type& team_member) {
-            auto gplane =
-              K::subview(
-                grid,
-                K::ALL,
-                K::ALL,
-                team_member.league_rank() % n_mrow,
-                team_member.league_rank() / n_mrow);
-
-            // first pass, parallel over x
-            if (n_y % 2 == 1)
-              K::parallel_for(
-                K::TeamThreadRange(team_member, n_x),
-                [=](int x) {
-                  gv_t tmp;
-                  int y = 0;
-                  for (int i = 0; i <= n_y; ++i) {
-                    swap_gv<execution_space>(tmp, gplane(x, y));
-                    y -= mid_y;
-                    if (y < 0)
-                      y += n_y;
-                  }
-                });
-            else
-              K::parallel_for(
-                K::TeamThreadRange(team_member, n_x),
-                [=](int x) {
-                  for (int y = mid_y; y < n_y; ++y)
-                    swap_gv<execution_space>(
-                      gplane(x, y),
-                      gplane(x, y - mid_y));
-                });
-
-            // second pass, parallel over y
-            if (n_x % 2 == 1)
-              K::parallel_for(
-                K::TeamThreadRange(team_member, n_y),
-                [=](int y) {
-                  gv_t tmp;
-                  int x = 0;
-                  for (int i = 0; i <= n_x; ++i) {
-                    swap_gv<execution_space>(tmp, gplane(x, y));
-                    x -= mid_x;
-                    if (x < 0)
-                      x += n_x;
-                  }
-                });
-            else
-              K::parallel_for(
-                K::TeamThreadRange(team_member, n_y),
-                [=](int y) {
-                  for (int x = mid_x; x < n_x; ++x)
-                    swap_gv<execution_space>(
-                      gplane(x, y),
-                      gplane(x - mid_x, y));
-                });
-          });
+          "grid_shift_genb",
+          K::TeamPolicy<execution_space, GenBackward>(
+            m_exec,
+            league_size(),
+            K::AUTO),
+          *this);
     }
   }
 };
