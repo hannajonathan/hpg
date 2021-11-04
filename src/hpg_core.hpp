@@ -509,7 +509,7 @@ template <
   typename GVisbuffView,
   typename GridScale,
   typename GridView,
-  typename WeightView,
+  typename GridWeightView,
   typename ModelView>
 struct /*HPG_EXPORT*/ VisibilityGridder final {
 
@@ -529,7 +529,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     std::is_same_v<typename MIndexView::non_const_data_type, int[4][4]>);
   static_assert(ModelView::rank == 4);
   static_assert(GridView::rank == 4);
-  static_assert(WeightView::rank == 2);
+  static_assert(GridWeightView::rank == 2);
 
   using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
@@ -547,7 +547,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   using acc_cf_value_t = acc_cpx_t<cf_value_t>;
   using grid_value_t = typename GridView::non_const_value_type;
   using model_value_t = typename ModelView::non_const_value_type;
-  using weight_value_t = typename WeightView::non_const_value_type;
+  using grid_weight_value_t = typename GridWeightView::non_const_value_type;
 
   using vis_t = Vis<execution_space, visdata_t, GridScale>;
 
@@ -562,7 +562,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   GVisbuffView m_gvisbuff;
   K::Array<GridScale, 2> m_grid_scale;
   GridView m_grid;
-  WeightView m_weights;
+  GridWeightView m_grid_weights;
   model_const_view m_model;
 
   K::Array<int, 2> m_grid_size;
@@ -586,7 +586,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const GVisbuffView& gvisbuff,
     const K::Array<GridScale, 2>& grid_scale,
     const GridView& grid,
-    const WeightView& weights,
+    const GridWeightView& grid_weights,
     const ModelView& model)
   : m_exec(exec)
   , m_cf_radii(cf_radii)
@@ -598,7 +598,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   , m_gvisbuff(gvisbuff)
   , m_grid_scale(grid_scale)
   , m_grid(grid)
-  , m_weights(weights)
+  , m_grid_weights(grid_weights)
   , m_model(model) {
 
     for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i)
@@ -911,7 +911,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const mindex_const_view& mueller_indexes,
     const mindex_const_view& conjugate_mueller_indexes,
     const GridView& grid,
-    const WeightView& weights,
+    const GridWeightView& grid_weights,
     const scratch_phscr_view& phi_Y) {
 
     const auto& N_X = vis.m_cf_size[0];
@@ -979,15 +979,15 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
         }
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt));
-    // compute final weight and add it to weights
+    // compute final weight and add it to grid weights
     K::single(
       K::PerTeam(team_member),
       [&]() {
-        weight_value_t twgt = 0;
+        grid_weight_value_t twgt = 0;
         for (int vpol = 0; vpol < N; ++vpol)
           twgt +=
-            weight_value_t(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]);
-        K::atomic_add(&weights(gpol, vis.m_grid_channel), twgt);
+            grid_weight_value_t(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]);
+        K::atomic_add(&grid_weights(gpol, vis.m_grid_channel), twgt);
       });
   }
 
@@ -1169,7 +1169,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
           m_mueller_indexes,
           m_conjugate_mueller_indexes,
           m_grid,
-          m_weights,
+          m_grid_weights,
           phi_Y);
       });
   }
@@ -1192,11 +1192,11 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 template <
   typename execution_space,
   typename GridView,
-  typename WeightView>
+  typename GridWeightView>
 struct /*HPG_EXPORT*/ GridNormalizer final {
 
   static_assert(GridView::rank == 4);
-  static_assert(WeightView::rank == 2);
+  static_assert(GridWeightView::rank == 2);
 
   static_assert(
     int(GridAxis::x) == 0
@@ -1206,23 +1206,23 @@ struct /*HPG_EXPORT*/ GridNormalizer final {
   static_assert(
     GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::channel == 1);
 
-  using weight_const_view_t = typename WeightView::const_type;
+  using grid_weight_const_view_t = typename GridWeightView::const_type;
   using grid_value_t = typename GridView::non_const_value_type;
-  using weight_value_t = typename WeightView::non_const_value_type;
+  using weight_value_t = typename GridWeightView::non_const_value_type;
 
   execution_space m_exec;
   GridView m_grid;
-  weight_const_view_t m_weights;
+  grid_weight_const_view_t m_grid_weights;
   weight_value_t m_inv_norm;
 
   GridNormalizer(
     const execution_space& exec,
     const GridView& grid,
-    const WeightView& weights,
+    const GridWeightView& grid_weights,
     weight_value_t wfactor)
     : m_exec(exec)
     , m_grid(grid)
-    , m_weights(weights)
+    , m_grid_weights(grid_weights)
     , m_inv_norm(weight_value_t(1) / wfactor) {}
 
   GridNormalizer(
@@ -1245,7 +1245,8 @@ struct /*HPG_EXPORT*/ GridNormalizer final {
   operator()(const ByWeights&, int x, int y, int mrow, int channel) const {
 
     m_grid(x, y, mrow, channel) =
-      (m_grid(x, y, mrow, channel) * m_inv_norm) / m_weights(mrow, channel);
+      (m_grid(x, y, mrow, channel) * m_inv_norm)
+      / m_grid_weights(mrow, channel);
   }
 
   //
@@ -1271,7 +1272,7 @@ struct /*HPG_EXPORT*/ GridNormalizer final {
       m_grid.extent_int(int(GridAxis::mrow)),
       m_grid.extent_int(int(GridAxis::channel))};
 
-    if (m_weights.is_allocated())
+    if (m_grid_weights.is_allocated())
       K::parallel_for(
         "normalize_by_weights",
         K::MDRangePolicy<K::Rank<4>, execution_space, ByWeights>(
@@ -1279,7 +1280,7 @@ struct /*HPG_EXPORT*/ GridNormalizer final {
           begin,
           end),
         *this);
-    else if (m_inv_norm != grid_value_fp(1))
+    else if (m_inv_norm != weight_value_t(1))
       K::parallel_for(
         "normalize_by_value",
         K::MDRangePolicy<K::Rank<4>, execution_space, ByValue>(
