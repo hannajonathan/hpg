@@ -1994,6 +1994,10 @@ struct /*HPG_EXPORT*/ FFTW<float> {
 /** FFT kernels
  *
  * Both in-place and out-of-place versions
+ *
+ * Because the implementations depend on specific grid layouts, we don't
+ * generalize these kernels to more general grid view types (as we have done for
+ * GridNormalizer, for example).
  */
 template <typename execution_space, unsigned version>
 struct /*HPG_EXPORT*/ FFT final {
