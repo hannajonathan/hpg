@@ -29,6 +29,16 @@
 
 #include <Kokkos_Core.hpp>
 
+#if defined(HPG_ENABLE_SERIAL) || defined(HPG_ENABLE_OPENMP)
+# include <fftw3.h>
+# ifdef HPG_ENABLE_OPENMP
+#  include <omp.h>
+# endif
+#endif
+#ifdef HPG_ENABLE_CUDA
+# include <cufft.h>
+#endif
+
 #ifdef __NVCC__
 # define WORKAROUND_NVCC_IF_CONSTEXPR_BUG
 #endif
@@ -290,17 +300,490 @@ sgn(T val) {
   return (T(0) < val) - (val < T(0));
 }
 
+/** visibility value type */
+using vis_t = K::complex<visibility_fp>;
+
+/** convolution function value type */
+using cf_t = K::complex<cf_fp>;
+
+/** gridded value type */
+using gv_t = K::complex<grid_value_fp>;
+
+/** portable UVW coordinates type */
+using uvw_t = K::Array<vis_uvw_fp, 3>;
+
 /** type for (plain) vector data */
 template <typename T>
 using vector_data = std::shared_ptr<std::vector<T>>;
+
+/** View type for grid values */
+template <typename Layout, typename memory_space>
+using grid_view = K::View<gv_t****, Layout, memory_space>;
+
+/** View type for constant grid values */
+template <typename Layout, typename memory_space>
+using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
+
+/** View type for weight values
+ *
+ * logical axis order: mrow, channel
+ */
+template <typename Layout, typename memory_space>
+using weight_view = K::View<grid_value_fp**, Layout, memory_space>;
+
+/** View type for constant weight values */
+template <typename Layout, typename memory_space>
+using const_weight_view = K::View<const grid_value_fp**, Layout, memory_space>;
+
+/** View type for CF values */
+template <typename Layout, typename memory_space>
+using cf_view =
+  K::View<cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
+
+/** View type for constant CF values */
+template <typename Layout, typename memory_space>
+using const_cf_view =
+  K::View<
+    const cf_t******,
+    Layout,
+    memory_space,
+    K::MemoryTraits<K::Unmanaged>>;
+
+/** view type for unmanaged view of vector data on host */
+template <typename T>
+using vector_view = K::View<T*, K::HostSpace, K::MemoryTraits<K::Unmanaged>>;
+
+template <unsigned N>
+using visdata_t =
+  core::VisData<
+    N,
+    vis_t,
+    vis_weight_fp,
+    vis_frequency_fp,
+    vis_phase_fp,
+    uvw_t,
+    cf_phase_gradient_fp>;
+
+/** view for VisData<N> */
+template <unsigned N, typename memory_space>
+using visdata_view =
+  K::View<visdata_t<N>*, memory_space, K::MemoryTraits<K::Unmanaged>>;
+
+/** view for backing buffer of visdata views in ExecSpace */
+template <typename memory_space>
+using visbuff_view = K::View<visdata_t<4>*, memory_space>;
+
+/** view for backing buffer of gvisvals views in ExecSpace */
+template <typename memory_space>
+using gvisbuff_view =
+  K::View<core::poln_array_type<visibility_fp, 4>*, memory_space>;
+
+/** view for Mueller element index matrix */
+template <typename memory_space>
+using mindex_view = K::View<int[4][4], memory_space>;
+
+/** view for constant Mueller element index matrix */
+template <typename memory_space>
+using const_mindex_view =
+  K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
+
+/** fftw function class templated on fp precision */
+template <typename T>
+struct /*HPG_EXPORT*/ FFTW {
+
+  using complex_t = void;
+  using plan_t = void;
+
+  // static void
+  // exec(const plan_t plan, K::complex<T>* in, K::complex<T>* out) {
+  // }
+
+#ifdef HPG_ENABLE_OPENMP
+  static void
+  plan_with_nthreads(int n) {
+  }
+#endif // HPG_ENABLE_OPENMP
+
+  // static std::tuple<plan_t, plan_t>
+  // plan_many(
+  //   int rank, const int *n, int howmany,
+  //   const K::complex<T> *in, const int *inembed,
+  //   int istride, int idist,
+  //   K::complex<T> *out, const int *onembed,
+  //   int ostride, int odist,
+  //   int sign, unsigned flags);
+
+  // static void
+  // destroy_plan(std::tuple<plan_t, plan_t> plan);
+};
+
+/** FFTW specialized for double precision */
+template <>
+struct /*HPG_EXPORT*/ FFTW<double> {
+
+  using complex_t = fftw_complex;
+  using plan_t = fftw_plan;
+
+  static void
+  exec(const plan_t plan, K::complex<double>* in, K::complex<double>* out) {
+    fftw_execute_dft(
+      plan,
+      reinterpret_cast<complex_t*>(in),
+      reinterpret_cast<complex_t*>(out));
+  }
+
+#ifdef HPG_ENABLE_OPENMP
+  static void
+  plan_with_nthreads(int n) {
+    fftw_plan_with_nthreads(n);
+  }
+#endif // HPG_ENABLE_OPENMP
+
+  static std::tuple<plan_t, plan_t>
+  plan_many(
+    int rank, const int *n, int howmany,
+    K::complex<double> *in, const int *inembed,
+    int istride, int idist,
+    K::complex<double> *out, const int *onembed,
+    int ostride, int odist,
+    int /*sstride*/,
+    int sign, unsigned flags) {
+
+    static_assert(sizeof(*in) == 16);
+
+    auto plan =
+      fftw_plan_many_dft(
+        rank, n, howmany,
+        reinterpret_cast<complex_t*>(in), inembed, istride, idist,
+        reinterpret_cast<complex_t*>(out), onembed, ostride, odist,
+        sign, flags);
+    return {plan, plan};
+  }
+
+  static void
+  destroy_plan(std::tuple<plan_t, plan_t> plans) {
+    fftw_destroy_plan(std::get<0>(plans));
+  }
+};
+
+/** FFTW specialized for single precision */
+template <>
+struct /*HPG_EXPORT*/ FFTW<float> {
+
+  using complex_t = fftwf_complex;
+  using plan_t = fftwf_plan;
+
+  static void
+  exec(const plan_t plan, K::complex<float>* in, K::complex<float>* out) {
+    fftwf_execute_dft(
+      plan,
+      reinterpret_cast<complex_t*>(in),
+      reinterpret_cast<complex_t*>(out));
+  }
+
+#ifdef HPG_ENABLE_OPENMP
+  static void
+  plan_with_nthreads(int n) {
+    fftwf_plan_with_nthreads(n);
+  }
+#endif // HPG_ENABLE_OPENMP
+
+  static std::tuple<plan_t, plan_t>
+  plan_many(
+    int rank, const int *n, int howmany,
+    K::complex<float> *in, const int *inembed,
+    int istride, int idist,
+    K::complex<float> *out, const int *onembed,
+    int ostride, int odist,
+    int sstride,
+    int sign, unsigned flags) {
+
+    static_assert(sizeof(*in) == 8);
+
+    return
+      {fftwf_plan_many_dft(
+          rank, n, howmany,
+          reinterpret_cast<complex_t*>(in), inembed, istride, idist,
+          reinterpret_cast<complex_t*>(out), onembed, ostride, odist,
+          sign, flags),
+       fftwf_plan_many_dft(
+         rank, n, howmany,
+         reinterpret_cast<complex_t*>(in + sstride), inembed, istride, idist,
+         reinterpret_cast<complex_t*>(out + sstride), onembed, ostride, odist,
+         sign, flags)};
+  }
+
+  static void
+  destroy_plan(std::tuple<plan_t, plan_t> plans) {
+    fftwf_destroy_plan(std::get<0>(plans));
+    fftwf_destroy_plan(std::get<1>(plans));
+  }
+};
+
+/** FFT kernels
+ *
+ * Both in-place and out-of-place versions
+ *
+ * Because the implementations depend on specific grid layouts, we leave this in
+ * the impl namespace.
+ */
+template <typename execution_space>
+struct /*HPG_EXPORT*/ FFT final {
+
+  // default implementation assumes FFTW3
+
+  template <typename IG, typename OG>
+  static auto
+  grid_fft_handle(execution_space exec, FFTSign sign, IG& igrid, OG& ogrid) {
+
+    using scalar_t = typename OG::value_type::value_type;
+
+#ifdef HPG_ENABLE_OPENMP
+    if constexpr (std::is_same_v<execution_space, K::Serial>)
+      FFTW<scalar_t>::plan_with_nthreads(1);
+    else
+      FFTW<scalar_t>::plan_with_nthreads(omp_get_max_threads());
+#endif // HPG_ENABLE_OPENMP
+
+    // this assumes there is no padding in grid
+    assert(igrid.span() ==
+           igrid.extent(0) * igrid.extent(1)
+           * igrid.extent(2) * igrid.extent(3));
+    static_assert(
+      int(core::GridAxis::x) == 0
+      && int(core::GridAxis::y) == 1
+      && int(core::GridAxis::mrow) == 2
+      && int(core::GridAxis::channel) == 3);
+    int n[2]{igrid.extent_int(0), igrid.extent_int(1)};
+    int stride = 1;
+    int dist = igrid.extent_int(0) * igrid.extent_int(1) * igrid.extent_int(2);
+    int nembed[2]{
+                igrid.extent_int(0) * igrid.extent_int(2),
+                  igrid.extent_int(1)};
+    auto result =
+      FFTW<scalar_t>::plan_many(
+        2, n, igrid.extent_int(3),
+        const_cast<K::complex<scalar_t>*>(&igrid(0, 0, 0, 0)),
+        nembed, stride, dist,
+        &ogrid(0, 0, 0, 0), nembed, stride, dist,
+        igrid.extent_int(1),
+        ((sign == FFTSign::NEGATIVE) ? FFTW_FORWARD : FFTW_BACKWARD),
+        FFTW_ESTIMATE | FFTW_PRESERVE_INPUT);
+    return result;
+  }
+
+  /** in-place FFT kernel
+   */
+  template <typename grid_layout, typename memory_space>
+  static std::optional<Error>
+  in_place_kernel(
+    execution_space exec,
+    FFTSign sign,
+    const grid_view<grid_layout, memory_space>& grid) {
+
+    using scalar_t =
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+
+    auto handles = grid_fft_handle(exec, sign, grid, grid);
+    auto& [h0, h1] = handles;
+    std::optional<Error> result;
+    if (h0 == nullptr || h1 == nullptr)
+      result = Error("fftw in_place_kernel() failed");
+    if (!result) {
+      for (int mrow = 0; mrow < grid.extent_int(2); ++mrow) {
+        FFTW<scalar_t>::exec(h0, &grid(0, 0, mrow, 0), &grid(0, 0, mrow, 0));
+        std::swap(h0, h1);
+      }
+      FFTW<scalar_t>::destroy_plan(handles);
+    }
+    return result;
+  }
+
+  /** out-of-place FFT kernel
+   */
+  template <typename grid_layout, typename memory_space>
+  static std::optional<Error>
+  out_of_place_kernel(
+    execution_space exec,
+    FFTSign sign,
+    const const_grid_view<grid_layout, memory_space>& pre_grid,
+    const grid_view<grid_layout, memory_space>& post_grid) {
+
+    using scalar_t =
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+
+    auto handles = grid_fft_handle(exec, sign, pre_grid, post_grid);
+    auto& [h0, h1] = handles;
+    std::optional<Error> result;
+    if (h0 == nullptr || h1 == nullptr)
+      result = Error("fftw in_place_kernel() failed");
+    if (!result) {
+      for (int mrow = 0; mrow < pre_grid.extent_int(2); ++mrow) {
+        FFTW<scalar_t>::exec(
+          h0,
+          const_cast<K::complex<scalar_t>*>(&pre_grid(0, 0, mrow, 0)),
+          &post_grid(0, 0, mrow, 0));
+        std::swap(h0, h1);
+      }
+      FFTW<scalar_t>::destroy_plan(handles);
+    }
+    return result;
+  }
+};
+
+#ifdef HPG_ENABLE_CUDA
+
+/*HPG_EXPORT*/ Error
+cufft_error(const std::string& prefix, cufftResult rc);
+
+/** cufft function class templated on fp precision */
+template <typename T>
+struct /*HPG_EXPORT*/ CUFFT {
+  //constexpr cufftType type;
+  static cufftResult
+  exec(cufftHandle, K::complex<T>*, K::complex<T>*, int) {
+    assert(false);
+    return CUFFT_NOT_SUPPORTED;
+  }
+};
+
+template <>
+struct /*HPG_EXPORT*/ CUFFT<double> {
+
+  static constexpr cufftType type = CUFFT_Z2Z;
+
+  static cufftResult
+  exec(
+    cufftHandle plan,
+    FFTSign sign,
+    K::complex<double>* idata,
+    K::complex<double>* odata) {
+
+    return
+      cufftExecZ2Z(
+        plan,
+        reinterpret_cast<cufftDoubleComplex*>(idata),
+        reinterpret_cast<cufftDoubleComplex*>(odata),
+        ((sign == FFTSign::NEGATIVE) ? CUFFT_FORWARD : CUFFT_INVERSE));
+  }
+};
+
+template <>
+struct /*HPG_EXPORT*/ CUFFT<float> {
+
+  static constexpr cufftType type = CUFFT_C2C;
+
+  static cufftResult
+  exec(
+    cufftHandle plan,
+    FFTSign sign,
+    K::complex<float>* idata,
+    K::complex<float>* odata) {
+    return
+      cufftExecC2C(
+        plan,
+        reinterpret_cast<cufftComplex*>(idata),
+        reinterpret_cast<cufftComplex*>(odata),
+        ((sign == FFTSign::NEGATIVE) ? CUFFT_FORWARD : CUFFT_INVERSE));
+  }
+};
+
+/** fft kernels for Cuda
+ */
+template <>
+struct /*HPG_EXPORT*/ FFT<K::Cuda> final {
+
+  template <typename G>
+  static std::tuple<cufftResult_t, cufftHandle>
+  grid_fft_handle(K::Cuda exec, G& grid) {
+
+    using scalar_t = typename G::value_type::value_type;
+
+    // this assumes there is no padding in grid
+    assert(grid.span() ==
+           grid.extent(0) * grid.extent(1) * grid.extent(2) * grid.extent(3));
+    static_assert(
+      int(core::GridAxis::x) == 0
+      && int(core::GridAxis::y) == 1
+      && int(core::GridAxis::mrow) == 2
+      && int(core::GridAxis::channel) == 3);
+    int n[2]{grid.extent_int(1), grid.extent_int(0)};
+    cufftHandle result;
+    auto rc =
+      cufftPlanMany(
+        &result, 2, n,
+        NULL, 1, 1,
+        NULL, 1, 1,
+        CUFFT<scalar_t>::type,
+        grid.extent_int(2) * grid.extent_int(3));
+    if (rc == CUFFT_SUCCESS)
+      rc = cufftSetStream(result, exec.cuda_stream());
+    return {rc, result};
+  }
+
+  /** in-place FFT kernel
+   */
+  template <typename grid_layout, typename memory_space>
+  static std::optional<Error>
+  in_place_kernel(
+      K::Cuda exec,
+      FFTSign sign,
+      const grid_view<grid_layout, memory_space>& grid) {
+
+    using scalar_t =
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+
+    auto [rc, handle] = grid_fft_handle(exec, grid);
+    if (rc == CUFFT_SUCCESS) {
+      rc = CUFFT<scalar_t>::exec(handle, sign, grid.data(), grid.data());
+      auto rc0 = cufftDestroy(handle);
+      assert(rc0 == CUFFT_SUCCESS);
+    }
+    std::optional<Error> result;
+    if (rc != CUFFT_SUCCESS)
+      result = cufft_error("Cuda in_place_kernel() failed: ", rc);
+    return result;
+  }
+
+  /** out-of-place FFT kernel
+   */
+  template <typename grid_layout, typename memory_space>
+  static std::optional<Error>
+  out_of_place_kernel(
+    K::Cuda exec,
+    FFTSign sign,
+    const const_grid_view<grid_layout, memory_space>& pre_grid,
+    const grid_view<grid_layout, memory_space>& post_grid) {
+
+    using scalar_t =
+      typename grid_view<grid_layout, memory_space>::value_type::value_type;
+
+    auto [rc, handle] = grid_fft_handle(exec, post_grid);
+    if (rc == CUFFT_SUCCESS) {
+      rc =
+        CUFFT<scalar_t>::exec(
+          handle,
+          sign,
+          const_cast<K::complex<scalar_t>*>(pre_grid.data()),
+          post_grid.data());
+      auto rc0 = cufftDestroy(handle);
+      assert(rc0 == CUFFT_SUCCESS);
+    }
+    std::optional<Error> result;
+    if (rc != CUFFT_SUCCESS)
+      result = cufft_error("cuda out_of_place_kernel() failed: ", rc);
+    return result;
+  }
+};
+#endif // HPG_ENABLE_CUDA
 
 template <typename Layout, typename memory_space>
 struct /*HPG_EXPORT*/ GridWeightPtr
   : public std::enable_shared_from_this<GridWeightPtr<Layout, memory_space>> {
 
-  core::weight_view<Layout, memory_space> m_gw;
+  weight_view<Layout, memory_space> m_gw;
 
-  GridWeightPtr(const core::weight_view<Layout, memory_space>& gw)
+  GridWeightPtr(const weight_view<Layout, memory_space>& gw)
     : m_gw(gw) {}
 
   std::shared_ptr<GridWeightArray::value_type>
@@ -318,9 +801,9 @@ template <typename Layout, typename memory_space>
 struct /*HPG_EXPORT*/ GridValuePtr
   : public std::enable_shared_from_this<GridValuePtr<Layout, memory_space>> {
 
-  core::grid_view<Layout, memory_space> m_gv;
+  grid_view<Layout, memory_space> m_gv;
 
-  GridValuePtr(const core::grid_view<Layout, memory_space>& gv)
+  GridValuePtr(const grid_view<Layout, memory_space>& gv)
     : m_gv(gv) {}
 
   std::shared_ptr<GridValueArray::value_type>
@@ -345,9 +828,7 @@ public:
   using grid_layout = GridLayout<kokkos_device>;
 
   using grid_t =
-    typename core::grid_view<
-      typename grid_layout::layout,
-      memory_space>::HostMirror;
+    typename grid_view<typename grid_layout::layout, memory_space>::HostMirror;
 
   grid_t grid;
 
@@ -546,7 +1027,7 @@ class /*HPG_EXPORT*/ GridWeightViewArray final
   using kokkos_device = typename DeviceT<D>::kokkos_device;
   using memory_space = typename kokkos_device::memory_space;
   using layout = typename kokkos_device::array_layout;
-  using weight_t = typename core::weight_view<layout, memory_space>::HostMirror;
+  using weight_t = typename weight_view<layout, memory_space>::HostMirror;
 
   weight_t weight;
 
@@ -764,11 +1245,11 @@ public:
     switch (lyo) {
     case Layout::Left: {
       K::View<
-        core::gv_t****,
+        gv_t****,
         K::LayoutLeft,
         typename DeviceT<H>::kokkos_device::memory_space,
         K::MemoryTraits<K::Unmanaged>> dstv(
-          reinterpret_cast<core::gv_t*>(dst),
+          reinterpret_cast<gv_t*>(dst),
           m_extents[0], m_extents[1], m_extents[2], m_extents[3]);
       K::deep_copy(espace, dstv, m_zero);
       espace.fence();
@@ -776,11 +1257,11 @@ public:
     }
     case Layout::Right: {
       K::View<
-        core::gv_t****,
+        gv_t****,
         K::LayoutRight,
         typename DeviceT<H>::kokkos_device::memory_space,
         K::MemoryTraits<K::Unmanaged>> dstv(
-          reinterpret_cast<core::gv_t*>(dst),
+          reinterpret_cast<gv_t*>(dst),
           m_extents[0], m_extents[1], m_extents[2], m_extents[3]);
       K::deep_copy(espace, dstv, m_zero);
       espace.fence();
@@ -869,7 +1350,7 @@ public:
   using cflayout = CFLayout<kokkos_device>;
 
   // notice layout for device D, but in HostSpace
-  using cfd_view_h = core::cf_view<typename cflayout::layout, K::HostSpace>;
+  using cfd_view_h = cf_view<typename cflayout::layout, K::HostSpace>;
 
   /** layout version string */
   std::string m_version;
@@ -878,7 +1359,7 @@ public:
   /** extents by group */
   std::vector<std::array<unsigned, rank - 1>> m_extents;
   /** buffers in host memory with CF values */
-  std::vector<std::vector<core::cf_t>> m_arrays;
+  std::vector<std::vector<cf_t>> m_arrays;
   /** Views of host memory buffers */
   std::vector<cfd_view_h> m_views;
 
@@ -906,10 +1387,10 @@ public:
 
     for (auto& [e, v] : arrays) {
       m_extents.push_back(e);
-      // we unfortunately must copy values from `arrays` because `core::cf_t` is
+      // we unfortunately must copy values from `arrays` because `cf_t` is
       // defined by the implementation, and is not the same type as `value_type`
       // (Kokkos::complex type has different alignment than std::complex)
-      std::vector<core::cf_t> vals;
+      std::vector<cf_t> vals;
       vals.reserve(v.size());
       std::copy(v.begin(), v.end(), std::back_inserter(vals));
       m_arrays.push_back(std::move(vals));
@@ -1058,7 +1539,7 @@ layout_for_device(
 
   auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
   typename DeviceCFArray<D>::cfd_view_h
-    cfd(reinterpret_cast<core::cf_t*>(dst), layout);
+    cfd(reinterpret_cast<cf_t*>(dst), layout);
   switch (host_device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial: {
