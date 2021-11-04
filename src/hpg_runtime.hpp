@@ -725,8 +725,8 @@ public:
   using grid_layout =  impl::GridLayout<kokkos_device>;
 
   impl::grid_view<typename grid_layout::layout, memory_space> m_grid;
-  impl::weight_view<typename execution_space::array_layout, memory_space>
-    m_weights;
+  impl::grid_weight_view<typename execution_space::array_layout, memory_space>
+    m_grid_weights;
   impl::grid_view<typename grid_layout::layout, memory_space> m_model;
   impl::const_mindex_view<memory_space> m_mueller_indexes;
   impl::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
@@ -803,7 +803,7 @@ public:
     m_implementation_versions = std::move(st).m_implementation_versions;
 
     m_grid = std::move(st).m_grid;
-    m_weights = std::move(st).m_weights;
+    m_grid_weights = std::move(st).m_grid_weights;
     m_model = std::move(st).m_model;
     m_mueller_indexes = std::move(st).m_mueller_indexes;
     m_conjugate_mueller_indexes = std::move(st).m_conjugate_mueller_indexes;
@@ -827,7 +827,7 @@ public:
   virtual ~StateT() {
     fence();
     m_grid = decltype(m_grid)();
-    m_weights = decltype(m_weights)();
+    m_grid_weights = decltype(m_grid_weights)();
     m_model = decltype(m_model)();
     m_mueller_indexes = decltype(m_mueller_indexes)();
     m_conjugate_mueller_indexes = decltype(m_conjugate_mueller_indexes)();
@@ -986,7 +986,7 @@ public:
         exec_grid.gvisbuff,
         m_grid_scale,
         m_grid,
-        m_weights,
+        m_grid_weights,
         m_model);
 
     if (do_degrid) {
@@ -1127,8 +1127,8 @@ public:
     fence_unlocked();
     auto& exec =
       m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
-    auto wgts_h = K::create_mirror(m_weights);
-    K::deep_copy(exec.space, wgts_h, m_weights);
+    auto wgts_h = K::create_mirror(m_grid_weights);
+    K::deep_copy(exec.space, wgts_h, m_grid_weights);
     exec.fence();
     return std::make_unique<impl::GridWeightViewArray<D>>(wgts_h);
   }
@@ -1139,12 +1139,12 @@ public:
       std::make_shared<
         impl::GridWeightPtr<
           typename execution_space::array_layout,
-          memory_space>>(m_weights)->ptr();
+          memory_space>>(m_grid_weights)->ptr();
   }
 
   size_t
   grid_weights_span() const override {
-    return m_weights.span();
+    return m_grid_weights.span();
   }
 
   std::unique_ptr<GridValueArray>
@@ -1223,7 +1223,7 @@ public:
     impl::core::GridNormalizer(
       m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
       m_grid,
-      m_weights,
+      m_grid_weights,
       wfactor)
       .normalize();
   }
@@ -1247,7 +1247,8 @@ public:
         break;
       }
     } else {
-      impl::const_grid_view<typename grid_layout::layout, memory_space>
+      typename
+        impl::grid_view<typename grid_layout::layout, memory_space>::const_type
         pre_grid = m_grid;
       new_grid(false, false);
       switch (fft_version()) {
@@ -1293,8 +1294,9 @@ public:
           break;
         }
       } else {
-        impl::const_grid_view<typename grid_layout::layout, memory_space>
-          pre_model = m_model;
+        typename
+          impl::grid_view<typename grid_layout::layout, memory_space>
+          ::const_type pre_model = m_model;
         std::array<int, 4> ig{
           int(m_grid_size[0]),
           int(m_grid_size[1]),
@@ -1366,7 +1368,7 @@ private:
     std::swap(m_implementation_versions, other.m_implementation_versions);
 
     std::swap(m_grid, other.m_grid);
-    std::swap(m_weights, other.m_weights);
+    std::swap(m_grid_weights, other.m_grid_weights);
     std::swap(m_model, other.m_model);
     std::swap(m_mueller_indexes, other.m_mueller_indexes);
     std::swap(m_conjugate_mueller_indexes, other.m_conjugate_mueller_indexes);
@@ -1615,16 +1617,16 @@ private:
       GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::channel == 1);
     if (also_weights) {
       if (create_without_init)
-        m_weights =
-          decltype(m_weights)(
-            K::ViewAllocateWithoutInitializing("weights"),
+        m_grid_weights =
+          decltype(m_grid_weights)(
+            K::ViewAllocateWithoutInitializing("grid_weights"),
             int(m_grid_size[int(impl::core::GridAxis::mrow)]),
             int(m_grid_size[int(impl::core::GridAxis::channel)]));
       else
-        m_weights =
-          decltype(m_weights)(
+        m_grid_weights =
+          decltype(m_grid_weights)(
             K::view_alloc(
-              "weights",
+              "grid_weights",
               m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
             int(m_grid_size[int(impl::core::GridAxis::mrow)]),
             int(m_grid_size[int(impl::core::GridAxis::channel)]));
@@ -1634,7 +1636,7 @@ private:
       auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
       K::deep_copy(exec.space, m_grid, st->m_grid);
       if (also_weights)
-        K::deep_copy(exec.space, m_weights, st->m_weights);
+        K::deep_copy(exec.space, m_grid_weights, st->m_grid_weights);
     }
   }
 };

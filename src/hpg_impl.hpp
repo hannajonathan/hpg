@@ -320,20 +320,12 @@ using vector_data = std::shared_ptr<std::vector<T>>;
 template <typename Layout, typename memory_space>
 using grid_view = K::View<gv_t****, Layout, memory_space>;
 
-/** View type for constant grid values */
-template <typename Layout, typename memory_space>
-using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
-
-/** View type for weight values
+/** View type for grid weight values
  *
  * logical axis order: mrow, channel
  */
 template <typename Layout, typename memory_space>
-using weight_view = K::View<grid_value_fp**, Layout, memory_space>;
-
-/** View type for constant weight values */
-template <typename Layout, typename memory_space>
-using const_weight_view = K::View<const grid_value_fp**, Layout, memory_space>;
+using grid_weight_view = K::View<grid_value_fp**, Layout, memory_space>;
 
 /** View type for CF values */
 template <typename Layout, typename memory_space>
@@ -606,7 +598,7 @@ struct /*HPG_EXPORT*/ FFT final {
   out_of_place_kernel(
     execution_space exec,
     FFTSign sign,
-    const const_grid_view<grid_layout, memory_space>& pre_grid,
+    const typename grid_view<grid_layout, memory_space>::const_type& pre_grid,
     const grid_view<grid_layout, memory_space>& post_grid) {
 
     using scalar_t =
@@ -752,7 +744,7 @@ struct /*HPG_EXPORT*/ FFT<K::Cuda> final {
   out_of_place_kernel(
     K::Cuda exec,
     FFTSign sign,
-    const const_grid_view<grid_layout, memory_space>& pre_grid,
+    const typename grid_view<grid_layout, memory_space>::const_type& pre_grid,
     const grid_view<grid_layout, memory_space>& post_grid) {
 
     using scalar_t =
@@ -781,9 +773,9 @@ template <typename Layout, typename memory_space>
 struct /*HPG_EXPORT*/ GridWeightPtr
   : public std::enable_shared_from_this<GridWeightPtr<Layout, memory_space>> {
 
-  weight_view<Layout, memory_space> m_gw;
+  grid_weight_view<Layout, memory_space> m_gw;
 
-  GridWeightPtr(const weight_view<Layout, memory_space>& gw)
+  GridWeightPtr(const grid_weight_view<Layout, memory_space>& gw)
     : m_gw(gw) {}
 
   std::shared_ptr<GridWeightArray::value_type>
@@ -1027,30 +1019,31 @@ class /*HPG_EXPORT*/ GridWeightViewArray final
   using kokkos_device = typename DeviceT<D>::kokkos_device;
   using memory_space = typename kokkos_device::memory_space;
   using layout = typename kokkos_device::array_layout;
-  using weight_t = typename weight_view<layout, memory_space>::HostMirror;
+  using grid_weight_t =
+    typename grid_weight_view<layout, memory_space>::HostMirror;
 
-  weight_t weight;
+  grid_weight_t grid_weight;
 
-  GridWeightViewArray(const weight_t& weight_)
-    : weight(weight_) {}
+  GridWeightViewArray(const grid_weight_t& grid_weight_)
+    : grid_weight(grid_weight_) {}
 
   virtual ~GridWeightViewArray() {}
 
   unsigned
   extent(unsigned dim) const override {
-    return weight.extent(dim);
+    return grid_weight.extent(dim);
   }
 
   const value_type&
   operator()(unsigned mrow, unsigned channel) const override {
 
-    return weight(mrow, channel);
+    return grid_weight(mrow, channel);
   }
 
   value_type&
   operator()(unsigned mrow, unsigned channel) override {
 
-    return weight(mrow, channel);
+    return grid_weight(mrow, channel);
   }
 
   template <Device H>
@@ -1066,25 +1059,25 @@ class /*HPG_EXPORT*/ GridWeightViewArray final
     switch (lyo) {
     case Layout::Left: {
       K::View<
-        typename weight_t::data_type,
+        typename grid_weight_t::data_type,
         K::LayoutLeft,
-        typename weight_t::memory_space,
+        typename grid_weight_t::memory_space,
         K::MemoryTraits<K::Unmanaged>> dstv(
-          reinterpret_cast<typename weight_t::pointer_type>(dst),
-          weight.extent(0), weight.extent(1));
-      K::deep_copy(espace, dstv, weight);
+          reinterpret_cast<typename grid_weight_t::pointer_type>(dst),
+          grid_weight.extent(0), grid_weight.extent(1));
+      K::deep_copy(espace, dstv, grid_weight);
       espace.fence();
       break;
     }
     case Layout::Right: {
       K::View<
-        typename weight_t::data_type,
+        typename grid_weight_t::data_type,
         K::LayoutRight,
-        typename weight_t::memory_space,
+        typename grid_weight_t::memory_space,
         K::MemoryTraits<K::Unmanaged>> dstv(
-          reinterpret_cast<typename weight_t::pointer_type>(dst),
-          weight.extent(0), weight.extent(1));
-      K::deep_copy(espace, dstv, weight);
+          reinterpret_cast<typename grid_weight_t::pointer_type>(dst),
+          grid_weight.extent(0), grid_weight.extent(1));
+      K::deep_copy(espace, dstv, grid_weight);
       espace.fence();
       break;
     }
@@ -1127,7 +1120,7 @@ public:
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
-    weight_t weight(
+    grid_weight_t grid_weight(
       K::ViewAllocateWithoutInitializing(name),
       layout(extents[0], extents[1]));
 
@@ -1140,27 +1133,27 @@ public:
     switch (lyo) {
     case Layout::Left: {
       K::View<
-        typename weight_t::data_type,
+        typename grid_weight_t::data_type,
         K::LayoutLeft,
-        typename weight_t::memory_space,
+        typename grid_weight_t::memory_space,
         K::MemoryTraits<K::Unmanaged>> srcv(
-          reinterpret_cast<typename weight_t::pointer_type>(
+          reinterpret_cast<typename grid_weight_t::pointer_type>(
             const_cast<value_type *>(src)),
-          weight.extent(0), weight.extent(1));
-      K::deep_copy(espace, weight, srcv);
+          grid_weight.extent(0), grid_weight.extent(1));
+      K::deep_copy(espace, grid_weight, srcv);
       espace.fence();
       break;
     }
     case Layout::Right: {
       K::View<
-        typename weight_t::data_type,
+        typename grid_weight_t::data_type,
         K::LayoutRight,
-        typename weight_t::memory_space,
+        typename grid_weight_t::memory_space,
         K::MemoryTraits<K::Unmanaged>> srcv(
-          reinterpret_cast<typename weight_t::pointer_type>(
+          reinterpret_cast<typename grid_weight_t::pointer_type>(
             const_cast<value_type *>(src)),
-          weight.extent(0), weight.extent(1));
-      K::deep_copy(espace, weight, srcv);
+          grid_weight.extent(0), grid_weight.extent(1));
+      K::deep_copy(espace, grid_weight, srcv);
       espace.fence();
       break;
     }
@@ -1168,7 +1161,7 @@ public:
       assert(false);
       break;
     }
-    return std::make_unique<GridWeightViewArray>(weight);
+    return std::make_unique<GridWeightViewArray>(grid_weight);
   }
 
   static std::unique_ptr<GridWeightViewArray>
