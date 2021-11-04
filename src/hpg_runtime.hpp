@@ -1377,32 +1377,20 @@ public:
 
   void
   shift_grid(ShiftDirection direction) override {
-    switch (grid_shifter_version()) {
-    case 0:
-      impl::core::GridShifter<execution_space, 0>::kernel(
-        direction,
-        m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
-        m_grid);
-      break;
-    default:
-      assert(false);
-      break;
-    }
+    impl::core::GridShifter(
+      m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+      direction,
+      m_grid)
+      .shift();
   }
 
   void
   shift_model(ShiftDirection direction) override {
-    switch (grid_shifter_version()) {
-    case 0:
-      impl::core::GridShifter<execution_space, 0>::kernel(
-        direction,
-        m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
-        m_model);
-      break;
-    default:
-      assert(false);
-      break;
-    }
+    impl::core::GridShifter(
+      m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+      direction,
+      m_model)
+      .shift();
   }
 
 private:
