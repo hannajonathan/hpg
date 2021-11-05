@@ -89,10 +89,13 @@ init_visibilities(
   const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const std::array<unsigned, 4>& cf_size,
   Generator& gen,
-  std::vector<hpg::VisData<1>>& vis) {
+  std::vector<hpg::VisData<1>>& vis,
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>>& ch_maps) {
 
   vis.clear();
   vis.reserve(num_vis);
+  ch_maps.clear();
+  ch_maps.reserve(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -114,12 +117,13 @@ init_visibilities(
     vis.push_back(
       hpg::VisData<1>(
         {std::complex<hpg::visibility_fp>(dist_vis(gen), dist_vis(gen))},
-        {dist_weight(gen)},
         freq,
         0.0,
         hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
-        dist_gchannel(gen),
         {dist_cfchannel(gen), 0}));
+    ch_maps.emplace_back(
+      std::map<unsigned, hpg::vis_weight_fp>{
+        {dist_gchannel(gen), dist_weight(gen)}});
   }
 }
 
@@ -142,7 +146,8 @@ run_tests(
   const std::array<unsigned, 4>& grid_size,
   const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const MyCFArray& cf,
-  std::vector<hpg::VisData<1>>& vis) {
+  std::vector<hpg::VisData<1>>& vis,
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>>& ch_maps) {
 
   std::vector<std::array<int, 1>> mueller_indexes;
   for (size_t i = 0; i < grid_size[2]; ++i)
@@ -156,6 +161,7 @@ run_tests(
           D,
           2,
           vis.size(),
+          1,
           &cf,
           grid_size,
           grid_scale,
@@ -184,6 +190,7 @@ run_tests(
           D,
           2,
           vis.size(),
+          1,
           &cf,
           grid_size,
           grid_scale,
@@ -192,7 +199,10 @@ run_tests(
     std::cout << "constructed" << std::endl;
     g0.set_convolution_function(host_dev, MyCFArray(cf));
     std::cout << "cf set" << std::endl;
-    g0.grid_visibilities(host_dev, std::remove_reference_t<decltype(vis)>(vis));
+    g0.grid_visibilities(
+      host_dev,
+      std::remove_reference_t<decltype(vis)>(vis),
+      ch_maps);
     std::cout << "gridded" << std::endl;
     auto weights = g0.grid_weights();
     std::cout << "weights";
@@ -233,7 +243,8 @@ dump_grids(
   const std::array<unsigned, 4>& grid_size,
   const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const MyCFArray& cf,
-  std::vector<hpg::VisData<1>>& vis) {
+  std::vector<hpg::VisData<1>>& vis,
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>>& ch_maps) {
 
   std::vector<std::array<int, 1>> mueller_indexes;
   for (size_t i = 0; i < grid_size[2]; ++i)
@@ -246,6 +257,7 @@ dump_grids(
         D,
         2,
         vis.size(),
+        1,
         &cf,
         grid_size,
         grid_scale,
@@ -254,7 +266,8 @@ dump_grids(
   g0.set_convolution_function(host_dev, MyCFArray(cf));
   g0.grid_visibilities(
     host_dev,
-    std::remove_reference_t<decltype(vis)>(vis));
+    std::remove_reference_t<decltype(vis)>(vis),
+    ch_maps);
   g0.normalize_by_weights();
   auto err = g0.apply_grid_fft();
   assert(!err);
@@ -299,7 +312,7 @@ main(int argc, char* argv[]) {
   hpg::ScopeGuard hpg(args);
 
   std::vector<hpg::VisData<1>> vis;
-
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>> ch_maps;
   {
     std::mt19937 rng(42);
 
@@ -314,16 +327,17 @@ main(int argc, char* argv[]) {
       grid_scale,
       cf_size,
       rng,
-      vis);
+      vis,
+      ch_maps);
 #ifdef HPG_ENABLE_SERIAL
     run_tests<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis);
+      grid_size, grid_scale, cf, vis, ch_maps);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     run_tests<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis);
+      grid_size, grid_scale, cf, vis, ch_maps);
 #endif // HPG_ENABLE_CUDA
   }
   {
@@ -340,16 +354,17 @@ main(int argc, char* argv[]) {
       grid_scale,
       cf_size,
       rng,
-      vis);
+      vis,
+      ch_maps);
 #ifdef HPG_ENABLE_SERIAL
     dump_grids<hpg::Device::Serial>(
       "Serial", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis);
+      grid_size, grid_scale, cf, vis, ch_maps);
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_CUDA
     dump_grids<hpg::Device::Cuda>(
       "Cuda", hpg::Device::OpenMP,
-      grid_size, grid_scale, cf, vis);
+      grid_size, grid_scale, cf, vis, ch_maps);
 #endif // HPG_ENABLE_CUDA
   }
 }

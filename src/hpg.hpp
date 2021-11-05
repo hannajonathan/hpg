@@ -23,6 +23,7 @@
 #include <cassert>
 #include <complex>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -264,16 +265,12 @@ struct VisData {
 
   /** visibility values, ordered by polarization*/
   std::array<std::complex<visibility_fp>, N> m_visibilities;
-  /** visibility weights, ordered by polarization*/
-  std::array<vis_weight_fp, N> m_weights;
   /** visibility frequency */
   vis_frequency_fp m_frequency;
   /** visibility phase */
   vis_phase_fp m_phase;
   /** visibility UVW coordinates */
   vis_uvw_t m_uvw;
-  /** grid channel index */
-  unsigned m_grid_channel;
   /** channel and grp CFArray index components */
   std::array<unsigned, 2> m_cf_index;
   /** phase gradient */
@@ -282,37 +279,29 @@ struct VisData {
   /** constructor, with CF phase gradient values */
   VisData(
     const std::array<std::complex<visibility_fp>, N>& visibilities,
-    const std::array<vis_weight_fp, N>& weights,
     const vis_frequency_fp& frequency,
     const vis_phase_fp& phase,
     const vis_uvw_t& uvw,
-    const unsigned& grid_channel,
     const std::array<unsigned, 2>& cf_index,
     const cf_phase_gradient_t& cf_phase_gradient)
     : m_visibilities(visibilities)
-    , m_weights(weights)
     , m_frequency(frequency)
     , m_phase(phase)
     , m_uvw(uvw)
-    , m_grid_channel(grid_channel)
     , m_cf_index(cf_index)
     , m_cf_phase_gradient(cf_phase_gradient) {}
 
   /** constructor, without CF phase gradient values */
   VisData(
     const std::array<std::complex<visibility_fp>, N>& visibilities,
-    const std::array<vis_weight_fp, N>& weights,
     const vis_frequency_fp& frequency,
     const vis_phase_fp& phase,
     const vis_uvw_t& uvw,
-    const unsigned& grid_channel,
     const std::array<unsigned, 2>& cf_index)
     : m_visibilities(visibilities)
-    , m_weights(weights)
     , m_frequency(frequency)
     , m_phase(phase)
     , m_uvw(uvw)
-    , m_grid_channel(grid_channel)
     , m_cf_index(cf_index)
     , m_cf_phase_gradient({0, 0}) {}
 
@@ -323,11 +312,9 @@ struct VisData {
   bool
   operator==(const VisData& rhs) {
     return m_visibilities == rhs.m_visibilities
-      && m_weights == rhs.m_weights
       && m_frequency == rhs.m_frequency
       && m_phase == rhs.m_phase
       && m_uvw == rhs.m_uvw
-      && m_grid_channel == rhs.m_grid_channel
       && m_cf_index == rhs.m_cf_index
       && m_cf_phase_gradient == rhs.m_cf_phase_gradient;
   }
@@ -1153,8 +1140,13 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of additional tasks (actual number
    * may be less than requested)
-   * @param max_visibility_batch_size maximum number of VisData<.> values for
-   * calls to grid_visibilities()
+   * @param visibility_batch_size batch size for number of VisData elements
+   * (N.B: this value is currently a hard limit of the implementation that
+   * governs the maximum number of elements in a vector of VisData elements
+   * accepted by the grid_visibilities() family of methods)
+   * @param max_avg_channels_per_vis maximum average (over
+   * visibilities in a batch) number of channels onto which visibilities
+   * are mapped
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
    * @param grid_size in logical axis order: X, Y, mrow, channel
@@ -1167,18 +1159,17 @@ protected:
    * to the GridderState instance. In all cases, at least one task is
    * employed, but some devices support additional, concurrent tasks.
    *
-   * The value of max_added_tasks and max_visibility_batch_size has an effect on
-   * the amount of memory allocated on the selected gridder device. The total
-   * amount of memory allocated for visibilities will be approximately equal to
-   * max_added_tasks multiplied by sizeof(VisData<N>) for the appropriate value
-   * of N.
+   * The values of max_added_tasks, visibility_batch_size and
+   * max_avg_channels_per_vis have effects on the amount of memory allocated
+   * on the selected gridder device.
    *
    * @sa Gridder::Gridder()
    */
   GridderState(
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -1201,7 +1192,8 @@ public:
   create(
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -1225,7 +1217,8 @@ public:
   create(
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -1240,7 +1233,8 @@ public:
       create(
         device,
         max_added_tasks,
-        max_visibility_batch_size,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
         init_cf_shape,
         grid_size,
         grid_scale,
@@ -1289,7 +1283,11 @@ public:
 
   /** maximum number of visibilities passed to gridding kernel at once */
   size_t
-  max_visibility_batch_size() const noexcept;
+  visibility_batch_size() const noexcept;
+
+  /** maximum average number of channels mapped onto by visibilities */
+  unsigned
+  max_avg_channels_per_vis() const noexcept;
 
   /** grid size */
   const std::array<unsigned, 4>&
@@ -1459,6 +1457,7 @@ public:
   grid_visibilities_base(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
@@ -1485,6 +1484,7 @@ public:
   grid_visibilities_base(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights,
     bool do_grid,
     bool return_visibilities,
@@ -1505,6 +1505,7 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) const &;
 
   /** grid visibilities, without degridding (template-free, rvalue reference
@@ -1523,6 +1524,7 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) &&;
 
   /** grid visibilities, without degridding (templated, const version)
@@ -1543,12 +1545,14 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) const & {
 
     return
       grid_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)),
+        grid_channel_maps,
         update_grid_weights);
   };
 
@@ -1571,6 +1575,7 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) && {
 
     return
@@ -1578,6 +1583,7 @@ public:
       .grid_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)),
+        grid_channel_maps,
         update_grid_weights);
   };
 
@@ -1596,6 +1602,7 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) const &;
 
   /** degrid and grid visibilities (template-free, rvalue reference version)
@@ -1613,6 +1620,7 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) &&;
 
   /** degrid and grid visibilities (templated, const version)
@@ -1633,12 +1641,14 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) const & {
 
     return
       degrid_grid_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)),
+        grid_channel_maps,
         update_grid_weights);
   };
 
@@ -1660,12 +1670,14 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) && {
 
     return
       std::move(*this).degrid_grid_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)),
+        grid_channel_maps,
         update_grid_weights);
   };
 
@@ -1683,7 +1695,9 @@ public:
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   degrid_get_predicted_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) const &;
+    VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps)
+  const &;
 
   /** degrid visibilities, returning predicted visibilities (template-free,
    * rvalue reference version)
@@ -1699,7 +1713,8 @@ public:
   rval_t<std::tuple<GridderState, future<VisDataVector>>>
   degrid_get_predicted_visibilities(
     Device host_device,
-    VisDataVector&& visibilities) &&;
+    VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps) &&;
 
   /** degrid visibilities, returning predicted visibilities (templated, const
    * version)
@@ -1718,12 +1733,15 @@ public:
   rval_t<std::tuple<GridderState, future<std::vector<VisData<N>>>>>
   degrid_get_predicted_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) const & {
+    std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps)
+  const & {
 
     auto tpl_or_err =
       degrid_get_predicted_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        grid_channel_maps);
     if (hpg::is_value(tpl_or_err)) {
       GridderState gs;
       future<VisDataVector> fvs;
@@ -1754,12 +1772,15 @@ public:
   rval_t<std::tuple<GridderState, future<std::vector<VisData<N>>>>>
   degrid_get_predicted_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) && {
+    std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps)
+  && {
 
     auto tpl_or_err =
       std::move(*this).degrid_get_predicted_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        grid_channel_maps);
     if (hpg::is_value(tpl_or_err)) {
       GridderState gs;
       future<VisDataVector> fvs;
@@ -1789,6 +1810,7 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) const &;
 
   /** degrid and grid visibilities, returning residual visibilities
@@ -1807,6 +1829,7 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) &&;
 
   /** degrid and grid visibilities, returning residual visibilities (templated,
@@ -1828,12 +1851,14 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) const & {
 
     auto tpl_or_err =
       degrid_grid_get_residual_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)),
+        grid_channel_maps,
         update_grid_weights);
     if (hpg::is_value(tpl_or_err)) {
       GridderState gs;
@@ -1868,12 +1893,15 @@ public:
   rval_t<std::tuple<GridderState, future<std::vector<VisData<N>>>>>
   degrid_grid_get_residual_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) && {
+    std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps)
+  && {
 
     auto tpl_or_err =
       std::move(*this).degrid_grid_get_residual_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        grid_channel_maps);
     if (hpg::is_value(tpl_or_err)) {
       GridderState gs;
       future<VisDataVector> fvs;
@@ -2243,8 +2271,13 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of concurrent tasks (actual
    * number may be less than requested)
-   * @param max_visibility_batch_size maximum number of VisData<.> values for
-   * calls to grid_visibilities()
+   * @param visibility_batch_size batch size for number of VisData elements
+   * (N.B: this value is currently a hard limit of the implementation that
+   * governs the maximum number of elements in a vector of VisData elements
+   * accepted by the grid_visibilities() family of methods)
+   * @param max_avg_channels_per_vis maximum average (over
+   * visibilities in a batch) number of channels onto which visibilities
+   * are mapped
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
    * @param grid_size in logical axis order: X, Y, mrow, channel
@@ -2257,16 +2290,15 @@ protected:
    * to the GridderState instance. In all cases, at least one task is employed,
    * but some devices support additional, concurrent tasks.
    *
-   * The value of max_added_tasks and max_visibility_batch_size has an effect on
-   * the amount of memory allocated on the selected gridder device. The total
-   * amount of memory allocated for visibilities will be approximately equal to
-   * max_added_tasks multiplied by sizeof(VisData<N>) for the appropriate value
-   * of N.
+   * The values of max_added_tasks, visibility_batch_size and
+   * max_avg_channels_per_vis have effects on the amount of memory allocated
+   * on the selected gridder device.
    */
   Gridder(
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -2289,7 +2321,8 @@ public:
   create(
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -2313,7 +2346,8 @@ public:
   create(
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -2329,7 +2363,8 @@ public:
       create(
         device,
         max_added_tasks,
-        max_visibility_batch_size,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
         init_cf_shape,
         grid_size,
         grid_scale,
@@ -2376,7 +2411,11 @@ public:
 
   /** maximum number of visibilities passed to gridding kernel at once */
   size_t
-  max_visibility_batch_size() const noexcept;
+  visibility_batch_size() const noexcept;
+
+  /** maximum average number of channels mapped onto by visibilities */
+  unsigned
+  max_avg_channels_per_vis() const noexcept;
 
   /** grid size */
   const std::array<unsigned, 4>&
@@ -2469,6 +2508,7 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true);
 
   /** grid visibilities (template version)
@@ -2486,12 +2526,14 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) {
 
     return
       grid_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)),
+        grid_channel_maps,
         update_grid_weights);
   }
 
@@ -2507,6 +2549,7 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true);
 
   /** degrid and grid visibilities (template version)
@@ -2524,12 +2567,14 @@ public:
   degrid_grid_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) {
 
     return
       degrid_grid_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)),
+        grid_channel_maps,
         update_grid_weights);
   }
 
@@ -2546,7 +2591,8 @@ public:
   rval_t<future<VisDataVector>>
   degrid_get_predicted_visibilities(
     Device host_device,
-    VisDataVector&& visibilities);
+    VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps);
 
   /** degrid visibilities, returning predicted visibilities (template version)
    *
@@ -2563,12 +2609,14 @@ public:
   rval_t<future<std::vector<VisData<N>>>>
   degrid_get_predicted_visibilities(
     Device host_device,
-    std::vector<VisData<N>>&& visibilities) {
+    std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps) {
 
     auto fvs_or_err =
       degrid_get_predicted_visibilities(
         host_device,
-        VisDataVector(std::move(visibilities)));
+        VisDataVector(std::move(visibilities)),
+        grid_channel_maps);
     if (hpg::is_value(fvs_or_err))
       return
         rval(
@@ -2595,6 +2643,7 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true);
 
   /** degrid and grid visibilities, returning residual visibilities (template
@@ -2615,12 +2664,14 @@ public:
   degrid_grid_get_residual_visibilities(
     Device host_device,
     std::vector<VisData<N>>&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights = true) {
 
     auto fvs_or_err =
       degrid_grid_get_residual_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)),
+        grid_channel_maps,
         update_grid_weights);
     if (hpg::is_value(fvs_or_err))
       return

@@ -511,6 +511,7 @@ struct InputData {
 
   hpg::VisDataVector visibilities;
   hpg::IArrayVector mueller_indexes;
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>> grid_channel_maps;
   std::vector<hpg::GridValueArray::value_type> model_values;
 };
 
@@ -524,7 +525,9 @@ init_visibilities(
 
   int num_visdata = (num_visibilities + N - 1) / N;
   std::vector<hpg::VisData<N>> visdata(num_visdata);
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>> ch_maps(num_visdata);
   auto visdata_p = visdata.data();
+  auto ch_maps_p = ch_maps.data();
   auto cf_sizes_p = cf_sizes.data();
   unsigned ngrp = cf_sizes.size();
 
@@ -548,33 +551,33 @@ init_visibilities(
       float vlim = y0 / vscale;
 
       std::array<std::complex<hpg::visibility_fp>, N> visibilities;
-      std::array<hpg::vis_weight_fp, N> weights;
       for (size_t i = 0; i < N; ++i) {
         visibilities[i] =
           std::complex<hpg::visibility_fp>(
             rstate.frand(-1, 1),
             rstate.frand(-1, 1));
-        weights[i] = rstate.frand(0, 1);
       }
       hpg::cf_phase_gradient_t
         grad{rstate.frand(-1.0, 1.0), rstate.frand(-1.0, 1.0)};
       *(visdata_p + i) =
         hpg::VisData<N>(
           visibilities,
-          weights,
           freq,
           rstate.frand(-3.14, 3.14),
           {rstate.frand(-ulim, ulim),
            rstate.frand(-vlim, vlim),
            0.0},
-          rstate.urand(0, input_data.gsize[3]),
           cf_index,
           grad);
-
+      *(ch_maps_p + i) =
+        std::map<unsigned, hpg::vis_weight_fp>{{
+          rstate.urand(0, input_data.gsize[3]),
+          rstate.frand(0, 1)}};
       generator.free_state(rstate);
     });
 
   input_data.visibilities = hpg::VisDataVector(visdata);
+  input_data.grid_channel_maps = std::move(ch_maps);
 }
 
 template <unsigned N>
@@ -721,6 +724,7 @@ run_hpg_trial_op(
             spec.device,
             spec.streams - 1,
             input_data.visibilities.size(),
+            1,
             &input_data.cf,
             input_data.gsize,
             default_scale,
@@ -766,7 +770,10 @@ run_hpg_trial_op(
         ids.pop();
         return
           map(
-            gfn(std::get<1>(std::move(t_gs)), std::move(id).visibilities),
+            gfn(
+              std::get<1>(std::move(t_gs)),
+              std::move(id).visibilities,
+              id.grid_channel_maps),
             [&](hpg::GridderState&& gs) {
               return
                 std::make_tuple(std::get<0>(std::move(t_gs)), std::move(gs));
@@ -813,11 +820,14 @@ run_hpg_trial<Op::Gridding>(
     spec,
     input_data,
     [update_grid_weights=spec.sow]
-    (hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
+    (hpg::GridderState&& gs,
+     hpg::VisDataVector&& vis,
+     const std::vector<std::map<unsigned, hpg::vis_weight_fp>>& chmaps) {
       return
         std::move(gs).grid_visibilities(
           hpg::Device::OpenMP,
           std::move(vis),
+          chmaps,
           update_grid_weights);
     });
 }
@@ -831,12 +841,15 @@ run_hpg_trial<Op::Degridding>(
   run_hpg_trial_op<Op::Degridding>(
     spec,
     input_data,
-    [](hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
+    [](hpg::GridderState&& gs,
+       hpg::VisDataVector&& vis,
+       const std::vector<std::map<unsigned, hpg::vis_weight_fp>>& chmaps) {
       return
         map(
           std::move(gs).grid_visibilities_base(
             hpg::Device::OpenMP,
             std::move(vis),
+            chmaps,
             false,  // update_grid_weights
             true,   // do_degrid
             false,  // return_visibilities
@@ -857,11 +870,14 @@ run_hpg_trial<Op::DegriddingAndGridding>(
     spec,
     input_data,
     [update_grid_weights=spec.sow]
-    (hpg::GridderState&& gs, hpg::VisDataVector&& vis) {
+    (hpg::GridderState&& gs,
+     hpg::VisDataVector&& vis,
+     const std::vector<std::map<unsigned, hpg::vis_weight_fp>>& chmaps) {
       return
         std::move(gs).degrid_grid_visibilities(
           hpg::Device::OpenMP,
           std::move(vis),
+          chmaps,
           update_grid_weights);
     });
 }
