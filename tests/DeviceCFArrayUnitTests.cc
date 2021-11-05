@@ -224,10 +224,13 @@ init_visibilities(
   const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const hpg::CFArray* cf,
   Generator& gen,
-  std::vector<hpg::VisData<1>>& vis) {
+  std::vector<hpg::VisData<1>>& vis,
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>>& ch_maps) {
 
   vis.clear();
   vis.reserve(num_vis);
+  ch_maps.clear();
+  ch_maps.reserve(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -253,13 +256,14 @@ init_visibilities(
     vis.push_back(
       hpg::VisData<1>(
         {std::complex<hpg::visibility_fp>(dist_vis(gen), dist_vis(gen))},
-        {dist_weight(gen)},
         freq,
         0.0,
         hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
-        dist_gchannel(gen),
         {dist_cfchannel(gen), grp},
         {dist_cfgrad(gen), dist_cfgrad(gen)}));
+    ch_maps.emplace_back(
+      std::map<unsigned, hpg::vis_weight_fp>{
+        {dist_gchannel(gen), dist_weight(gen)}});
   }
 }
 
@@ -482,8 +486,8 @@ TEST(DeviceCFArray, Gridding) {
   unsigned num_vis = 1000;
   std::mt19937 rng(42);
   std::vector<hpg::VisData<1>> vis;
-
-  init_visibilities(num_vis, grid_size, grid_scale, &cf, rng, vis);
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>> ch_maps;
+  init_visibilities(num_vis, grid_size, grid_scale, &cf, rng, vis, ch_maps);
 
   // cf GridderState
   auto gs_cf =
@@ -493,6 +497,7 @@ TEST(DeviceCFArray, Gridding) {
           default_device,
           0,
           num_vis,
+          1,
           &cf,
           grid_size,
           grid_scale,
@@ -512,6 +517,7 @@ TEST(DeviceCFArray, Gridding) {
           default_device,
           0,
           num_vis,
+          1,
           devcf.get(),
           grid_size,
           grid_scale,
@@ -520,9 +526,7 @@ TEST(DeviceCFArray, Gridding) {
         [&devcf](auto&& gs) {
           return
             std::move(gs)
-            .set_convolution_function(
-              default_host_device,
-              std::move(*devcf));
+            .set_convolution_function(default_host_device, std::move(*devcf));
         }));
 
   // function to grid visibilities and return gridded values
@@ -530,7 +534,8 @@ TEST(DeviceCFArray, Gridding) {
     hpg::RvalM<const hpg::GridderState&, hpg::GridderState>::pure(
       [&](const hpg::GridderState& gs) {
         return
-          gs.grid_visibilities(default_host_device, decltype(vis)(vis));
+          gs
+          .grid_visibilities(default_host_device, decltype(vis)(vis), ch_maps);
       })
     .map(
       [](auto&& gs) {
@@ -580,6 +585,7 @@ TEST(DeviceCFArray, Efficiency) {
                 default_device,
                 0,
                 10,
+                1,
                 cfs[0].get(),
                 {1000, 1000, 1, 1},
                 {0.1, 0.1},
@@ -683,8 +689,8 @@ TEST(DeviceCFArray, RWGridding) {
   unsigned num_vis = 1000;
   std::mt19937 rng(42);
   std::vector<hpg::VisData<1>> vis;
-
-  init_visibilities(num_vis, grid_size, grid_scale, &cf, rng, vis);
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>> ch_maps;
+  init_visibilities(num_vis, grid_size, grid_scale, &cf, rng, vis, ch_maps);
 
   // cf GridderState
   auto gs_cf =
@@ -694,6 +700,7 @@ TEST(DeviceCFArray, RWGridding) {
           default_device,
           0,
           num_vis,
+          1,
           &cf,
           grid_size,
           grid_scale,
@@ -713,6 +720,7 @@ TEST(DeviceCFArray, RWGridding) {
           default_device,
           0,
           num_vis,
+          1,
           wdevcf.get(),
           grid_size,
           grid_scale,
@@ -731,7 +739,8 @@ TEST(DeviceCFArray, RWGridding) {
     hpg::RvalM<const hpg::GridderState&, hpg::GridderState>::pure(
       [&](const hpg::GridderState& gs) {
         return
-          gs.grid_visibilities(default_host_device, decltype(vis)(vis));
+          gs
+          .grid_visibilities(default_host_device, decltype(vis)(vis), ch_maps);
       })
     .map(
       [](auto&& gs) {
@@ -765,6 +774,7 @@ TEST(DeviceCFArray, RWEfficiency) {
                 default_device,
                 0,
                 10,
+                1,
                 cfs[0].get(),
                 {1000, 1000, 1, 1},
                 {0.1, 0.1},

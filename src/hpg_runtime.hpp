@@ -58,7 +58,7 @@ struct ExcessiveNumberVisibilitiesError
 
   ExcessiveNumberVisibilitiesError()
     : Error(
-      "Number of visibilities exceeds maximum batch size",
+      "Number of visibilities exceeds batch size",
       ErrorType::ExcessiveNumberVisibilities) {}
 };
 
@@ -75,13 +75,38 @@ struct UpdateWeightsWithoutGriddingError
       ErrorType::UpdateWeightsWithoutGridding) {}
 };
 
+/** excessive number of channels in mapping error
+ *
+ * Total number of grid channels for visibilities exceeds configured maximum
+ */
+struct ExcessiveVisibilityChannelsError
+  : public Error {
+
+  ExcessiveVisibilityChannelsError()
+    : Error(
+      "Total number of grid channel indexes for visibilities exceeds maximum",
+      ErrorType::ExcessiveVisibilityChannels) {}
+};
+
+struct GridChannelMapsSizeError
+  : public Error {
+
+  GridChannelMapsSizeError()
+    : Error(
+      "Size of grid channel maps vector does not equal "
+      "size of visibilites vector",
+      ErrorType::GridChannelMapsSize) {}
+};
+
 /** abstract base class for state implementations */
 struct /*HPG_EXPORT*/ State {
 
   Device m_device; /**< device type */
   unsigned m_max_active_tasks; /**< maximum number of active tasks */
-  size_t m_max_visibility_batch_size; /**< maximum number of visibilities to
-                                         sent to gridding kernel at once */
+  size_t m_visibility_batch_size; /**< batch size of visibilities to
+                                     send to gridding kernel at once */
+  size_t m_max_avg_channels_per_vis; /**< max avg number of channel indexes for
+                                          gridding */
   std::array<unsigned, 4> m_grid_size; /**< grid size */
   K::Array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
   unsigned m_num_polarizations; /**< number of visibility polarizations */
@@ -96,14 +121,16 @@ struct /*HPG_EXPORT*/ State {
   State(
     Device device,
     unsigned max_active_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     unsigned num_polarizations,
     const std::array<unsigned, 4>& implementation_versions)
     : m_device(device)
     , m_max_active_tasks(max_active_tasks)
-    , m_max_visibility_batch_size(max_visibility_batch_size)
+    , m_visibility_batch_size(visibility_batch_size)
+    , m_max_avg_channels_per_vis(max_avg_channels_per_vis)
     , m_grid_size(grid_size)
     , m_grid_scale({grid_scale[0], grid_scale[1]})
     , m_num_polarizations(num_polarizations)
@@ -146,6 +173,9 @@ struct /*HPG_EXPORT*/ State {
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    std::vector<vis_weight_fp>&& wgt_values,
+    std::vector<unsigned>&& wgt_col_index,
+    std::vector<size_t>&& wgt_row_index,
     bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
@@ -585,6 +615,15 @@ struct /*HPG_EXPORT*/ ExecSpace final {
     std::vector<::hpg::VisData<4>>> vis_vector;
   mutable State::maybe_vis_t vis_promise;
   size_t num_visibilities;
+  impl::weight_values_view<memory_space> weight_values;
+  impl::vector_view<vis_weight_fp> weight_values_h;
+  std::vector<vis_weight_fp> weight_values_vector;
+  impl::weight_col_index_view<memory_space> weight_col_index;
+  impl::vector_view<unsigned> weight_col_index_h;
+  std::vector<unsigned> weight_col_index_vector;
+  impl::weight_row_index_view<memory_space> weight_row_index;
+  impl::vector_view<size_t> weight_row_index_h;
+  std::vector<size_t> weight_row_index_vector;
 
   ExecSpace(execution_space sp)
     : space(sp) {
@@ -600,7 +639,16 @@ struct /*HPG_EXPORT*/ ExecSpace final {
     , visibilities_h(std::move(other).visibilities_h)
     , vis_vector(std::move(other).vis_vector)
     , vis_promise(std::move(other).vis_promise)
-    , num_visibilities(std::move(other).num_visibilities) {
+    , num_visibilities(std::move(other).num_visibilities)
+    , weight_values(std::move(other).weight_values)
+    , weight_values_h(std::move(other).weight_values_h)
+    , weight_values_vector(std::move(other).weight_values_vector)
+    , weight_col_index(std::move(other).weight_col_index)
+    , weight_col_index_h(std::move(other).weight_col_index_h)
+    , weight_col_index_vector(std::move(other).weight_col_index_vector)
+    , weight_row_index(std::move(other).weight_row_index)
+    , weight_row_index_h(std::move(other).weight_row_index_h)
+    , weight_row_index_vector(std::move(other).weight_row_index_vector) {
   }
 
   virtual ~ExecSpace() {}
@@ -615,6 +663,15 @@ struct /*HPG_EXPORT*/ ExecSpace final {
     vis_vector = std::move(rhs).vis_vector;
     vis_promise = std::move(rhs).vis_promise;
     num_visibilities = std::move(rhs).num_visibilities;
+    weight_values = std::move(rhs).weight_values;
+    weight_values_h = std::move(rhs).weight_values_h;
+    weight_values_vector = std::move(rhs).weight_values_vector;
+    weight_col_index = std::move(rhs).weight_col_index;
+    weight_col_index_h = std::move(rhs).weight_col_index_h;
+    weight_col_index_vector = std::move(rhs).weight_col_index_vector;
+    weight_row_index = std::move(rhs).weight_row_index;
+    weight_row_index_h = std::move(rhs).weight_row_index_h;
+    weight_row_index_vector = std::move(rhs).weight_row_index_vector;
     return *this;
   }
 
@@ -654,6 +711,68 @@ struct /*HPG_EXPORT*/ ExecSpace final {
     }
     vis_vector = std::move(in_vis);
     return num_visibilities;
+  }
+
+  void
+  copy_weights_to_device(
+    std::vector<vis_weight_fp>&& in_weight_values,
+    std::vector<unsigned>&& in_weight_col_index,
+    std::vector<size_t>&& in_weight_row_index) {
+
+    weight_values_vector = std::move(in_weight_values);
+    weight_col_index_vector = std::move(in_weight_col_index);
+    weight_row_index_vector = std::move(in_weight_row_index);
+
+    if (weight_row_index_vector.size() > 0) {
+      weight_values_h =
+        impl::vector_view<vis_weight_fp>(
+          weight_values_vector.data(),
+          weight_values_vector.size());
+      weight_col_index_h =
+        impl::vector_view<unsigned>(
+          weight_col_index_vector.data(),
+          weight_col_index_vector.size());
+      weight_row_index_h =
+        impl::vector_view<size_t>(
+          weight_row_index_vector.data(),
+          weight_row_index_vector.size());
+      if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
+        {
+          auto weight_values_d =
+            K::subview(
+              weight_values,
+              std::pair((size_t)0, weight_values_vector.size()));
+          K::deep_copy(space, weight_values_d, weight_values_h);
+        }
+        {
+          auto weight_col_index_d =
+            K::subview(
+              weight_col_index,
+              std::pair((size_t)0, weight_col_index_vector.size()));
+          K::deep_copy(space, weight_col_index_d, weight_col_index_h);
+        }
+        {
+          auto weight_row_index_d =
+            K::subview(
+              weight_row_index,
+              std::pair((size_t)0, weight_row_index_vector.size()));
+          K::deep_copy(space, weight_row_index_d, weight_row_index_h);
+        }
+      } else {
+        weight_values =
+          impl::weight_values_view<memory_space>(
+            weight_values_h.data(),
+            weight_values_vector.size());
+        weight_col_index =
+          impl::weight_col_index_view<memory_space>(
+            weight_col_index_h.data(),
+            weight_col_index_vector.size());
+        weight_row_index =
+          impl::weight_row_index_view<memory_space>(
+            weight_row_index_h.data(),
+            weight_row_index_vector.size());
+      }
+    }
   }
 
   State::maybe_vis_t
@@ -750,7 +869,8 @@ private:
 public:
   StateT(
     unsigned max_active_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4> grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -760,7 +880,8 @@ public:
     : State(
       D,
       std::min(max_active_tasks, device_traits::active_task_limit),
-      max_visibility_batch_size,
+      visibility_batch_size,
+      max_avg_channels_per_vis,
       grid_size,
       grid_scale,
       mueller_indexes.m_npol,
@@ -778,7 +899,8 @@ public:
     : State(
       D,
       st.m_max_active_tasks,
-      st.m_max_visibility_batch_size,
+      st.m_visibility_batch_size,
+      st.m_max_avg_channels_per_vis,
       st.m_grid_size,
       {st.m_grid_scale[0], st.m_grid_scale[1]},
       st.m_num_polarizations,
@@ -796,7 +918,8 @@ public:
     : State(D) {
 
     m_max_active_tasks = std::move(st).m_max_active_tasks;
-    m_max_visibility_batch_size = std::move(st).m_max_visibility_batch_size;
+    m_visibility_batch_size = std::move(st).m_visibility_batch_size;
+    m_max_avg_channels_per_vis = std::move(st).m_max_avg_channels_per_vis;
     m_grid_size = std::move(st).m_grid_size;
     m_grid_scale = std::move(st).m_grid_scale;
     m_num_polarizations = std::move(st).m_num_polarizations;
@@ -961,6 +1084,9 @@ public:
   default_grid_visibilities(
     Device /*host_device*/,
     std::vector<::hpg::VisData<N>>&& visibilities,
+    std::vector<vis_weight_fp>&& wgt_values,
+    std::vector<unsigned>&& wgt_col_index,
+    std::vector<size_t>&& wgt_row_index,
     bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
@@ -968,6 +1094,10 @@ public:
 
     auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     int len = exec_pre.copy_visibilities_to_device(std::move(visibilities));
+    exec_pre.copy_weights_to_device(
+      std::move(wgt_values),
+      std::move(wgt_col_index),
+      std::move(wgt_row_index));
 
     auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
@@ -983,6 +1113,9 @@ public:
         m_conjugate_mueller_indexes,
         len,
         exec_grid.template visdata<N>(),
+        exec_grid.weight_values,
+        exec_grid.weight_col_index,
+        exec_grid.weight_row_index,
         exec_grid.gvisbuff,
         m_grid_scale,
         m_grid,
@@ -1013,6 +1146,9 @@ public:
   grid_visibilities(
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
+    std::vector<vis_weight_fp>&& wgt_values,
+    std::vector<unsigned>&& wgt_col_index,
+    std::vector<size_t>&& wgt_row_index,
     bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
@@ -1033,6 +1169,9 @@ public:
         default_grid_visibilities(
           host_device,
           std::move(visibilities),
+          std::move(wgt_values),
+          std::move(wgt_col_index),
+          std::move(wgt_row_index),
           update_grid_weights,
           do_degrid,
           return_visibilities,
@@ -1044,6 +1183,9 @@ public:
         default_grid_visibilities(
           host_device,
           std::move(visibilities),
+          std::move(wgt_values),
+          std::move(wgt_col_index),
+          std::move(wgt_row_index),
           update_grid_weights,
           do_degrid,
           return_visibilities,
@@ -1061,6 +1203,9 @@ public:
   grid_visibilities(
     Device host_device,
     VisDataVector&& visibilities,
+    std::vector<vis_weight_fp>&& wgt_values,
+    std::vector<unsigned>&& wgt_col_index,
+    std::vector<size_t>&& wgt_row_index,
     bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
@@ -1073,6 +1218,9 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v1),
+          std::move(wgt_values),
+          std::move(wgt_col_index),
+          std::move(wgt_row_index),
           update_grid_weights,
           do_degrid,
           return_visibilities,
@@ -1083,6 +1231,9 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v2),
+          std::move(wgt_values),
+          std::move(wgt_col_index),
+          std::move(wgt_row_index),
           update_grid_weights,
           do_degrid,
           return_visibilities,
@@ -1093,6 +1244,9 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v3),
+          std::move(wgt_values),
+          std::move(wgt_col_index),
+          std::move(wgt_row_index),
           update_grid_weights,
           do_degrid,
           return_visibilities,
@@ -1103,6 +1257,9 @@ public:
         grid_visibilities(
           host_device,
           std::move(*visibilities.m_v4),
+          std::move(wgt_values),
+          std::move(wgt_col_index),
+          std::move(wgt_row_index),
           update_grid_weights,
           do_degrid,
           return_visibilities,
@@ -1362,7 +1519,10 @@ private:
   void
   swap(StateT& other) noexcept {
     assert(m_max_active_tasks == other.m_max_active_tasks);
-    std::swap(m_max_visibility_batch_size, other.m_max_visibility_batch_size);
+    std::swap(m_visibility_batch_size, other.m_visibility_batch_size);
+    std::swap(
+      m_max_avg_channels_per_vis,
+      other.m_max_avg_channels_per_vis);
     std::swap(m_grid_size, other.m_grid_size);
     std::swap(m_grid_scale, other.m_grid_scale);
     std::swap(m_implementation_versions, other.m_implementation_versions);
@@ -1407,15 +1567,30 @@ private:
         }
       }
       auto& esp = m_exec_spaces.back();
-      if constexpr (!std::is_same_v<K::HostSpace, memory_space>)
+      if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
         esp.visbuff =
           decltype(esp.visbuff)(
             K::ViewAllocateWithoutInitializing("visibility_buffer"),
-            m_max_visibility_batch_size);
+            m_visibility_batch_size);
+        auto max_num_channels =
+          m_max_avg_channels_per_vis * m_visibility_batch_size;
+        esp.weight_values =
+          decltype(esp.weight_values)(
+            K::ViewAllocateWithoutInitializing("weight_values"),
+            max_num_channels);
+        esp.weight_col_index =
+          decltype(esp.weight_col_index)(
+            K::ViewAllocateWithoutInitializing("weight_col_index"),
+            max_num_channels);
+        esp.weight_row_index =
+          decltype(esp.weight_row_index)(
+            K::ViewAllocateWithoutInitializing("weight_row_index"),
+            m_visibility_batch_size + 1);
+      }
       esp.gvisbuff =
         decltype(esp.gvisbuff)(
           K::ViewAllocateWithoutInitializing("gvis_buffer"),
-          m_max_visibility_batch_size);
+          m_visibility_batch_size);
     }
 
     if (std::holds_alternative<const CFArrayShape*>(init)) {
@@ -1701,6 +1876,7 @@ struct /*HPG_EXPORT*/ GridderState {
     GS&& st,
     Device host_device,
     VisDataVector&& visibilities,
+    const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
     bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
@@ -1709,7 +1885,8 @@ struct /*HPG_EXPORT*/ GridderState {
     if (host_devices().count(host_device) == 0)
       return DisabledHostDeviceError();
 
-    if (visibilities.size() > st.impl->m_max_visibility_batch_size)
+    auto num_visibilities = visibilities.size();
+    if (num_visibilities > st.impl->m_visibility_batch_size)
       return ExcessiveNumberVisibilitiesError();
 
     if (visibilities.m_npol != st.impl->m_num_polarizations)
@@ -1718,11 +1895,37 @@ struct /*HPG_EXPORT*/ GridderState {
     if (!do_grid && update_grid_weights)
       return UpdateWeightsWithoutGriddingError();
 
+    if (num_visibilities != grid_channel_maps.size())
+      return GridChannelMapsSizeError();
+
+    // convert channel map to matrix in CRS format
+    size_t max_num_channels =
+      st.impl->m_max_avg_channels_per_vis * num_visibilities;
+    std::vector<vis_weight_fp> wgt;
+    wgt.reserve(max_num_channels);
+    std::vector<unsigned> col_index;
+    col_index.reserve(max_num_channels);
+    std::vector<size_t> row_index;
+    row_index.reserve(num_visibilities + 1);
+    for (size_t r = 0; r < num_visibilities; ++r) {
+      row_index.push_back(col_index.size());
+      for (auto& [c, w] : grid_channel_maps[r]) {
+        col_index.push_back(c);
+        wgt.push_back(w);
+      }
+    }
+    if (col_index.size() > max_num_channels)
+      return ExcessiveVisibilityChannelsError();
+    row_index.push_back(col_index.size());
+
     ::hpg::GridderState result(std::forward<GS>(st));
     auto err_or_maybevis =
       result.impl->grid_visibilities(
         host_device,
         std::move(visibilities),
+        std::move(wgt),
+        std::move(col_index),
+        std::move(row_index),
         update_grid_weights,
         do_degrid,
         return_visibilities,

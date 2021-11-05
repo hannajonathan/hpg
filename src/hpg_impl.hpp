@@ -21,6 +21,7 @@
 // #inlude "hpg_export.h"
 
 #include <cassert>
+#include <numeric>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -350,7 +351,6 @@ using visdata_t =
   core::VisData<
     N,
     vis_t,
-    vis_weight_fp,
     vis_frequency_fp,
     vis_phase_fp,
     uvw_t,
@@ -378,6 +378,37 @@ using mindex_view = K::View<int[4][4], memory_space>;
 template <typename memory_space>
 using const_mindex_view =
   K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
+
+template <typename memory_space>
+using weight_view_memory_traits =
+  std::conditional_t<
+    std::is_same_v<memory_space, K::HostSpace>,
+    K::MemoryUnmanaged,
+    K::MemoryManaged>;
+
+/** view for values in CRS representation of weights */
+template <typename memory_space>
+using weight_values_view =
+  K::View<
+    vis_weight_fp*,
+    memory_space,
+    weight_view_memory_traits<memory_space>>;
+
+/** view for column index in CRS representation of weights */
+template <typename memory_space>
+using weight_col_index_view =
+  K::View<
+    unsigned*,
+    memory_space,
+    weight_view_memory_traits<memory_space>>;
+
+/** view for row index in CRS representation of weights */
+template <typename memory_space>
+using weight_row_index_view =
+  K::View<
+    size_t*,
+    memory_space,
+    weight_view_memory_traits<memory_space>>;
 
 /** fftw function class templated on fp precision */
 template <typename T>
@@ -1554,6 +1585,16 @@ layout_for_device(
     assert(false);
     break;
   }
+}
+
+template <unsigned N>
+size_t
+max_number_cubes(const std::vector<::hpg::VisData<N>>& visdata) {
+  auto max_gc =
+    [](const size_t& acc, const auto& d) {
+      return std::max(acc, d.m_grid_cubes.size());
+    };
+  return std::accumulate(visdata.begin(), visdata.end(), size_t(0), max_gc);
 }
 
 } // end namespace runtime::impl

@@ -32,8 +32,10 @@ enum class HPG_EXPORT ErrorType {
   InvalidCFLayout,
   InvalidModelGridSize,
   ExcessiveNumberVisibilities,
+  ExcessiveVisibilityChannels,
   UpdateWeightsWithoutGridding,
   CFSupportExceedsGrid,
+  GridChannelMapsSize,
   Other
 };
 

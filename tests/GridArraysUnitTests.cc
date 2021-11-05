@@ -204,10 +204,13 @@ init_visibilities(
   const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const MyCFArray& cf,
   Generator& gen,
-  std::vector<hpg::VisData<1>>& vis) {
+  std::vector<hpg::VisData<1>>& vis,
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>>& ch_maps) {
 
   vis.clear();
   vis.reserve(num_vis);
+  ch_maps.clear();
+  ch_maps.reserve(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -233,13 +236,14 @@ init_visibilities(
     vis.push_back(
       hpg::VisData<1>(
         {std::complex<hpg::visibility_fp>(dist_vis(gen), dist_vis(gen))},
-        {dist_weight(gen)},
         freq,
         0.0,
         hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
-        dist_gchannel(gen),
         {dist_cfchannel(gen), grp},
         {dist_cfgrad(gen), dist_cfgrad(gen)}));
+    ch_maps.emplace_back(
+      std::map<unsigned, hpg::vis_weight_fp>{
+        {dist_gchannel(gen), dist_weight(gen)}});
   }
 }
 
@@ -287,6 +291,7 @@ TEST(GridArrays, GridValueReadWrite) {
       default_device,
       0,
       4,
+      1,
       &cf,
       grid_size,
       grid_scale,
@@ -329,6 +334,7 @@ TEST(GridArrays, CopyToValuesLayouts) {
       default_device,
       0,
       4,
+      1,
       &cf,
       grid_size,
       grid_scale,
@@ -524,6 +530,7 @@ TEST(GridArrays, CopyToWeightsLayouts) {
       default_device,
       0,
       4,
+      1,
       &cf,
       grid_size,
       grid_scale,
@@ -589,7 +596,8 @@ TEST(GridArrays, CompareLayouts) {
   MyCFArray cf = create_cf(10, cf_sizes, rng);
 
   std::vector<hpg::VisData<1>> vis;
-  init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>> ch_maps;
+  init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis, ch_maps);
 
   std::vector<std::array<int, 1>> mueller_indexes{{0}};
 
@@ -601,6 +609,7 @@ TEST(GridArrays, CompareLayouts) {
             default_device,
             0,
             num_vis,
+            1,
             &cf,
             grid_size,
             grid_scale,
@@ -617,7 +626,7 @@ TEST(GridArrays, CompareLayouts) {
       [&](auto&& gs) mutable {
         return
           std::move(gs)
-          .grid_visibilities(default_host_device, std::move(vis), true);
+          .grid_visibilities(default_host_device, std::move(vis), ch_maps, true);
       })
     .map(
       [](auto&& gs) {

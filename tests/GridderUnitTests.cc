@@ -153,10 +153,13 @@ init_visibilities(
   const std::array<hpg::grid_scale_fp, 2>& grid_scale,
   const MyCFArray& cf,
   Generator& gen,
-  std::vector<hpg::VisData<1>>& vis) {
+  std::vector<hpg::VisData<1>>& vis,
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>>& ch_maps) {
 
   vis.clear();
   vis.reserve(num_vis);
+  ch_maps.clear();
+  ch_maps.reserve(num_vis);
 
   const double inv_lambda = 9.75719;
   const double freq = 299792458.0 * inv_lambda;
@@ -180,12 +183,13 @@ init_visibilities(
     vis.push_back(
       hpg::VisData<1>(
         {std::complex<hpg::visibility_fp>(dist_vis(gen), dist_vis(gen))},
-        {dist_weight(gen)},
         freq,
         0.0,
         hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
-        dist_gchannel(gen),
         {dist_cfchannel(gen), grp}));
+    ch_maps.emplace_back(
+      std::map<unsigned, hpg::vis_weight_fp>{
+        {dist_gchannel(gen), dist_weight(gen)}});
   }
 }
 
@@ -250,6 +254,7 @@ TEST(Gridder, ConstructorArgs) {
         default_device,
         0,
         batch_size,
+        1,
         &cf,
         grid_size,
         grid_scale,
@@ -262,7 +267,7 @@ TEST(Gridder, ConstructorArgs) {
   EXPECT_EQ(g1.grid_size(), grid_size);
   EXPECT_EQ(g1.grid_scale(), grid_scale);
   EXPECT_EQ(g1.max_added_tasks(), 0);
-  EXPECT_EQ(g1.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(g1.visibility_batch_size(), batch_size);
   EXPECT_EQ(
     g1.convolution_function_region_size(nullptr),
     g1.convolution_function_region_size(&cf));
@@ -282,6 +287,7 @@ TEST(Gridder, Copies) {
         default_device,
         0,
         batch_size,
+        1,
         &cf,
         grid_size,
         grid_scale,
@@ -293,7 +299,7 @@ TEST(Gridder, Copies) {
   EXPECT_EQ(g1.device(), default_device);
   EXPECT_EQ(g1.grid_size(), grid_size);
   EXPECT_EQ(g1.grid_scale(), grid_scale);
-  EXPECT_EQ(g1.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(g1.visibility_batch_size(), batch_size);
   EXPECT_EQ(
     g1.convolution_function_region_size(nullptr),
     g0.convolution_function_region_size(nullptr));
@@ -303,7 +309,7 @@ TEST(Gridder, Copies) {
   EXPECT_EQ(g2.device(), default_device);
   EXPECT_EQ(g2.grid_size(), grid_size);
   EXPECT_EQ(g2.grid_scale(), grid_scale);
-  EXPECT_EQ(g2.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(g2.visibility_batch_size(), batch_size);
   EXPECT_EQ(
     g2.convolution_function_region_size(nullptr),
     g0.convolution_function_region_size(nullptr));
@@ -323,6 +329,7 @@ TEST(Gridder, Moves) {
         default_device,
         0,
         batch_size,
+        1,
         &cf,
         grid_size,
         grid_scale,
@@ -335,7 +342,7 @@ TEST(Gridder, Moves) {
   EXPECT_EQ(g1.device(), default_device);
   EXPECT_EQ(g1.grid_size(), grid_size);
   EXPECT_EQ(g1.grid_scale(), grid_scale);
-  EXPECT_EQ(g1.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(g1.visibility_batch_size(), batch_size);
   EXPECT_EQ(
     g1.convolution_function_region_size(nullptr),
     cf_region_sz);
@@ -345,7 +352,7 @@ TEST(Gridder, Moves) {
   EXPECT_EQ(g2.device(), default_device);
   EXPECT_EQ(g2.grid_size(), grid_size);
   EXPECT_EQ(g2.grid_scale(), grid_scale);
-  EXPECT_EQ(g2.max_visibility_batch_size(), batch_size);
+  EXPECT_EQ(g2.visibility_batch_size(), batch_size);
   EXPECT_EQ(
     g2.convolution_function_region_size(nullptr),
     cf_region_sz);
@@ -364,6 +371,7 @@ TEST(Gridder, InitValues) {
         default_device,
         0,
         10,
+        1,
         &cf,
         grid_size,
         grid_scale,
@@ -394,6 +402,7 @@ TEST(Gridder, CF) {
         default_device,
         0,
         22,
+        1,
         &cf,
         grid_size,
         grid_scale,
@@ -457,6 +466,7 @@ TEST(Gridder, Reset) {
         default_device,
         0,
         num_vis,
+        1,
         &cf,
         grid_size,
         grid_scale,
@@ -465,13 +475,13 @@ TEST(Gridder, Reset) {
 
   std::mt19937 rng(42);
   std::vector<hpg::VisData<1>> vis;
-
+  std::vector<std::map<unsigned, hpg::vis_weight_fp>> ch_maps;
   {
     const std::array<unsigned, 4> cf_size{3 + padding, 3 + padding, 1, 3};
     MyCFArray cf = create_cf(10, {cf_size}, rng);
     g.set_convolution_function(default_host_device, MyCFArray(cf));
-    init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis);
-    g.grid_visibilities(default_host_device, std::move(vis), true);
+    init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis, ch_maps);
+    g.grid_visibilities(default_host_device, std::move(vis), ch_maps, true);
 
     auto values = g.grid_values();
     EXPECT_TRUE(has_non_zero(values.get()));
