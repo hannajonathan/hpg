@@ -156,8 +156,10 @@ struct /*HPG_EXPORT*/ State
   // visibility partition
   MPI_Comm m_grid_comm;
 
-  // global offset of local grid channel indexes
-  unsigned m_grid_channel_offset;
+  // global grid channel indexes for this rank (inclusive at min, exclusive at
+  // max)
+  int m_grid_channel_min;
+  int m_grid_channel_max;
 
   mutable bool m_reduced_grid;
 
@@ -168,7 +170,8 @@ protected:
   State()
     : m_vis_comm(MPI_COMM_NULL)
     , m_grid_comm(MPI_COMM_NULL)
-    , m_grid_channel_offset(0)
+    , m_grid_channel_min(0)
+    , m_grid_channel_max(0)
     , m_reduced_grid(true)
     , m_reduced_weights(true) {}
 
@@ -177,10 +180,12 @@ public:
   State(
     MPI_Comm vis_comm,
     MPI_Comm grid_comm,
-    unsigned grid_channel_offset)
+    unsigned grid_channel_offset,
+    unsigned grid_channel_size)
     : m_vis_comm(vis_comm)
     , m_grid_comm(grid_comm)
-    , m_grid_channel_offset(grid_channel_offset)
+    , m_grid_channel_min(grid_channel_offset)
+    , m_grid_channel_max(grid_channel_offset + grid_channel_size)
     , m_reduced_grid(true)
     , m_reduced_weights(true) {}
 
@@ -193,12 +198,12 @@ public:
 
   unsigned
   grid_channel_offset() const noexcept {
-    return m_grid_channel_offset;
+    return m_grid_channel_min;
   }
 
   unsigned
   grid_channel_size() const noexcept {
-    return grid_size()[unsigned(GridValueArray::Axis::channel)];
+    return m_grid_channel_max - m_grid_channel_min;
   }
 
   bool
@@ -213,6 +218,11 @@ public:
     int rank;
     MPI_Comm_rank(m_grid_comm, &rank);
     return rank == 0;
+  }
+
+  bool
+  in_grid_channel_slice(int ch) const noexcept {
+    return m_grid_channel_min <= ch && ch < m_grid_channel_max;
   }
 };
 
@@ -249,7 +259,11 @@ public:
     const IArrayVector& mueller_indexes,
     const IArrayVector& conjugate_mueller_indexes,
     const std::array<unsigned, 4>& implementation_versions)
-    : State(vis_comm, grid_comm, grid_channel_offset)
+    : State(
+      vis_comm,
+      grid_comm,
+      grid_channel_offset,
+      grid_size[int(impl::core::GridAxis::channel)])
     , ::hpg::runtime::StateT<D>(
       max_active_tasks,
       visibility_batch_size,
@@ -267,6 +281,8 @@ public:
     : State()
     , ::hpg::runtime::StateT<D>(std::move(st)) {
 
+    std::swap(m_grid_channel_min, st.m_grid_channel_min);
+    std::swap(m_grid_channel_max, st.m_grid_channel_max);
     std::swap(m_reduced_grid, st.m_reduced_grid);
     std::swap(m_reduced_weights, st.m_reduced_weights);
     std::swap(m_vis_comm, st.m_vis_comm);
@@ -544,9 +560,7 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-    // Broadcast visibilities from grid partition subspace root rank.
-    auto is_grid_root = is_grid_partition_root();
-
+    // broadcast all vector values from the grid partition root rank
     std::array<MPI_Aint, 3> len;
     len[0] = visibilities.size();
     len[1] = wgt_values.size();
@@ -590,19 +604,57 @@ public:
       m_grid_comm,
       &reqs[3]);
     MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
-    for (auto& r : reqs)
-      MPI_Request_free(&r);
 
+    // determine whether any visibility is being mapped to grid channels in
+    // multiple (> 1) ranks of the grid partition (can be skipped if not
+    // degridding)
+    bool non_local_channel_mapping;
+    if (non_trivial_grid_partition() && do_degrid) {
+      std::vector<int> num_ranks_mapped;
+      num_ranks_mapped.reserve(len[0]);
+      // The following has the benefit of depending only on local data on every
+      // rank, but it comes at the cost of a call to MPI_Allreduce();
+      // alternatives may be considered if this design presents a performance
+      // issue. In particular, at best we're avoiding one later call to
+      // MPI_Allreduce after degridding but it comes at the expense of always
+      // calling MPI_Allreduce here. Assuming that the post-degridding call to
+      // MPI_Allreduce is slower than this one is reasonable, but not verified.
+      for (size_t i = 0; i < len[0]; ++i)
+        num_ranks_mapped.push_back(
+          std::any_of(
+            &wgt_col_index[wgt_row_index[i]],
+            &wgt_col_index[wgt_row_index[i + 1]],
+            [this](auto& c) { return in_grid_channel_slice(c); })
+          ? 1
+          : 0);
+      MPI_Allreduce(
+        MPI_IN_PLACE,
+        num_ranks_mapped.data(),
+        len[0],
+        mpi_datatype<decltype(num_ranks_mapped)::value_type>(),
+        MPI_SUM,
+        m_grid_comm);
+      non_local_channel_mapping =
+        std::any_of(
+          num_ranks_mapped.begin(),
+          num_ranks_mapped.end(),
+          [](auto& n) { return n > 1; });
+    } else {
+      non_local_channel_mapping = false;
+    }
+
+    // copy visibilities and channel mapping vectors to device
     auto& exec_pre =
       this->m_exec_spaces[this->next_exec_space(StreamPhase::PRE_GRIDDING)];
     exec_pre.copy_visibilities_to_device(std::move(visibilities));
     exec_pre.copy_weights_to_device(
-        std::move(wgt_values),
-        std::move(wgt_col_index),
-        std::move(wgt_row_index));
+      std::move(wgt_values),
+      std::move(wgt_col_index),
+      std::move(wgt_row_index));
     m_reduced_grid = m_reduced_grid && (len[0] == 0);
     m_reduced_weights = m_reduced_grid && (len[0] == 0 || !update_grid_weights);
 
+    // initialize the gridder object
     auto& exec_grid =
       this->m_exec_spaces[this->next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(this->m_cfs[this->m_cf_indexes.front()]);
@@ -627,33 +679,39 @@ public:
         this->m_grid,
         this->m_grid_weights,
         this->m_model,
-        this->m_grid_channel_offset);
+        m_grid_channel_min);
 
+    // use gridder object to invoke degridding and gridding kernels
     if (do_degrid) {
       gridder.degrid_all();
-      // FIXME: implement 1:1 shortcut, avoiding allreduce
-      if (non_trivial_grid_partition())
+      if (non_local_channel_mapping) {
+        // Whenever any visibilities are mapped to grid channels on multiple
+        // ranks, we need to reduce the degridded visibility values from and to
+        // all ranks. NB: this is a prime area for considering performance
+        // improvements, but any solution should be scalable, and at least the
+        // following satisfies that criterion
         exec_grid.fence();
-      // Reduce all 4 polarizations, independent of the value of N, in order
-      // to allow use of both a predefined datatype and a predefined reduction
-      // operator, MPI_SUM. The function hpg::mpi::gvisbuff_datatype() could
-      // be used to define a custom datatype, which would, for N < 4, be
-      // non-contiguous and would also require a custom reduction
-      // operator. The alternative might reduce the size of messages, but
-      // would incur inefficiencies in the execution of the reduction
-      // operation. A comparison between the alternatives might be worth
-      // profiling, but for now, we go with the simpler approach.
-      static_assert(
-        sizeof(
-          typename std::remove_reference_t<decltype(gvisbuff)>::value_type)
-        == 4 * sizeof(K::complex<visibility_fp>));
-      MPI_Allreduce(
-        MPI_IN_PLACE,
-        gvisbuff.data(),
-        4 * len[0],
-        mpi_datatype<K::complex<visibility_fp>>(),
-        MPI_SUM,
-        m_grid_comm);
+        // Reduce all 4 polarizations, independent of the value of N, in order
+        // to allow use of both a predefined datatype and a predefined reduction
+        // operator, MPI_SUM. The function hpg::mpi::gvisbuff_datatype() could
+        // be used to define a custom datatype, which would, for N < 4, be
+        // non-contiguous and would also require a custom reduction
+        // operator. The alternative might reduce the size of messages, but
+        // would incur inefficiencies in the execution of the reduction
+        // operation. A comparison between the alternatives might be worth
+        // profiling, but for now, we go with the simpler approach.
+        static_assert(
+          sizeof(
+            typename std::remove_reference_t<decltype(gvisbuff)>::value_type)
+          == 4 * sizeof(K::complex<visibility_fp>));
+        MPI_Allreduce(
+          MPI_IN_PLACE,
+          gvisbuff.data(),
+          4 * len[0],
+          mpi_datatype<K::complex<visibility_fp>>(),
+          MPI_SUM,
+          m_grid_comm);
+      }
       if (do_grid)
         gridder.vis_copy_residual_and_rescale();
       else
@@ -935,7 +993,8 @@ protected:
       static_cast<::hpg::runtime::StateT<D>&>(other));
     std::swap(m_vis_comm, other.m_vis_comm);
     std::swap(m_grid_comm, other.m_grid_comm);
-    std::swap(m_grid_channel_offset, other.m_grid_channel_offset);
+    std::swap(m_grid_channel_min, other.m_grid_channel_min);
+    std::swap(m_grid_channel_max, other.m_grid_channel_max);
     std::swap(m_reduced_grid, other.m_reduced_grid);
     std::swap(m_reduced_weights, other.m_reduced_weights);
   }
