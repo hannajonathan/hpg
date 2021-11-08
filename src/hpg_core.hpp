@@ -228,7 +228,7 @@ struct /*HPG_EXPORT*/ VisData {
   using vis_t = V; // vis_t
   using freq_t = F; // vis_frequency_fp
   using ph_t = P; // vis_phase_fp
-  using uvw_t = U; // impl::uvw_t
+  using uvw_t = U; // uvw_t
   using phgrad_t = G; // cf_phase_gradient_fp
 
   KOKKOS_INLINE_FUNCTION VisData() {};
@@ -1677,7 +1677,7 @@ struct /*HPG_EXPORT*/ GridShifter final {
   }
 };
 
-} // ena namespace hpg::runtime:impl::core
+} // end namespace hpg::runtime:impl::core
 
 // Local Variables:
 // mode: c++
