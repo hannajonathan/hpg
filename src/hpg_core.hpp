@@ -436,7 +436,7 @@ struct /*HPG_EXPORT*/ Vis final {
   KOKKOS_INLINE_FUNCTION Vis(
     const VD& vis,
     const K::Array<vis_t, npol>& vals,
-    const K::Array<int, 2>& grid_size,
+    const K::Array<int, 2>& grid_planes_size,
     const K::Array<GS, 2>& grid_scale,
     const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     const K::Array<int, 2>& oversampling)
@@ -453,7 +453,7 @@ struct /*HPG_EXPORT*/ Vis final {
       m_cf_size[d] = 2 * cf_radii[m_cf_grp][d] + 1;
       auto [g, maj, min, f] =
         compute_vis_coord(
-          grid_size[d],
+          grid_planes_size[d],
           oversampling[d],
           m_cf_size[d] / 2,
           vis.m_uvw[d],
@@ -570,11 +570,11 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   GridWeightView m_grid_weights;
   model_const_view m_model;
 
-  K::Array<int, 2> m_grid_size;
+  K::Array<int, 2> m_grid_planes_size;
+  K::Array<int, 2> m_grid_channel_slice;
   K::Array<int, 2> m_oversampling;
   size_t m_shmem_size;
 
-  unsigned m_cube_offset;
   /** constructor
    *
    * first argument is needed for complete class template argument deduction
@@ -597,7 +597,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const GridView& grid,
     const GridWeightView& grid_weights,
     const ModelView& model,
-    unsigned cube_offset)
+    unsigned channel_offset)
   : m_exec(exec)
   , m_cf_radii(cf_radii)
   , m_max_cf_extent_y(max_cf_extent_y)
@@ -616,9 +616,13 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
     for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i)
       m_cfs[i] = cfs[i];
-    m_grid_size = {
+    m_grid_planes_size = {
       m_grid.extent_int(int(GridAxis::x)),
       m_grid.extent_int(int(GridAxis::y))};
+    m_grid_channel_slice = {
+      int(channel_offset),
+      int(channel_offset) + m_grid.extent_int(int(GridAxis::channel))
+    };
     m_oversampling = {
       m_cfs[0].extent_int(int(CFAxis::x_minor)),
       m_cfs[0].extent_int(int(CFAxis::y_minor))};
@@ -626,15 +630,15 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 
   static KOKKOS_INLINE_FUNCTION bool
-  all_within_grid(
+  all_within_grid_planes(
     const vis_t& vis,
-    const K::Array<int, 2>& grid_size) {
+    const K::Array<int, 2>& grid_planes_size) {
 
     return
       (0 <= vis.m_grid_coord[0])
-      && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_size[0])
+      && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_planes_size[0])
       && (0 <= vis.m_grid_coord[1])
-      && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_size[1]);
+      && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_planes_size[1]);
   }
 
   static KOKKOS_INLINE_FUNCTION void
@@ -764,26 +768,26 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     vis_t vis(
       visibility,
       visibility.m_values,
-      m_grid_size,
+      m_grid_planes_size,
       m_grid_scale,
       m_cf_radii,
       m_oversampling);
     poln_array_type<visibility_fp_t, N> gvis;
-    if (all_within_grid(vis, m_grid_size)) {
+    if (all_within_grid_planes(vis, m_grid_planes_size)) {
       auto phscr =
         scratch_phscr_view(
           team_member.team_scratch(0),
           m_max_cf_extent_y);
       compute_phase_screen(team_member, vis, phscr);
       for (int j = m_viswgt_row_index(i); j < m_viswgt_row_index(i + 1); ++j) {
-        if (m_cube_offset <= m_viswgt_col_index(j)
-            && m_viswgt_col_index(j) < m_cube_offset + m_cube_size FIXME) {
+        if (m_grid_channel_slice[0] <= m_viswgt_col_index(j)
+            && m_viswgt_col_index(j) < m_grid_channel_slice[1]) {
           auto v =
             degrid_vis(
               team_member,
               vis,
-              m_viswgt_col_index(j),
-              m_cfs[vis.m_cf_grp] - m_cube_offset,
+              m_viswgt_col_index(j) - m_grid_channel_slice[0],
+              m_cfs[vis.m_cf_grp],
               m_mueller_indexes,
               m_conjugate_mueller_indexes,
               m_model,
@@ -1092,24 +1096,24 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     vis_t vis(
       m_visibilities(i),
       reinterpret_cast<K::Array<visibility_t, N>&>(m_gvisbuff(i).vals),
-      m_grid_size,
+      m_grid_planes_size,
       m_grid_scale,
       m_cf_radii,
       m_oversampling);
     // skip this visibility if all of the updated grid points are not
-    // within grid bounds
-    if (all_within_grid(vis, m_grid_size)) {
+    // within grid plane bounds
+    if (all_within_grid_planes(vis, m_grid_planes_size)) {
       auto phscr =
         scratch_phscr_view(
           team_member.team_scratch(0),
           m_max_cf_extent_y);
       compute_phase_screen(team_member, vis, phscr);
       for (int j = m_viswgt_row_index(i); j < m_viswgt_row_index(i + 1); ++j)
-        if (m_cube_offset <= m_viswgt_col_index(j)
-            && m_viswgt_col_index(j) < m_cube_offset + m_cube_size FIXME)
+        if (m_grid_channel_slice[0] <= m_viswgt_col_index(j)
+            && m_viswgt_col_index(j) < m_grid_channel_slice[1])
           grid_one(
             vis,
-            m_viswgt_col_index(j) - m_cube_offset,
+            m_viswgt_col_index(j) - m_grid_channel_slice[0],
             m_viswgts(j),
             gpol,
             m_cfs[vis.m_cf_grp],

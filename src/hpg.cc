@@ -325,12 +325,12 @@ GridderState::max_added_tasks() const noexcept {
 
 size_t
 GridderState::visibility_batch_size() const noexcept {
-  return impl->m_visibility_batch_size();
+  return impl->visibility_batch_size();
 }
 
 unsigned
 GridderState::max_avg_channels_per_vis() const noexcept {
-  return impl->m_max_avg_channels_per_vis();
+  return impl->max_avg_channels_per_vis();
 }
 
 std::array<unsigned, 4>
