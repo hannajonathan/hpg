@@ -209,14 +209,14 @@ runtime::impl::min_cf_buffer_size(
 
 #ifdef HPG_ENABLE_CUDA
 
-Error
+std::unique_ptr<Error>
 runtime::impl::cufft_error(
   const std::string& prefix,
   cufftResult rc) {
 
   std::ostringstream oss(prefix);
   oss << ": cufftResult code " << rc;
-  return Error(oss.str());
+  return std::make_unique<Error>(oss.str());
 }
 
 #endif // HPG_ENABLE_CUDA

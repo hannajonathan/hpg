@@ -61,7 +61,7 @@ struct /*HPG_EXPORT*/ State {
   max_active_tasks() const noexcept = 0;
 
   virtual size_t
-  max_visibility_batch_size() const noexcept = 0;
+  visibility_batch_size() const noexcept = 0;
 
   virtual size_t
   max_avg_channels_per_vis() const noexcept = 0;
@@ -125,10 +125,10 @@ struct /*HPG_EXPORT*/ State {
   reset_grid() = 0;
 
   virtual void
-  fill_grid(const impl::core::gv_t& val) = 0;
+  fill_grid(const impl::gv_t& val) = 0;
 
   virtual void
-  fill_weights(const grid_value_fp& val) = 0;
+  fill_grid_weights(const grid_value_fp& val) = 0;
 
   virtual std::unique_ptr<GridValueArray>
   model_values() const = 0;
@@ -628,7 +628,7 @@ struct /*HPG_EXPORT*/ ExecSpace final {
     return num_visibilities;
   }
 
-  void
+  std::tuple<size_t, size_t>
   copy_weights_to_device(
     std::vector<vis_weight_fp>&& in_weight_values,
     std::vector<unsigned>&& in_weight_col_index,
@@ -688,6 +688,7 @@ struct /*HPG_EXPORT*/ ExecSpace final {
             weight_row_index_vector.size());
       }
     }
+    return {weight_values_vector.size(), weight_row_index_vector.size()};
   }
 
   State::maybe_vis_t
@@ -753,8 +754,8 @@ public:
 
   Device m_device; /**< device type */
   unsigned m_max_active_tasks; /**< maximum number of active tasks */
-  size_t m_max_visibility_batch_size; /**< maximum number of visibilities to
-                                         sent to gridding kernel at once */
+  size_t m_visibility_batch_size; /**< number of visibilities to sent to
+                                       gridding kernel at once */
   size_t m_max_avg_channels_per_vis; /**< max avg number of channel indexes for
                                           gridding */
   std::array<unsigned, 4> m_grid_size; /**< grid size */
@@ -810,7 +811,7 @@ public:
     : m_device(D)
     , m_max_active_tasks(
       std::min(max_active_tasks, device_traits::active_task_limit))
-    , m_max_visibility_batch_size(max_visibility_batch_size)
+    , m_visibility_batch_size(visibility_batch_size)
     , m_max_avg_channels_per_vis(max_avg_channels_per_vis)
     , m_grid_size(grid_size)
     , m_grid_scale({grid_scale[0], grid_scale[1]})
@@ -828,7 +829,7 @@ public:
   StateT(const StateT& st)
     : m_device(D)
     , m_max_active_tasks(st.m_max_active_tasks)
-    , m_max_visibility_batch_size(st.m_max_visibility_batch_size)
+    , m_visibility_batch_size(st.m_visibility_batch_size)
     , m_max_avg_channels_per_vis(st.m_max_avg_channels_per_vis)
     , m_grid_size(st.m_grid_size)
     , m_grid_scale(st.m_grid_scale)
@@ -944,8 +945,8 @@ public:
   }
 
   size_t
-  max_visibility_batch_size() const noexcept override {
-    return m_max_visibility_batch_size;
+  visibility_batch_size() const noexcept override {
+    return m_visibility_batch_size;
   }
 
   size_t
@@ -1355,21 +1356,21 @@ public:
   }
 
   virtual void
-  fill_grid(const impl::core::gv_t& val) override {
+  fill_grid(const impl::gv_t& val) override {
     auto& exec =
       m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
     auto g_h = K::create_mirror_view(m_grid);
-    K::deep_copy(g_h, impl::core::gv_t(0));
+    K::deep_copy(g_h, impl::gv_t(0));
     K::deep_copy(exec.space, m_grid, g_h);
   };
 
   virtual void
-  fill_weights(const grid_value_fp& val) override {
+  fill_grid_weights(const grid_value_fp& val) override {
     auto& exec =
       m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
-    auto w_h = K::create_mirror_view(m_weights);
+    auto w_h = K::create_mirror_view(m_grid_weights);
     K::deep_copy(w_h, grid_value_fp(0));
-    K::deep_copy(exec.space, m_weights, w_h);
+    K::deep_copy(exec.space, m_grid_weights, w_h);
   };
 
   virtual void
@@ -1889,7 +1890,7 @@ struct /*HPG_EXPORT*/ GridderState {
       return std::make_unique<DisabledHostDeviceError>();
 
     auto num_visibilities = visibilities.size();
-    if (num_visibilities > st.impl->m_visibility_batch_size())
+    if (num_visibilities > st.impl->visibility_batch_size())
       return std::make_unique<ExcessiveNumberVisibilitiesError>();
 
     if (visibilities.m_npol != st.impl->num_polarizations())
@@ -1903,7 +1904,7 @@ struct /*HPG_EXPORT*/ GridderState {
 
     // convert channel map to matrix in CRS format
     size_t max_num_channels =
-      st.impl->m_max_avg_channels_per_vis * num_visibilities;
+      st.impl->max_avg_channels_per_vis() * num_visibilities;
     std::vector<vis_weight_fp> wgt;
     wgt.reserve(max_num_channels);
     std::vector<unsigned> col_index;

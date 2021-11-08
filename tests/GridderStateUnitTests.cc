@@ -854,8 +854,6 @@ TEST(GridderState, CopyOrMove) {
     init_visibilities(num_vis, grid_size, grid_scale, cf, rng, vis, ch_maps);
     auto gs2_or_err =
       gs1.grid_visibilities(default_host_device, decltype(vis)(vis), ch_maps);
-    if (hpg::is_error(gs2_or_err))
-      std::cout << hpg::get_error(gs2_or_err).message() << std::endl;
     ASSERT_TRUE(hpg::is_value(gs2_or_err));
     auto gs2 = hpg::get_value(std::move(gs2_or_err));
 
@@ -1142,7 +1140,7 @@ TEST(GridderState, GriddingError) {
       gs1.grid_visibilities(default_host_device, decltype(vis)(vis), ch_maps);
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err)->type(),
+      hpg::get_error(std::move(gs2_or_err))->type(),
       hpg::ErrorType::InvalidNumberPolarizations);
   }
   auto gs =
@@ -1175,7 +1173,7 @@ TEST(GridderState, GriddingError) {
         false); // do_grid
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err)->type(),
+      hpg::get_error(std::move(gs2_or_err))->type(),
       hpg::ErrorType::UpdateWeightsWithoutGridding);
   }
   {
@@ -1187,7 +1185,7 @@ TEST(GridderState, GriddingError) {
       gs1.grid_visibilities(default_host_device, decltype(vis)(vis), chm1);
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err)->type(),
+      hpg::get_error(std::move(gs2_or_err))->type(),
       hpg::ErrorType::GridChannelMapsSize);
   }
   {
@@ -1199,7 +1197,7 @@ TEST(GridderState, GriddingError) {
       gs1.grid_visibilities(default_host_device, std::move(vism1), ch_maps);
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err)->type(),
+      hpg::get_error(std::move(gs2_or_err))->type(),
       hpg::ErrorType::GridChannelMapsSize);
   }
   {
@@ -1221,7 +1219,7 @@ TEST(GridderState, GriddingError) {
       gs1.grid_visibilities(default_host_device, decltype(vis)(vis), ch_maps);
     ASSERT_TRUE(hpg::is_error(gs2_or_err));
     EXPECT_EQ(
-      hpg::get_error(gs2_or_err)->type(),
+      hpg::get_error(std::move(gs2_or_err))->type(),
       hpg::ErrorType::ExcessiveVisibilityChannels);
   }
 }

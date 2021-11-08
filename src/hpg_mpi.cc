@@ -79,7 +79,8 @@ GridderState::GridderState(
   int grid_part_index,
   Device device,
   unsigned max_added_tasks,
-  size_t max_visibility_batch_size,
+  size_t visibility_batch_size,
+  unsigned max_avg_channels_per_vis,
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
@@ -136,31 +137,33 @@ GridderState::GridderState(
     }
   }
 
-  // the grid plane partition divides the grid into segments on the cube axis,
-  // we compute the offset and size of our local segment of cube indexes
+  // the grid plane partition divides the grid into segments on the channel
+  // axis, we compute the offset and size of our local segment of channel
+  // indexes
   //
   // Note that the following will compute offsets greater than the size of the
-  // cube axis in some cases, which should be taken to indicate an empty grid
+  // channel axis in some cases, which should be taken to indicate an empty grid
   // partition (computed segment size will be zero in this case, as well).
   //
-  auto grid_cube_size = grid_size[unsigned(GridValueArray::Axis::cube)];
-  unsigned grid_cube_offset_local = 0;
-  unsigned grid_cube_size_local = grid_cube_size;
+  auto grid_channel_size = grid_size[unsigned(GridValueArray::Axis::channel)];
+  unsigned grid_channel_offset_local = 0;
+  unsigned grid_channel_size_local = grid_channel_size;
 
   int grid_comm_size;
   MPI_Comm_size(grid_comm, &grid_comm_size);
   int grid_comm_rank;
   MPI_Comm_rank(grid_comm, &grid_comm_rank);
-  unsigned min_grid_cube_size = grid_cube_size / unsigned(grid_comm_size);
-  unsigned grid_cube_rem_size = grid_cube_size % unsigned(grid_comm_size);
-  grid_cube_offset_local =
-    unsigned(grid_comm_rank) * min_grid_cube_size
-    + std::min(unsigned(grid_comm_rank), grid_cube_rem_size);
-  grid_cube_size_local =
-    min_grid_cube_size
-    + ((unsigned(grid_comm_rank) < grid_cube_rem_size) ? 1 : 0);
+  unsigned min_grid_channel_size = grid_channel_size / unsigned(grid_comm_size);
+  unsigned grid_channel_rem_size = grid_channel_size % unsigned(grid_comm_size);
+  grid_channel_offset_local =
+    unsigned(grid_comm_rank) * min_grid_channel_size
+    + std::min(unsigned(grid_comm_rank), grid_channel_rem_size);
+  grid_channel_size_local =
+    min_grid_channel_size
+    + ((unsigned(grid_comm_rank) < grid_channel_rem_size) ? 1 : 0);
   std::array<unsigned, 4> grid_size_local = grid_size;
-  grid_size_local[unsigned(GridValueArray::Axis::cube)] = grid_cube_size_local;
+  grid_size_local[unsigned(GridValueArray::Axis::channel)] =
+    grid_channel_size_local;
 
   using namespace runtime;
 
@@ -177,9 +180,10 @@ GridderState::GridderState(
       std::make_shared<StateT<Device::Serial>>(
         vis_comm,
         grid_comm,
-        grid_cube_offset_local,
+        grid_channel_offset_local,
         max_active_tasks,
-        max_visibility_batch_size,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
         init_cf_shape,
         grid_size_local,
         grid_scale,
@@ -196,9 +200,10 @@ GridderState::GridderState(
       std::make_shared<StateT<Device::OpenMP>>(
         vis_comm,
         grid_comm,
-        grid_cube_offset_local,
+        grid_channel_offset_local,
         max_active_tasks,
-        max_visibility_batch_size,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
         init_cf_shape,
         grid_size_local,
         grid_scale,
@@ -215,9 +220,10 @@ GridderState::GridderState(
       std::make_shared<StateT<Device::Cuda>>(
         vis_comm,
         grid_comm,
-        grid_cube_offset_local,
+        grid_channel_offset_local,
         max_active_tasks,
-        max_visibility_batch_size,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
         init_cf_shape,
         grid_size_local,
         grid_scale,
@@ -241,7 +247,8 @@ GridderState::create(
   int grid_part_index,
   Device device,
   unsigned max_added_tasks,
-  size_t max_visibility_batch_size,
+  size_t visibility_batch_size,
+  unsigned max_avg_channels_per_vis,
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
@@ -292,7 +299,8 @@ GridderState::create(
           grid_part_index,
           device,
           max_added_tasks,
-          max_visibility_batch_size,
+          visibility_batch_size,
+          max_avg_channels_per_vis,
           init_cf_shape,
           grid_size,
           grid_scale,
@@ -313,7 +321,8 @@ GridderState::create2d(
   unsigned grid_part_size,
   Device device,
   unsigned max_added_tasks,
-  size_t max_visibility_batch_size,
+  size_t visibility_batch_size,
+  unsigned max_avg_channels_per_vis,
   const CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
@@ -351,7 +360,8 @@ GridderState::create2d(
       1,
       device,
       max_added_tasks,
-      max_visibility_batch_size,
+      visibility_batch_size,
+      max_avg_channels_per_vis,
       init_cf_shape,
       grid_size,
       grid_scale,
@@ -374,13 +384,13 @@ GridderState::is_grid_partition_root() const noexcept {
 }
 
 unsigned
-GridderState::grid_cube_offset() const noexcept {
-  return impl->grid_cube_offset();
+GridderState::grid_channel_offset() const noexcept {
+  return impl->grid_channel_offset();
 }
 
 unsigned
-GridderState::grid_cube_size() const noexcept {
-  return impl->grid_cube_size();
+GridderState::grid_channel_size() const noexcept {
+  return impl->grid_channel_size();
 }
 
 

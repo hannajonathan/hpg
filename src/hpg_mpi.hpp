@@ -242,11 +242,16 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of additional tasks (actual number
    * may be less than requested)
-   * @param max_visibility_batch_size maximum number of VisData<.> values for
-   * calls to grid_visibilities()
+   * @param visibility_batch_size batch size for number of VisData elements
+   * (N.B: this value is currently a hard limit of the implementation that
+   * governs the maximum number of elements in a vector of VisData elements
+   * accepted by the grid_visibilities() family of methods)
+   * @param max_avg_channels_per_vis maximum average (over
+   * visibilities in a batch) number of channels onto which visibilities
+   * are mapped
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
-   * @param grid_size in logical axis order: X, Y, mrow, cube
+   * @param grid_size in logical axis order: X, Y, mrow, channel
    * @param grid_scale in X, Y order
    * @param mueller_indexes CFArray Mueller element indexes, by mrow
    * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
@@ -256,11 +261,9 @@ protected:
    * to the GridderState instance. In all cases, at least one task is
    * employed, but some devices support additional, concurrent tasks.
    *
-   * The value of max_added_tasks and max_visibility_batch_size has an effect on
-   * the amount of memory allocated on the selected gridder device. The total
-   * amount of memory allocated for visibilities will be approximately equal to
-   * max_added_tasks multiplied by sizeof(VisData<N>) for the appropriate value
-   * of N.
+   * The values of max_added_tasks, visibility_batch_size and
+   * max_avg_channels_per_vis have effects on the amount of memory allocated
+   * on the selected gridder device.
    *
    * @sa Gridder::Gridder()
    */
@@ -270,7 +273,8 @@ protected:
     int grid_part_index,
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -304,7 +308,8 @@ public:
     int grid_part_index,
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -334,7 +339,8 @@ public:
     unsigned grid_part_size,
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -361,7 +367,8 @@ public:
     int grid_part_index,
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -380,7 +387,8 @@ public:
         grid_part_index,
         device,
         max_added_tasks,
-        max_visibility_batch_size,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
         init_cf_shape,
         grid_size,
         grid_scale,
@@ -406,7 +414,8 @@ public:
     unsigned grid_part_size,
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -425,7 +434,8 @@ public:
         grid_part_size,
         device,
         max_added_tasks,
-        max_visibility_batch_size,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
         init_cf_shape,
         grid_size,
         grid_scale,
@@ -482,9 +492,13 @@ public:
   unsigned
   max_added_tasks() const noexcept;
 
-  /** maximum number of visibilities passed to gridding kernel at once */
+  /** number of visibilities passed to gridding kernel at once */
   size_t
-  max_visibility_batch_size() const noexcept;
+  visibility_batch_size() const noexcept;
+
+  /** maximum average number of channels mapped onto by visibilities */
+  unsigned
+  max_avg_channels_per_vis() const noexcept;
 
   /** grid size */
   const std::array<unsigned, 4>&
@@ -495,10 +509,10 @@ public:
   grid_scale() const noexcept;
 
   unsigned
-  grid_cube_offset() const noexcept;
+  grid_channel_offset() const noexcept;
 
   unsigned
-  grid_cube_size() const noexcept;
+  grid_channel_size() const noexcept;
 
   /** number of visibility polarizations */
   unsigned
@@ -1030,11 +1044,16 @@ protected:
    * @param device gridder device type
    * @param max_added_tasks maximum number of concurrent tasks (actual
    * number may be less than requested)
-   * @param max_visibility_batch_size maximum number of VisData<.> values for
-   * calls to grid_visibilities()
+   * @param visibility_batch_size batch size for number of VisData elements
+   * (N.B: this value is currently a hard limit of the implementation that
+   * governs the maximum number of elements in a vector of VisData elements
+   * accepted by the grid_visibilities() family of methods)
+   * @param max_avg_channels_per_vis maximum average (over
+   * visibilities in a batch) number of channels onto which visibilities
+   * are mapped
    * @param init_cf_shape shape of CF region for initial memory allocation (per
    * task)
-   * @param grid_size in logical axis order: X, Y, mrow, cube
+   * @param grid_size in logical axis order: X, Y, mrow, channel
    * @param grid_scale in X, Y order
    * @param mueller_indexes CFArray Mueller element indexes, by mrow
    * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
@@ -1044,11 +1063,9 @@ protected:
    * to the GridderState instance. In all cases, at least one task is employed,
    * but some devices support additional, concurrent tasks.
    *
-   * The value of max_added_tasks and max_visibility_batch_size has an effect on
-   * the amount of memory allocated on the selected gridder device. The total
-   * amount of memory allocated for visibilities will be approximately equal to
-   * max_added_tasks multiplied by sizeof(VisData<N>) for the appropriate value
-   * of N.
+   * The values of max_added_tasks, visibility_batch_size and
+   * max_avg_channels_per_vis have effects on the amount of memory allocated
+   * on the selected gridder device.
    */
   Gridder(
     MPI_Comm comm,
@@ -1056,7 +1073,8 @@ protected:
     int grid_part_index,
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -1083,7 +1101,8 @@ public:
     int grid_part_index,
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -1110,7 +1129,8 @@ public:
     int grid_part_index,
     Device device,
     unsigned max_added_tasks,
-    size_t max_visibility_batch_size,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
@@ -1129,7 +1149,8 @@ public:
         grid_part_index,
         device,
         max_added_tasks,
-        max_visibility_batch_size,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
         init_cf_shape,
         grid_size,
         grid_scale,
@@ -1174,9 +1195,13 @@ public:
   unsigned
   max_added_tasks() const noexcept;
 
-  /** maximum number of visibilities passed to gridding kernel at once */
+  /** number of visibilities passed to gridding kernel at once */
   size_t
-  max_visibility_batch_size() const noexcept;
+  visibility_batch_size() const noexcept;
+
+  /** maximum average number of channels mapped onto by visibilities */
+  unsigned
+  max_avg_channels_per_vis() const noexcept;
 
   /** grid size */
   const std::array<unsigned, 4>&

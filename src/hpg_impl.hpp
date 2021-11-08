@@ -574,7 +574,7 @@ struct /*HPG_EXPORT*/ FFT final {
   /** in-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-  static std::optional<Error>
+  static std::optional<std::unique_ptr<Error>>
   in_place_kernel(
     execution_space exec,
     FFTSign sign,
@@ -585,9 +585,9 @@ struct /*HPG_EXPORT*/ FFT final {
 
     auto handles = grid_fft_handle(exec, sign, grid, grid);
     auto& [h0, h1] = handles;
-    std::optional<Error> result;
+    std::optional<std::unique_ptr<Error>> result;
     if (h0 == nullptr || h1 == nullptr)
-      result = Error("fftw in_place_kernel() failed");
+      result = std::make_unique<Error>("fftw in_place_kernel() failed");
     if (!result) {
       for (int mrow = 0; mrow < grid.extent_int(2); ++mrow) {
         FFTW<scalar_t>::exec(h0, &grid(0, 0, mrow, 0), &grid(0, 0, mrow, 0));
@@ -601,7 +601,7 @@ struct /*HPG_EXPORT*/ FFT final {
   /** out-of-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-  static std::optional<Error>
+  static std::optional<std::unique_ptr<Error>>
   out_of_place_kernel(
     execution_space exec,
     FFTSign sign,
@@ -613,9 +613,9 @@ struct /*HPG_EXPORT*/ FFT final {
 
     auto handles = grid_fft_handle(exec, sign, pre_grid, post_grid);
     auto& [h0, h1] = handles;
-    std::optional<Error> result;
+    std::optional<std::unique_ptr<Error>> result;
     if (h0 == nullptr || h1 == nullptr)
-      result = Error("fftw in_place_kernel() failed");
+      result = std::make_unique<Error>("fftw in_place_kernel() failed");
     if (!result) {
       for (int mrow = 0; mrow < pre_grid.extent_int(2); ++mrow) {
         FFTW<scalar_t>::exec(
@@ -632,7 +632,7 @@ struct /*HPG_EXPORT*/ FFT final {
 
 #ifdef HPG_ENABLE_CUDA
 
-/*HPG_EXPORT*/ Error
+/*HPG_EXPORT*/ std::unique_ptr<Error>
 cufft_error(const std::string& prefix, cufftResult rc);
 
 /** cufft function class templated on fp precision */
@@ -723,7 +723,7 @@ struct /*HPG_EXPORT*/ FFT<K::Cuda> final {
   /** in-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-  static std::optional<Error>
+  static std::optional<std::unique_ptr<Error>>
   in_place_kernel(
       K::Cuda exec,
       FFTSign sign,
@@ -738,7 +738,7 @@ struct /*HPG_EXPORT*/ FFT<K::Cuda> final {
       auto rc0 = cufftDestroy(handle);
       assert(rc0 == CUFFT_SUCCESS);
     }
-    std::optional<Error> result;
+    std::optional<std::unique_ptr<Error>> result;
     if (rc != CUFFT_SUCCESS)
       result = cufft_error("Cuda in_place_kernel() failed: ", rc);
     return result;
@@ -747,7 +747,7 @@ struct /*HPG_EXPORT*/ FFT<K::Cuda> final {
   /** out-of-place FFT kernel
    */
   template <typename grid_layout, typename memory_space>
-  static std::optional<Error>
+  static std::optional<std::unique_ptr<Error>>
   out_of_place_kernel(
     K::Cuda exec,
     FFTSign sign,
@@ -768,7 +768,7 @@ struct /*HPG_EXPORT*/ FFT<K::Cuda> final {
       auto rc0 = cufftDestroy(handle);
       assert(rc0 == CUFFT_SUCCESS);
     }
-    std::optional<Error> result;
+    std::optional<std::unique_ptr<Error>> result;
     if (rc != CUFFT_SUCCESS)
       result = cufft_error("cuda out_of_place_kernel() failed: ", rc);
     return result;
