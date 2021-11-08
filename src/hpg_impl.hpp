@@ -184,6 +184,13 @@ struct /*HPG_EXPORT*/ GridLayout {
       K::LayoutLeft,
       K::LayoutStride>;
 
+  // an assumption throughout this module
+  static_assert(
+    int(core::GridAxis::x) == 0
+    && int(core::GridAxis::y) == 1
+    && int(core::GridAxis::mrow) == 2
+    && int(core::GridAxis::channel) == 3);
+
   /** create Kokkos layout using given grid dimensions
    *
    * logical index order matches GridAxis definition
@@ -231,6 +238,15 @@ struct /*HPG_EXPORT*/ CFLayout {
       std::is_same_v<typename Device::array_layout, K::LayoutLeft>,
       K::LayoutLeft,
       K::LayoutStride>;
+
+  // an assumption throughout this module
+  static_assert(
+    int(core::CFAxis::x_major) == 0
+    && int(core::CFAxis::y_major) == 1
+    && int(core::CFAxis::mueller) == 2
+    && int(core::CFAxis::channel) == 3
+    && int(core::CFAxis::x_minor) == 4
+    && int(core::CFAxis::y_minor) == 5);
 
   /**
    * create Kokkos layout using given CFArray slice
@@ -548,11 +564,6 @@ struct /*HPG_EXPORT*/ FFT final {
     assert(igrid.span() ==
            igrid.extent(0) * igrid.extent(1)
            * igrid.extent(2) * igrid.extent(3));
-    static_assert(
-      int(core::GridAxis::x) == 0
-      && int(core::GridAxis::y) == 1
-      && int(core::GridAxis::mrow) == 2
-      && int(core::GridAxis::channel) == 3);
     int n[2]{igrid.extent_int(0), igrid.extent_int(1)};
     int stride = 1;
     int dist = igrid.extent_int(0) * igrid.extent_int(1) * igrid.extent_int(2);
@@ -701,11 +712,6 @@ struct /*HPG_EXPORT*/ FFT<K::Cuda> final {
     // this assumes there is no padding in grid
     assert(grid.span() ==
            grid.extent(0) * grid.extent(1) * grid.extent(2) * grid.extent(3));
-    static_assert(
-      int(core::GridAxis::x) == 0
-      && int(core::GridAxis::y) == 1
-      && int(core::GridAxis::mrow) == 2
-      && int(core::GridAxis::channel) == 3);
     int n[2]{grid.extent_int(1), grid.extent_int(0)};
     cufftHandle result;
     auto rc =
@@ -853,22 +859,12 @@ public:
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned channel)
     const override {
 
-    static_assert(
-      int(core::GridAxis::x) == 0
-      && int(core::GridAxis::y) == 1
-      && int(core::GridAxis::mrow) == 2
-      && int(core::GridAxis::channel) == 3);
     return reinterpret_cast<const value_type&>(grid(x, y, mrow, channel));
   }
 
   value_type&
   operator()(unsigned x, unsigned y, unsigned mrow, unsigned channel) override {
 
-    static_assert(
-      int(core::GridAxis::x) == 0
-      && int(core::GridAxis::y) == 1
-      && int(core::GridAxis::mrow) == 2
-      && int(core::GridAxis::channel) == 3);
     return reinterpret_cast<value_type&>(grid(x, y, mrow, channel));
   }
 
@@ -1317,11 +1313,6 @@ init_model(GVH& gv_h, const GridValueArray& gv) {
       K::HostSpace>
     ::accessible);
   static_assert(
-    int(core::GridAxis::x) == 0
-    && int(core::GridAxis::y) == 1
-    && int(core::GridAxis::mrow) == 2
-    && int(core::GridAxis::channel) == 3);
-  static_assert(
     GridValueArray::Axis::x == 0
     && GridValueArray::Axis::y == 1
     && GridValueArray::Axis::mrow == 2
@@ -1445,14 +1436,6 @@ public:
     unsigned grp)
     override {
 
-    static_assert(
-      int(core::CFAxis::x_major) == 0
-      && int(core::CFAxis::y_major) == 1
-      && int(core::CFAxis::mueller) == 2
-      && int(core::CFAxis::channel) == 3
-      && int(core::CFAxis::x_minor) == 4
-      && int(core::CFAxis::y_minor) == 5);
-
     return
       reinterpret_cast<std::complex<cf_fp>&>(
         m_views[grp](
@@ -1472,14 +1455,6 @@ public:
     unsigned channel,
     unsigned grp)
     const override {
-
-    static_assert(
-      int(core::CFAxis::x_major) == 0
-      && int(core::CFAxis::y_major) == 1
-      && int(core::CFAxis::mueller) == 2
-      && int(core::CFAxis::channel) == 3
-      && int(core::CFAxis::x_minor) == 4
-      && int(core::CFAxis::y_minor) == 5);
 
     return
       m_views[grp](
@@ -1504,13 +1479,7 @@ init_cf_host(CFH& cf_h, const CFArray& cf, unsigned grp) {
   static_assert(
     K::SpaceAccessibility<typename D::memory_space, K::HostSpace>
     ::accessible);
-  static_assert(
-    int(core::CFAxis::x_major) == 0
-    && int(core::CFAxis::y_major) == 1
-    && int(core::CFAxis::mueller) == 2
-    && int(core::CFAxis::channel) == 3
-    && int(core::CFAxis::x_minor) == 4
-    && int(core::CFAxis::y_minor) == 5);
+
   static_assert(
     CFArray::Axis::x == 0
     && CFArray::Axis::y == 1
