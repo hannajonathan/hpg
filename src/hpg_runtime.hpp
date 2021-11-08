@@ -1166,7 +1166,7 @@ public:
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     case 1:
       return
-        default_grid_visibilities(
+        alt_grid_visibilities(
           host_device,
           std::move(visibilities),
           std::move(wgt_values),

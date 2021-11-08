@@ -37,16 +37,6 @@ if(VALID_HPG_API LESS 0)
     "Invalid Hpg_API; supported options are ${HPG_API_OPTIONS}")
 endif()
 
-# can only enable MPI when experimental implementations are enabled
-#
-# TODO: remove this when current experimental gridding implementation
-# is promoted to default
-#
-if(Hpg_ENABLE_MPI AND NOT Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
-  message(FATAL_ERROR
-    "MPI runtime may only be enabled when experimental implementations are enabled")
-endif()
-
 set(HAVE_SERIAL -1)
 set(HAVE_OPENMP -1)
 set(HAVE_CUDA -1)
