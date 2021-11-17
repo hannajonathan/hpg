@@ -69,27 +69,26 @@ InvalidGroupSizeError::InvalidGroupSizeError()
     "Size of communicator group is too small for desired partition",
     ErrorType::InvalidGroupSize) {}
 
-GridderState::GridderState() {}
-
-GridderState::~GridderState() {}
-
-GridderState::GridderState(
+static std::shared_ptr<::hpg::mpi::runtime::State>
+create_impl(
   MPI_Comm comm,
   int vis_part_index,
   int grid_part_index,
-  Device device,
+  ::hpg::Device device,
   unsigned max_added_tasks,
   size_t visibility_batch_size,
   unsigned max_avg_channels_per_vis,
-  const CFArrayShape* init_cf_shape,
+  const ::hpg::CFArrayShape* init_cf_shape,
   const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale,
-  const IArrayVector& mueller_indexes,
-  const IArrayVector& conjugate_mueller_indexes
+  const std::array<::hpg::grid_scale_fp, 2>& grid_scale,
+  const ::hpg::IArrayVector& mueller_indexes,
+  const ::hpg::IArrayVector& conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   , const std::array<unsigned, 4>& implementation_versions
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   ) {
+
+  using namespace ::hpg::mpi;
 
   // compute communicators for subspaces of visibility and grid plane partitions
   // for this rank
@@ -145,7 +144,8 @@ GridderState::GridderState(
   // channel axis in some cases, which should be taken to indicate an empty grid
   // partition (computed segment size will be zero in this case, as well).
   //
-  auto grid_channel_size = grid_size[unsigned(GridValueArray::Axis::channel)];
+  auto grid_channel_size =
+    grid_size[unsigned(::hpg::GridValueArray::Axis::channel)];
   unsigned grid_channel_offset_local = 0;
   unsigned grid_channel_size_local = grid_channel_size;
 
@@ -162,7 +162,7 @@ GridderState::GridderState(
     min_grid_channel_size
     + ((unsigned(grid_comm_rank) < grid_channel_rem_size) ? 1 : 0);
   std::array<unsigned, 4> grid_size_local = grid_size;
-  grid_size_local[unsigned(GridValueArray::Axis::channel)] =
+  grid_size_local[unsigned(::hpg::GridValueArray::Axis::channel)] =
     grid_channel_size_local;
 
   using namespace runtime;
@@ -173,11 +173,12 @@ GridderState::GridderState(
 
   const unsigned max_active_tasks = max_added_tasks + 1;
 
+  std::shared_ptr<State> result;
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    impl =
-      std::make_shared<StateT<Device::Serial>>(
+  case ::hpg::Device::Serial:
+    result =
+      std::make_shared<StateT<::hpg::Device::Serial>>(
         vis_comm,
         grid_comm,
         grid_channel_offset_local,
@@ -195,9 +196,9 @@ GridderState::GridderState(
 #endif // HPG_ENABLE_SERIAL
     break;
 #ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    impl =
-      std::make_shared<StateT<Device::OpenMP>>(
+  case ::hpg::Device::OpenMP:
+    result =
+      std::make_shared<StateT<::hpg::Device::OpenMP>>(
         vis_comm,
         grid_comm,
         grid_channel_offset_local,
@@ -215,9 +216,9 @@ GridderState::GridderState(
 #endif // HPG_ENABLE_OPENMP
     break;
 #ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    impl =
-      std::make_shared<StateT<Device::Cuda>>(
+  case ::hpg::Device::Cuda:
+    result =
+      std::make_shared<StateT<::hpg::Device::Cuda>>(
         vis_comm,
         grid_comm,
         grid_channel_offset_local,
@@ -238,9 +239,10 @@ GridderState::GridderState(
     assert(false);
     break;
   }
+  return result;
 }
 
-::hpg::rval_t<GridderState>
+::hpg::rval_t<std::tuple<::hpg::GridderState, bool, bool>>
 GridderState::create(
   MPI_Comm comm,
   int vis_part_index,
@@ -259,62 +261,62 @@ GridderState::create(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   ) noexcept {
 
+  using val_t = std::tuple<::hpg::GridderState, bool, bool>;
+
   if (grid_size[2] != mueller_indexes.size()
       || grid_size[2] != conjugate_mueller_indexes.size())
-    return
-      ::hpg::rval<GridderState>(
-        std::make_unique<InvalidNumberMuellerIndexRowsError>());
+    return rval<val_t>(std::make_unique<InvalidNumberMuellerIndexRowsError>());
 
   if (comm == MPI_COMM_NULL)
-    return
-      ::hpg::rval<GridderState>(std::make_unique<NullCommunicatorError>());
+    return rval<val_t>(std::make_unique<NullCommunicatorError>());
 
   int ndims = 1;
   int topo;
   MPI_Topo_test(comm, &topo);
   if (!(topo == MPI_UNDEFINED || topo == MPI_CART))
-    return
-      ::hpg::rval<GridderState>(std::make_unique<InvalidTopologyError>());
+    return rval<val_t>(std::make_unique<InvalidTopologyError>());
   if (topo == MPI_CART) {
     MPI_Cartdim_get(comm, &ndims);
     if (ndims > 2)
-      return
-        ::hpg::rval<GridderState>(
-          std::make_unique<InvalidCartesianRankError>());
+      return rval<val_t>(std::make_unique<InvalidCartesianRankError>());
   }
   if (vis_part_index == grid_part_index)
-    return
-      ::hpg::rval<GridderState>(
-        std::make_unique<IdenticalPartitionIndexError>());
+    return rval<val_t>(std::make_unique<IdenticalPartitionIndexError>());
   if (vis_part_index >= ndims || grid_part_index >= ndims)
-    return
-      ::hpg::rval<GridderState>(std::make_unique<InvalidPartitionIndexError>());
+    return rval<val_t>(std::make_unique<InvalidPartitionIndexError>());
 
-  if (devices().count(device) > 0)
-    return
-      rval<GridderState>(
-        GridderState(
-          comm,
-          vis_part_index,
-          grid_part_index,
-          device,
-          max_added_tasks,
-          visibility_batch_size,
-          max_avg_channels_per_vis,
-          init_cf_shape,
-          grid_size,
-          grid_scale,
-          mueller_indexes,
-          conjugate_mueller_indexes
+  if (devices().count(device) == 0)
+    return rval<val_t>(std::make_unique<DisabledDeviceError>());
+
+  auto impl =
+    create_impl(
+      comm,
+      vis_part_index,
+      grid_part_index,
+      device,
+      max_added_tasks,
+      visibility_batch_size,
+      max_avg_channels_per_vis,
+      init_cf_shape,
+      grid_size,
+      grid_scale,
+      mueller_indexes,
+      conjugate_mueller_indexes
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-          , implementation_versions
+      , implementation_versions
 #endif
-          ));
-  else
-    return rval<GridderState>(std::make_unique<DisabledDeviceError>());
+      );
+  auto vis_part_root = impl->is_visibility_partition_root();
+  auto grid_part_root = impl->is_grid_partition_root();
+  return
+    ::hpg::rval_t<val_t>(
+      std::make_tuple(
+        ::hpg::GridderState(impl),
+        vis_part_root,
+        grid_part_root));
 }
 
-::hpg::rval_t<GridderState>
+::hpg::rval_t<std::tuple<::hpg::GridderState, bool, bool>>
 GridderState::create2d(
   MPI_Comm comm,
   unsigned vis_part_size,
@@ -333,20 +335,19 @@ GridderState::create2d(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   ) noexcept {
 
+  using val_t = std::tuple<::hpg::GridderState, bool, bool>;
+
   if (comm == MPI_COMM_NULL)
-    return
-      ::hpg::rval<GridderState>(std::make_unique<NullCommunicatorError>());
+    return rval<val_t>(std::make_unique<NullCommunicatorError>());
 
   if (vis_part_size == 0 || grid_part_size == 0)
-    return
-      ::hpg::rval<GridderState>(std::make_unique<InvalidPartitionSizeError>());
+    return rval<val_t>(std::make_unique<InvalidPartitionSizeError>());
 
   {
     int comm_size;
     MPI_Comm_size(comm, &comm_size);
     if (unsigned(comm_size) < vis_part_size * grid_part_size)
-      return
-        ::hpg::rval<GridderState>(std::make_unique<InvalidGroupSizeError>());
+      return rval<val_t>(std::make_unique<InvalidGroupSizeError>());
   }
 
   int dims[2]{int(vis_part_size), int(grid_part_size)};
@@ -372,27 +373,6 @@ GridderState::create2d(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
       );
 }
-
-bool
-GridderState::is_visibility_partition_root() const noexcept {
-  return impl->is_visibility_partition_root();
-}
-
-bool
-GridderState::is_grid_partition_root() const noexcept {
-  return impl->is_grid_partition_root();
-}
-
-unsigned
-GridderState::grid_channel_offset() const noexcept {
-  return impl->grid_channel_offset();
-}
-
-unsigned
-GridderState::grid_channel_size() const noexcept {
-  return impl->grid_channel_size();
-}
-
 
 // Local Variables:
 // mode: c++

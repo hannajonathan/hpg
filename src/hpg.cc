@@ -171,7 +171,7 @@ GridderState::GridderState(
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
-    impl =
+    m_impl =
       std::make_shared<StateT<Device::Serial>>(
         max_active_tasks,
         visibility_batch_size,
@@ -188,7 +188,7 @@ GridderState::GridderState(
     break;
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
-    impl =
+    m_impl =
       std::make_shared<StateT<Device::OpenMP>>(
         max_active_tasks,
         visibility_batch_size,
@@ -205,7 +205,7 @@ GridderState::GridderState(
     break;
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
-    impl =
+    m_impl =
       std::make_shared<StateT<Device::Cuda>>(
         max_active_tasks,
         visibility_batch_size,
@@ -279,28 +279,28 @@ GridderState::operator=(const GridderState& rhs) {
   using namespace runtime;
 
   const GridderState& crhs = const_cast<const GridderState&>(rhs);
-  switch (crhs.impl->device()) {
+  switch (crhs.m_impl->device()) {
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial:
-    impl =
+    m_impl =
       std::make_shared<StateT<Device::Serial>>(
-        dynamic_cast<StateT<Device::Serial>*>(crhs.impl.get())
+        dynamic_cast<StateT<Device::Serial>*>(crhs.m_impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_SERIAL
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP:
-    impl =
+    m_impl =
       std::make_shared<StateT<Device::OpenMP>>(
-        dynamic_cast<StateT<Device::OpenMP>*>(crhs.impl.get())
+        dynamic_cast<StateT<Device::OpenMP>*>(crhs.m_impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_OPENMP
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda:
-    impl =
+    m_impl =
       std::make_shared<StateT<Device::Cuda>>(
-        dynamic_cast<StateT<Device::Cuda>*>(crhs.impl.get())
+        dynamic_cast<StateT<Device::Cuda>*>(crhs.m_impl.get())
         ->copy());
     break;
 #endif // HPG_ENABLE_CUDA
@@ -315,42 +315,42 @@ GridderState::~GridderState() {}
 
 Device
 GridderState::device() const noexcept {
-  return impl->device();
+  return m_impl->device();
 }
 
 unsigned
 GridderState::max_added_tasks() const noexcept {
-  return impl->max_active_tasks() - 1;
+  return m_impl->max_active_tasks() - 1;
 }
 
 size_t
 GridderState::visibility_batch_size() const noexcept {
-  return impl->visibility_batch_size();
+  return m_impl->visibility_batch_size();
 }
 
 unsigned
 GridderState::max_avg_channels_per_vis() const noexcept {
-  return impl->max_avg_channels_per_vis();
+  return m_impl->max_avg_channels_per_vis();
 }
 
 std::array<unsigned, 4>
 GridderState::grid_size() const noexcept {
-  return impl->grid_size();
+  return m_impl->grid_size();
 }
 
 std::array<grid_scale_fp, 2>
 GridderState::grid_scale() const noexcept {
-  return impl->grid_scale();
+  return m_impl->grid_scale();
 }
 
 unsigned
 GridderState::num_polarizations() const noexcept {
-  return impl->num_polarizations();
+  return m_impl->num_polarizations();
 }
 
 bool
 GridderState::is_null() const noexcept {
-  return !bool(impl);
+  return !bool(m_impl);
 }
 
 size_t
@@ -359,7 +359,7 @@ GridderState::convolution_function_region_size(const CFArrayShape* shape)
 
   ProfileRegion region("GridderState::convolution_function_region_size");
 
-  return impl->convolution_function_region_size(shape);
+  return m_impl->convolution_function_region_size(shape);
 }
 
 rval_t<GridderState>
@@ -676,7 +676,7 @@ GridderState::fence() const & {
   ProfileRegion region("GridderState::fence_const");
 
   GridderState result(*this);
-  result.impl->fence();
+  result.m_impl->fence();
   return result;
 }
 
@@ -686,7 +686,7 @@ GridderState::fence() && {
   ProfileRegion region("GridderState::fence");
 
   GridderState result(std::move(*this));
-  result.impl->fence();
+  result.m_impl->fence();
   return result;
 }
 
@@ -696,7 +696,7 @@ GridderState::grid_weights() const & {
   ProfileRegion region("GridderState::grid_weights_const");
 
   GridderState result(*this);
-  return {std::move(result), std::move(result.impl->grid_weights())};
+  return {std::move(result), std::move(result.m_impl->grid_weights())};
 }
 
 std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
@@ -705,7 +705,7 @@ GridderState::grid_weights() && {
   ProfileRegion region("GridderState::grid_weights");
 
   GridderState result(std::move(*this));
-  return {std::move(result), std::move(result.impl->grid_weights())};
+  return {std::move(result), std::move(result.m_impl->grid_weights())};
 }
 
 std::shared_ptr<GridWeightArray::value_type>
@@ -713,7 +713,7 @@ GridderState::grid_weights_ptr() const & {
 
   ProfileRegion region("GridderState::grid_weights_ptr");
 
-  return impl->grid_weights_ptr();
+  return m_impl->grid_weights_ptr();
 }
 
 size_t
@@ -721,7 +721,7 @@ GridderState::grid_weights_span() const & {
 
   ProfileRegion region("GridderState::grid_weights_span");
 
-  return impl->grid_weights_span();
+  return m_impl->grid_weights_span();
 }
 
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
@@ -730,7 +730,7 @@ GridderState::grid_values() const & {
   ProfileRegion region("GridderState::grid_values_const");
 
   GridderState result(*this);
-  return {std::move(result), std::move(result.impl->grid_values())};
+  return {std::move(result), std::move(result.m_impl->grid_values())};
 }
 
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
@@ -739,7 +739,7 @@ GridderState::grid_values() && {
   ProfileRegion region("GridderState::grid_values");
 
   GridderState result(std::move(*this));
-  return {std::move(result), std::move(result.impl->grid_values())};
+  return {std::move(result), std::move(result.m_impl->grid_values())};
 }
 
 std::shared_ptr<GridValueArray::value_type>
@@ -747,7 +747,7 @@ GridderState::grid_values_ptr() const & {
 
   ProfileRegion region("GridderState::grid_values_ptr");
 
-  return impl->grid_values_ptr();
+  return m_impl->grid_values_ptr();
 }
 
 size_t
@@ -755,7 +755,7 @@ GridderState::grid_values_span() const & {
 
   ProfileRegion region("GridderState::grid_values_span");
 
-  return impl->grid_values_span();
+  return m_impl->grid_values_span();
 }
 
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
@@ -764,7 +764,7 @@ GridderState::model_values() const & {
   ProfileRegion region("GridderState::model_values_const");
 
   GridderState result(*this);
-  return {std::move(result), std::move(result.impl->model_values())};
+  return {std::move(result), std::move(result.m_impl->model_values())};
 }
 
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
@@ -773,7 +773,7 @@ GridderState::model_values() && {
   ProfileRegion region("GridderState::model_values");
 
   GridderState result(std::move(*this));
-  return {std::move(result), std::move(result.impl->model_values())};
+  return {std::move(result), std::move(result.m_impl->model_values())};
 }
 
 std::shared_ptr<GridValueArray::value_type>
@@ -781,7 +781,7 @@ GridderState::model_values_ptr() const & {
 
   ProfileRegion region("GridderState::model_values_ptr");
 
-  return impl->model_values_ptr();
+  return m_impl->model_values_ptr();
 }
 
 size_t
@@ -789,7 +789,7 @@ GridderState::model_values_span() const & {
 
   ProfileRegion region("GridderState::grid_values_span");
 
-  return impl->model_values_span();
+  return m_impl->model_values_span();
 }
 
 GridderState
@@ -798,7 +798,7 @@ GridderState::reset_grid() const & {
   ProfileRegion region("GridderState::reset_grid_const");
 
   GridderState result(*this);
-  result.impl->reset_grid();
+  result.m_impl->reset_grid();
   return result;
 }
 
@@ -808,7 +808,7 @@ GridderState::reset_grid() && {
   ProfileRegion region("GridderState::reset_grid");
 
   GridderState result(std::move(*this));
-  result.impl->reset_grid();
+  result.m_impl->reset_grid();
   return result;
 }
 
@@ -818,7 +818,7 @@ GridderState::reset_model() const & {
   ProfileRegion region("GridderState::reset_model_const");
 
   GridderState result(*this);
-  result.impl->reset_model();
+  result.m_impl->reset_model();
   return result;
 }
 
@@ -828,7 +828,7 @@ GridderState::reset_model() && {
   ProfileRegion region("GridderState::reset_model");
 
   GridderState result(std::move(*this));
-  result.impl->reset_model();
+  result.m_impl->reset_model();
   return result;
 }
 
@@ -838,7 +838,7 @@ GridderState::normalize_by_weights(grid_value_fp wfactor) const & {
   ProfileRegion region("GridderState::normalize_by_weights_const");
 
   GridderState result(*this);
-  result.impl->normalize_by_weights(wfactor);
+  result.m_impl->normalize_by_weights(wfactor);
   return result;
 }
 
@@ -848,7 +848,7 @@ GridderState::normalize_by_weights(grid_value_fp wfactor) && {
   ProfileRegion region("GridderState::normalize_by_weights");
 
   GridderState result(std::move(*this));
-  result.impl->normalize_by_weights(wfactor);
+  result.m_impl->normalize_by_weights(wfactor);
   return result;
 }
 
@@ -916,7 +916,7 @@ GridderState::shift_grid(ShiftDirection direction) const & {
   ProfileRegion region("GridderState::shift_grid_const");
 
   GridderState result(*this);
-  result.impl->shift_grid(direction);
+  result.m_impl->shift_grid(direction);
   return result;
 }
 
@@ -926,7 +926,7 @@ GridderState::shift_grid(ShiftDirection direction) && {
   ProfileRegion region("GridderState::shift_grid");
 
   GridderState result(std::move(*this));
-  result.impl->shift_grid(direction);
+  result.m_impl->shift_grid(direction);
   return result;
 }
 
@@ -936,7 +936,7 @@ GridderState::shift_model(ShiftDirection direction) const & {
   ProfileRegion region("GridderState::shift_model_const");
 
   GridderState result(*this);
-  result.impl->shift_model(direction);
+  result.m_impl->shift_model(direction);
   return result;
 }
 
@@ -946,13 +946,13 @@ GridderState::shift_model(ShiftDirection direction) && {
   ProfileRegion region("GridderState::shift_model");
 
   GridderState result(std::move(*this));
-  result.impl->shift_model(direction);
+  result.m_impl->shift_model(direction);
   return result;
 }
 
 void
 GridderState::swap(GridderState& other) noexcept {
-  std::swap(impl, other.impl);
+  std::swap(m_impl, other.m_impl);
 }
 
 template <>
