@@ -1122,7 +1122,7 @@ protected:
   friend class runtime::GridderState;
 
   // state cannot be a unique_ptr since runtime::State is here an incomplete type
-  std::shared_ptr<runtime::State> impl; /**< state implementation */
+  std::shared_ptr<runtime::State> m_impl; /**< state implementation */
 
 public:
 
@@ -1136,6 +1136,11 @@ public:
    * value
    */
   GridderState();
+
+  /** constructor from runtime::State
+   */
+  GridderState(std::shared_ptr<runtime::State> st)
+  : m_impl(st) {}
 
 protected:
 
@@ -1302,6 +1307,14 @@ public:
   /** grid scale */
   std::array<grid_scale_fp, 2>
   grid_scale() const noexcept;
+
+  /** global offset of first local grid channel */
+  unsigned
+  grid_channel_offset() const noexcept;
+
+  /** local number of grid channels */
+  unsigned
+  grid_channel_size() const noexcept;
 
   /** number of visibility polarizations */
   unsigned

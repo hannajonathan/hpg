@@ -73,6 +73,12 @@ struct /*HPG_EXPORT*/ State {
   grid_scale() const noexcept = 0;
 
   virtual unsigned
+  grid_channel_offset() const noexcept = 0;
+
+  virtual unsigned
+  grid_channel_size() const noexcept = 0;
+
+  virtual unsigned
   num_polarizations() const noexcept = 0;
 
   virtual size_t
@@ -965,6 +971,16 @@ public:
   }
 
   unsigned
+  grid_channel_offset() const noexcept override {
+    return 0;
+  }
+
+  unsigned
+  grid_channel_size() const noexcept override {
+    return unsigned(m_grid_size[int(impl::core::GridAxis::channel)]);
+  }
+
+  unsigned
   num_polarizations() const noexcept override {
     return m_num_polarizations;
   }
@@ -1106,7 +1122,7 @@ public:
         m_grid,
         m_grid_weights,
         m_model,
-        0);
+        grid_channel_offset());
 
     if (do_degrid) {
       gridder.degrid_all();
@@ -1832,7 +1848,7 @@ struct /*HPG_EXPORT*/ GridderState {
   allocate_convolution_function_region(GS&& st, const CFArrayShape* shape) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    if (auto error = result.impl->allocate_convolution_function_region(shape);
+    if (auto error = result.m_impl->allocate_convolution_function_region(shape);
         error)
       return std::move(error.value());
     else
@@ -1846,7 +1862,7 @@ struct /*HPG_EXPORT*/ GridderState {
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
       if (auto error =
-          result.impl->set_convolution_function(host_device, std::move(cf));
+          result.m_impl->set_convolution_function(host_device, std::move(cf));
           error)
         return std::move(error.value());
       else
@@ -1862,7 +1878,7 @@ struct /*HPG_EXPORT*/ GridderState {
 
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
-      if (auto error = result.impl->set_model(host_device, std::move(gv));
+      if (auto error = result.m_impl->set_model(host_device, std::move(gv));
           error)
         return std::move(error.value());
       else
@@ -1890,10 +1906,10 @@ struct /*HPG_EXPORT*/ GridderState {
       return std::make_unique<DisabledHostDeviceError>();
 
     auto num_visibilities = visibilities.size();
-    if (num_visibilities > st.impl->visibility_batch_size())
+    if (num_visibilities > st.m_impl->visibility_batch_size())
       return std::make_unique<ExcessiveNumberVisibilitiesError>();
 
-    if (visibilities.m_npol != st.impl->num_polarizations())
+    if (visibilities.m_npol != st.m_impl->num_polarizations())
       return std::make_unique<InvalidNumberPolarizationsError>();
 
     if (!do_grid && update_grid_weights)
@@ -1904,7 +1920,7 @@ struct /*HPG_EXPORT*/ GridderState {
 
     // convert channel map to matrix in CRS format
     size_t max_num_channels =
-      st.impl->max_avg_channels_per_vis() * num_visibilities;
+      st.m_impl->max_avg_channels_per_vis() * num_visibilities;
     std::vector<vis_weight_fp> wgt;
     wgt.reserve(max_num_channels);
     std::vector<unsigned> col_index;
@@ -1924,7 +1940,7 @@ struct /*HPG_EXPORT*/ GridderState {
 
     ::hpg::GridderState result(std::forward<GS>(st));
     auto err_or_maybevis =
-      result.impl->grid_visibilities(
+      result.m_impl->grid_visibilities(
         host_device,
         std::move(visibilities),
         std::move(wgt),
@@ -1981,7 +1997,7 @@ struct /*HPG_EXPORT*/ GridderState {
   apply_grid_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    if (auto error = result.impl->apply_grid_fft(norm, sign, in_place); error)
+    if (auto error = result.m_impl->apply_grid_fft(norm, sign, in_place); error)
       return std::move(error.value());
     else
       return std::move(result);
@@ -1992,7 +2008,8 @@ struct /*HPG_EXPORT*/ GridderState {
   apply_model_fft(GS&& st, grid_value_fp norm, FFTSign sign, bool in_place) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    if (auto error = result.impl->apply_model_fft(norm, sign, in_place); error)
+    if (auto error = result.m_impl->apply_model_fft(norm, sign, in_place);
+        error)
       return std::move(error.value());
     else
       return std::move(result);
