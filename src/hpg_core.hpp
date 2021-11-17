@@ -630,15 +630,15 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 
   static KOKKOS_INLINE_FUNCTION bool
-  all_within_grid_planes(
+  does_overlap_grid_section(
     const vis_t& vis,
     const K::Array<int, 2>& grid_planes_size) {
 
     return
-      (0 <= vis.m_grid_coord[0])
-      && (vis.m_grid_coord[0] + vis.m_cf_size[0] <= grid_planes_size[0])
-      && (0 <= vis.m_grid_coord[1])
-      && (vis.m_grid_coord[1] + vis.m_cf_size[1] <= grid_planes_size[1]);
+      (0 < vis.m_grid_coord[0] + vis.m_cf_size[0])
+      && (vis.m_grid_coord[0] < grid_planes_size[0])
+      && (0 < vis.m_grid_coord[1] + vis.m_cf_size[1])
+      && (vis.m_grid_coord[1] < grid_planes_size[1]);
   }
 
   static KOKKOS_INLINE_FUNCTION void
@@ -773,7 +773,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       m_cf_radii,
       m_oversampling);
     poln_array_type<visibility_fp_t, N> gvis;
-    if (all_within_grid_planes(vis, m_grid_planes_size)) {
+    if (does_overlap_grid_section(vis, m_grid_planes_size)) {
       auto phscr =
         scratch_phscr_view(
           team_member.team_scratch(0),
@@ -1102,7 +1102,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       m_oversampling);
     // skip this visibility if all of the updated grid points are not
     // within grid plane bounds
-    if (all_within_grid_planes(vis, m_grid_planes_size)) {
+    if (does_overlap_grid_section(vis, m_grid_planes_size)) {
       auto phscr =
         scratch_phscr_view(
           team_member.team_scratch(0),
