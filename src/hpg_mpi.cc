@@ -374,6 +374,108 @@ GridderState::create2d(
       );
 }
 
+static ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
+apply_gridder(
+  ::hpg::rval_t<std::tuple<::hpg::GridderState, bool, bool>>&& create_gs) {
+
+  using rc_t = ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>;
+
+  return
+    fold(
+      std::move(create_gs),
+      [](auto&& val) -> rc_t {
+        auto [gs, vis_part_root, grid_part_root] = std::move(val);
+        return
+          std::make_tuple(
+            ::hpg::Gridder(std::move(gs)),
+            vis_part_root,
+            grid_part_root);
+      },
+      [](auto&& err) -> rc_t {
+        return std::move(err);
+      });
+}
+
+::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
+Gridder::create(
+  MPI_Comm comm,
+  int vis_part_index,
+  int grid_part_index,
+  Device device,
+  unsigned max_added_tasks,
+  size_t visibility_batch_size,
+  unsigned max_avg_channels_per_vis,
+  const CFArrayShape* init_cf_shape,
+  const std::array<unsigned, 4>& grid_size,
+  const std::array<grid_scale_fp, 2>& grid_scale,
+  IArrayVector&& mueller_indexes,
+  IArrayVector&& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  , const std::array<unsigned, 4>& implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  ) noexcept {
+
+  return
+    apply_gridder(
+      GridderState::create(
+        comm,
+        vis_part_index,
+        grid_part_index,
+        device,
+        max_added_tasks,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
+        init_cf_shape,
+        grid_size,
+        grid_scale,
+        std::move(mueller_indexes),
+        std::move(conjugate_mueller_indexes)
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        , implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+      ));
+}
+
+::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
+Gridder::create2d(
+  MPI_Comm comm,
+  unsigned vis_part_size,
+  unsigned grid_part_size,
+  Device device,
+  unsigned max_added_tasks,
+  size_t visibility_batch_size,
+  unsigned max_avg_channels_per_vis,
+  const CFArrayShape* init_cf_shape,
+  const std::array<unsigned, 4>& grid_size,
+  const std::array<grid_scale_fp, 2>& grid_scale,
+  IArrayVector&& mueller_indexes,
+  IArrayVector&& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  , const std::array<unsigned, 4>& implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+  ) noexcept {
+
+  return
+    apply_gridder(
+      GridderState::create2d(
+        comm,
+        vis_part_size,
+        grid_part_size,
+        device,
+        max_added_tasks,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
+        init_cf_shape,
+        grid_size,
+        grid_scale,
+        std::move(mueller_indexes),
+        std::move(conjugate_mueller_indexes)
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        , implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+      ));
+}
+
 // Local Variables:
 // mode: c++
 // c-basic-offset: 2

@@ -422,7 +422,7 @@ namespace Gridder {
    *
    * Does not throw an exception if device argument names an unsupported device
    */
-  rval_t<::hpg::Gridder>
+  rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create(
     MPI_Comm comm,
     int vis_part_index,
@@ -450,7 +450,7 @@ namespace Gridder {
    * @sa Gridder()
    */
   template <unsigned N>
-  rval_t<::hpg::Gridder>
+  rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create(
     MPI_Comm comm,
     int vis_part_index,
@@ -489,6 +489,68 @@ namespace Gridder {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
       );
   }
+
+  rval_t<std::tuple<::hpg::Gridder, bool, bool>>
+  create2d(
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    unsigned grid_part_size,
+    Device device,
+    unsigned max_added_tasks,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ) noexcept;
+
+  template <unsigned N>
+  rval_t<std::tuple<::hpg::Gridder, bool, bool>>
+  create2d(
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    unsigned grid_part_size,
+    Device device,
+    unsigned max_added_tasks,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions =
+    ::hpg::GridderState::default_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ) noexcept {
+
+    return
+      create2d(
+        comm,
+        vis_part_size,
+        grid_part_size,
+        device,
+        max_added_tasks,
+        visibility_batch_size,
+        max_avg_channels_per_vis,
+        init_cf_shape,
+        grid_size,
+        grid_scale,
+        IArrayVector(mueller_indexes),
+        IArrayVector(conjugate_mueller_indexes)
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        , implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        );
+  }
+
+
 } // end namespace Gridder
 
 } // end namespace hpg::mpi
