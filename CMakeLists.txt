@@ -50,14 +50,12 @@ endif()
 
 # Project wide setup
 set(MIN_CXX_STANDARD 17)
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD ${MIN_CXX_STANDARD})
-endif()
+set(CMAKE_CXX_STANDARD ${MIN_CXX_STANDARD} CACHE STRING "C++ language standard")
 if(${CMAKE_CXX_STANDARD} LESS ${MIN_CXX_STANDARD})
   message(FATAL_ERROR
     "C++ language standard must not be less than ${MIN_CXX_STANDARD}")
 endif()
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL "C++ language standard required")
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(Hpg_BUILD_DOCS "Build Doxygen documentation" ON)
