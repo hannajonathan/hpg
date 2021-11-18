@@ -2404,6 +2404,9 @@ public:
   /** move constructor */
   Gridder(Gridder&& other) noexcept = default;
 
+  /** constructor from GridderState */
+  Gridder(GridderState&& st) noexcept;
+
   /** copy assignment
    *
    * Invokes fence() on argument
@@ -2877,11 +2880,6 @@ public:
    */
   void
   shift_model(ShiftDirection direction);
-
-protected:
-
-  /** move constructor */
-  Gridder(GridderState&& st) noexcept;
 };
 
 } // end namespace hpg
