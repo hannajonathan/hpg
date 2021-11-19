@@ -269,18 +269,9 @@ public:
     : State(
       MPI_COMM_NULL,
       MPI_COMM_NULL,
-      grid_channel_offset,
-      grid_size[int(impl::core::GridAxis::channel)])
-    , ::hpg::runtime::StateT<D>(
-      st.max_active_tasks,
-      st.visibility_batch_size,
-      st.max_avg_channels_per_vis,
-      st.init_cf_shape,
-      st.grid_size,
-      st.grid_scale,
-      st.mueller_indexes,
-      st.conjugate_mueller_indexes,
-      st.implementation_versions) {
+      st.grid_channel_min,
+      st.grid_channel_max - st.grid_channel_min)
+    , ::hpg::runtime::StateT<D>(st) {
 
     MPI_Comm_dup(st.m_vis_comm, &m_vis_comm);
     MPI_Comm_dup(st.m_grid_comm, &m_grid_comm);
