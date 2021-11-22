@@ -22,9 +22,112 @@
 
 #include <Kokkos_Core.hpp>
 
-namespace hpg::mpi {
+namespace hpg::mpi::runtime {
+
+namespace impl = ::hpg::runtime::impl;
 
 namespace K = Kokkos;
+
+template <typename T>
+constexpr MPI_Datatype
+mpi_datatype() {
+  return MPI_DATATYPE_NULL;
+}
+template <>
+constexpr MPI_Datatype
+mpi_datatype<char>() {
+  return MPI_CHAR;
+}
+template <>
+constexpr MPI_Datatype
+mpi_datatype<signed short int>() {
+  return MPI_SHORT;
+}
+template <>
+constexpr MPI_Datatype
+mpi_datatype<signed int>() {
+  return MPI_INT;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<signed long int>() {
+  return MPI_LONG;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<signed long long int>() {
+  return MPI_LONG_LONG;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<signed char>() {
+  return MPI_SIGNED_CHAR;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<unsigned char>() {
+  return MPI_UNSIGNED_CHAR;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<unsigned short int>() {
+  return MPI_UNSIGNED_SHORT;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<unsigned int>() {
+  return MPI_UNSIGNED;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<unsigned long int>() {
+  return MPI_UNSIGNED_LONG;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<unsigned long long int>() {
+  return MPI_UNSIGNED_LONG_LONG;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<float>() {
+  return MPI_FLOAT;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<double>() {
+  return MPI_DOUBLE;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<long double>() {
+  return MPI_LONG_DOUBLE;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<wchar_t>() {
+  return MPI_WCHAR;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<bool>() {
+  return MPI_CXX_BOOL;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<std::complex<float>>() {
+  return MPI_CXX_COMPLEX;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<std::complex<double>>() {
+  return MPI_CXX_DOUBLE_COMPLEX;
+};
+template <>
+constexpr MPI_Datatype
+mpi_datatype<std::complex<long double>>() {
+  return MPI_CXX_LONG_DOUBLE_COMPLEX;
+};
 
 template <>
 constexpr MPI_Datatype
@@ -41,13 +144,6 @@ constexpr MPI_Datatype
 mpi_datatype<K::complex<long double>>() {
   return MPI_CXX_LONG_DOUBLE_COMPLEX;
 };
-} // end namespace hpg::mpi
-
-namespace hpg::mpi::runtime {
-
-namespace impl = ::hpg::runtime::impl;
-
-namespace K = Kokkos;
 
 template <unsigned N>
 MPI_Datatype
