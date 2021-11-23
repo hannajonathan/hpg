@@ -71,8 +71,8 @@ struct InvalidModelGridSizeError
 
   /** constructor */
   InvalidModelGridSizeError(
-    const std::array<unsigned, GridValueArray::rank>& model_size,
-    const std::array<unsigned, GridValueArray::rank>& grid_size)
+    const Kokkos::Array<int, GridValueArray::rank>& model_size,
+    const Kokkos::Array<int, GridValueArray::rank>& grid_size)
     : Error(
       "model grid size " + sz2str(model_size)
       + " is different from visibility grid size " + sz2str(grid_size),
@@ -80,7 +80,7 @@ struct InvalidModelGridSizeError
 
   /** array extents as string */
   static std::string
-  sz2str(const std::array<unsigned, GridValueArray::rank>& sz) {
+  sz2str(const Kokkos::Array<int, GridValueArray::rank>& sz) {
     std::ostringstream oss;
     oss << "[" << sz[0]
         << "," << sz[1]
@@ -196,7 +196,7 @@ struct /*HPG_EXPORT*/ GridLayout {
    * logical index order matches GridAxis definition
    */
   static layout
-  dimensions(const std::array<int, 4>& dims) {
+  dimensions(const K::Array<int, 4>& dims) {
     if constexpr (std::is_same_v<layout, K::LayoutLeft>) {
       return K::LayoutLeft(dims[0], dims[1], dims[2], dims[3]);
     } else {
@@ -942,7 +942,7 @@ public:
     const std::array<unsigned, rank>& extents,
     Layout lyo) {
 
-    std::array<int, rank>
+    K::Array<int, rank>
       iext{int(extents[0]), int(extents[1]), int(extents[2]), int(extents[3])};
     grid_t grid(
       K::ViewAllocateWithoutInitializing(name),

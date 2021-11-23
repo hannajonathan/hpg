@@ -490,10 +490,10 @@ public:
              ++grp) {
           auto extents = cf_array.extents(grp);
           if ((extents[CFArray::Axis::x] >
-               this->m_grid_size[int(impl::core::GridAxis::x)]
+               this->m_grid_size_local[int(impl::core::GridAxis::x)]
                * cf_array.oversampling())
               || (extents[CFArray::Axis::y] >
-                  this->m_grid_size[int(impl::core::GridAxis::y)]
+                  this->m_grid_size_local[int(impl::core::GridAxis::y)]
                   * cf_array.oversampling()))
             exceeds_grid = true;
         }
@@ -575,37 +575,38 @@ public:
 
     // check that gv size equals that of grid
     {
-      std::array<unsigned, 4> model_sz;
+      K::Array<int, 4> model_sz;
       if (is_vis_root)
-        model_sz = {gv.extent(0), gv.extent(1), gv.extent(2), gv.extent(3)};
+        model_sz = {
+          int(gv.extent(0)),
+          int(gv.extent(1)),
+          int(gv.extent(2)),
+          int(gv.extent(3))};
       MPI_Bcast(
         model_sz.data(),
         4,
         mpi_datatype<unsigned>(),
         0,
         m_vis_comm);
-      if (this->m_grid_size != model_sz)
+      if (this->m_grid_size_local[0] != model_sz[0]
+          || this->m_grid_size_local[1] != model_sz[1]
+          || this->m_grid_size_local[2] != model_sz[2]
+          || this->m_grid_size_local[3] != model_sz[3])
         return
           std::make_unique<InvalidModelGridSizeError>(
             model_sz,
-            this->m_grid_size);
+            this->m_grid_size_local);
     }
 
     fence();
     auto& exec =
       this->m_exec_spaces[this->next_exec_space(StreamPhase::PRE_GRIDDING)];
 
-    if (!this->m_model.is_allocated()) {
-      std::array<int, 4> ig{
-        int(this->m_grid_size[0]),
-        int(this->m_grid_size[1]),
-        int(this->m_grid_size[2]),
-        int(this->m_grid_size[3])};
+    if (!this->m_model.is_allocated())
       this->m_model =
         decltype(this->m_model)(
           K::ViewAllocateWithoutInitializing("model"),
-          SD::grid_layout::dimensions(ig));
-    }
+          SD::grid_layout::dimensions(this->m_grid_size_local));
 
     // copy the model to device memory on the root rank, then broadcast it to
     // the other ranks
@@ -779,7 +780,8 @@ public:
         this->m_grid,
         this->m_grid_weights,
         this->m_model,
-        m_grid_channel_min);
+        this->m_grid_offset_local,
+        this->m_grid_size_global);
 
     // use gridder object to invoke degridding and gridding kernels
     if (do_degrid) {
