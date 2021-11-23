@@ -335,7 +335,7 @@ GridderState::max_avg_channels_per_vis() const noexcept {
 
 std::array<unsigned, 4>
 GridderState::grid_size() const noexcept {
-  return m_impl->grid_size();
+  return m_impl->grid_size_global();
 }
 
 std::array<grid_scale_fp, 2>

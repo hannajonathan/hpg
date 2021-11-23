@@ -63,6 +63,12 @@ enum class /*HPG_EXPORT*/ GridAxis {
   channel
 };
 
+/** ordered grid weights array axes */
+enum class /*HPG_EXPORT*/ GridWeightAxis {
+  mrow,
+  channel
+};
+
 /** ordered CF array axes */
 enum class /*HPG_EXPORT*/ CFAxis {
   x_major,
@@ -418,7 +424,7 @@ struct /*HPG_EXPORT*/ Vis final {
   using uvw_t = typename VD::uvw_t;
   using phgrad_t = typename VD::phgrad_t;
 
-  int m_grid_coord[2]; /**< grid coordinate */
+  int m_grid_coord[2]; /**< local grid coordinate */
   int m_cf_minor[2]; /**< CF minor coordinate */
   int m_cf_major[2]; /**< CF major coordinate */
   int m_fine_offset[2]; /**< visibility position - nearest major grid */
@@ -436,7 +442,8 @@ struct /*HPG_EXPORT*/ Vis final {
   KOKKOS_INLINE_FUNCTION Vis(
     const VD& vis,
     const K::Array<vis_t, npol>& vals,
-    const K::Array<int, 2>& grid_planes_size,
+    const K::Array<int, 4>& grid_min_local,
+    const K::Array<int, 4>& grid_size_global,
     const K::Array<GS, 2>& grid_scale,
     const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
     const K::Array<int, 2>& oversampling)
@@ -453,13 +460,13 @@ struct /*HPG_EXPORT*/ Vis final {
       m_cf_size[d] = 2 * cf_radii[m_cf_grp][d] + 1;
       auto [g, maj, min, f] =
         compute_vis_coord(
-          grid_planes_size[d],
+          grid_size_global[d],
           oversampling[d],
           m_cf_size[d] / 2,
           vis.m_uvw[d],
           inv_lambda,
           grid_scale[d]);
-      m_grid_coord[d] = g;
+      m_grid_coord[d] = g - grid_min_local[d];
       m_cf_major[d] = maj;
       m_cf_minor[d] = min;
       m_fine_offset[d] = f;
@@ -570,8 +577,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   GridWeightView m_grid_weights;
   model_const_view m_model;
 
-  K::Array<int, 2> m_grid_planes_size;
-  K::Array<int, 2> m_grid_channel_slice;
+  K::Array<int, 4> m_grid_min_local;
+  K::Array<int, 4> m_grid_size_local;
+  K::Array<int, 4> m_grid_size_global;
   K::Array<int, 2> m_oversampling;
   size_t m_shmem_size;
 
@@ -597,7 +605,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const GridView& grid,
     const GridWeightView& grid_weights,
     const ModelView& model,
-    unsigned channel_offset)
+    const K::Array<int, 4>& grid_offset_local,
+    const K::Array<int, 4>& grid_size_global)
   : m_exec(exec)
   , m_cf_radii(cf_radii)
   , m_max_cf_extent_y(max_cf_extent_y)
@@ -612,16 +621,17 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   , m_grid_scale(grid_scale)
   , m_grid(grid)
   , m_grid_weights(grid_weights)
-  , m_model(model) {
+  , m_model(model)
+  , m_grid_min_local(grid_offset_local)
+  , m_grid_size_global(grid_size_global) {
 
     for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i)
       m_cfs[i] = cfs[i];
-    m_grid_planes_size = {
-      m_grid.extent_int(int(GridAxis::x)),
-      m_grid.extent_int(int(GridAxis::y))};
-    m_grid_channel_slice = {
-      int(channel_offset),
-      int(channel_offset) + m_grid.extent_int(int(GridAxis::channel))
+    m_grid_size_local = {
+      grid.extent_int(0),
+      grid.extent_int(1),
+      grid.extent_int(2),
+      grid.extent_int(3)
     };
     m_oversampling = {
       m_cfs[0].extent_int(int(CFAxis::x_minor)),
@@ -630,15 +640,23 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 
   static KOKKOS_INLINE_FUNCTION bool
-  does_overlap_grid_section(
+  does_overlap_grid_plane_section(
     const vis_t& vis,
-    const K::Array<int, 2>& grid_planes_size) {
+    const K::Array<int, 4>& grid_size_local) {
 
     return
       (0 < vis.m_grid_coord[0] + vis.m_cf_size[0])
-      && (vis.m_grid_coord[0] < grid_planes_size[0])
+      && (vis.m_grid_coord[0] < grid_size_local[int(GridAxis::x)])
       && (0 < vis.m_grid_coord[1] + vis.m_cf_size[1])
-      && (vis.m_grid_coord[1] < grid_planes_size[1]);
+      && (vis.m_grid_coord[1] < grid_size_local[int(GridAxis::y)]);
+  }
+
+  static KOKKOS_INLINE_FUNCTION bool
+  does_overlap_grid_channel_section(
+    int ch,
+    const K::Array<int, 4>& grid_size_local) {
+
+    return (0 <= ch) && (ch < grid_size_local[int(GridAxis::channel)]);
   }
 
   static KOKKOS_INLINE_FUNCTION void
@@ -647,9 +665,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const vis_t& vis,
     const scratch_phscr_view& phi_Y) {
 
-    // compute the values of the phase screen along the Y axis now and store the
-    // results in scratch memory because gridding on the Y axis accesses the
-    // phase screen values for every row of the Mueller matrix column
     K::parallel_for(
       K::TeamVectorRange(team_member, vis.m_cf_size[1]),
       [=](const int Y) {
@@ -669,9 +684,24 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const model_const_view& model,
     const scratch_phscr_view& phi_Y) {
 
-    const auto& N_X = vis.m_cf_size[0];
-    const auto& N_Y = vis.m_cf_size[1];
-    const auto N_R = model.extent_int(int(GridAxis::mrow));
+    const auto min_x = std::max(0, vis.m_grid_coord[0]);
+    const auto max_x =
+      std::min(
+        vis.m_grid_coord[0] + vis.m_cf_size[0],
+        model.extent_int(int(GridAxis::x)));
+    const auto n_x = max_x - min_x;
+    const auto min_y = std::max(0, vis.m_grid_coord[1]);
+    const auto max_y =
+      std::min(
+        vis.m_grid_coord[1] + vis.m_cf_size[1],
+        model.extent_int(int(GridAxis::y)));
+    const auto n_y = max_y - min_y;
+    const auto n_r = model.extent_int(int(GridAxis::mrow));
+
+    const K::Array<int, 2> cf_min{
+      vis.m_cf_major[0] + min_x - vis.m_grid_coord[0],
+      vis.m_cf_major[1] + min_y - vis.m_grid_coord[1]};
+    const K::Array<int, 2> grid_min{min_x, min_y};
 
     auto degridding_mindex =
       vis.m_pos_w ? conjugate_mueller_indexes : mueller_indexes;
@@ -688,8 +718,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       auto cf_vis =
         K::subview(
           cf,
-          K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
-          K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+          K::pair<int, int>(cf_min[0], cf_min[0] + n_x),
+          K::pair<int, int>(cf_min[1], cf_min[1] + n_y),
           K::ALL,
           vis.m_cf_channel,
           vis.m_cf_minor[0],
@@ -699,22 +729,23 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       auto model_vis =
         K::subview(
           model,
-          K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-          K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+          K::pair<int, int>(grid_min[0], grid_min[0] + n_x),
+          K::pair<int, int>(grid_min[1], grid_min[1] + n_y),
           K::ALL,
           grid_channel);
 
       // loop over model polarizations
-      for (int gpol = 0; gpol < N_R; ++gpol) {
+      for (int gpol = 0; gpol < n_r; ++gpol) {
         decltype(vis_array) va;
         // parallel loop over grid X
         K::parallel_reduce(
-          K::TeamThreadRange(team_member, N_X),
+          K::TeamThreadRange(team_member, n_x),
           [=](const int X, decltype(vis_array)& vis_array_l) {
-            auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
+            auto phi_X = vis.m_phi0[0] + (X + cf_min[0]) * vis.m_dphi[0];
             // loop over grid Y
-            for (int Y = 0; Y < N_Y; ++Y) {
-              auto screen = cphase<execution_space>(-phi_X - phi_Y(Y));
+            for (int Y = 0; Y < n_y; ++Y) {
+              auto screen =
+                cphase<execution_space>(-phi_X - phi_Y(Y + cf_min[1]));
               const auto mv = model_vis(X, Y, gpol) * screen;
               // loop over visibility polarizations
               for (int vpol = 0; vpol < N; ++vpol) {
@@ -768,25 +799,30 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     vis_t vis(
       visibility,
       visibility.m_values,
-      m_grid_planes_size,
+      m_grid_min_local,
+      m_grid_size_global,
       m_grid_scale,
       m_cf_radii,
       m_oversampling);
     poln_array_type<visibility_fp_t, N> gvis;
-    if (does_overlap_grid_section(vis, m_grid_planes_size)) {
+    if (does_overlap_grid_plane_section(vis, m_grid_size_local)) {
       auto phscr =
         scratch_phscr_view(
           team_member.team_scratch(0),
           m_max_cf_extent_y);
+      // compute the values of the phase screen along the Y axis now and store the
+      // results in scratch memory because gridding on the Y axis accesses the phase
+      // screen values for every row of the Mueller matrix column
       compute_phase_screen(team_member, vis, phscr);
       for (int j = m_viswgt_row_index(i); j < m_viswgt_row_index(i + 1); ++j) {
-        if (m_grid_channel_slice[0] <= m_viswgt_col_index(j)
-            && m_viswgt_col_index(j) < m_grid_channel_slice[1]) {
+        if (does_overlap_grid_channel_section(
+              m_viswgt_col_index(j) - m_grid_min_local[int(GridAxis::channel)],
+              m_grid_size_local)) {
           auto v =
             degrid_vis(
               team_member,
               vis,
-              m_viswgt_col_index(j) - m_grid_channel_slice[0],
+              m_viswgt_col_index(j) - m_grid_min_local[int(GridAxis::channel)],
               m_cfs[vis.m_cf_grp],
               m_mueller_indexes,
               m_conjugate_mueller_indexes,
@@ -950,8 +986,23 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const GridWeightView& grid_weights,
     const scratch_phscr_view& phi_Y) {
 
-    const auto& N_X = vis.m_cf_size[0];
-    const auto& N_Y = vis.m_cf_size[1];
+    const auto min_x = std::max(0, vis.m_grid_coord[0]);
+    const auto max_x =
+      std::min(
+        vis.m_grid_coord[0] + vis.m_cf_size[0],
+        grid.extent_int(int(GridAxis::x)));
+    const auto n_x = max_x - min_x;
+    const auto min_y = std::max(0, vis.m_grid_coord[1]);
+    const auto max_y =
+      std::min(
+        vis.m_grid_coord[1] + vis.m_cf_size[1],
+        grid.extent_int(int(GridAxis::y)));
+    const auto n_y = max_y - min_y;
+
+    const K::Array<int, 2> cf_min{
+      vis.m_cf_major[0] + min_x - vis.m_grid_coord[0],
+      vis.m_cf_major[1] + min_y - vis.m_grid_coord[1]};
+    const K::Array<int, 2> grid_min{min_x, min_y};
 
     auto gridding_mindex =
       K::subview(
@@ -964,8 +1015,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     auto cf_vis =
       K::subview(
         cf,
-        K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
-        K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+        K::pair<int, int>(cf_min[0], cf_min[0] + n_x),
+        K::pair<int, int>(cf_min[1], cf_min[1] + n_y),
         K::ALL,
         vis.m_cf_channel,
         vis.m_cf_minor[0],
@@ -976,8 +1027,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     auto grd_vis =
       K::subview(
         grid,
-        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        K::pair<int, int>(grid_min[0], grid_min[0] + n_x),
+        K::pair<int, int>(grid_min[1], grid_min[1] + n_y),
         gpol,
         grid_channel);
 
@@ -985,13 +1036,13 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     poln_array_type<typename acc_cf_value_t::value_type, N> grid_wgt;
     // parallel loop over grid X
     K::parallel_reduce(
-      K::TeamThreadRange(team_member, N_X),
+      K::TeamThreadRange(team_member, n_x),
       [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
-        auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
+        auto phi_X = vis.m_phi0[0] + (X + cf_min[0]) * vis.m_dphi[0];
         // loop over grid Y
-        for (int Y = 0; Y < N_Y; ++Y) {
+        for (int Y = 0; Y < n_y; ++Y) {
           const auto wgt_screen =
-            viswgt * cphase<execution_space>(phi_X + phi_Y(Y));
+            viswgt * cphase<execution_space>(phi_X + phi_Y(Y + cf_min[1]));
           grid_value_t gv(0);
           // loop over visibility polarizations
           for (int vpol = 0; vpol < N; ++vpol) {
@@ -1031,8 +1082,23 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const GridView& grid,
     const scratch_phscr_view& phi_Y) {
 
-    const auto& N_X = vis.m_cf_size[0];
-    const auto& N_Y = vis.m_cf_size[1];
+    const auto min_x = std::max(0, vis.m_grid_coord[0]);
+    const auto max_x =
+      std::min(
+        vis.m_grid_coord[0] + vis.m_cf_size[0],
+        grid.extent_int(int(GridAxis::x)));
+    const auto n_x = max_x - min_x;
+    const auto min_y = std::max(0, vis.m_grid_coord[1]);
+    const auto max_y =
+      std::min(
+        vis.m_grid_coord[1] + vis.m_cf_size[1],
+        grid.extent_int(int(GridAxis::y)));
+    const auto n_y = max_y - min_y;
+
+    const K::Array<int, 2> cf_min{
+      vis.m_cf_major[0] + min_x - vis.m_grid_coord[0],
+      vis.m_cf_major[1] + min_y - vis.m_grid_coord[1]};
+    const K::Array<int, 2> grid_min{min_x, min_y};
 
     auto gridding_mindex =
       K::subview(
@@ -1045,8 +1111,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     auto cf_vis =
       K::subview(
         cf,
-        K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
-        K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+        K::pair<int, int>(cf_min[0], cf_min[0] + n_x),
+        K::pair<int, int>(cf_min[1], cf_min[1] + n_y),
         K::ALL,
         vis.m_cf_channel,
         vis.m_cf_minor[0],
@@ -1057,20 +1123,20 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     auto grd_vis =
       K::subview(
         grid,
-        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        K::pair<int, int>(grid_min[0], grid_min[0] + n_x),
+        K::pair<int, int>(grid_min[1], grid_min[1] + n_y),
         gpol,
         grid_channel);
 
     // parallel loop over grid X
     K::parallel_for(
-      K::TeamThreadRange(team_member, N_X),
+      K::TeamThreadRange(team_member, n_x),
       [=](const int X) {
-        auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
+        auto phi_X = vis.m_phi0[0] + (X + cf_min[0]) * vis.m_dphi[0];
         // loop over grid Y
-        for (int Y = 0; Y < N_Y; ++Y) {
+        for (int Y = 0; Y < n_y; ++Y) {
           const auto wgt_screen =
-            viswgt * cphase<execution_space>(phi_X + phi_Y(Y));
+            viswgt * cphase<execution_space>(phi_X + phi_Y(Y + cf_min[1]));
           grid_value_t gv(0);
           // loop over visibility polarizations
           for (int vpol = 0; vpol < N; ++vpol) {
@@ -1096,24 +1162,29 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     vis_t vis(
       m_visibilities(i),
       reinterpret_cast<K::Array<visibility_t, N>&>(m_gvisbuff(i).vals),
-      m_grid_planes_size,
+      m_grid_min_local,
+      m_grid_size_global,
       m_grid_scale,
       m_cf_radii,
       m_oversampling);
     // skip this visibility if all of the updated grid points are not
     // within grid plane bounds
-    if (does_overlap_grid_section(vis, m_grid_planes_size)) {
+    if (does_overlap_grid_plane_section(vis, m_grid_size_local)) {
       auto phscr =
         scratch_phscr_view(
           team_member.team_scratch(0),
           m_max_cf_extent_y);
+      // compute the values of the phase screen along the Y axis now and store the
+      // results in scratch memory because gridding on the Y axis accesses the phase
+      // screen values for every row of the Mueller matrix column
       compute_phase_screen(team_member, vis, phscr);
       for (int j = m_viswgt_row_index(i); j < m_viswgt_row_index(i + 1); ++j)
-        if (m_grid_channel_slice[0] <= m_viswgt_col_index(j)
-            && m_viswgt_col_index(j) < m_grid_channel_slice[1])
+        if (does_overlap_grid_channel_section(
+              m_viswgt_col_index(j) - m_grid_min_local[int(GridAxis::channel)],
+              m_grid_size_local))
           grid_one(
             vis,
-            m_viswgt_col_index(j) - m_grid_channel_slice[0],
+            m_viswgt_col_index(j) - m_grid_min_local[int(GridAxis::channel)],
             m_viswgts(j),
             gpol,
             m_cfs[vis.m_cf_grp],
@@ -1240,7 +1311,8 @@ struct /*HPG_EXPORT*/ GridNormalizer final {
     && int(GridAxis::mrow) == 2
     && int(GridAxis::channel) == 3);
   static_assert(
-    GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::channel == 1);
+    int(GridWeightAxis::mrow) == 0
+    && int(GridWeightAxis::channel) == 1);
 
   using grid_weight_const_view_t = typename GridWeightView::const_type;
   using grid_value_t = typename GridView::non_const_value_type;

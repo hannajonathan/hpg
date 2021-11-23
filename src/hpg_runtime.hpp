@@ -67,16 +67,16 @@ struct /*HPG_EXPORT*/ State {
   max_avg_channels_per_vis() const noexcept = 0;
 
   virtual std::array<unsigned, 4>
-  grid_size() const noexcept = 0;
+  grid_size_global() const noexcept = 0;
+
+  virtual std::array<unsigned, 4>
+  grid_size_local() const noexcept = 0;
+
+  virtual std::array<unsigned, 4>
+  grid_offset_local() const noexcept = 0;
 
   virtual std::array<grid_scale_fp, 2>
   grid_scale() const noexcept = 0;
-
-  virtual unsigned
-  grid_channel_offset() const noexcept = 0;
-
-  virtual unsigned
-  grid_channel_size() const noexcept = 0;
 
   virtual unsigned
   num_polarizations() const noexcept = 0;
@@ -764,7 +764,9 @@ public:
                                        gridding kernel at once */
   size_t m_max_avg_channels_per_vis; /**< max avg number of channel indexes for
                                           gridding */
-  std::array<unsigned, 4> m_grid_size; /**< grid size */
+  K::Array<int, 4> m_grid_size_global; /**< global grid size */
+  K::Array<int, 4> m_grid_size_local; /**< local grid size */
+  K::Array<int, 4> m_grid_offset_local; /**< local grid offset*/
   K::Array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
   unsigned m_num_polarizations; /**< number of visibility polarizations */
   std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
@@ -819,10 +821,20 @@ public:
       std::min(max_active_tasks, device_traits::active_task_limit))
     , m_visibility_batch_size(visibility_batch_size)
     , m_max_avg_channels_per_vis(max_avg_channels_per_vis)
-    , m_grid_size(grid_size)
+    , m_grid_offset_local({0, 0, 0, 0})
     , m_grid_scale({grid_scale[0], grid_scale[1]})
     , m_num_polarizations(mueller_indexes.m_npol)
     , m_implementation_versions(implementation_versions) {
+
+    m_grid_size_global[int(impl::core::GridAxis::x)] =
+      grid_size[int(GridValueArray::Axis::x)];
+    m_grid_size_global[int(impl::core::GridAxis::y)] =
+      grid_size[int(GridValueArray::Axis::y)];
+    m_grid_size_global[int(impl::core::GridAxis::mrow)] =
+      grid_size[int(GridValueArray::Axis::mrow)];
+    m_grid_size_global[int(impl::core::GridAxis::channel)] =
+      grid_size[int(GridValueArray::Axis::channel)];
+    m_grid_size_local = m_grid_size_global;
 
     init_state(init_cf_shape);
     m_mueller_indexes =
@@ -837,7 +849,9 @@ public:
     , m_max_active_tasks(st.m_max_active_tasks)
     , m_visibility_batch_size(st.m_visibility_batch_size)
     , m_max_avg_channels_per_vis(st.m_max_avg_channels_per_vis)
-    , m_grid_size(st.m_grid_size)
+    , m_grid_size_global(st.m_grid_size_global)
+    , m_grid_size_local(st.m_grid_size_local)
+    , m_grid_offset_local(st.m_grid_offset_local)
     , m_grid_scale(st.m_grid_scale)
     , m_num_polarizations(st.m_num_polarizations)
     , m_implementation_versions(st.m_implementation_versions) {
@@ -856,7 +870,9 @@ public:
     m_max_active_tasks = std::move(st).m_max_active_tasks;
     m_visibility_batch_size = std::move(st).m_visibility_batch_size;
     m_max_avg_channels_per_vis = std::move(st).m_max_avg_channels_per_vis;
-    m_grid_size = std::move(st).m_grid_size;
+    m_grid_size_global = std::move(st).m_grid_size_global;
+    m_grid_size_local = std::move(st).m_grid_size_local;
+    m_grid_offset_local = std::move(st).m_grid_offset_local;
     m_grid_scale = std::move(st).m_grid_scale;
     m_num_polarizations = std::move(st).m_num_polarizations;
     m_implementation_versions = std::move(st).m_implementation_versions;
@@ -961,23 +977,49 @@ public:
   }
 
   std::array<unsigned, 4>
-  grid_size() const noexcept override {
-    return m_grid_size;
+  grid_size_global() const noexcept override {
+    std::array<unsigned, 4> result;
+    result[int(GridValueArray::Axis::x)] =
+      m_grid_size_global[int(impl::core::GridAxis::x)];
+    result[int(GridValueArray::Axis::y)]=
+      m_grid_size_global[int(impl::core::GridAxis::y)];
+    result[int(GridValueArray::Axis::mrow)]=
+      m_grid_size_global[int(impl::core::GridAxis::mrow)];
+    result[int(GridValueArray::Axis::channel)]=
+      m_grid_size_global[int(impl::core::GridAxis::channel)];
+    return result;
+  }
+
+  std::array<unsigned, 4>
+  grid_size_local() const noexcept override {
+    std::array<unsigned, 4> result;
+    result[int(GridValueArray::Axis::x)] =
+      m_grid_size_local[int(impl::core::GridAxis::x)];
+    result[int(GridValueArray::Axis::y)]=
+      m_grid_size_local[int(impl::core::GridAxis::y)];
+    result[int(GridValueArray::Axis::mrow)]=
+      m_grid_size_local[int(impl::core::GridAxis::mrow)];
+    result[int(GridValueArray::Axis::channel)]=
+      m_grid_size_local[int(impl::core::GridAxis::channel)];
+    return result;
+  }
+
+  std::array<unsigned, 4>
+  grid_offset_local() const noexcept override {
+    std::array<unsigned, 4> result;
+    result[int(GridValueArray::Axis::x)] =
+      m_grid_offset_local[int(impl::core::GridAxis::x)];
+    result[int(GridValueArray::Axis::y)]=
+      m_grid_offset_local[int(impl::core::GridAxis::y)];
+    result[int(GridValueArray::Axis::mrow)]=
+      m_grid_offset_local[int(impl::core::GridAxis::mrow)];
+    result[int(GridValueArray::Axis::channel)]=
+      m_grid_offset_local[int(impl::core::GridAxis::channel)];
   }
 
   std::array<grid_scale_fp, 2>
   grid_scale() const noexcept override {
     return {m_grid_scale[0], m_grid_scale[1]};
-  }
-
-  unsigned
-  grid_channel_offset() const noexcept override {
-    return 0;
-  }
-
-  unsigned
-  grid_channel_size() const noexcept override {
-    return unsigned(m_grid_size[int(impl::core::GridAxis::channel)]);
   }
 
   unsigned
@@ -1011,10 +1053,10 @@ public:
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       auto extents = cf_array.extents(grp);
       if ((extents[CFArray::Axis::x] >
-           m_grid_size[int(impl::core::GridAxis::x)]
+           m_grid_size_local[int(impl::core::GridAxis::x)]
            * cf_array.oversampling())
           || (extents[CFArray::Axis::y] >
-              m_grid_size[int(impl::core::GridAxis::y)]
+              m_grid_size_local[int(impl::core::GridAxis::y)]
               * cf_array.oversampling()))
         return std::make_unique<CFSupportExceedsGridError>();
     }
@@ -1034,25 +1076,32 @@ public:
 
   virtual std::optional<std::unique_ptr<Error>>
   set_model(Device host_device, GridValueArray&& gv) override {
-    std::array<unsigned, 4>
-      model_sz{gv.extent(0), gv.extent(1), gv.extent(2), gv.extent(3)};
-    if (m_grid_size != model_sz)
-      return std::make_unique<InvalidModelGridSizeError>(model_sz, m_grid_size);
+    K::Array<int, 4> model_sz;
+    model_sz[int(impl::core::GridAxis::x)] =
+      gv.extent(unsigned(GridValueArray::Axis::x));
+    model_sz[int(impl::core::GridAxis::y)] =
+      gv.extent(unsigned(GridValueArray::Axis::y));
+    model_sz[int(impl::core::GridAxis::mrow)] =
+      gv.extent(unsigned(GridValueArray::Axis::mrow));
+    model_sz[int(impl::core::GridAxis::channel)] =
+      gv.extent(unsigned(GridValueArray::Axis::channel));
+    if (m_grid_size_local[0] != model_sz[0]
+        || m_grid_size_local[1] != model_sz[1]
+        || m_grid_size_local[2] != model_sz[2]
+        || m_grid_size_local[3] != model_sz[3])
+      return
+        std::make_unique<InvalidModelGridSizeError>(
+          model_sz,
+          m_grid_size_local);
 
     fence();
     auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
 
-    if (!m_model.is_allocated()) {
-      std::array<int, 4> ig{
-        int(m_grid_size[0]),
-        int(m_grid_size[1]),
-        int(m_grid_size[2]),
-        int(m_grid_size[3])};
+    if (!m_model.is_allocated())
       m_model =
         decltype(m_model)(
           K::ViewAllocateWithoutInitializing("model"),
-          grid_layout::dimensions(ig));
-    }
+          grid_layout::dimensions(m_grid_size_local));
 
     try {
       impl::GridValueViewArray<D> gvv =
@@ -1122,7 +1171,8 @@ public:
         m_grid,
         m_grid_weights,
         m_model,
-        grid_channel_offset());
+        m_grid_offset_local,
+        m_grid_size_global);
 
     if (do_degrid) {
       gridder.degrid_all();
@@ -1474,15 +1524,10 @@ public:
         typename
           impl::grid_view<typename grid_layout::layout, memory_space>
           ::const_type pre_model = m_model;
-        std::array<int, 4> ig{
-          int(m_grid_size[0]),
-          int(m_grid_size[1]),
-          int(m_grid_size[2]),
-          int(m_grid_size[3])};
         m_model =
           decltype(m_model)(
             K::ViewAllocateWithoutInitializing("grid"),
-            grid_layout::dimensions(ig));
+            grid_layout::dimensions(m_grid_size_local));
         switch (fft_version()) {
         case 0:
           err =
@@ -1543,7 +1588,9 @@ protected:
     std::swap(
       m_max_avg_channels_per_vis,
       other.m_max_avg_channels_per_vis);
-    std::swap(m_grid_size, other.m_grid_size);
+    std::swap(m_grid_size_global, other.m_grid_size_global);
+    std::swap(m_grid_size_local, other.m_grid_size_local);
+    std::swap(m_grid_offset_local, other.m_grid_offset_local);
     std::swap(m_grid_scale, other.m_grid_scale);
     std::swap(m_implementation_versions, other.m_implementation_versions);
 
@@ -1659,15 +1706,10 @@ protected:
         cf.state = this;
       }
       if (ost->m_model.is_allocated()) {
-        std::array<int, 4> ig{
-          int(m_grid_size[0]),
-          int(m_grid_size[1]),
-          int(m_grid_size[2]),
-          int(m_grid_size[3])};
         m_model =
           decltype(m_model)(
             K::ViewAllocateWithoutInitializing("model"),
-            grid_layout::dimensions(ig));
+            grid_layout::dimensions(m_grid_size_local));
         K::deep_copy(m_exec_spaces[0].space, m_model, ost->m_model);
       }
     }
@@ -1778,23 +1820,18 @@ protected:
     // in the following, we don't call next_exec_space() except when a stream is
     // required, as there are code paths that never use a stream, and thus we
     // can avoid unnecessary stream switches
-    std::array<int, 4> ig{
-      int(m_grid_size[0]),
-      int(m_grid_size[1]),
-      int(m_grid_size[2]),
-      int(m_grid_size[3])};
     if (create_without_init)
       m_grid =
         decltype(m_grid)(
           K::ViewAllocateWithoutInitializing("grid"),
-          grid_layout::dimensions(ig));
+          grid_layout::dimensions(m_grid_size_local));
     else
       m_grid =
         decltype(m_grid)(
           K::view_alloc(
             "grid",
             m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
-          grid_layout::dimensions(ig));
+          grid_layout::dimensions(m_grid_size_local));
 #ifndef NDEBUG
     std::cout << "alloc grid sz " << m_grid.extent(0)
               << " " << m_grid.extent(1)
@@ -1809,22 +1846,23 @@ protected:
 #endif // NDEBUG
 
     static_assert(
-      GridWeightArray::Axis::mrow == 0 && GridWeightArray::Axis::channel == 1);
+      int(impl::core::GridWeightAxis::mrow) == 0
+      && int(impl::core::GridWeightAxis::channel) == 1);
     if (also_weights) {
       if (create_without_init)
         m_grid_weights =
           decltype(m_grid_weights)(
             K::ViewAllocateWithoutInitializing("grid_weights"),
-            int(m_grid_size[int(impl::core::GridAxis::mrow)]),
-            int(m_grid_size[int(impl::core::GridAxis::channel)]));
+            int(m_grid_size_local[int(impl::core::GridAxis::mrow)]),
+            int(m_grid_size_local[int(impl::core::GridAxis::channel)]));
       else
         m_grid_weights =
           decltype(m_grid_weights)(
             K::view_alloc(
               "grid_weights",
               m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
-            int(m_grid_size[int(impl::core::GridAxis::mrow)]),
-            int(m_grid_size[int(impl::core::GridAxis::channel)]));
+            int(m_grid_size_local[int(impl::core::GridAxis::mrow)]),
+            int(m_grid_size_local[int(impl::core::GridAxis::channel)]));
     }
     if (std::holds_alternative<const StateT*>(source)) {
       auto st = std::get<const StateT*>(source);
