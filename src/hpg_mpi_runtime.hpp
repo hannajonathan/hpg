@@ -757,13 +757,17 @@ public:
       &reqs[3]);
     MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
 
+    int replica_size;
+    MPI_Comm_size(m_replica_comm, &replica_size);
+    int replica_rank;
+    MPI_Comm_rank(m_replica_comm, &replica_rank);
+
     // determine whether any visibility is being mapped to grid channels in
     // multiple (> 1) ranks of the grid partition (can be skipped if not
     // degridding)
     bool non_local_channel_mapping;
     if (non_trivial_grid_partition() && do_degrid) {
-      std::vector<int> num_ranks_mapped;
-      num_ranks_mapped.reserve(len[0]);
+      std::vector<int> num_ranks_mapped(len[0]);
       // The following has the benefit of depending only on local data on every
       // rank, but it comes at the cost of a call to MPI_Allreduce();
       // alternatives may be considered if this design presents a performance
@@ -771,14 +775,14 @@ public:
       // MPI_Allreduce after degridding but it comes at the expense of always
       // calling MPI_Allreduce here. Assuming that the post-degridding call to
       // MPI_Allreduce is slower than this one is reasonable, but not verified.
-      for (size_t i = 0; i < len[0]; ++i)
-        num_ranks_mapped.push_back(
-          std::any_of(
+      for (size_t i = replica_rank; i < len[0]; i += replica_size)
+        num_ranks_mapped[i] =
+          (std::any_of(
             &wgt_col_index[wgt_row_index[i]],
             &wgt_col_index[wgt_row_index[i + 1]],
             [this](auto& c) { return in_grid_channel_slice(c); })
-          ? 1
-          : 0);
+           ? 1
+           : 0);
       MPI_Allreduce(
         MPI_IN_PLACE,
         num_ranks_mapped.data(),
@@ -811,6 +815,10 @@ public:
       this->m_exec_spaces[this->next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(this->m_cfs[this->m_cf_indexes.front()]);
     auto& gvisbuff = exec_grid.gvisbuff;
+    K::deep_copy(
+      exec_grid.space,
+      gvisbuff,
+      typename std::remove_reference_t<decltype(gvisbuff)>::value_type());
 
     auto gridder =
       impl::core::VisibilityGridder(
@@ -822,6 +830,8 @@ public:
         this->m_mueller_indexes,
         this->m_conjugate_mueller_indexes,
         len[0],
+        replica_rank,
+        replica_size,
         exec_grid.template visdata<N>(),
         exec_grid.weight_values,
         exec_grid.weight_col_index,

@@ -1158,6 +1158,11 @@ public:
 
     auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
+    auto& gvisbuff = exec_grid.gvisbuff;
+    K::deep_copy(
+      exec_grid.space,
+      gvisbuff,
+      typename std::remove_reference_t<decltype(gvisbuff)>::value_type());
 
     auto gridder =
       impl::core::VisibilityGridder(
@@ -1169,11 +1174,13 @@ public:
         m_mueller_indexes,
         m_conjugate_mueller_indexes,
         len,
+        0,
+        1,
         exec_grid.template visdata<N>(),
         exec_grid.weight_values,
         exec_grid.weight_col_index,
         exec_grid.weight_row_index,
-        exec_grid.gvisbuff,
+        gvisbuff,
         m_grid_scale,
         m_grid,
         m_grid_weights,
