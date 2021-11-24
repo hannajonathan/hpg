@@ -1068,17 +1068,6 @@ public:
   virtual std::optional<std::unique_ptr<Error>>
   set_convolution_function(Device host_device, CFArray&& cf_array) override {
 
-    for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
-      auto extents = cf_array.extents(grp);
-      if ((extents[CFArray::Axis::x] >
-           m_grid_size_local[int(impl::core::GridAxis::x)]
-           * cf_array.oversampling())
-          || (extents[CFArray::Axis::y] >
-              m_grid_size_local[int(impl::core::GridAxis::y)]
-              * cf_array.oversampling()))
-        return std::make_unique<CFSupportExceedsGridError>();
-    }
-
     switch_cf_pool();
     auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);

@@ -91,19 +91,6 @@ struct InvalidModelGridSizeError
   }
 };
 
-/** CF support exceeds grid size error
- *
- * CF support exceeds size of grid
- */
-struct CFSupportExceedsGridError
-  : public Error {
-
-  CFSupportExceedsGridError()
-    : Error(
-      "CF support size exceeds grid size",
-      ErrorType::CFSupportExceedsGrid) {}
-};
-
 namespace runtime::impl {
 
 namespace K = Kokkos;

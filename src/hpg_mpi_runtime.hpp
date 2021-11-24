@@ -529,30 +529,6 @@ public:
     // N.B: access cf_array directly only at the root rank of m_grid_comm
     bool is_root = is_grid_partition_root();
 
-    // check that cf_array support isn't larger than grid
-    //
-    // FIXME: probably don't need this check
-    {
-      bool exceeds_grid = false;
-      if (is_root) {
-        for (unsigned grp = 0;
-             !exceeds_grid && grp < cf_array.num_groups();
-             ++grp) {
-          auto extents = cf_array.extents(grp);
-          if ((extents[CFArray::Axis::x] >
-               this->m_grid_size_local[int(impl::core::GridAxis::x)]
-               * cf_array.oversampling())
-              || (extents[CFArray::Axis::y] >
-                  this->m_grid_size_local[int(impl::core::GridAxis::y)]
-                  * cf_array.oversampling()))
-            exceeds_grid = true;
-        }
-      }
-      MPI_Bcast(&exceeds_grid, 1, mpi_datatype<bool>(), 0, m_grid_comm);
-      if (exceeds_grid)
-        return std::make_unique<CFSupportExceedsGridError>();
-    }
-
     // Broadcast the cf_array in m_grid_comm, but as the equivalent of a
     // impl::DeviceCFArray for efficiency. Note that we broadcast the data among
     // host memories, which allows us to defer any device fence for as long as

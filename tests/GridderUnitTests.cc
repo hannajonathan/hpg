@@ -419,34 +419,6 @@ TEST(Gridder, CF) {
     auto oerr1 = g.set_convolution_function(default_host_device, std::move(cf));
     EXPECT_FALSE(bool(oerr1));
   }
-  {
-    // X dimension too large
-    const std::array<unsigned, 4> cf_size{8, 3, 3, 3};
-    auto oerr =
-      hpg::Gridder(g).set_convolution_function(
-        default_host_device,
-        create_cf(10, {cf_size}, rng));
-    EXPECT_TRUE(bool(oerr));
-  }
-  {
-    // Y dimension too large
-    const std::array<unsigned, 4> cf_size{3, 8, 4, 3};
-    auto oerr =
-      hpg::Gridder(g).set_convolution_function(
-        default_host_device,
-        create_cf(10, {cf_size}, rng));
-    EXPECT_TRUE(bool(oerr));
-  }
-  {
-    // error in one of a list of CFs
-    const std::vector<std::array<unsigned, 4>>
-      cf_sizes{{3, 3, 3, 3}, {8, 3, 3, 3}, {2, 2, 2, 2}};
-    auto oerr =
-      hpg::Gridder(g).set_convolution_function(
-        default_host_device,
-        create_cf(10, cf_sizes, rng));
-    EXPECT_TRUE(bool(oerr));
-  }
 }
 
 // test that Gridder::reset_grid() correctly resets grid weights and values
