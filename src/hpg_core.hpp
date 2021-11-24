@@ -567,6 +567,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   mindex_const_view m_mueller_indexes;
   mindex_const_view m_conjugate_mueller_indexes;
   int m_num_visibilities;
+  int m_visibility_offset;
+  int m_visibility_inc;
   VisdataView m_visibilities;
   viswgt_const_view m_viswgts;
   viswgt_col_index_const_view m_viswgt_col_index;
@@ -596,6 +598,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const MIndexView& mueller_indexes,
     const MIndexView& conjugate_mueller_indexes,
     int num_visibilities,
+    int visibility_offset,
+    int visibility_inc,
     const VisdataView& visibilities,
     const VisWgtValuesView& viswgts,
     const VisWgtColIndexView& viswgt_col_index,
@@ -614,6 +618,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   , m_conjugate_mueller_indexes(conjugate_mueller_indexes)
   , m_num_visibilities(num_visibilities)
   , m_visibilities(visibilities)
+  , m_visibility_offset(visibility_offset)
+  , m_visibility_inc(visibility_inc)
   , m_viswgts(viswgts)
   , m_viswgt_col_index(viswgt_col_index)
   , m_viswgt_row_index(viswgt_row_index)
@@ -787,13 +793,17 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   int
   league_size(const DegridAll&) const {
-    return m_num_visibilities;
+    return
+      m_num_visibilities / m_visibility_inc
+      + (((m_num_visibilities % m_visibility_inc) < m_visibility_offset)
+         ? 1
+         : 0);
   }
 
   KOKKOS_INLINE_FUNCTION void
   operator()(const DegridAll&, const member_type& team_member) const {
 
-    auto i = team_member.league_rank();
+    auto i = team_member.league_rank() * m_visibility_inc + m_visibility_offset;
     auto& visibility = m_visibilities(i);
 
     vis_t vis(
@@ -831,8 +841,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
           K::single(K::PerTeam(team_member), [&](){ gvis += v; });
         }
       }
-    } else {
-      K::single(K::PerTeam(team_member), [&](){ gvis.set_nan(); });
     }
     K::single(
       K::PerTeam(team_member),
@@ -865,14 +873,18 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   int
   league_size(const VisCopyResidualAndRescale&) const {
-    return m_num_visibilities;
+    return
+      m_num_visibilities / m_visibility_inc
+      + (((m_num_visibilities % m_visibility_inc) < m_visibility_offset)
+         ? 1
+         : 0);
   }
 
   // compute residual visibilities, prepare values for gridding
   KOKKOS_INLINE_FUNCTION void
   operator()(const VisCopyResidualAndRescale&, const member_type& team_member)
     const {
-    auto i = team_member.league_rank();
+    auto i = team_member.league_rank() * m_visibility_inc + m_visibility_offset;
     auto& vis = m_visibilities(i);
     auto phasor = cphase<execution_space>(vis.m_d_phase);
     auto& gvis = m_gvisbuff(i);
@@ -905,13 +917,17 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   int
   league_size(const VisRescale&) const {
-    return m_num_visibilities;
+    return
+      m_num_visibilities / m_visibility_inc
+      + (((m_num_visibilities % m_visibility_inc) < m_visibility_offset)
+         ? 1
+         : 0);
   }
 
   // prepare values for gridding
   KOKKOS_INLINE_FUNCTION void
   operator()(const VisRescale&, const member_type& team_member) const {
-    auto i = team_member.league_rank();
+    auto i = team_member.league_rank() * m_visibility_inc + m_visibility_offset;
     auto& vis = m_visibilities(i);
     auto phasor = cphase<execution_space>(vis.m_d_phase);
     auto& gvis = m_gvisbuff(i);
@@ -943,14 +959,18 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   int
   league_size(const VisCopyPredicted&) const {
-    return m_num_visibilities;
+    return
+      m_num_visibilities / m_visibility_inc
+      + (((m_num_visibilities % m_visibility_inc) < m_visibility_offset)
+         ? 1
+         : 0);
   }
 
   // copy predicted visibilities
   KOKKOS_INLINE_FUNCTION void
   operator()(const VisCopyPredicted&, const member_type& team_member) const {
 
-    auto i = team_member.league_rank();
+    auto i = team_member.league_rank() * m_visibility_inc + m_visibility_offset;
     auto& vis = m_visibilities(i);
     auto& gvis = m_gvisbuff(i);
     K::parallel_for(
@@ -1156,7 +1176,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   for_all_vis_on_grid(const member_type& team_member, const F& grid_one) const {
 
     const auto N_R = m_grid.extent_int(int(GridAxis::mrow));
-    auto i = team_member.league_rank() / N_R;
+    auto i =
+      (team_member.league_rank() / N_R) * m_visibility_inc
+      + m_visibility_offset;
     auto gpol = team_member.league_rank() % N_R;
 
     vis_t vis(
@@ -1174,9 +1196,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
         scratch_phscr_view(
           team_member.team_scratch(0),
           m_max_cf_extent_y);
-      // compute the values of the phase screen along the Y axis now and store the
-      // results in scratch memory because gridding on the Y axis accesses the phase
-      // screen values for every row of the Mueller matrix column
+      // compute the values of the phase screen along the Y axis now and store
+      // the results in scratch memory because gridding on the Y axis accesses
+      // the phase screen values for every row of the Mueller matrix column
       compute_phase_screen(team_member, vis, phscr);
       for (int j = m_viswgt_row_index(i); j < m_viswgt_row_index(i + 1); ++j)
         if (does_overlap_grid_channel_section(
@@ -1202,7 +1224,12 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   int
   league_size(const GridAllNoWeights&) const {
-    return m_grid.extent_int(int(GridAxis::mrow)) * m_num_visibilities;
+    return
+      m_grid.extent_int(int(GridAxis::mrow))
+      * (m_num_visibilities / m_visibility_inc
+         + (((m_num_visibilities % m_visibility_inc) < m_visibility_offset)
+            ? 1
+            : 0));
   }
 
   KOKKOS_INLINE_FUNCTION void
@@ -1252,7 +1279,12 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   int
   league_size(const GridAll&) const {
-    return m_grid.extent_int(int(GridAxis::mrow)) * m_num_visibilities;
+    return
+      m_grid.extent_int(int(GridAxis::mrow))
+      * (m_num_visibilities / m_visibility_inc
+         + (((m_num_visibilities % m_visibility_inc) < m_visibility_offset)
+            ? 1
+            : 0));
   }
 
   KOKKOS_INLINE_FUNCTION void
