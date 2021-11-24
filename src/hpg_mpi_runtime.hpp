@@ -252,10 +252,7 @@ struct /*HPG_EXPORT*/ State
   // visibility partition
   MPI_Comm m_grid_comm;
 
-  // global grid channel indexes for this rank (inclusive at min, exclusive at
-  // max)
-  int m_grid_channel_min;
-  int m_grid_channel_max;
+  MPI_Comm m_replica_comm;
 
   mutable bool m_reduced_grid;
 
@@ -266,27 +263,21 @@ protected:
   State()
     : m_vis_comm(MPI_COMM_NULL)
     , m_grid_comm(MPI_COMM_NULL)
-    , m_grid_channel_min(0)
-    , m_grid_channel_max(0)
+    , m_replica_comm(MPI_COMM_NULL)
     , m_reduced_grid(true)
     , m_reduced_weights(true) {}
 
 public:
 
-  State(
-    MPI_Comm vis_comm,
-    MPI_Comm grid_comm,
-    unsigned grid_channel_offset,
-    unsigned grid_channel_size)
+  State(MPI_Comm vis_comm, MPI_Comm grid_comm, MPI_Comm replica_comm)
     : m_vis_comm(vis_comm)
     , m_grid_comm(grid_comm)
-    , m_grid_channel_min(grid_channel_offset)
-    , m_grid_channel_max(grid_channel_offset + grid_channel_size)
+    , m_replica_comm(replica_comm)
     , m_reduced_grid(true)
     , m_reduced_weights(true) {}
 
   virtual ~State() {
-    for (auto& c : {&m_vis_comm, &m_grid_comm}) {
+    for (auto& c : {&m_vis_comm, &m_grid_comm, &m_replica_comm}) {
       if (*c != MPI_COMM_NULL && *c != MPI_COMM_SELF && *c != MPI_COMM_WORLD)
         MPI_Comm_free(c);
     }
@@ -307,8 +298,10 @@ public:
   }
 
   bool
-  in_grid_channel_slice(int ch) const noexcept {
-    return m_grid_channel_min <= ch && ch < m_grid_channel_max;
+  is_replica_partition_root() const noexcept {
+    int rank;
+    MPI_Comm_rank(m_replica_comm, &rank);
+    return rank == 0;
   }
 };
 
@@ -330,12 +323,21 @@ struct /*HPG_EXPORT*/ StateT
 
   using StreamPhase = ::hpg::runtime::StreamPhase;
 
+  // needed because of conversion from ReplicatedGridBrick array indexes to
+  // GridAxis indexes in constructor
+  static_assert(
+    int(impl::core::GridAxis::x) == 0
+    && int(impl::core::GridAxis::y) == 1
+    && int(impl::core::GridAxis::mrow) == 2
+    && int(impl::core::GridAxis::channel) == 3);
+
 public:
 
   StateT(
     MPI_Comm vis_comm,
     MPI_Comm grid_comm,
-    unsigned grid_channel_offset,
+    const ReplicatedGridBrick& grid_brick,
+    MPI_Comm replica_comm,
     unsigned max_active_tasks,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
@@ -345,44 +347,59 @@ public:
     const IArrayVector& mueller_indexes,
     const IArrayVector& conjugate_mueller_indexes,
     const std::array<unsigned, 4>& implementation_versions)
-    : State(
-      vis_comm,
-      grid_comm,
-      grid_channel_offset,
-      grid_size[int(impl::core::GridAxis::channel)])
+    : State(vis_comm, grid_comm, replica_comm)
     , ::hpg::runtime::StateT<D>(
       max_active_tasks,
       visibility_batch_size,
       max_avg_channels_per_vis,
       init_cf_shape,
       grid_size,
+      {grid_brick.offset[ReplicatedGridBrick::Axis::x],
+       grid_brick.offset[ReplicatedGridBrick::Axis::y],
+       0,
+       grid_brick.offset[ReplicatedGridBrick::Axis::channel]},
+      {grid_brick.size[ReplicatedGridBrick::Axis::x],
+       grid_brick.size[ReplicatedGridBrick::Axis::y],
+       grid_size[GridValueArray::Axis::mrow],
+       grid_brick.size[ReplicatedGridBrick::Axis::channel]},
       grid_scale,
       mueller_indexes,
       conjugate_mueller_indexes,
       implementation_versions) {}
 
   StateT(const StateT& st)
-    : State(
-      MPI_COMM_NULL,
-      MPI_COMM_NULL,
-      st.grid_channel_min,
-      st.grid_channel_max - st.grid_channel_min)
+    : State()
     , ::hpg::runtime::StateT<D>(st) {
 
-    MPI_Comm_dup(st.m_vis_comm, &m_vis_comm);
-    MPI_Comm_dup(st.m_grid_comm, &m_grid_comm);
+    if (st.m_vis_comm != MPI_COMM_NULL) {
+      if (st.m_vis_comm != MPI_COMM_SELF)
+        MPI_Comm_dup(st.m_vis_comm, &m_vis_comm);
+      else
+        m_vis_comm = MPI_COMM_SELF;
+    }
+    if (st.m_grid_comm != MPI_COMM_NULL) {
+      if (st.m_grid_comm != MPI_COMM_SELF)
+        MPI_Comm_dup(st.m_grid_comm, &m_grid_comm);
+      else
+        m_grid_comm = MPI_COMM_SELF;
+    }
+    if (st.m_replica_comm != MPI_COMM_NULL) {
+      if (st.m_replica_comm != MPI_COMM_SELF)
+        MPI_Comm_dup(st.m_replica_comm, &m_replica_comm);
+      else
+        m_replica_comm = MPI_COMM_SELF;
+    }
   }
 
   StateT(StateT&& st) noexcept
     : State()
     , ::hpg::runtime::StateT<D>(std::move(st)) {
 
-    std::swap(m_grid_channel_min, st.m_grid_channel_min);
-    std::swap(m_grid_channel_max, st.m_grid_channel_max);
     std::swap(m_reduced_grid, st.m_reduced_grid);
     std::swap(m_reduced_weights, st.m_reduced_weights);
     std::swap(m_vis_comm, st.m_vis_comm);
     std::swap(m_grid_comm, st.m_grid_comm);
+    std::swap(m_replica_comm, st.m_replica_comm);
   }
 
   virtual ~StateT() {}
@@ -415,23 +432,43 @@ public:
     return size > 1;
   }
 
+  bool
+  non_trivial_replica_partition() const noexcept {
+    int size;
+    MPI_Comm_size(m_replica_comm, &size);
+    return size > 1;
+  }
+
   void
   reduce_weights_unlocked() const {
     if (!m_reduced_weights) {
-      if (non_trivial_visibility_partition()) {
-        auto is_root = is_visibility_partition_root();
+      if (non_trivial_visibility_partition()
+          || non_trivial_replica_partition()) {
+        auto is_root =
+          is_visibility_partition_root() && is_replica_partition_root();
         auto& exec =
           this->m_exec_spaces[
             this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
         exec.fence();
         MPI_Reduce(
-          (is_root ? MPI_IN_PLACE : this->m_grid_weights.data()),
+          (is_visibility_partition_root()
+           ? MPI_IN_PLACE
+           : this->m_grid_weights.data()),
           this->m_grid_weights.data(),
           this->m_grid_weights.span(),
           mpi_datatype<grid_value_fp>(),
           MPI_SUM,
           0,
           m_vis_comm);
+        if (is_visibility_partition_root())
+          MPI_Reduce(
+            (is_root ? MPI_IN_PLACE : this->m_grid_weights.data()),
+            this->m_grid_weights.data(),
+            this->m_grid_weights.span(),
+            mpi_datatype<grid_value_fp>(),
+            MPI_SUM,
+            0,
+            m_replica_comm);
         if (!is_root)
           const_cast<StateT<D>*>(this)->fill_grid_weights(grid_value_fp(0));
       }
@@ -448,20 +485,31 @@ public:
   void
   reduce_grid_unlocked() const {
     if (!m_reduced_grid) {
-      if (non_trivial_visibility_partition()) {
-        auto is_root = is_visibility_partition_root();
+      if (non_trivial_visibility_partition()
+          || non_trivial_replica_partition()) {
+        auto is_root =
+          is_visibility_partition_root() && is_replica_partition_root();
         auto& exec =
           this->m_exec_spaces[
             this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
         exec.fence();
         MPI_Reduce(
-          (is_root ? MPI_IN_PLACE : this->m_grid.data()),
+          (is_visibility_partition_root() ? MPI_IN_PLACE : this->m_grid.data()),
           this->m_grid.data(),
           this->m_grid.span(),
           mpi_datatype<impl::gv_t>(),
           MPI_SUM,
           0,
           m_vis_comm);
+        if (is_visibility_partition_root())
+          MPI_Reduce(
+            (is_root ? MPI_IN_PLACE : this->m_grid.data()),
+            this->m_grid.data(),
+            this->m_grid.span(),
+            mpi_datatype<impl::gv_t>(),
+            MPI_SUM,
+            0,
+            m_replica_comm);
         if (!is_root)
           const_cast<StateT<D>*>(this)->fill_grid(impl::gv_t(0));
       }
@@ -482,6 +530,8 @@ public:
     bool is_root = is_grid_partition_root();
 
     // check that cf_array support isn't larger than grid
+    //
+    // FIXME: probably don't need this check
     {
       bool exceeds_grid = false;
       if (is_root) {
@@ -570,18 +620,27 @@ public:
   virtual std::optional<std::unique_ptr<::hpg::Error>>
   set_model(Device host_device, GridValueArray&& gv) override {
 
-    // N.B: access gv directly only at the root rank of m_vis_comm
-    bool is_vis_root = is_visibility_partition_root();
+    // N.B: access gv directly only at the root rank of m_vis_comm and only in
+    // the root rank of any replicas
+    bool is_root =
+      is_visibility_partition_root() && is_replica_partition_root();
 
     // check that gv size equals that of grid
     {
       K::Array<int, 4> model_sz;
-      if (is_vis_root)
+      if (is_root)
         model_sz = {
           int(gv.extent(0)),
           int(gv.extent(1)),
           int(gv.extent(2)),
           int(gv.extent(3))};
+      if (is_visibility_partition_root())
+        MPI_Bcast(
+          model_sz.data(),
+          4,
+          mpi_datatype<unsigned>(),
+          0,
+          m_replica_comm);
       MPI_Bcast(
         model_sz.data(),
         4,
@@ -610,7 +669,7 @@ public:
 
     // copy the model to device memory on the root rank, then broadcast it to
     // the other ranks
-    if (is_vis_root) {
+    if (is_root) {
       using GVVArray = typename impl::GridValueViewArray<D>;
       GVVArray gvv;
       try {
@@ -634,10 +693,17 @@ public:
         }
       }
       K::deep_copy(exec.space, this->m_model, gvv.grid);
-      if (non_trivial_visibility_partition())
+      if (non_trivial_visibility_partition() || non_trivial_replica_partition())
         exec.fence();
     }
     // broadcast the model values
+    if (is_visibility_partition_root())
+      MPI_Bcast(
+        this->m_model.data(),
+        this->m_model.span(),
+        mpi_datatype<impl::gv_t>(),
+        0,
+        m_replica_comm);
     MPI_Bcast(
       this->m_model.data(),
       this->m_model.span(),
@@ -646,6 +712,15 @@ public:
       m_vis_comm);
 
     return std::nullopt;
+  }
+
+  bool
+  in_grid_channel_slice(int ch) const noexcept {
+    return
+      (this->m_grid_offset_local[int(impl::core::GridAxis::channel)] <= ch)
+      && (ch
+          < (this->m_grid_offset_local[int(impl::core::GridAxis::channel)]
+             + this->m_grid_size_local[int(impl::core::GridAxis::channel)]));
   }
 
   template <unsigned N>
@@ -951,7 +1026,7 @@ public:
   grid_weights() const override {
     std::scoped_lock lock(this->m_mtx);
     reduce_weights_unlocked();
-    if (is_visibility_partition_root()) {
+    if (is_visibility_partition_root() && is_replica_partition_root()) {
       auto& exec =
         this->m_exec_spaces[
           this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
@@ -968,7 +1043,7 @@ public:
   grid_values() const override {
     std::scoped_lock lock(this->m_mtx);
     reduce_grid_unlocked();
-    if (is_visibility_partition_root()) {
+    if (is_visibility_partition_root() && is_replica_partition_root()) {
       auto& exec =
         this->m_exec_spaces[
           this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
@@ -985,7 +1060,7 @@ public:
   model_values() const override {
     std::scoped_lock lock(this->m_mtx);
     this->fence_unlocked();
-    if (is_visibility_partition_root()) {
+    if (is_visibility_partition_root() && is_replica_partition_root()) {
       if (this->m_model.is_allocated()) {
         auto& exec =
           this->m_exec_spaces[
@@ -1019,7 +1094,7 @@ public:
   normalize_by_weights(grid_value_fp wfactor) override {
     reduce_weights();
     reduce_grid();
-    if (is_visibility_partition_root()) {
+    if (is_visibility_partition_root() && is_replica_partition_root()) {
       auto& exec =
         this->m_exec_spaces[
           this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
@@ -1037,7 +1112,7 @@ public:
   apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) override {
     reduce_grid();
     std::optional<std::unique_ptr<::hpg::Error>> err;
-    if (is_visibility_partition_root()) {
+    if (is_visibility_partition_root() && is_replica_partition_root()) {
       auto& exec =
         this->m_exec_spaces[
           this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
@@ -1095,8 +1170,7 @@ protected:
       static_cast<::hpg::runtime::StateT<D>&>(other));
     std::swap(m_vis_comm, other.m_vis_comm);
     std::swap(m_grid_comm, other.m_grid_comm);
-    std::swap(m_grid_channel_min, other.m_grid_channel_min);
-    std::swap(m_grid_channel_max, other.m_grid_channel_max);
+    std::swap(m_replica_comm, other.m_replica_comm);
     std::swap(m_reduced_grid, other.m_reduced_grid);
     std::swap(m_reduced_weights, other.m_reduced_weights);
   }

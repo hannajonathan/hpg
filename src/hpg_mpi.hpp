@@ -27,13 +27,8 @@ namespace hpg::mpi {
 /** MPI error types
  */
 enum class HPG_EXPORT ErrorType {
-  InvalidTopology,
-  InvalidCartesianRank,
-  IdenticalPartitionIndex,
-  InvalidPartitionIndex,
+  InvalidCommunicatorSize,
   NullCommunicator,
-  InvalidPartitionSize,
-  InvalidGroupSize,
   Other
 };
 
@@ -60,29 +55,10 @@ public:
   virtual ~Error();
 };
 
-
-struct InvalidTopologyError
+struct InvalidCommunicatorSizeError
   : public Error {
 
-  InvalidTopologyError();
-};
-
-struct InvalidCartesianRankError
-  : public Error {
-
-  InvalidCartesianRankError();
-};
-
-struct IdenticalPartitionIndexError
-  : public Error {
-
-  IdenticalPartitionIndexError();
-};
-
-struct InvalidPartitionIndexError
-  : public Error {
-
-  InvalidPartitionIndexError();
+  InvalidCommunicatorSizeError();
 };
 
 struct NullCommunicatorError
@@ -91,16 +67,22 @@ struct NullCommunicatorError
   NullCommunicatorError();
 };
 
-struct InvalidPartitionSizeError
-  : public Error {
+struct ReplicatedGridBrick {
+  // three axes are x, y, and channel; mrow partition not supported
+  static constexpr unsigned rank = 3;
+  enum Axis {x, y, channel};
 
-  InvalidPartitionSizeError();
-};
+  unsigned num_replicas;
+  std::array<unsigned, rank> offset;
+  std::array<unsigned, rank> size;
 
-struct InvalidGroupSizeError
-  : public Error {
+  static bool
+  disjoint(const std::vector<ReplicatedGridBrick>& bricks);
 
-  InvalidGroupSizeError();
+  // static bool
+  // complete(
+  //   const std::vector<ReplicatedGridBrick>& bricks,
+  //   const std::array<unsigned, 4>& space);
 };
 
 namespace GridderState {
@@ -146,9 +128,6 @@ namespace GridderState {
    */
   rval_t<std::tuple<::hpg::GridderState, bool, bool>>
   create(
-    MPI_Comm comm,
-    int vis_part_index,
-    int grid_part_index,
     Device device,
     unsigned max_added_tasks,
     size_t visibility_batch_size,
@@ -157,11 +136,13 @@ namespace GridderState {
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     IArrayVector&& mueller_indexes,
-    IArrayVector&& conjugate_mueller_indexes
+    IArrayVector&& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions
+    const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept;
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    const std::vector<ReplicatedGridBrick>& grid_part) noexcept;
 
   /** factory method
    *
@@ -197,9 +178,6 @@ namespace GridderState {
    */
   rval_t<std::tuple<::hpg::GridderState, bool, bool>>
   create2d(
-    MPI_Comm comm,
-    unsigned vis_part_size,
-    unsigned grid_part_size,
     Device device,
     unsigned max_added_tasks,
     size_t visibility_batch_size,
@@ -208,11 +186,13 @@ namespace GridderState {
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     IArrayVector&& mueller_indexes,
-    IArrayVector&& conjugate_mueller_indexes
+    IArrayVector&& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions
+    const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept;
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    unsigned grid_part_size) noexcept;
 
   /** factory method
    *
@@ -226,9 +206,6 @@ namespace GridderState {
   template <unsigned N>
   rval_t<std::tuple<::hpg::GridderState, bool, bool>>
   create(
-    MPI_Comm comm,
-    int vis_part_index,
-    int grid_part_index,
     Device device,
     unsigned max_added_tasks,
     size_t visibility_batch_size,
@@ -237,18 +214,16 @@ namespace GridderState {
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
-    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions =
-    ::hpg::GridderState::default_versions
+    const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept {
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    const std::vector<ReplicatedGridBrick>& grid_part) noexcept {
 
     return
       create(
-        comm,
-        vis_part_index,
-        grid_part_index,
         device,
         max_added_tasks,
         visibility_batch_size,
@@ -257,11 +232,13 @@ namespace GridderState {
         grid_size,
         grid_scale,
         IArrayVector(mueller_indexes),
-        IArrayVector(conjugate_mueller_indexes)
+        IArrayVector(conjugate_mueller_indexes),
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-        , implementation_versions
+        implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-        );
+        comm,
+        vis_part_size,
+        grid_part);
   }
 
   /** factory method
@@ -276,9 +253,6 @@ namespace GridderState {
   template <unsigned N>
   rval_t<std::tuple<::hpg::GridderState, bool, bool>>
   create2d(
-    MPI_Comm comm,
-    unsigned vis_part_size,
-    unsigned grid_part_size,
     Device device,
     unsigned max_added_tasks,
     size_t visibility_batch_size,
@@ -287,18 +261,16 @@ namespace GridderState {
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
-    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions =
-    ::hpg::GridderState::default_versions
+    const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept {
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    unsigned grid_part_size) noexcept {
 
     return
       create2d(
-        comm,
-        vis_part_size,
-        grid_part_size,
         device,
         max_added_tasks,
         visibility_batch_size,
@@ -307,11 +279,13 @@ namespace GridderState {
         grid_size,
         grid_scale,
         IArrayVector(mueller_indexes),
-        IArrayVector(conjugate_mueller_indexes)
+        IArrayVector(conjugate_mueller_indexes),
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-        , implementation_versions
+        implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-        );
+        comm,
+        vis_part_size,
+        grid_part_size);
   }
 } // end namespace GridderState
 
@@ -323,9 +297,6 @@ namespace Gridder {
    */
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create(
-    MPI_Comm comm,
-    int vis_part_index,
-    int grid_part_index,
     Device device,
     unsigned max_added_tasks,
     size_t visibility_batch_size,
@@ -334,11 +305,31 @@ namespace Gridder {
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     IArrayVector&& mueller_indexes,
-    IArrayVector&& conjugate_mueller_indexes
+    IArrayVector&& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions
+    const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept;
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    const std::vector<ReplicatedGridBrick>& grid_part) noexcept;
+
+  rval_t<std::tuple<::hpg::Gridder, bool, bool>>
+  create2d(
+    Device device,
+    unsigned max_added_tasks,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes,
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    const std::array<unsigned, 4>& implementation_versions,
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    unsigned grid_part_size) noexcept;
 
   /** Gridder factory method
    *
@@ -351,9 +342,6 @@ namespace Gridder {
   template <unsigned N>
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create(
-    MPI_Comm comm,
-    int vis_part_index,
-    int grid_part_index,
     Device device,
     unsigned max_added_tasks,
     size_t visibility_batch_size,
@@ -362,18 +350,16 @@ namespace Gridder {
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
-    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions =
-      ::hpg::GridderState::default_versions
+    const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept {
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    const std::vector<ReplicatedGridBrick>& grid_part) noexcept {
 
     return
       create(
-        comm,
-        vis_part_index,
-        grid_part_index,
         device,
         max_added_tasks,
         visibility_batch_size,
@@ -382,38 +368,18 @@ namespace Gridder {
         grid_size,
         grid_scale,
         IArrayVector(mueller_indexes),
-        IArrayVector(conjugate_mueller_indexes)
+        IArrayVector(conjugate_mueller_indexes),
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-        , implementation_versions
+        implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-      );
+        comm,
+        vis_part_size,
+        grid_part);
   }
-
-  rval_t<std::tuple<::hpg::Gridder, bool, bool>>
-  create2d(
-    MPI_Comm comm,
-    unsigned vis_part_size,
-    unsigned grid_part_size,
-    Device device,
-    unsigned max_added_tasks,
-    size_t visibility_batch_size,
-    unsigned max_avg_channels_per_vis,
-    const CFArrayShape* init_cf_shape,
-    const std::array<unsigned, 4>& grid_size,
-    const std::array<grid_scale_fp, 2>& grid_scale,
-    IArrayVector&& mueller_indexes,
-    IArrayVector&& conjugate_mueller_indexes
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept;
 
   template <unsigned N>
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create2d(
-    MPI_Comm comm,
-    unsigned vis_part_size,
-    unsigned grid_part_size,
     Device device,
     unsigned max_added_tasks,
     size_t visibility_batch_size,
@@ -422,18 +388,16 @@ namespace Gridder {
     const std::array<unsigned, 4>& grid_size,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
-    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    , const std::array<unsigned, 4>& implementation_versions =
-    ::hpg::GridderState::default_versions
+    const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    ) noexcept {
+    MPI_Comm comm,
+    unsigned vis_part_size,
+    unsigned grid_part_size) noexcept {
 
     return
       create2d(
-        comm,
-        vis_part_size,
-        grid_part_size,
         device,
         max_added_tasks,
         visibility_batch_size,
@@ -442,13 +406,14 @@ namespace Gridder {
         grid_size,
         grid_scale,
         IArrayVector(mueller_indexes),
-        IArrayVector(conjugate_mueller_indexes)
+        IArrayVector(conjugate_mueller_indexes),
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-        , implementation_versions
+        implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-        );
+        comm,
+        vis_part_size,
+        grid_part_size);
   }
-
 
 } // end namespace Gridder
 
