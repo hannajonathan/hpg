@@ -34,7 +34,6 @@ enum class HPG_EXPORT ErrorType {
   ExcessiveNumberVisibilities,
   ExcessiveVisibilityChannels,
   UpdateWeightsWithoutGridding,
-  CFSupportExceedsGrid,
   GridChannelMapsSize,
   Other
 };
