@@ -33,47 +33,61 @@ Error::mpi_type() const {
 
 Error::~Error() {}
 
-InvalidTopologyError::InvalidTopologyError()
+InvalidCommunicatorSizeError::InvalidCommunicatorSizeError()
   : Error(
-    "Communicator has unsupported topology (must be Cartesian or none)",
-    ErrorType::InvalidTopology) {}
-
-InvalidCartesianRankError::InvalidCartesianRankError()
-  : Error(
-    "Communicator Cartesian topology rank is unsupported (must be <= 2)",
-    ErrorType::InvalidCartesianRank) {}
-
-IdenticalPartitionIndexError::IdenticalPartitionIndexError()
-  : Error(
-    "Indexes of visibility and grid partitions in Cartesian topology "
-    "are identical",
-    ErrorType::IdenticalPartitionIndex) {}
-
-InvalidPartitionIndexError::InvalidPartitionIndexError()
-  : Error(
-    "Index of visibility or grid partition is out of range",
-    ErrorType::InvalidPartitionIndex) {}
+    "Communicator size too small",
+    ErrorType::InvalidCommunicatorSize) {}
 
 NullCommunicatorError::NullCommunicatorError()
   : Error(
     "Null communicator is invalid",
     ErrorType::NullCommunicator) {}
 
-InvalidPartitionSizeError::InvalidPartitionSizeError()
-  : Error(
-    "Size of visibility or grid partition is zero",
-    ErrorType::InvalidPartitionSize) {}
+bool
+ReplicatedGridBrick::disjoint(const std::vector<ReplicatedGridBrick>& bricks) {
+  bool result = true;
+  for (size_t i = 0; result && i < bricks.size(); ++i)
+    result =
+      std::all_of(
+        bricks.begin() + i + 1,
+        bricks.end(),
+        [bi = bricks[i]](auto& b) {
+          bool nonoverlapping = bi.num_replicas == 0 || b.num_replicas == 0;
+          for (size_t j = 0; !nonoverlapping && j < b.offset.size(); ++j)
+            nonoverlapping =
+              bi.offset[j] + bi.size[j] <= b.offset[j]
+              || b.offset[j] + b.size[j] <= bi.offset[j];
+          return nonoverlapping;
+        });
+  return result;
+}
 
-InvalidGroupSizeError::InvalidGroupSizeError()
-  : Error(
-    "Size of communicator group is too small for desired partition",
-    ErrorType::InvalidGroupSize) {}
+// FIXME
+//
+// bool
+// ReplicatedGridBrick::complete(
+//   const std::vector<ReplicatedGridBrick>& bricks,
+//   const std::array<unsigned, GridValueArray::rank>& space) {
+
+//   std::array<unsigned, ReplicatedGridBrick::rank> min;
+//   std::fill_n(min.begin(), min.size(), std::numeric_limits<unsigned>::max());
+//   std::array<unsigned, ReplicatedGridBrick::rank> max;
+//   std::fill_n(max.begin(), max.size(), std::numeric_limits<unsigned>::min());
+//   for (auto& b : bricks)
+//     if (b.num_replicas > 0)
+//       for (size_t i = 0; i < min.size(); ++i) {
+//         min[i] = std::min(min[i], b.offset[i]);
+//         max[i] = std::max(max[i], b.offset[i] + b.size[i]);
+//       }
+//   return
+//     std::all_of(min.begin(), min.end(), [](auto c) { return c == 0; })
+//     && max[ReplicatedGridBrick::x] == space[GridValueArray::x]
+//     && max[ReplicatedGridBrick::y] == space[GridValueArray::y]
+//     && max[ReplicatedGridBrick::channel] == space[GridValueArray::channel];
+// }
 
 static std::shared_ptr<::hpg::mpi::runtime::State>
 create_impl(
-  MPI_Comm comm,
-  int vis_part_index,
-  int grid_part_index,
   ::hpg::Device device,
   unsigned max_added_tasks,
   size_t visibility_batch_size,
@@ -82,19 +96,21 @@ create_impl(
   const std::array<unsigned, 4>& grid_size,
   const std::array<::hpg::grid_scale_fp, 2>& grid_scale,
   const ::hpg::IArrayVector& mueller_indexes,
-  const ::hpg::IArrayVector& conjugate_mueller_indexes
+  const ::hpg::IArrayVector& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  , const std::array<unsigned, 4>& implementation_versions
+  const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  ) {
+  MPI_Comm comm,
+  unsigned vis_part_size,
+  const std::vector<ReplicatedGridBrick>& grid_part) {
 
   using namespace ::hpg::mpi;
 
-  // compute communicators for subspaces of visibility and grid plane partitions
-  // for this rank
+  // compute communicators for subspaces of visibility, grid and replica
+  // partitions for this rank
   //
-  // For example, assume 2d indexes are ordered (visibility subset, grid plane
-  // subset), and we represent the processes in the group by
+  // For example, assume no replicas > 1, 2d indexes are ordered (visibility
+  // subset, grid plane subset), and we represent the processes in the group by
   //
   // r00 r01 r02
   // r10 r11 r12
@@ -102,68 +118,47 @@ create_impl(
   // if this process is r01, its grid plane subspace is (r00 r01 r02), and its
   // visibility subspace is (r01 r11)
   //
-  MPI_Comm vis_comm;
-  MPI_Comm grid_comm;
-  int ndims = 1;
-  int topo;
-  MPI_Topo_test(comm, &topo);
-  if (topo == MPI_CART)
-    MPI_Cartdim_get(comm, &ndims);
-  if (ndims == 1) {
-    if (grid_part_index == -1) {
-      MPI_Comm_dup(comm, &vis_comm);
-      MPI_Comm_dup(MPI_COMM_SELF, &grid_comm);
-    } else /* vis_part_index == -1 */ {
-      MPI_Comm_dup(MPI_COMM_SELF, &vis_comm);
-      MPI_Comm_dup(comm, &grid_comm);
+
+  auto grid_part_size =
+    std::accumulate(
+      grid_part.begin(),
+      grid_part.end(),
+      0u,
+      [](const unsigned& acc, const auto& b) { return acc + b.num_replicas; });
+
+  int comm_rank;
+  MPI_Comm_rank(comm, &comm_rank);
+  MPI_Comm grid_comm; // grid partition comm
+  MPI_Comm_split(
+    comm,
+    comm_rank / grid_part_size,
+    comm_rank % grid_part_size,
+    &grid_comm);
+  MPI_Comm vis_comm; // visibility partition comm
+  MPI_Comm_split(
+    comm,
+    comm_rank % grid_part_size,
+    comm_rank / grid_part_size,
+    &vis_comm);
+  int grid_rank;
+  MPI_Comm_rank(grid_comm, &grid_rank);
+  ssize_t grid_brick_index = -1;
+  MPI_Comm replica_comm = MPI_COMM_SELF;
+  int replica_rank = 0;
+  for (size_t i = 0; i < grid_part.size(); ++i) {
+    bool my_brick =
+      replica_rank <= grid_rank
+      && grid_rank < replica_rank + grid_part[i].num_replicas;
+    if (my_brick)
+      grid_brick_index = i;
+    if (grid_part[i].num_replicas > 1) {
+      MPI_Comm c;
+      MPI_Comm_split(grid_comm, my_brick ? 0 : MPI_UNDEFINED, 0, &c);
+      if (my_brick)
+        replica_comm = c;
     }
-  } else {
-    if (vis_part_index > -1) {
-      std::vector<int> remain_dims(ndims);
-      std::fill(remain_dims.begin(), remain_dims.end(), int(true));
-      remain_dims[vis_part_index] = int(false);
-      MPI_Cart_sub(comm, remain_dims.data(), &grid_comm);
-    } else {
-      MPI_Comm_dup(comm, &grid_comm);
-    }
-    if (grid_part_index > -1) {
-      std::vector<int> remain_dims(ndims);
-      std::fill(remain_dims.begin(), remain_dims.end(), int(true));
-      remain_dims[grid_part_index] = int(false);
-      MPI_Cart_sub(comm, remain_dims.data(), &vis_comm);
-    } else {
-      MPI_Comm_dup(comm, &vis_comm);
-    }
+    replica_rank += grid_part[i].num_replicas;
   }
-
-  // the grid plane partition divides the grid into segments on the channel
-  // axis, we compute the offset and size of our local segment of channel
-  // indexes
-  //
-  // Note that the following will compute offsets greater than the size of the
-  // channel axis in some cases, which should be taken to indicate an empty grid
-  // partition (computed segment size will be zero in this case, as well).
-  //
-  auto grid_channel_size =
-    grid_size[unsigned(::hpg::GridValueArray::Axis::channel)];
-  unsigned grid_channel_offset_local = 0;
-  unsigned grid_channel_size_local = grid_channel_size;
-
-  int grid_comm_size;
-  MPI_Comm_size(grid_comm, &grid_comm_size);
-  int grid_comm_rank;
-  MPI_Comm_rank(grid_comm, &grid_comm_rank);
-  unsigned min_grid_channel_size = grid_channel_size / unsigned(grid_comm_size);
-  unsigned grid_channel_rem_size = grid_channel_size % unsigned(grid_comm_size);
-  grid_channel_offset_local =
-    unsigned(grid_comm_rank) * min_grid_channel_size
-    + std::min(unsigned(grid_comm_rank), grid_channel_rem_size);
-  grid_channel_size_local =
-    min_grid_channel_size
-    + ((unsigned(grid_comm_rank) < grid_channel_rem_size) ? 1 : 0);
-  std::array<unsigned, 4> grid_size_local = grid_size;
-  grid_size_local[unsigned(::hpg::GridValueArray::Axis::channel)] =
-    grid_channel_size_local;
 
   using namespace runtime;
 
@@ -181,12 +176,13 @@ create_impl(
       std::make_shared<StateT<::hpg::Device::Serial>>(
         vis_comm,
         grid_comm,
-        grid_channel_offset_local,
+        grid_part[grid_brick_index],
+        replica_comm,
         max_active_tasks,
         visibility_batch_size,
         max_avg_channels_per_vis,
         init_cf_shape,
-        grid_size_local,
+        grid_size,
         grid_scale,
         mueller_indexes,
         conjugate_mueller_indexes,
@@ -201,12 +197,13 @@ create_impl(
       std::make_shared<StateT<::hpg::Device::OpenMP>>(
         vis_comm,
         grid_comm,
-        grid_channel_offset_local,
+        grid_part[grid_brick_index],
+        replica_comm,
         max_active_tasks,
         visibility_batch_size,
         max_avg_channels_per_vis,
         init_cf_shape,
-        grid_size_local,
+        grid_size,
         grid_scale,
         mueller_indexes,
         conjugate_mueller_indexes,
@@ -221,12 +218,13 @@ create_impl(
       std::make_shared<StateT<::hpg::Device::Cuda>>(
         vis_comm,
         grid_comm,
-        grid_channel_offset_local,
+        grid_part[grid_brick_index],
+        replica_comm,
         max_active_tasks,
         visibility_batch_size,
         max_avg_channels_per_vis,
         init_cf_shape,
-        grid_size_local,
+        grid_size,
         grid_scale,
         mueller_indexes,
         conjugate_mueller_indexes,
@@ -244,9 +242,6 @@ create_impl(
 
 ::hpg::rval_t<std::tuple<::hpg::GridderState, bool, bool>>
 GridderState::create(
-  MPI_Comm comm,
-  int vis_part_index,
-  int grid_part_index,
   Device device,
   unsigned max_added_tasks,
   size_t visibility_batch_size,
@@ -255,11 +250,13 @@ GridderState::create(
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
   IArrayVector&& mueller_indexes,
-  IArrayVector&& conjugate_mueller_indexes
+  IArrayVector&& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  , const std::array<unsigned, 4>& implementation_versions
+  const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  ) noexcept {
+  MPI_Comm comm,
+  unsigned vis_part_size,
+  const std::vector<ReplicatedGridBrick>& grid_part) noexcept {
 
   using val_t = std::tuple<::hpg::GridderState, bool, bool>;
 
@@ -270,29 +267,43 @@ GridderState::create(
   if (comm == MPI_COMM_NULL)
     return rval<val_t>(std::make_unique<NullCommunicatorError>());
 
-  int ndims = 1;
-  int topo;
-  MPI_Topo_test(comm, &topo);
-  if (!(topo == MPI_UNDEFINED || topo == MPI_CART))
-    return rval<val_t>(std::make_unique<InvalidTopologyError>());
-  if (topo == MPI_CART) {
-    MPI_Cartdim_get(comm, &ndims);
-    if (ndims > 2)
-      return rval<val_t>(std::make_unique<InvalidCartesianRankError>());
-  }
-  if (vis_part_index == grid_part_index)
-    return rval<val_t>(std::make_unique<IdenticalPartitionIndexError>());
-  if (vis_part_index >= ndims || grid_part_index >= ndims)
-    return rval<val_t>(std::make_unique<InvalidPartitionIndexError>());
-
   if (devices().count(device) == 0)
     return rval<val_t>(std::make_unique<DisabledDeviceError>());
 
+  auto num_repl_grid_bricks =
+    std::accumulate(
+      grid_part.begin(),
+      grid_part.end(),
+      0u,
+      [](const unsigned& acc, const auto& b) { return acc + b.num_replicas; });
+  int comm_size;
+  MPI_Comm_size(comm, &comm_size);
+  if (comm_size < vis_part_size * std::max(num_repl_grid_bricks, 1u))
+    return rval<val_t>(std::make_unique<InvalidCommunicatorSizeError>());
+  std::vector<ReplicatedGridBrick> nonempty_grid_part;
+  // ensure that the default nonempty_grid_part is constructed below using the
+  // correct indexes
+  static_assert(
+    ReplicatedGridBrick::Axis::x == 0
+    && ReplicatedGridBrick::Axis::y == 1
+    && ReplicatedGridBrick::Axis::channel == 2);
+  if (num_repl_grid_bricks == 0)
+    nonempty_grid_part.push_back(
+      ReplicatedGridBrick{
+        1,
+        {0, 0, 0},
+        {grid_size[GridValueArray::Axis::x],
+         grid_size[GridValueArray::Axis::y],
+         grid_size[GridValueArray::Axis::channel]}});
+  else
+    std::copy_if(
+      grid_part.begin(),
+      grid_part.end(),
+      std::back_inserter(nonempty_grid_part),
+      [](const auto& b) { return b.num_replicas > 0; });
+
   auto impl =
     create_impl(
-      comm,
-      vis_part_index,
-      grid_part_index,
       device,
       max_added_tasks,
       visibility_batch_size,
@@ -301,12 +312,16 @@ GridderState::create(
       grid_size,
       grid_scale,
       mueller_indexes,
-      conjugate_mueller_indexes
+      conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-      , implementation_versions
+      implementation_versions,
 #endif
-      );
-  auto vis_part_root = impl->is_visibility_partition_root();
+      comm,
+      vis_part_size,
+      nonempty_grid_part);
+  auto vis_part_root =
+    impl->is_visibility_partition_root()
+    && impl->is_replica_partition_root();
   auto grid_part_root = impl->is_grid_partition_root();
   return
     ::hpg::rval_t<val_t>(
@@ -318,9 +333,6 @@ GridderState::create(
 
 ::hpg::rval_t<std::tuple<::hpg::GridderState, bool, bool>>
 GridderState::create2d(
-  MPI_Comm comm,
-  unsigned vis_part_size,
-  unsigned grid_part_size,
   Device device,
   unsigned max_added_tasks,
   size_t visibility_batch_size,
@@ -329,36 +341,48 @@ GridderState::create2d(
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
   IArrayVector&& mueller_indexes,
-  IArrayVector&& conjugate_mueller_indexes
+  IArrayVector&& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  , const std::array<unsigned, 4>& implementation_versions
+  const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  ) noexcept {
+  MPI_Comm comm,
+  unsigned vis_part_size,
+  unsigned grid_part_size) noexcept {
 
   using val_t = std::tuple<::hpg::GridderState, bool, bool>;
 
-  if (comm == MPI_COMM_NULL)
-    return rval<val_t>(std::make_unique<NullCommunicatorError>());
-
-  if (vis_part_size == 0 || grid_part_size == 0)
-    return rval<val_t>(std::make_unique<InvalidPartitionSizeError>());
-
-  {
-    int comm_size;
-    MPI_Comm_size(comm, &comm_size);
-    if (unsigned(comm_size) < vis_part_size * grid_part_size)
-      return rval<val_t>(std::make_unique<InvalidGroupSizeError>());
+  // the grid plane partition divides the grid into segments on the channel
+  // axis, we compute the offset and size of our local segment of channel
+  // indexes
+  //
+  // Note that the following will compute offsets greater than the size of the
+  // channel axis in some cases, which should be taken to indicate an empty grid
+  // partition (computed segment size will be zero in this case, as well).
+  //
+  auto grid_channel_size = grid_size[::hpg::GridValueArray::Axis::channel];
+  unsigned min_brick_channel_size = grid_channel_size / grid_part_size;
+  unsigned brick_channel_rem_size = grid_channel_size % grid_part_size;
+  std::vector<ReplicatedGridBrick> grid_bricks;
+  for (unsigned i = 0; i < grid_part_size; ++i) {
+    ReplicatedGridBrick brick;
+    brick.num_replicas = 1;
+    brick.offset[ReplicatedGridBrick::Axis::x] = 0;
+    brick.offset[ReplicatedGridBrick::Axis::y] = 0;
+    brick.offset[ReplicatedGridBrick::Axis::channel] =
+      i * min_brick_channel_size + std::min(i, brick_channel_rem_size);
+    brick.size[ReplicatedGridBrick::Axis::x] =
+      grid_size[::hpg::GridValueArray::Axis::x];
+    brick.size[ReplicatedGridBrick::Axis::y] =
+      grid_size[::hpg::GridValueArray::Axis::y];
+    brick.size[ReplicatedGridBrick::Axis::channel] =
+      min_brick_channel_size + ((i < brick_channel_rem_size) ? 1 : 0);
+    grid_bricks.push_back(std::move(brick));
   }
+  assert(disjoint(grid_bricks));
+  //assert(complete(grid_bricks, grid_size));
 
-  int dims[2]{int(vis_part_size), int(grid_part_size)};
-  int periods[2]{0, 0};
-  MPI_Comm comm_cart;
-  MPI_Cart_create(comm, 2, dims, periods, true, &comm_cart);
   return
     create(
-      comm_cart,
-      0,
-      1,
       device,
       max_added_tasks,
       visibility_batch_size,
@@ -367,11 +391,13 @@ GridderState::create2d(
       grid_size,
       grid_scale,
       std::move(mueller_indexes),
-      std::move(conjugate_mueller_indexes)
+      std::move(conjugate_mueller_indexes),
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-      , implementation_versions
+      implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-      );
+      comm,
+      vis_part_size,
+      grid_bricks);
 }
 
 static ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
@@ -398,9 +424,6 @@ apply_gridder(
 
 ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
 Gridder::create(
-  MPI_Comm comm,
-  int vis_part_index,
-  int grid_part_index,
   Device device,
   unsigned max_added_tasks,
   size_t visibility_batch_size,
@@ -409,18 +432,17 @@ Gridder::create(
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
   IArrayVector&& mueller_indexes,
-  IArrayVector&& conjugate_mueller_indexes
+  IArrayVector&& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  , const std::array<unsigned, 4>& implementation_versions
+  const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  ) noexcept {
+  MPI_Comm comm,
+  unsigned vis_part_size,
+  const std::vector<ReplicatedGridBrick>& grid_part) noexcept {
 
   return
     apply_gridder(
       GridderState::create(
-        comm,
-        vis_part_index,
-        grid_part_index,
         device,
         max_added_tasks,
         visibility_batch_size,
@@ -429,18 +451,17 @@ Gridder::create(
         grid_size,
         grid_scale,
         std::move(mueller_indexes),
-        std::move(conjugate_mueller_indexes)
+        std::move(conjugate_mueller_indexes),
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-        , implementation_versions
+        implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-      ));
+        comm,
+        vis_part_size,
+        grid_part));
 }
 
 ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
 Gridder::create2d(
-  MPI_Comm comm,
-  unsigned vis_part_size,
-  unsigned grid_part_size,
   Device device,
   unsigned max_added_tasks,
   size_t visibility_batch_size,
@@ -449,18 +470,17 @@ Gridder::create2d(
   const std::array<unsigned, 4>& grid_size,
   const std::array<grid_scale_fp, 2>& grid_scale,
   IArrayVector&& mueller_indexes,
-  IArrayVector&& conjugate_mueller_indexes
+  IArrayVector&& conjugate_mueller_indexes,
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  , const std::array<unsigned, 4>& implementation_versions
+  const std::array<unsigned, 4>& implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  ) noexcept {
+  MPI_Comm comm,
+  unsigned vis_part_size,
+  unsigned grid_part_size) noexcept {
 
   return
     apply_gridder(
       GridderState::create2d(
-        comm,
-        vis_part_size,
-        grid_part_size,
         device,
         max_added_tasks,
         visibility_batch_size,
@@ -469,11 +489,13 @@ Gridder::create2d(
         grid_size,
         grid_scale,
         std::move(mueller_indexes),
-        std::move(conjugate_mueller_indexes)
+        std::move(conjugate_mueller_indexes),
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-        , implementation_versions
+        implementation_versions,
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-      ));
+        comm,
+        vis_part_size,
+        grid_part_size));
 }
 
 // Local Variables:

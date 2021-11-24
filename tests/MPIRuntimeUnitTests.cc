@@ -27,14 +27,10 @@ error_type_test(hpg::mpi::ErrorType etype) {
 
 TEST(MPIRuntime, Errors) {
 
-  error_type_test<hpg::mpi::InvalidTopologyError>(
-    hpg::mpi::ErrorType::InvalidTopology);
-  error_type_test<hpg::mpi::InvalidCartesianRankError>(
-    hpg::mpi::ErrorType::InvalidCartesianRank);
-  error_type_test<hpg::mpi::IdenticalPartitionIndexError>(
-    hpg::mpi::ErrorType::IdenticalPartitionIndex);
-  error_type_test<hpg::mpi::InvalidPartitionIndexError>(
-    hpg::mpi::ErrorType::InvalidPartitionIndex);
+  error_type_test<hpg::mpi::InvalidCommunicatorSizeError>(
+    hpg::mpi::ErrorType::InvalidCommunicatorSize);
+  error_type_test<hpg::mpi::NullCommunicatorError>(
+    hpg::mpi::ErrorType::NullCommunicator);
 }
 
 // Local Variables:

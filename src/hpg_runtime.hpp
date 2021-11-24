@@ -765,8 +765,8 @@ public:
   size_t m_max_avg_channels_per_vis; /**< max avg number of channel indexes for
                                           gridding */
   K::Array<int, 4> m_grid_size_global; /**< global grid size */
+  K::Array<int, 4> m_grid_offset_local;/**< local grid offset*/
   K::Array<int, 4> m_grid_size_local; /**< local grid size */
-  K::Array<int, 4> m_grid_offset_local; /**< local grid offset*/
   K::Array<grid_scale_fp, 2> m_grid_scale; /**< grid scale */
   unsigned m_num_polarizations; /**< number of visibility polarizations */
   std::array<unsigned, 4> m_implementation_versions; /**< impl versions*/
@@ -811,7 +811,9 @@ public:
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
-    const std::array<unsigned, 4> grid_size,
+    const std::array<unsigned, 4>& grid_size_global,
+    const std::array<unsigned, 4>& grid_offset_local,
+    const std::array<unsigned, 4>& grid_size_local,
     const std::array<grid_scale_fp, 2>& grid_scale,
     const IArrayVector& mueller_indexes,
     const IArrayVector& conjugate_mueller_indexes,
@@ -821,20 +823,36 @@ public:
       std::min(max_active_tasks, device_traits::active_task_limit))
     , m_visibility_batch_size(visibility_batch_size)
     , m_max_avg_channels_per_vis(max_avg_channels_per_vis)
-    , m_grid_offset_local({0, 0, 0, 0})
     , m_grid_scale({grid_scale[0], grid_scale[1]})
     , m_num_polarizations(mueller_indexes.m_npol)
     , m_implementation_versions(implementation_versions) {
 
     m_grid_size_global[int(impl::core::GridAxis::x)] =
-      grid_size[int(GridValueArray::Axis::x)];
+      grid_size_global[GridValueArray::Axis::x];
     m_grid_size_global[int(impl::core::GridAxis::y)] =
-      grid_size[int(GridValueArray::Axis::y)];
+      grid_size_global[GridValueArray::Axis::y];
     m_grid_size_global[int(impl::core::GridAxis::mrow)] =
-      grid_size[int(GridValueArray::Axis::mrow)];
+      grid_size_global[GridValueArray::Axis::mrow];
     m_grid_size_global[int(impl::core::GridAxis::channel)] =
-      grid_size[int(GridValueArray::Axis::channel)];
-    m_grid_size_local = m_grid_size_global;
+      grid_size_global[GridValueArray::Axis::channel];
+
+    m_grid_offset_local[int(impl::core::GridAxis::x)] =
+      grid_offset_local[GridValueArray::Axis::x];
+    m_grid_offset_local[int(impl::core::GridAxis::y)] =
+      grid_offset_local[GridValueArray::Axis::y];
+    m_grid_offset_local[int(impl::core::GridAxis::mrow)] =
+      grid_offset_local[GridValueArray::Axis::mrow];
+    m_grid_offset_local[int(impl::core::GridAxis::channel)] =
+      grid_offset_local[GridValueArray::Axis::channel];
+
+    m_grid_size_local[int(impl::core::GridAxis::x)] =
+      grid_size_local[GridValueArray::Axis::x];
+    m_grid_size_local[int(impl::core::GridAxis::y)] =
+      grid_size_local[GridValueArray::Axis::y];
+    m_grid_size_local[int(impl::core::GridAxis::mrow)] =
+      grid_size_local[GridValueArray::Axis::mrow];
+    m_grid_size_local[int(impl::core::GridAxis::channel)] =
+      grid_size_local[GridValueArray::Axis::channel];
 
     init_state(init_cf_shape);
     m_mueller_indexes =
@@ -850,8 +868,8 @@ public:
     , m_visibility_batch_size(st.m_visibility_batch_size)
     , m_max_avg_channels_per_vis(st.m_max_avg_channels_per_vis)
     , m_grid_size_global(st.m_grid_size_global)
-    , m_grid_size_local(st.m_grid_size_local)
     , m_grid_offset_local(st.m_grid_offset_local)
+    , m_grid_size_local(st.m_grid_size_local)
     , m_grid_scale(st.m_grid_scale)
     , m_num_polarizations(st.m_num_polarizations)
     , m_implementation_versions(st.m_implementation_versions) {
@@ -871,8 +889,8 @@ public:
     m_visibility_batch_size = std::move(st).m_visibility_batch_size;
     m_max_avg_channels_per_vis = std::move(st).m_max_avg_channels_per_vis;
     m_grid_size_global = std::move(st).m_grid_size_global;
-    m_grid_size_local = std::move(st).m_grid_size_local;
     m_grid_offset_local = std::move(st).m_grid_offset_local;
+    m_grid_size_local = std::move(st).m_grid_size_local;
     m_grid_scale = std::move(st).m_grid_scale;
     m_num_polarizations = std::move(st).m_num_polarizations;
     m_implementation_versions = std::move(st).m_implementation_versions;
