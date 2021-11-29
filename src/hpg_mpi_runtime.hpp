@@ -1041,60 +1041,28 @@ public:
   grid_weights() const override {
     std::scoped_lock lock(this->m_mtx);
     reduce_weights_unlocked();
-    if (is_visibility_partition_root() && is_replica_partition_root()) {
-      auto& exec =
-        this->m_exec_spaces[
-          this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
-      auto wgts_h = K::create_mirror(this->m_grid_weights);
-      K::deep_copy(exec.space, wgts_h, this->m_grid_weights);
-      exec.fence();
-      return std::make_unique<impl::GridWeightViewArray<D>>(wgts_h);
-    } else {
-      return nullptr;
-    }
+    return
+      ((is_visibility_partition_root() && is_replica_partition_root())
+       ? this->grid_weights_unlocked()
+       : nullptr);
   }
 
   virtual std::unique_ptr<GridValueArray>
   grid_values() const override {
     std::scoped_lock lock(this->m_mtx);
     reduce_grid_unlocked();
-    if (is_visibility_partition_root() && is_replica_partition_root()) {
-      auto& exec =
-        this->m_exec_spaces[
-          this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
-      auto grid_h = K::create_mirror(this->m_grid);
-      K::deep_copy(exec.space, grid_h, this->m_grid);
-      exec.fence();
-      return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
-    } else {
-      return nullptr;
-    }
+    return
+      ((is_visibility_partition_root() && is_replica_partition_root())
+       ? this->grid_values_unlocked()
+       : nullptr);
   }
 
   virtual std::unique_ptr<GridValueArray>
   model_values() const override {
-    std::scoped_lock lock(this->m_mtx);
-    this->fence_unlocked();
-    if (is_visibility_partition_root() && is_replica_partition_root()) {
-      if (this->m_model.is_allocated()) {
-        auto& exec =
-          this->m_exec_spaces[
-            this->next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
-        auto model_h = K::create_mirror(this->m_model);
-        K::deep_copy(exec.space, model_h, this->m_model);
-        exec.fence();
-        return std::make_unique<impl::GridValueViewArray<D>>(model_h);
-      } else {
-        std::array<unsigned, 4> ex{
-          unsigned(this->m_grid.extent(0)),
-          unsigned(this->m_grid.extent(1)),
-          unsigned(this->m_grid.extent(2)),
-          unsigned(this->m_grid.extent(3))};
-        return std::make_unique<impl::UnallocatedModelValueArray>(ex);
-      }
-    } else {
-      return nullptr;
-    }
+    return
+      ((is_visibility_partition_root() && is_replica_partition_root())
+       ? ::hpg::runtime::StateT<D>::model_values()
+       : nullptr);
   }
 
   virtual void
@@ -1109,18 +1077,8 @@ public:
   normalize_by_weights(grid_value_fp wfactor) override {
     reduce_weights();
     reduce_grid();
-    if (is_visibility_partition_root() && is_replica_partition_root()) {
-      auto& exec =
-        this->m_exec_spaces[
-          this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
-      impl::core::GridNormalizer(
-        this->m_exec_spaces[
-          this->next_exec_space(StreamPhase::GRIDDING)].space,
-        this->m_grid,
-        this->m_grid_weights,
-        wfactor)
-        .normalize();
-    }
+    if (is_visibility_partition_root() && is_replica_partition_root())
+      ::hpg::runtime::StateT<D>::normalize_by_weights(wfactor);
   }
 
   virtual std::optional<std::unique_ptr<::hpg::Error>>
