@@ -1070,56 +1070,47 @@ public:
 
   virtual std::optional<std::unique_ptr<::hpg::Error>>
   apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) override {
-    reduce_grid();
     std::optional<std::unique_ptr<::hpg::Error>> err;
-    if (is_visibility_partition_root() && is_replica_partition_root()) {
-      auto& exec =
-        this->m_exec_spaces[
-          this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
-      if (in_place) {
-        switch (fft_version()) {
-        case 0:
-          err =
-            impl::FFT<execution_space>
-            ::in_place_kernel(
-              this->m_exec_spaces[
-                this->next_exec_space(StreamPhase::GRIDDING)].space,
-              sign,
-              this->m_grid);
-          break;
-        default:
-          assert(false);
-          break;
-        }
-      } else {
-        typename
-          impl::grid_view<typename grid_layout::layout, memory_space>
-          ::const_type pre_grid = this->m_grid;
-        this->new_grid(false, false);
-        switch (fft_version()) {
-        case 0:
-          err =
-            impl::FFT<execution_space>::out_of_place_kernel(
-              this->m_exec_spaces[
-                this->next_exec_space(StreamPhase::GRIDDING)].space,
-              sign,
-              pre_grid,
-              this->m_grid);
-          break;
-        default:
-          assert(false);
-          break;
-        }
-      }
-      // apply normalization
-      impl::core::GridNormalizer(
-        this->m_exec_spaces[
-          this->next_exec_space(StreamPhase::GRIDDING)].space,
-        this->m_grid,
-        norm)
-        .normalize();
+    reduce_grid();
+    if (non_trivial_plane_partition()) {
+      std::abort(); // FIXME
+    } else if (is_visibility_partition_root() && is_replica_partition_root()) {
+      err = ::hpg::runtime::StateT<D>::apply_grid_fft(norm, sign, in_place);
     }
     return err;
+  }
+
+  virtual std::optional<std::unique_ptr<::hpg::Error>>
+  apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place)
+    override {
+    std::optional<std::unique_ptr<::hpg::Error>> err;
+    if (non_trivial_plane_partition()) {
+      std::abort(); // FIXME
+      broadcast_model();
+    } else {
+      err = ::hpg::runtime::StateT<D>::apply_model_fft(norm, sign, in_place);
+    }
+    return err;
+  }
+
+  virtual void
+  shift_grid(ShiftDirection direction) override {
+    reduce_grid();
+    if (non_trivial_plane_partition()) {
+      std::abort(); // FIXME
+    } else if (is_visibility_partition_root() && is_replica_partition_root()) {
+      ::hpg::runtime::StateT<D>::shift_grid(direction);
+    }
+  }
+
+  virtual void
+  shift_model(ShiftDirection direction) override {
+    if (non_trivial_plane_partition()) {
+      std::abort(); // FIXME
+      broadcast_model();
+    } else {
+    ::hpg::runtime::StateT<D>::shift_model(direction);
+    }
   }
 
 protected:
