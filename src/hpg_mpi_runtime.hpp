@@ -346,6 +346,17 @@ public:
 
   bool
   non_trivial_plane_partition() const noexcept {
+    return
+      m_plane_comm != MPI_COMM_NULL
+      && [c=m_plane_comm]{
+        int sz;
+        MPI_Comm_size(c, &sz);
+        return sz > 1;
+      }();
+  }
+
+  bool
+  is_plane_partition_root() const noexcept {
     return m_plane_comm != MPI_COMM_NULL;
   }
 };
