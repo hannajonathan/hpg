@@ -221,6 +221,13 @@ create_impl(
     if (c != MPI_COMM_NULL)
       replica_comm = c;
   }
+  MPI_Comm plane_comm = MPI_COMM_NULL;
+  if (has_split_planes)
+    MPI_Comm_split(
+      grid_comm,
+      ((vis_rank == 0) ? ch0 : MPI_UNDEFINED),
+      0,
+      &plane_comm);
 
   using namespace runtime;
 
@@ -240,6 +247,7 @@ create_impl(
         grid_comm,
         grid_bricks[grid_brick_index],
         replica_comm,
+        plane_comm,
         max_active_tasks,
         visibility_batch_size,
         max_avg_channels_per_vis,
@@ -261,6 +269,7 @@ create_impl(
         grid_comm,
         grid_bricks[grid_brick_index],
         replica_comm,
+        plane_comm,
         max_active_tasks,
         visibility_batch_size,
         max_avg_channels_per_vis,
@@ -282,6 +291,7 @@ create_impl(
         grid_comm,
         grid_bricks[grid_brick_index],
         replica_comm,
+        plane_comm,
         max_active_tasks,
         visibility_batch_size,
         max_avg_channels_per_vis,
