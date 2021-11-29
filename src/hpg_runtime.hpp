@@ -1347,13 +1347,7 @@ public:
   virtual std::unique_ptr<GridWeightArray>
   grid_weights() const override {
     std::scoped_lock lock(m_mtx);
-    fence_unlocked();
-    auto& exec =
-      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
-    auto wgts_h = K::create_mirror(m_grid_weights);
-    K::deep_copy(exec.space, wgts_h, m_grid_weights);
-    exec.fence();
-    return std::make_unique<impl::GridWeightViewArray<D>>(wgts_h);
+    return grid_weights_unlocked();
   }
 
   virtual std::shared_ptr<GridWeightArray::value_type>
@@ -1373,13 +1367,7 @@ public:
   virtual std::unique_ptr<GridValueArray>
   grid_values() const override {
     std::scoped_lock lock(m_mtx);
-    fence_unlocked();
-    auto& exec =
-      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
-    auto grid_h = K::create_mirror(m_grid);
-    K::deep_copy(exec.space, grid_h, m_grid);
-    exec.fence();
-    return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
+    return grid_values_unlocked();
   }
 
   virtual std::shared_ptr<GridValueArray::value_type>
@@ -1398,22 +1386,7 @@ public:
   virtual std::unique_ptr<GridValueArray>
   model_values() const override {
     std::scoped_lock lock(m_mtx);
-    fence_unlocked();
-    auto& exec =
-      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
-    if (m_model.is_allocated()) {
-      auto model_h = K::create_mirror(m_model);
-      K::deep_copy(exec.space, model_h, m_model);
-      exec.fence();
-      return std::make_unique<impl::GridValueViewArray<D>>(model_h);
-    } else {
-      std::array<unsigned, 4> ex{
-        unsigned(m_grid.extent(0)),
-        unsigned(m_grid.extent(1)),
-        unsigned(m_grid.extent(2)),
-        unsigned(m_grid.extent(3))};
-      return std::make_unique<impl::UnallocatedModelValueArray>(ex);
-    }
+    return model_values_unlocked();
   }
 
   virtual std::shared_ptr<GridValueArray::value_type>
@@ -1593,6 +1566,48 @@ protected:
       exec.fence();
     }
     m_current = StreamPhase::PRE_GRIDDING;
+  }
+
+  std::unique_ptr<GridWeightArray>
+  grid_weights_unlocked() const {
+    fence_unlocked();
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto wgts_h = K::create_mirror(m_grid_weights);
+    K::deep_copy(exec.space, wgts_h, m_grid_weights);
+    exec.fence();
+    return std::make_unique<impl::GridWeightViewArray<D>>(wgts_h);
+  }
+
+  std::unique_ptr<GridValueArray>
+  grid_values_unlocked() const noexcept {
+    fence_unlocked();
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto grid_h = K::create_mirror(m_grid);
+    K::deep_copy(exec.space, grid_h, m_grid);
+    exec.fence();
+    return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
+  }
+
+  std::unique_ptr<GridValueArray>
+  model_values_unlocked() const {
+    fence_unlocked();
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    if (m_model.is_allocated()) {
+      auto model_h = K::create_mirror(m_model);
+      K::deep_copy(exec.space, model_h, m_model);
+      exec.fence();
+      return std::make_unique<impl::GridValueViewArray<D>>(model_h);
+    } else {
+      std::array<unsigned, 4> ex{
+        unsigned(m_grid.extent(0)),
+        unsigned(m_grid.extent(1)),
+        unsigned(m_grid.extent(2)),
+        unsigned(m_grid.extent(3))};
+      return std::make_unique<impl::UnallocatedModelValueArray>(ex);
+    }
   }
 
   void
