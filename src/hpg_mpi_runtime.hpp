@@ -204,6 +204,16 @@ gvisbuff_datatype() {
   return result;
 }
 
+struct ReplicatedGridBrick {
+  // three axes are x, y, and channel; mrow partition not supported
+  static constexpr unsigned rank = 3;
+  enum Axis {x, y, channel};
+
+  unsigned num_replicas;
+  std::array<unsigned, rank> offset;
+  std::array<unsigned, rank> size;
+};
+
 struct DevCFShape
   : public CFArrayShape {
 
@@ -284,6 +294,13 @@ public:
   }
 
   bool
+  non_trivial_visibility_partition() const noexcept {
+    int size;
+    MPI_Comm_size(m_vis_comm, &size);
+    return size > 1;
+  }
+
+  bool
   is_visibility_partition_root() const noexcept {
     int rank;
     MPI_Comm_rank(m_vis_comm, &rank);
@@ -291,10 +308,24 @@ public:
   }
 
   bool
+  non_trivial_grid_partition() const noexcept {
+    int size;
+    MPI_Comm_size(m_grid_comm, &size);
+    return size > 1;
+  }
+
+  bool
   is_grid_partition_root() const noexcept {
     int rank;
     MPI_Comm_rank(m_grid_comm, &rank);
     return rank == 0;
+  }
+
+  bool
+  non_trivial_replica_partition() const noexcept {
+    int size;
+    MPI_Comm_size(m_replica_comm, &size);
+    return size > 1;
   }
 
   bool
@@ -416,27 +447,6 @@ public:
     StateT tmp(std::move(st));
     this->swap(tmp);
     return *this;
-  }
-
-  bool
-  non_trivial_visibility_partition() const noexcept {
-    int size;
-    MPI_Comm_size(m_vis_comm, &size);
-    return size > 1;
-  }
-
-  bool
-  non_trivial_grid_partition() const noexcept {
-    int size;
-    MPI_Comm_size(m_grid_comm, &size);
-    return size > 1;
-  }
-
-  bool
-  non_trivial_replica_partition() const noexcept {
-    int size;
-    MPI_Comm_size(m_replica_comm, &size);
-    return size > 1;
   }
 
   void
