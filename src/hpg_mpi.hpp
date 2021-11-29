@@ -29,6 +29,7 @@ namespace hpg::mpi {
 enum class HPG_EXPORT ErrorType {
   InvalidCommunicatorSize,
   NullCommunicator,
+  NonconformingGridPartition,
   Other
 };
 
@@ -67,22 +68,30 @@ struct NullCommunicatorError
   NullCommunicatorError();
 };
 
-struct ReplicatedGridBrick {
+struct NonconformingGridPartitionError
+  : public Error {
+
+  NonconformingGridPartitionError();
+};
+
+struct ReplicatedGridDecomposition {
   // three axes are x, y, and channel; mrow partition not supported
   static constexpr unsigned rank = 3;
   enum Axis {x, y, channel};
 
-  unsigned num_replicas;
-  std::array<unsigned, rank> offset;
-  std::array<unsigned, rank> size;
+  std::array<std::vector<unsigned>, rank> m_sizes;
 
-  static bool
-  disjoint(const std::vector<ReplicatedGridBrick>& bricks);
+  std::vector<std::vector<std::vector<unsigned>>> m_num_extra_replicas;
 
-  // static bool
-  // complete(
-  //   const std::vector<ReplicatedGridBrick>& bricks,
-  //   const std::array<unsigned, 4>& space);
+  ReplicatedGridDecomposition(
+    const std::array<std::vector<unsigned>, rank>& sizes);
+
+  bool
+  conforms_to(
+    const std::array<unsigned, GridValueArray::rank>& grid_size) const;
+
+  unsigned
+  size() const;
 };
 
 namespace GridderState {
@@ -142,7 +151,7 @@ namespace GridderState {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    const std::vector<ReplicatedGridBrick>& grid_part) noexcept;
+    const ReplicatedGridDecomposition& grid_part) noexcept;
 
   /** factory method
    *
@@ -220,7 +229,7 @@ namespace GridderState {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    const std::vector<ReplicatedGridBrick>& grid_part) noexcept {
+    const ReplicatedGridDecomposition& grid_part) noexcept {
 
     return
       create(
@@ -311,7 +320,7 @@ namespace Gridder {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    const std::vector<ReplicatedGridBrick>& grid_part) noexcept;
+    const ReplicatedGridDecomposition& grid_part) noexcept;
 
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create2d(
@@ -356,7 +365,7 @@ namespace Gridder {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    const std::vector<ReplicatedGridBrick>& grid_part) noexcept {
+    const ReplicatedGridDecomposition& grid_part) noexcept {
 
     return
       create(
