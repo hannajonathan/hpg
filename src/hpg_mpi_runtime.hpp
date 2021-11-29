@@ -708,11 +708,10 @@ public:
 
   bool
   in_grid_channel_slice(int ch) const noexcept {
+    constexpr auto ax = int(impl::core::GridAxis::channel);
     return
-      (this->m_grid_offset_local[int(impl::core::GridAxis::channel)] <= ch)
-      && (ch
-          < (this->m_grid_offset_local[int(impl::core::GridAxis::channel)]
-             + this->m_grid_size_local[int(impl::core::GridAxis::channel)]));
+      (this->m_grid_offset_local[ax] <= ch)
+      && (ch < (this->m_grid_offset_local[ax] + this->m_grid_size_local[ax]));
   }
 
   template <unsigned N>
