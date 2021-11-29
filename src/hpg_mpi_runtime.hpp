@@ -264,6 +264,8 @@ struct /*HPG_EXPORT*/ State
 
   MPI_Comm m_replica_comm;
 
+  MPI_Comm m_plane_comm;
+
   mutable bool m_reduced_grid;
 
   mutable bool m_reduced_weights;
@@ -274,20 +276,27 @@ protected:
     : m_vis_comm(MPI_COMM_NULL)
     , m_grid_comm(MPI_COMM_NULL)
     , m_replica_comm(MPI_COMM_NULL)
+    , m_plane_comm(MPI_COMM_NULL)
     , m_reduced_grid(true)
     , m_reduced_weights(true) {}
 
 public:
 
-  State(MPI_Comm vis_comm, MPI_Comm grid_comm, MPI_Comm replica_comm)
+  State(
+    MPI_Comm vis_comm,
+    MPI_Comm grid_comm,
+    MPI_Comm replica_comm,
+    MPI_Comm plane_comm)
     : m_vis_comm(vis_comm)
     , m_grid_comm(grid_comm)
     , m_replica_comm(replica_comm)
+    , m_plane_comm(plane_comm)
     , m_reduced_grid(true)
     , m_reduced_weights(true) {}
 
   virtual ~State() {
-    for (auto& c : {&m_vis_comm, &m_grid_comm, &m_replica_comm}) {
+    for (auto& c :
+           {&m_vis_comm, &m_grid_comm, &m_replica_comm, &m_plane_comm}) {
       if (*c != MPI_COMM_NULL && *c != MPI_COMM_SELF && *c != MPI_COMM_WORLD)
         MPI_Comm_free(c);
     }
@@ -334,6 +343,11 @@ public:
     MPI_Comm_rank(m_replica_comm, &rank);
     return rank == 0;
   }
+
+  bool
+  non_trivial_plane_partition() const noexcept {
+    return m_plane_comm != MPI_COMM_NULL;
+  }
 };
 
 template <Device D>
@@ -369,6 +383,7 @@ public:
     MPI_Comm grid_comm,
     const ReplicatedGridBrick& grid_brick,
     MPI_Comm replica_comm,
+    MPI_Comm plane_comm,
     unsigned max_active_tasks,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
@@ -378,7 +393,7 @@ public:
     const IArrayVector& mueller_indexes,
     const IArrayVector& conjugate_mueller_indexes,
     const std::array<unsigned, 4>& implementation_versions)
-    : State(vis_comm, grid_comm, replica_comm)
+    : State(vis_comm, grid_comm, replica_comm, plane_comm)
     , ::hpg::runtime::StateT<D>(
       max_active_tasks,
       visibility_batch_size,
@@ -420,6 +435,9 @@ public:
       else
         m_replica_comm = MPI_COMM_SELF;
     }
+    if (st.m_plane_comm != MPI_COMM_NULL) {
+      MPI_Comm_dup(st.m_plane_comm, &m_plane_comm);
+    }
   }
 
   StateT(StateT&& st) noexcept
@@ -431,6 +449,7 @@ public:
     std::swap(m_vis_comm, st.m_vis_comm);
     std::swap(m_grid_comm, st.m_grid_comm);
     std::swap(m_replica_comm, st.m_replica_comm);
+    std::swap(m_plane_comm, st.m_plane_comm);
   }
 
   virtual ~StateT() {}
@@ -1167,6 +1186,7 @@ protected:
     std::swap(m_vis_comm, other.m_vis_comm);
     std::swap(m_grid_comm, other.m_grid_comm);
     std::swap(m_replica_comm, other.m_replica_comm);
+    std::swap(m_plane_comm, other.m_plane_comm);
     std::swap(m_reduced_grid, other.m_reduced_grid);
     std::swap(m_reduced_weights, other.m_reduced_weights);
   }
