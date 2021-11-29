@@ -701,20 +701,7 @@ public:
       if (non_trivial_visibility_partition() || non_trivial_replica_partition())
         exec.fence();
     }
-    // broadcast the model values
-    if (is_visibility_partition_root())
-      MPI_Bcast(
-        this->m_model.data(),
-        this->m_model.span(),
-        mpi_datatype<impl::gv_t>(),
-        0,
-        m_replica_comm);
-    MPI_Bcast(
-      this->m_model.data(),
-      this->m_model.span(),
-      mpi_datatype<impl::gv_t>(),
-      0,
-      m_vis_comm);
+    broadcast_model();
 
     return std::nullopt;
   }
@@ -1147,6 +1134,24 @@ protected:
     std::swap(m_plane_comm, other.m_plane_comm);
     std::swap(m_reduced_grid, other.m_reduced_grid);
     std::swap(m_reduced_weights, other.m_reduced_weights);
+  }
+
+  void
+  broadcast_model() noexcept {
+    // broadcast the model values
+    if (is_visibility_partition_root())
+      MPI_Bcast(
+        this->m_model.data(),
+        this->m_model.span(),
+        mpi_datatype<impl::gv_t>(),
+        0,
+        m_replica_comm);
+    MPI_Bcast(
+      this->m_model.data(),
+      this->m_model.span(),
+      mpi_datatype<impl::gv_t>(),
+      0,
+      m_vis_comm);
   }
 };
 
