@@ -590,7 +590,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
    * first argument is needed for complete class template argument deduction
    */
   VisibilityGridder(
-    const std::integral_constant<unsigned, N>&,
     const execution_space& exec,
     const K::Array<CFView, HPG_MAX_NUM_CF_GROUPS>& cfs,
     const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>& cf_radii,
@@ -1325,6 +1324,55 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       *this);
   }
 };
+
+template <
+  typename execution_space,
+  typename CFView,
+  typename MIndexView,
+  typename VisdataView,
+  typename VisWgtValuesView,
+  typename VisWgtColIndexView,
+  typename VisWgtRowIndexView,
+  typename GVisbuffView,
+  typename GridScale,
+  typename GridView,
+  typename GridWeightView,
+  typename ModelView>
+VisibilityGridder(
+  const execution_space&,
+  const K::Array<CFView, HPG_MAX_NUM_CF_GROUPS>&,
+  const K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS>&,
+  unsigned,
+  const MIndexView&,
+  const MIndexView&,
+  int,
+  int,
+  int,
+  const VisdataView&,
+  const VisWgtValuesView&,
+  const VisWgtColIndexView&,
+  const VisWgtRowIndexView&,
+  const GVisbuffView&,
+  const K::Array<GridScale, 2>&,
+  const GridView&,
+  const GridWeightView&,
+  const ModelView&,
+  const K::Array<int, 4>&,
+  const K::Array<int, 4>&) ->
+VisibilityGridder<
+  VisdataView::value_type::npol,
+  execution_space,
+  CFView,
+  MIndexView,
+  VisdataView,
+  VisWgtValuesView,
+  VisWgtColIndexView,
+  VisWgtRowIndexView,
+  GVisbuffView,
+  GridScale,
+  GridView,
+  GridWeightView,
+  ModelView>;
 
 /** grid normalization
  */

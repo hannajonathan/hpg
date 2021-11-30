@@ -848,7 +848,6 @@ public:
 
     auto gridder =
       impl::core::VisibilityGridder(
-        std::integral_constant<unsigned, N>(),
         exec_grid.space,
         cf.cf_d,
         cf.cf_radii,
