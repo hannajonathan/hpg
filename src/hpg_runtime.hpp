@@ -1159,14 +1159,12 @@ public:
     auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     auto& gvisbuff = exec_grid.gvisbuff;
-    K::deep_copy(
-      exec_grid.space,
-      gvisbuff,
-      typename std::remove_reference_t<decltype(gvisbuff)>::value_type());
+    using gvis0 =
+      typename std::remove_reference_t<decltype(gvisbuff)>::value_type;
+    K::deep_copy(exec_grid.space, gvisbuff, gvis0());
 
     auto gridder =
       impl::core::VisibilityGridder(
-        std::integral_constant<unsigned, N>(),
         exec_grid.space,
         cf.cf_d,
         cf.cf_radii,
