@@ -1033,6 +1033,7 @@ public:
       m_grid_offset_local[int(impl::core::GridAxis::mrow)];
     result[int(GridValueArray::Axis::channel)]=
       m_grid_offset_local[int(impl::core::GridAxis::channel)];
+    return result;
   }
 
   std::array<grid_scale_fp, 2>
