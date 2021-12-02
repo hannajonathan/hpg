@@ -866,45 +866,6 @@ public:
     int replica_rank;
     MPI_Comm_rank(m_replica_comm, &replica_rank);
 
-    // determine whether any visibility is being mapped to grid channels in
-    // multiple (> 1) ranks of the grid partition (can be skipped if not
-    // degridding)
-    bool non_local_channel_mapping;
-    if (non_trivial_grid_partition() && do_degrid) {
-      std::vector<int> num_ranks_mapped(len[0]);
-      // The following has the benefit of depending only on local data on every
-      // rank, but it comes at the cost of a call to MPI_Allreduce();
-      // alternatives may be considered if this design presents a performance
-      // issue. In particular, at best we're avoiding one later call to
-      // MPI_Allreduce after degridding but it comes at the expense of always
-      // calling MPI_Allreduce here. Assuming that the post-degridding call to
-      // MPI_Allreduce is slower than this one is reasonable, but not verified.
-
-      // FIXME: should expand test to account for partitioned planes
-      for (size_t i = replica_rank; i < len[0]; i += replica_size)
-        num_ranks_mapped[i] =
-          (std::any_of(
-            &wgt_col_index[wgt_row_index[i]],
-            &wgt_col_index[wgt_row_index[i + 1]],
-            [this](auto& c) { return in_grid_channel_slice(c); })
-           ? 1
-           : 0);
-      MPI_Allreduce(
-        MPI_IN_PLACE,
-        num_ranks_mapped.data(),
-        len[0],
-        mpi_datatype<decltype(num_ranks_mapped)::value_type>::value(),
-        MPI_SUM,
-        m_grid_comm);
-      non_local_channel_mapping =
-        std::any_of(
-          num_ranks_mapped.begin(),
-          num_ranks_mapped.end(),
-          [](auto& n) { return n > 1; });
-    } else {
-      non_local_channel_mapping = false;
-    }
-
     // copy visibilities and channel mapping vectors to device
     auto& exec_pre =
       this->m_exec_spaces[this->next_exec_space(StreamPhase::PRE_GRIDDING)];
@@ -953,34 +914,32 @@ public:
     // use gridder object to invoke degridding and gridding kernels
     if (do_degrid) {
       gridder.degrid_all(len[0]);
-      if (non_local_channel_mapping) {
-        // Whenever any visibilities are mapped to grid channels on multiple
-        // ranks, we need to reduce the degridded visibility values from and to
-        // all ranks. NB: this is a prime area for considering performance
-        // improvements, but any solution should be scalable, and at least the
-        // following satisfies that criterion
-        exec_grid.fence();
-        // Reduce all 4 polarizations, independent of the value of N, in order
-        // to allow use of both a predefined datatype and a predefined reduction
-        // operator, MPI_SUM. The function hpg::mpi::gvisbuff_datatype() could
-        // be used to define a custom datatype, which would, for N < 4, be
-        // non-contiguous and would also require a custom reduction
-        // operator. The alternative might reduce the size of messages, but
-        // would incur inefficiencies in the execution of the reduction
-        // operation. A comparison between the alternatives might be worth
-        // profiling, but for now, we go with the simpler approach.
-        static_assert(
-          sizeof(
-            typename std::remove_reference_t<decltype(gvisbuff)>::value_type)
-          == 4 * sizeof(K::complex<visibility_fp>));
-        MPI_Allreduce(
-          MPI_IN_PLACE,
-          gvisbuff.data(),
-          4 * len[0],
-          mpi_datatype<K::complex<visibility_fp>>::value(),
-          MPI_SUM,
-          m_grid_comm);
-      }
+      // Whenever any visibilities are mapped to grid channels on multiple
+      // ranks, we need to reduce the degridded visibility values from and to
+      // all ranks. NB: this is a prime area for considering performance
+      // improvements, but any solution should be scalable, and at least the
+      // following satisfies that criterion
+      exec_grid.fence();
+      // Reduce all 4 polarizations, independent of the value of N, in order
+      // to allow use of both a predefined datatype and a predefined reduction
+      // operator, MPI_SUM. The function hpg::mpi::gvisbuff_datatype() could
+      // be used to define a custom datatype, which would, for N < 4, be
+      // non-contiguous and would also require a custom reduction
+      // operator. The alternative might reduce the size of messages, but
+      // would incur inefficiencies in the execution of the reduction
+      // operation. A comparison between the alternatives might be worth
+      // profiling, but for now, we go with the simpler approach.
+      static_assert(
+        sizeof(
+          typename std::remove_reference_t<decltype(gvisbuff)>::value_type)
+        == 4 * sizeof(K::complex<visibility_fp>));
+      MPI_Allreduce(
+        MPI_IN_PLACE,
+        gvisbuff.data(),
+        4 * len[0],
+        mpi_datatype<K::complex<visibility_fp>>::value(),
+        MPI_SUM,
+        m_grid_comm);
       if (do_grid)
         gridder.vis_copy_residual_and_rescale(len[0]);
       else
