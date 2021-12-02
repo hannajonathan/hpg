@@ -29,180 +29,246 @@ namespace impl = ::hpg::runtime::impl;
 namespace K = Kokkos;
 
 template <typename T>
-constexpr MPI_Datatype
-mpi_datatype() {
-  return MPI_DATATYPE_NULL;
-}
-template <>
-constexpr MPI_Datatype
-mpi_datatype<char>() {
-  return MPI_CHAR;
-}
-template <>
-constexpr MPI_Datatype
-mpi_datatype<signed short int>() {
-  return MPI_SHORT;
-}
-template <>
-constexpr MPI_Datatype
-mpi_datatype<signed int>() {
-  return MPI_INT;
+struct mpi_datatype {
+  using value_type = void;
+  static value_type value() {};
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<signed long int>() {
-  return MPI_LONG;
+struct mpi_datatype<char> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_CHAR; };
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<signed long long int>() {
-  return MPI_LONG_LONG;
+struct mpi_datatype<signed short int> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_SHORT; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<signed char>() {
-  return MPI_SIGNED_CHAR;
+struct mpi_datatype<signed int> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_INT; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<unsigned char>() {
-  return MPI_UNSIGNED_CHAR;
+struct mpi_datatype<signed long int> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_LONG; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<unsigned short int>() {
-  return MPI_UNSIGNED_SHORT;
+struct mpi_datatype<signed long long int> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_LONG_LONG; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<unsigned int>() {
-  return MPI_UNSIGNED;
+struct mpi_datatype<signed char> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_SIGNED_CHAR; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<unsigned long int>() {
-  return MPI_UNSIGNED_LONG;
+struct mpi_datatype<unsigned char> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_UNSIGNED_CHAR; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<unsigned long long int>() {
-  return MPI_UNSIGNED_LONG_LONG;
+struct mpi_datatype<unsigned short int> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_UNSIGNED_SHORT; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<float>() {
-  return MPI_FLOAT;
+struct mpi_datatype<unsigned int> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_UNSIGNED; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<double>() {
-  return MPI_DOUBLE;
+struct mpi_datatype<unsigned long int> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_UNSIGNED_LONG; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<long double>() {
-  return MPI_LONG_DOUBLE;
+struct mpi_datatype<unsigned long long int> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_UNSIGNED_LONG_LONG; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<wchar_t>() {
-  return MPI_WCHAR;
+struct mpi_datatype<float> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_FLOAT; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<bool>() {
-  return MPI_CXX_BOOL;
+struct mpi_datatype<double> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_DOUBLE; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<std::complex<float>>() {
-  return MPI_CXX_COMPLEX;
+struct mpi_datatype<long double> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_LONG_DOUBLE; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<std::complex<double>>() {
-  return MPI_CXX_DOUBLE_COMPLEX;
+struct mpi_datatype<wchar_t> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_WCHAR; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<std::complex<long double>>() {
-  return MPI_CXX_LONG_DOUBLE_COMPLEX;
-};
-
-template <>
-constexpr MPI_Datatype
-mpi_datatype<K::complex<float>>() {
-  return MPI_CXX_COMPLEX;
+struct mpi_datatype<bool> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_CXX_BOOL; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<K::complex<double>>() {
-  return MPI_CXX_DOUBLE_COMPLEX;
+struct mpi_datatype<std::complex<float>> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_CXX_COMPLEX; }
 };
 template <>
-constexpr MPI_Datatype
-mpi_datatype<K::complex<long double>>() {
-  return MPI_CXX_LONG_DOUBLE_COMPLEX;
+struct mpi_datatype<std::complex<double>> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_CXX_DOUBLE_COMPLEX; }
 };
-
+template <>
+struct mpi_datatype<std::complex<long double>> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_CXX_LONG_DOUBLE_COMPLEX; }
+};
+template <>
+struct mpi_datatype<K::complex<float>> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_CXX_COMPLEX; }
+};
+template <>
+struct mpi_datatype<K::complex<double>> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_CXX_DOUBLE_COMPLEX; }
+};
+template <>
+struct mpi_datatype<K::complex<long double>> {
+  using value_type = MPI_Datatype;
+  static constexpr value_type value() { return MPI_CXX_LONG_DOUBLE_COMPLEX; }
+};
 template <unsigned N>
-MPI_Datatype
-mpi_datatype<::hpg::VisData<N>>() {
-  static std::mutex m;
-  static MPI_Datatype result = MPI_DATATYPE_NULL;
-  std::lock_guard<std::mutex> l(m);
-  if (result == MPI_DATATYPE_NULL) {
-    using VD = ::hpg::VisData<N>;
-    constexpr int count = 6;
-    int blocklengths[count] = {
-      VD::npol, // m_visibilities
-      1, // m_frequency
-      1, // m_phase
-      std::tuple_size<decltype(VD::m_uvw)>::value,
-      std::tuple_size<decltype(VD::m_cf_index)>::value,
-      std::tuple_size<decltype(VD::m_cf_phase_gradient)>::value
-    };
-    MPI_Aint displacements[count] = {
-      offsetof(VD, m_visibilities),
-      offsetof(VD, m_frequency),
-      offsetof(VD, m_phase),
-      offsetof(VD, m_uvw),
-      offsetof(VD, m_cf_index),
-      offsetof(VD, m_cf_phase_gradient)
-    };
-    MPI_Datatype types[count] = {
-      mpi_datatype<typename decltype(VD::m_visibilities)::value_type>(),
-      mpi_datatype<decltype(VD::m_frequency)>(),
-      mpi_datatype<decltype(VD::m_phase)>(),
-      mpi_datatype<typename decltype(VD::m_uvw)::value_type>(),
-      mpi_datatype<typename decltype(VD::m_cf_index)::value_type>(),
-      mpi_datatype<typename decltype(VD::m_cf_phase_gradient)::value_type>()
-    };
-    MPI_Type_create_struct(count, blocklengths, displacements, types, &result);
-    MPI_Type_commit(&result);
+struct mpi_datatype<::hpg::VisData<N>> {
+  using value_type = MPI_Datatype;
+  static value_type
+  value() {
+    static std::once_flag flag;
+    static MPI_Datatype result;
+    std::call_once(
+      flag,
+      [](MPI_Datatype* dt) {
+        using VD = ::hpg::VisData<N>;
+        constexpr int count = 6;
+        int blocklengths[count] = {
+          VD::npol, // m_visibilities
+          1, // m_frequency
+          1, // m_phase
+          std::tuple_size<decltype(VD::m_uvw)>::value,
+          std::tuple_size<decltype(VD::m_cf_index)>::value,
+          std::tuple_size<decltype(VD::m_cf_phase_gradient)>::value
+        };
+        MPI_Aint displacements[count] = {
+          offsetof(VD, m_visibilities),
+          offsetof(VD, m_frequency),
+          offsetof(VD, m_phase),
+          offsetof(VD, m_uvw),
+          offsetof(VD, m_cf_index),
+          offsetof(VD, m_cf_phase_gradient)
+        };
+        MPI_Datatype types[count] = {
+          mpi_datatype<typename decltype(VD::m_visibilities)::value_type>
+            ::value(),
+          mpi_datatype<decltype(VD::m_frequency)>::value(),
+          mpi_datatype<decltype(VD::m_phase)>::value(),
+          mpi_datatype<typename decltype(VD::m_uvw)::value_type>::value(),
+          mpi_datatype<typename decltype(VD::m_cf_index)::value_type>::value(),
+          mpi_datatype<typename decltype(VD::m_cf_phase_gradient)::value_type>
+            ::value()
+        };
+        MPI_Type_create_struct(
+          count,
+          blocklengths,
+          displacements,
+          types,
+          dt);
+        MPI_Type_commit(dt);
+      },
+      &result);
+    return result;
   }
-  return result;
-}
-
-template <unsigned N>
-MPI_Datatype
-gvisbuff_datatype() {
-  static std::mutex m;
-  static MPI_Datatype result = MPI_DATATYPE_NULL;
-  std::lock_guard<std::mutex> l(m);
-  if (result == MPI_DATATYPE_NULL) {
-    using PA = impl::core::poln_array_type<visibility_fp, 4>;
-    MPI_Datatype blk;
-    MPI_Type_contiguous(
-      N,
-      mpi_datatype<std::complex<visibility_fp>>(),
-      &blk);
-    MPI_Type_create_resized(blk, 0, sizeof(PA), &result);
-    MPI_Type_free(&blk);
-    MPI_Type_commit(&result);
+};
+template <typename T, int N>
+struct mpi_datatype<impl::core::poln_array_type<T, N>> {
+  using value_type = MPI_Datatype;
+  static value_type
+  value() {
+    static std::once_flag flag;
+    static MPI_Datatype result;
+    std::call_once(
+      flag,
+      [](MPI_Datatype* dt) {
+        MPI_Type_contiguous(
+          N,
+          mpi_datatype<std::complex<T>>::value(),
+          dt);
+        MPI_Type_commit(dt);
+      },
+      &result);
+    return result;
   }
-  return result;
-}
+};
+template <
+  unsigned N,
+  typename V,
+  typename F,
+  typename P,
+  typename U,
+  typename G>
+struct mpi_datatype<impl::core::VisData<N, V, F, P, U, G>> {
+  using value_type = MPI_Datatype;
+  static value_type
+  value() {
+    static std::once_flag flag;
+    static MPI_Datatype result;
+    std::call_once(
+      flag,
+      [](MPI_Datatype* dt) {
+        using VD = impl::core::VisData<N, V, F, P, U, G>;
+        constexpr int count = 6;
+        int blocklengths[count] = {
+          VD::npol, // m_values
+          1, // m_freq
+          1, // m_d_phase
+          decltype(VD::m_uvw)::size(),
+          decltype(VD::m_cf_index)::size(),
+          decltype(VD::m_cf_phase_gradient)::size()
+        };
+        MPI_Aint displacements[count] = {
+          offsetof(VD, m_values),
+          offsetof(VD, m_freq),
+          offsetof(VD, m_d_phase),
+          offsetof(VD, m_uvw),
+          offsetof(VD, m_cf_index),
+          offsetof(VD, m_cf_phase_gradient)
+        };
+        MPI_Datatype types[count] = {
+          mpi_datatype<typename decltype(VD::m_values)::value_type>
+            ::value(),
+          mpi_datatype<decltype(VD::m_freq)>::value(),
+          mpi_datatype<decltype(VD::m_d_phase)>::value(),
+          mpi_datatype<typename decltype(VD::m_uvw)::value_type>::value(),
+          mpi_datatype<typename decltype(VD::m_cf_index)::value_type>::value(),
+          mpi_datatype<typename decltype(VD::m_cf_phase_gradient)::value_type>
+            ::value()
+        };
+        MPI_Type_create_struct(
+          count,
+          blocklengths,
+          displacements,
+          types,
+          dt);
+        MPI_Type_commit(dt);
+      },
+      &result);
+    return result;
+  }
+};
 
 struct ReplicatedGridBrick {
   // three axes are x, y, and channel; mrow partition not supported
@@ -496,7 +562,7 @@ public:
            : this->m_grid_weights.data()),
           this->m_grid_weights.data(),
           this->m_grid_weights.span(),
-          mpi_datatype<grid_value_fp>(),
+          mpi_datatype<grid_value_fp>::value(),
           MPI_SUM,
           0,
           m_vis_comm);
@@ -505,7 +571,7 @@ public:
             (is_root ? MPI_IN_PLACE : this->m_grid_weights.data()),
             this->m_grid_weights.data(),
             this->m_grid_weights.span(),
-            mpi_datatype<grid_value_fp>(),
+            mpi_datatype<grid_value_fp>::value(),
             MPI_SUM,
             0,
             m_replica_comm);
@@ -537,7 +603,7 @@ public:
           (is_visibility_partition_root() ? MPI_IN_PLACE : this->m_grid.data()),
           this->m_grid.data(),
           this->m_grid.span(),
-          mpi_datatype<impl::gv_t>(),
+          mpi_datatype<impl::gv_t>::value(),
           MPI_SUM,
           0,
           m_vis_comm);
@@ -546,7 +612,7 @@ public:
             (is_root ? MPI_IN_PLACE : this->m_grid.data()),
             this->m_grid.data(),
             this->m_grid.span(),
-            mpi_datatype<impl::gv_t>(),
+            mpi_datatype<impl::gv_t>::value(),
             MPI_SUM,
             0,
             m_replica_comm);
@@ -601,12 +667,12 @@ public:
           shape.push_back(e);
       shape_sz = int(shape.size());
     }
-    MPI_Bcast(&shape_sz, 1, mpi_datatype<int>(), 0, m_grid_comm);
+    MPI_Bcast(&shape_sz, 1, mpi_datatype<int>::value(), 0, m_grid_comm);
     shape.resize(shape_sz);
     MPI_Bcast(
       shape.data(),
       shape_sz,
-      mpi_datatype<unsigned>(),
+      mpi_datatype<unsigned>::value(),
       0,
       m_grid_comm);
 
@@ -619,7 +685,7 @@ public:
       MPI_Bcast(
         dev_cf_array.m_arrays[grp].data(),
         dev_cf_array.m_arrays[grp].size(),
-        mpi_datatype<CFArray::value_type>(),
+        mpi_datatype<CFArray::value_type>::value(),
         0,
         m_grid_comm);
 
@@ -654,13 +720,13 @@ public:
         MPI_Bcast(
           model_sz.data(),
           4,
-          mpi_datatype<unsigned>(),
+          mpi_datatype<unsigned>::value(),
           0,
           m_replica_comm);
       MPI_Bcast(
         model_sz.data(),
         4,
-        mpi_datatype<unsigned>(),
+        mpi_datatype<unsigned>::value(),
         0,
         m_vis_comm);
       if (this->m_grid_size_local[0] != model_sz[0]
@@ -756,7 +822,7 @@ public:
       MPI_Ibcast(
         visibilities.data(),
         visibilities.size(),
-        mpi_datatype<::hpg::VisData<N>>(),
+        mpi_datatype<::hpg::VisData<N>>::value(),
         0,
         m_grid_comm,
         &reqs.back());
@@ -766,7 +832,7 @@ public:
         wgt_values.data(),
         wgt_values.size(),
         mpi_datatype<
-          std::remove_reference_t<decltype(wgt_values)>::value_type>(),
+          std::remove_reference_t<decltype(wgt_values)>::value_type>::value(),
         0,
         m_grid_comm,
         &reqs.back());
@@ -776,7 +842,8 @@ public:
         wgt_col_index.data(),
         wgt_col_index.size(),
         mpi_datatype<
-          std::remove_reference_t<decltype(wgt_col_index)>::value_type>(),
+          std::remove_reference_t<decltype(wgt_col_index)>::value_type>
+          ::value(),
         0,
         m_grid_comm,
         &reqs.back());
@@ -786,7 +853,8 @@ public:
         wgt_row_index.data(),
         wgt_row_index.size(),
         mpi_datatype<
-          std::remove_reference_t<decltype(wgt_row_index)>::value_type>(),
+          std::remove_reference_t<decltype(wgt_row_index)>::value_type>
+          ::value(),
         0,
         m_grid_comm,
         &reqs.back());
@@ -825,7 +893,7 @@ public:
         MPI_IN_PLACE,
         num_ranks_mapped.data(),
         len[0],
-        mpi_datatype<decltype(num_ranks_mapped)::value_type>(),
+        mpi_datatype<decltype(num_ranks_mapped)::value_type>::value(),
         MPI_SUM,
         m_grid_comm);
       non_local_channel_mapping =
@@ -909,7 +977,7 @@ public:
           MPI_IN_PLACE,
           gvisbuff.data(),
           4 * len[0],
-          mpi_datatype<K::complex<visibility_fp>>(),
+          mpi_datatype<K::complex<visibility_fp>>::value(),
           MPI_SUM,
           m_grid_comm);
       }
@@ -969,7 +1037,7 @@ public:
       MPI_Sendrecv_replace(
         exec.weight_values.data(),
         max_wgts,
-        mpi_datatype<vis_weight_fp>(),
+        mpi_datatype<vis_weight_fp>::value(),
         left,
         0,
         right,
@@ -980,7 +1048,7 @@ public:
       MPI_Sendrecv_replace(
         exec.weight_col_index.data(),
         max_wgts,
-        mpi_datatype<unsigned>(),
+        mpi_datatype<unsigned>::value(),
         left,
         0,
         right,
@@ -991,7 +1059,19 @@ public:
       MPI_Sendrecv_replace(
         exec.weight_row_index.data(),
         max_vis + 1,
-        mpi_datatype<size_t>(),
+        mpi_datatype<size_t>::value(),
+        left,
+        0,
+        right,
+        0,
+        m_grid_comm,
+        MPI_STATUS_IGNORE);
+      // reqs.push_back(MPI_REQUEST_NULL);
+      auto visdata = exec.template visdata<N>();
+      MPI_Sendrecv_replace(
+        visdata.data(),
+        max_vis,
+        mpi_datatype<typename decltype(visdata)::value_type>::value(),
         left,
         0,
         right,
@@ -1000,9 +1080,9 @@ public:
         MPI_STATUS_IGNORE);
       // reqs.push_back(MPI_REQUEST_NULL);
       MPI_Sendrecv_replace(
-        exec.template visdata<N>().data(),
+        exec.gvisbuff.data(),
         max_vis,
-        MPI_DOUBLE, //FIXME!
+        mpi_datatype<typename decltype(exec.gvisbuff)::value_type>::value(),
         left,
         0,
         right,
@@ -1071,10 +1151,10 @@ public:
         visibilities.data(),
         vis_sendcounts.data(),
         vis_displs.data(),
-        mpi_datatype<::hpg::VisData<N>>(),
+        mpi_datatype<::hpg::VisData<N>>::value(),
         is_grid_partition_root() ? MPI_IN_PLACE : visibilities.data(),
         num_vis,
-        mpi_datatype<::hpg::VisData<N>>(),
+        mpi_datatype<::hpg::VisData<N>>::value(),
         0,
         m_grid_comm,
         &reqs.back());
@@ -1097,11 +1177,13 @@ public:
         wri_sendcounts.data(),
         wri_displs.data(),
         mpi_datatype<
-          std::remove_reference_t<decltype(wgt_row_index)>::value_type>(),
+          std::remove_reference_t<decltype(wgt_row_index)>::value_type>
+          ::value(),
         is_grid_partition_root() ? MPI_IN_PLACE : wgt_row_index.data(),
         num_vis + 1,
         mpi_datatype<
-          std::remove_reference_t<decltype(wgt_row_index)>::value_type>(),
+          std::remove_reference_t<decltype(wgt_row_index)>::value_type>
+          ::value(),
         0,
         m_grid_comm,
         &reqs.back());
@@ -1133,11 +1215,13 @@ public:
         wv_sendcounts.data(),
         wv_displs.data(),
         mpi_datatype<
-          std::remove_reference_t<decltype(wgt_col_index)>::value_type>(),
+          std::remove_reference_t<decltype(wgt_col_index)>::value_type>
+          ::value(),
         is_grid_partition_root() ? MPI_IN_PLACE : wgt_col_index.data(),
         num_wgt_values,
         mpi_datatype<
-          std::remove_reference_t<decltype(wgt_col_index)>::value_type>(),
+          std::remove_reference_t<decltype(wgt_col_index)>::value_type>
+          ::value(),
         0,
         m_grid_comm,
         &reqs.back());
@@ -1147,11 +1231,11 @@ public:
         wv_sendcounts.data(),
         wv_displs.data(),
         mpi_datatype<
-          std::remove_reference_t<decltype(wgt_values)>::value_type>(),
+          std::remove_reference_t<decltype(wgt_values)>::value_type>::value(),
         is_grid_partition_root() ? MPI_IN_PLACE : wgt_values.data(),
         num_wgt_values,
         mpi_datatype<
-          std::remove_reference_t<decltype(wgt_values)>::value_type>(),
+          std::remove_reference_t<decltype(wgt_values)>::value_type>::value(),
         0,
         m_grid_comm,
         &reqs.back());
@@ -1292,6 +1376,9 @@ public:
           return_visibilities,
           do_grid);
       break;
+    default:
+      assert(false);
+      return maybe_vis_t();
     }
   }
 
@@ -1521,13 +1608,13 @@ protected:
       MPI_Bcast(
         this->m_model.data(),
         this->m_model.span(),
-        mpi_datatype<impl::gv_t>(),
+        mpi_datatype<impl::gv_t>::value(),
         0,
         m_replica_comm);
     MPI_Bcast(
       this->m_model.data(),
       this->m_model.span(),
-      mpi_datatype<impl::gv_t>(),
+      mpi_datatype<impl::gv_t>::value(),
       0,
       m_vis_comm);
   }
