@@ -1187,20 +1187,20 @@ public:
         m_grid_size_global);
 
     if (do_degrid) {
-      gridder.degrid_all();
+      gridder.degrid_all(len);
       if (do_grid)
-        gridder.vis_copy_residual_and_rescale();
+        gridder.vis_copy_residual_and_rescale(len);
       else
-        gridder.vis_copy_predicted();
+        gridder.vis_copy_predicted(len);
     } else {
-      gridder.vis_rescale();
+      gridder.vis_rescale(len);
     }
 
     if (do_grid) {
       if (update_grid_weights)
-        gridder.grid_all();
+        gridder.grid_all(len);
       else
-        gridder.grid_all_no_weights();
+        gridder.grid_all_no_weights(len);
     }
     return exec_grid.copy_visibilities_to_host(return_visibilities);
   }
