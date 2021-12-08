@@ -226,8 +226,10 @@ struct /*HPG_EXPORT*/ DeviceTraits<K::Cuda> {
 
 /** names for stream states */
 enum class /*HPG_EXPORT*/ StreamPhase {
+  PRE_DEGRIDDING,
+  DEGRIDDING,
   PRE_GRIDDING,
-  GRIDDING
+  GRIDDING,
 };
 
 /** formatted output for StreamPhase value */
