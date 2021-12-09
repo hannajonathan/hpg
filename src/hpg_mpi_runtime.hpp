@@ -30,121 +30,145 @@ namespace K = Kokkos;
 
 template <typename T>
 struct mpi_datatype {
+  using scalar_type = T;
   using value_type = void;
   static value_type value() {};
 };
 template <>
 struct mpi_datatype<char> {
+  using scalar_type = char;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_CHAR; };
 };
 template <>
 struct mpi_datatype<signed short int> {
+  using scalar_type = signed short int;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_SHORT; }
 };
 template <>
 struct mpi_datatype<signed int> {
+  using scalar_type = signed int;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_INT; }
 };
 template <>
 struct mpi_datatype<signed long int> {
+  using scalar_type = signed long int;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_LONG; }
 };
 template <>
 struct mpi_datatype<signed long long int> {
+  using scalar_type = signed long long int;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_LONG_LONG; }
 };
 template <>
 struct mpi_datatype<signed char> {
+  using scalar_type = signed char;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_SIGNED_CHAR; }
 };
 template <>
 struct mpi_datatype<unsigned char> {
+  using scalar_type = unsigned char;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_UNSIGNED_CHAR; }
 };
 template <>
 struct mpi_datatype<unsigned short int> {
+  using scalar_type = unsigned short int;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_UNSIGNED_SHORT; }
 };
 template <>
 struct mpi_datatype<unsigned int> {
+  using scalar_type = unsigned int;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_UNSIGNED; }
 };
 template <>
 struct mpi_datatype<unsigned long int> {
+  using scalar_type = unsigned long int;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_UNSIGNED_LONG; }
 };
 template <>
 struct mpi_datatype<unsigned long long int> {
+  using scalar_type = unsigned long long int;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_UNSIGNED_LONG_LONG; }
 };
 template <>
 struct mpi_datatype<float> {
+  using scalar_type = float;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_FLOAT; }
 };
 template <>
 struct mpi_datatype<double> {
+  using scalar_type = double;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_DOUBLE; }
 };
 template <>
 struct mpi_datatype<long double> {
+  using scalar_type = long double;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_LONG_DOUBLE; }
 };
 template <>
 struct mpi_datatype<wchar_t> {
+  using scalar_type = wchar_t;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_WCHAR; }
 };
 template <>
 struct mpi_datatype<bool> {
+  using scalar_type = bool;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_CXX_BOOL; }
 };
 template <>
 struct mpi_datatype<std::complex<float>> {
+  using scalar_type = std::complex<float>;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_CXX_COMPLEX; }
 };
 template <>
 struct mpi_datatype<std::complex<double>> {
+  using scalar_type = std::complex<double>;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_CXX_DOUBLE_COMPLEX; }
 };
 template <>
 struct mpi_datatype<std::complex<long double>> {
+  using scalar_type = std::complex<long double>;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_CXX_LONG_DOUBLE_COMPLEX; }
 };
 template <>
 struct mpi_datatype<K::complex<float>> {
+  using scalar_type = K::complex<float>;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_CXX_COMPLEX; }
 };
 template <>
 struct mpi_datatype<K::complex<double>> {
+  using scalar_type = K::complex<double>;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_CXX_DOUBLE_COMPLEX; }
 };
 template <>
 struct mpi_datatype<K::complex<long double>> {
+  using scalar_type = K::complex<long double>;
   using value_type = MPI_Datatype;
   static constexpr value_type value() { return MPI_CXX_LONG_DOUBLE_COMPLEX; }
 };
 template <unsigned N>
 struct mpi_datatype<::hpg::VisData<N>> {
+  using scalar_type = ::hpg::VisData<N>;
   using value_type = MPI_Datatype;
   static value_type
   value() {
@@ -153,39 +177,42 @@ struct mpi_datatype<::hpg::VisData<N>> {
     std::call_once(
       flag,
       [](MPI_Datatype* dt) {
-        using VD = ::hpg::VisData<N>;
         constexpr int count = 6;
-        int blocklengths[count] = {
-          VD::npol, // m_visibilities
+        const std::array<int, count> blocklengths{
+          scalar_type::npol, // m_visibilities
           1, // m_frequency
           1, // m_phase
-          std::tuple_size<decltype(VD::m_uvw)>::value,
-          std::tuple_size<decltype(VD::m_cf_index)>::value,
-          std::tuple_size<decltype(VD::m_cf_phase_gradient)>::value
+          std::tuple_size<decltype(scalar_type::m_uvw)>::value,
+          std::tuple_size<decltype(scalar_type::m_cf_index)>::value,
+          std::tuple_size<decltype(scalar_type::m_cf_phase_gradient)>::value
         };
-        MPI_Aint displacements[count] = {
-          offsetof(VD, m_visibilities),
-          offsetof(VD, m_frequency),
-          offsetof(VD, m_phase),
-          offsetof(VD, m_uvw),
-          offsetof(VD, m_cf_index),
-          offsetof(VD, m_cf_phase_gradient)
+        const std::array<MPI_Aint, count> displacements{
+          offsetof(scalar_type, m_visibilities),
+          offsetof(scalar_type, m_frequency),
+          offsetof(scalar_type, m_phase),
+          offsetof(scalar_type, m_uvw),
+          offsetof(scalar_type, m_cf_index),
+          offsetof(scalar_type, m_cf_phase_gradient)
         };
-        MPI_Datatype types[count] = {
-          mpi_datatype<typename decltype(VD::m_visibilities)::value_type>
+        const std::array<MPI_Datatype, count> types{
+          mpi_datatype<
+            typename decltype(scalar_type::m_visibilities)::value_type>
             ::value(),
-          mpi_datatype<decltype(VD::m_frequency)>::value(),
-          mpi_datatype<decltype(VD::m_phase)>::value(),
-          mpi_datatype<typename decltype(VD::m_uvw)::value_type>::value(),
-          mpi_datatype<typename decltype(VD::m_cf_index)::value_type>::value(),
-          mpi_datatype<typename decltype(VD::m_cf_phase_gradient)::value_type>
+          mpi_datatype<decltype(scalar_type::m_frequency)>::value(),
+          mpi_datatype<decltype(scalar_type::m_phase)>::value(),
+          mpi_datatype<
+            typename decltype(scalar_type::m_uvw)::value_type>::value(),
+          mpi_datatype<
+            typename decltype(scalar_type::m_cf_index)::value_type>::value(),
+          mpi_datatype<
+            typename decltype(scalar_type::m_cf_phase_gradient)::value_type>
             ::value()
         };
         MPI_Type_create_struct(
           count,
-          blocklengths,
-          displacements,
-          types,
+          blocklengths.data(),
+          displacements.data(),
+          types.data(),
           dt);
         MPI_Type_commit(dt);
       },
@@ -195,6 +222,7 @@ struct mpi_datatype<::hpg::VisData<N>> {
 };
 template <typename T, int N>
 struct mpi_datatype<impl::core::poln_array_type<T, N>> {
+  using scalar_type = impl::core::poln_array_type<T, N>;
   using value_type = MPI_Datatype;
   static value_type
   value() {
@@ -221,6 +249,7 @@ template <
   typename U,
   typename G>
 struct mpi_datatype<impl::core::VisData<N, V, F, P, U, G>> {
+  using scalar_type = impl::core::VisData<N, V, F, P, U, G>;
   using value_type = MPI_Datatype;
   static value_type
   value() {
@@ -229,39 +258,41 @@ struct mpi_datatype<impl::core::VisData<N, V, F, P, U, G>> {
     std::call_once(
       flag,
       [](MPI_Datatype* dt) {
-        using VD = impl::core::VisData<N, V, F, P, U, G>;
         constexpr int count = 6;
-        int blocklengths[count] = {
-          VD::npol, // m_values
+        const std::array<int, count> blocklengths{
+          scalar_type::npol, // m_values
           1, // m_freq
           1, // m_d_phase
-          decltype(VD::m_uvw)::size(),
-          decltype(VD::m_cf_index)::size(),
-          decltype(VD::m_cf_phase_gradient)::size()
+          decltype(scalar_type::m_uvw)::size(),
+          decltype(scalar_type::m_cf_index)::size(),
+          decltype(scalar_type::m_cf_phase_gradient)::size()
         };
-        MPI_Aint displacements[count] = {
-          offsetof(VD, m_values),
-          offsetof(VD, m_freq),
-          offsetof(VD, m_d_phase),
-          offsetof(VD, m_uvw),
-          offsetof(VD, m_cf_index),
-          offsetof(VD, m_cf_phase_gradient)
+        const std::array<MPI_Aint, count> displacements{
+          offsetof(scalar_type, m_values),
+          offsetof(scalar_type, m_freq),
+          offsetof(scalar_type, m_d_phase),
+          offsetof(scalar_type, m_uvw),
+          offsetof(scalar_type, m_cf_index),
+          offsetof(scalar_type, m_cf_phase_gradient)
         };
-        MPI_Datatype types[count] = {
-          mpi_datatype<typename decltype(VD::m_values)::value_type>
+        const std::array<MPI_Datatype, count> types{
+          mpi_datatype<typename decltype(scalar_type::m_values)::value_type>
             ::value(),
-          mpi_datatype<decltype(VD::m_freq)>::value(),
-          mpi_datatype<decltype(VD::m_d_phase)>::value(),
-          mpi_datatype<typename decltype(VD::m_uvw)::value_type>::value(),
-          mpi_datatype<typename decltype(VD::m_cf_index)::value_type>::value(),
-          mpi_datatype<typename decltype(VD::m_cf_phase_gradient)::value_type>
+          mpi_datatype<decltype(scalar_type::m_freq)>::value(),
+          mpi_datatype<decltype(scalar_type::m_d_phase)>::value(),
+          mpi_datatype<
+            typename decltype(scalar_type::m_uvw)::value_type>::value(),
+          mpi_datatype<
+            typename decltype(scalar_type::m_cf_index)::value_type>::value(),
+          mpi_datatype<
+            typename decltype(scalar_type::m_cf_phase_gradient)::value_type>
             ::value()
         };
         MPI_Type_create_struct(
           count,
-          blocklengths,
-          displacements,
-          types,
+          blocklengths.data(),
+          displacements.data(),
+          types.data(),
           dt);
         MPI_Type_commit(dt);
       },
