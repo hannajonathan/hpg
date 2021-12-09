@@ -27,6 +27,7 @@ namespace hpg::mpi {
 /** MPI error types
  */
 enum class HPG_EXPORT ErrorType {
+  OddNumberStreams,
   InvalidCommunicatorSize,
   NullCommunicator,
   NonconformingGridPartition,
@@ -54,6 +55,12 @@ public:
 
   /** destructor */
   virtual ~Error();
+};
+
+struct OddNumberStreamsError
+  : public Error {
+
+  OddNumberStreamsError();
 };
 
 struct InvalidCommunicatorSizeError
@@ -94,19 +101,18 @@ struct ReplicatedGridDecomposition {
   size() const;
 };
 
+enum class VisibilityDistribution {
+  Broadcast,
+  Pipeline,
+};
+
 namespace GridderState {
 
   /** factory method
    *
-   * @param comm MPI communicator with 2d topology, MPI_COMM_SELF, or
-   * MPI_COMM_NULL
-   * @param vis_part_index dimensional index in 2d topology of visibililty
-   * partition (can be -1, if no visibility partition)
-   * @param grid_part_index dimensional index in 2d topology of grid partition
-   * (can be -1 if no grid partition)
    * @param device gridder device type
-   * @param max_added_tasks maximum number of additional tasks (actual number
-   * may be less than requested)
+   * @param max_added_tasks maximum number of additional tasks; must be an odd
+   * number (actual number may be less than requested)
    * @param visibility_batch_size batch size for number of VisData elements
    * (N.B: this value is currently a hard limit of the implementation that
    * governs the maximum number of elements in a vector of VisData elements
@@ -121,6 +127,13 @@ namespace GridderState {
    * @param mueller_indexes CFArray Mueller element indexes, by mrow
    * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
    * by mrow
+   * @param comm MPI communicator with 2d topology, MPI_COMM_SELF, or
+   * MPI_COMM_NULL
+   * @param vis_part_size size of visibility partition (i.e, number of subsets
+   * in partition)
+   * @param grid_part grid partition
+   * @param visibility_distribution visibility distribution algorithm for grid
+   * partition
    *
    * max_added_tasks may be used to control the level of concurrency available
    * to the GridderState instance. In all cases, at least one task is
@@ -151,18 +164,14 @@ namespace GridderState {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    const ReplicatedGridDecomposition& grid_part) noexcept;
+    const ReplicatedGridDecomposition& grid_part,
+    VisibilityDistribution visibility_distribution) noexcept;
 
   /** factory method
    *
-   * @param comm MPI communicator
-   * @param vis_part_size size of visibility partition (i.e, number of subsets
-   * in partition)
-   * @param grid_part_size size of grid partition (i.e, number of subsets in
-   * partition)
    * @param device gridder device type
-   * @param max_added_tasks maximum number of additional tasks (actual number
-   * may be less than requested)
+   * @param max_added_tasks maximum number of additional tasks; must be an odd
+   * number (actual number may be less than requested)
    * @param visibility_batch_size batch size for number of VisData elements
    * (N.B: this value is currently a hard limit of the implementation that
    * governs the maximum number of elements in a vector of VisData elements
@@ -177,6 +186,13 @@ namespace GridderState {
    * @param mueller_indexes CFArray Mueller element indexes, by mrow
    * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
    * by mrow
+   * @param comm MPI communicator
+   * @param vis_part_size size of visibility partition (i.e, number of subsets
+   * in partition)
+   * @param grid_part_size size of grid partition (i.e, number of subsets in
+   * partition)
+   * @param visibility_distribution visibility distribution algorithm for grid
+   * partition
    *
    * Does not throw an exception if device argument names an unsupported
    * device. This function creates a new communicator from comm with a 2d
@@ -201,7 +217,8 @@ namespace GridderState {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    unsigned grid_part_size) noexcept;
+    unsigned grid_part_size,
+    VisibilityDistribution visibility_distribution) noexcept;
 
   /** factory method
    *
@@ -229,7 +246,8 @@ namespace GridderState {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    const ReplicatedGridDecomposition& grid_part) noexcept {
+    const ReplicatedGridDecomposition& grid_part,
+    VisibilityDistribution visibility_distribution) noexcept {
 
     return
       create(
@@ -247,7 +265,8 @@ namespace GridderState {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         comm,
         vis_part_size,
-        grid_part);
+        grid_part,
+        visibility_distribution);
   }
 
   /** factory method
@@ -276,7 +295,8 @@ namespace GridderState {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    unsigned grid_part_size) noexcept {
+    unsigned grid_part_size,
+    VisibilityDistribution visibility_distribution) noexcept {
 
     return
       create2d(
@@ -294,7 +314,8 @@ namespace GridderState {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         comm,
         vis_part_size,
-        grid_part_size);
+        grid_part_size,
+        visibility_distribution);
   }
 } // end namespace GridderState
 
@@ -320,7 +341,8 @@ namespace Gridder {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    const ReplicatedGridDecomposition& grid_part) noexcept;
+    const ReplicatedGridDecomposition& grid_part,
+    VisibilityDistribution visibility_distribution) noexcept;
 
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create2d(
@@ -338,7 +360,8 @@ namespace Gridder {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    unsigned grid_part_size) noexcept;
+    unsigned grid_part_size,
+    VisibilityDistribution visibility_distribution) noexcept;
 
   /** Gridder factory method
    *
@@ -365,7 +388,8 @@ namespace Gridder {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    const ReplicatedGridDecomposition& grid_part) noexcept {
+    const ReplicatedGridDecomposition& grid_part,
+    VisibilityDistribution visibility_distribution) noexcept {
 
     return
       create(
@@ -383,7 +407,8 @@ namespace Gridder {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         comm,
         vis_part_size,
-        grid_part);
+        grid_part,
+        visibility_distribution);
   }
 
   template <unsigned N>
@@ -403,7 +428,8 @@ namespace Gridder {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     MPI_Comm comm,
     unsigned vis_part_size,
-    unsigned grid_part_size) noexcept {
+    unsigned grid_part_size,
+    VisibilityDistribution visibility_distribution) noexcept {
 
     return
       create2d(
@@ -421,7 +447,8 @@ namespace Gridder {
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         comm,
         vis_part_size,
-        grid_part_size);
+        grid_part_size,
+        visibility_distribution);
   }
 
 } // end namespace Gridder

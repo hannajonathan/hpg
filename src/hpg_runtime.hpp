@@ -283,7 +283,7 @@ struct /*HPG_EXPORT*/ CFPool final {
   CFPool(CFPool&& other) noexcept {
 
     if (other.state)
-      other.state->fence();
+      other.state->fence_unlocked();
     std::swap(pool, other.pool);
     std::swap(num_cf_groups, other.num_cf_groups);
     std::swap(max_cf_extent_y, other.max_cf_extent_y);
@@ -306,13 +306,12 @@ struct /*HPG_EXPORT*/ CFPool final {
           K::ViewAllocateWithoutInitializing("cf"),
           rhs.pool.extent(0));
       // use the rhs execution space for the copy, because otherwise we'd need a
-      // fence on that execution space after the copy, and this way we can
-      // possibly avoid a fence before the copy
+      // fence on that execution space after the copy in any case, and this way
+      // we can possibly avoid a fence before the copy
       K::deep_copy(
         rhs.state
-        ->m_exec_spaces[
-          rhs.state->next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)]
-        .space,
+          ->m_exec_spaces[
+            rhs.state->next_pre_compute_exec_space_unlocked()].space,
         pool,
         rhs.pool);
       rhs.state->fence_unlocked();
@@ -332,9 +331,9 @@ struct /*HPG_EXPORT*/ CFPool final {
   operator=(CFPool&& rhs) noexcept {
 
     if (state)
-      state->fence();
+      state->fence_unlocked();
     if (rhs.state)
-      rhs.state->fence();
+      rhs.state->fence_unlocked();
     std::swap(pool, rhs.pool);
     std::swap(num_cf_groups, rhs.num_cf_groups);
     std::swap(max_cf_extent_y, rhs.max_cf_extent_y);
@@ -1072,7 +1071,7 @@ public:
   set_convolution_function(Device host_device, CFArray&& cf_array) override {
 
     switch_cf_pool();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    auto& exec = m_exec_spaces[next_pre_compute_exec_space()];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     try {
       cf.add_device_cfs(
@@ -1105,7 +1104,7 @@ public:
           m_grid_size_local);
 
     fence();
-    auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    auto& exec = m_exec_spaces[next_pre_compute_exec_space()];
 
     if (!m_model.is_allocated())
       m_model =
@@ -1152,14 +1151,14 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-    auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    auto& exec_pre = m_exec_spaces[next_pre_compute_exec_space()];
     int len = exec_pre.copy_visibilities_to_device(std::move(visibilities));
     exec_pre.copy_weights_to_device(
       std::move(wgt_values),
       std::move(wgt_col_index),
       std::move(wgt_row_index));
 
-    auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
+    auto& exec_grid = m_exec_spaces[next_compute_exec_space()];
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     auto& gvisbuff = exec_grid.gvisbuff;
     using gvis0 =
@@ -1411,8 +1410,7 @@ public:
 
   virtual void
   fill_grid(const impl::gv_t& val) override {
-    auto& exec =
-      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     auto g_h = K::create_mirror_view(m_grid);
     K::deep_copy(g_h, impl::gv_t(0));
     K::deep_copy(exec.space, m_grid, g_h);
@@ -1420,8 +1418,7 @@ public:
 
   virtual void
   fill_grid_weights(const grid_value_fp& val) override {
-    auto& exec =
-      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     auto w_h = K::create_mirror_view(m_grid_weights);
     K::deep_copy(w_h, grid_value_fp(0));
     K::deep_copy(exec.space, m_grid_weights, w_h);
@@ -1436,7 +1433,7 @@ public:
   virtual void
   normalize_by_weights(grid_value_fp wfactor) override {
     impl::core::GridNormalizer(
-      m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+      m_exec_spaces[next_compute_exec_space()].space,
       m_grid,
       m_grid_weights,
       wfactor)
@@ -1453,7 +1450,7 @@ public:
       case 0:
         err =
           impl::FFT<execution_space>::in_place_kernel(
-            m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+            m_exec_spaces[next_compute_exec_space()].space,
             sign,
             m_grid);
         break;
@@ -1470,7 +1467,7 @@ public:
       case 0:
         err =
           impl::FFT<execution_space>::out_of_place_kernel(
-            m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+            m_exec_spaces[next_compute_exec_space()].space,
             sign,
             pre_grid,
             m_grid);
@@ -1482,7 +1479,7 @@ public:
     }
     // apply normalization
     impl::core::GridNormalizer(
-      m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+      m_exec_spaces[next_compute_exec_space()].space,
       m_grid,
       norm)
       .normalize();
@@ -1500,7 +1497,7 @@ public:
         case 0:
           err =
             impl::FFT<execution_space>::in_place_kernel(
-              m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space,
+              m_exec_spaces[next_compute_exec_space()].space,
               sign,
               m_model);
           break;
@@ -1520,7 +1517,7 @@ public:
         case 0:
           err =
             impl::FFT<execution_space>::out_of_place_kernel(
-              m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space,
+              m_exec_spaces[next_compute_exec_space()].space,
               sign,
               pre_model,
               m_model);
@@ -1532,7 +1529,7 @@ public:
       }
       // apply normalization
       impl::core::GridNormalizer(
-        m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+        m_exec_spaces[next_compute_exec_space()].space,
         m_model,
         norm)
         .normalize();
@@ -1543,7 +1540,7 @@ public:
   virtual void
   shift_grid(ShiftDirection direction) override {
     impl::core::GridShifter(
-      m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+      m_exec_spaces[next_compute_exec_space()].space,
       direction,
       m_grid)
       .shift();
@@ -1552,7 +1549,7 @@ public:
   virtual void
   shift_model(ShiftDirection direction) override {
     impl::core::GridShifter(
-      m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)].space,
+      m_exec_spaces[next_compute_exec_space()].space,
       direction,
       m_model)
       .shift();
@@ -1566,14 +1563,13 @@ protected:
       auto& exec = m_exec_spaces[i];
       exec.fence();
     }
-    m_current = StreamPhase::PRE_GRIDDING;
+    next_pre_compute_exec_space_unlocked();
   }
 
   std::unique_ptr<GridWeightArray>
   grid_weights_unlocked() const {
     fence_unlocked();
-    auto& exec =
-      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     auto wgts_h = K::create_mirror(m_grid_weights);
     K::deep_copy(exec.space, wgts_h, m_grid_weights);
     exec.fence();
@@ -1583,8 +1579,7 @@ protected:
   std::unique_ptr<GridValueArray>
   grid_values_unlocked() const noexcept {
     fence_unlocked();
-    auto& exec =
-      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     auto grid_h = K::create_mirror(m_grid);
     K::deep_copy(exec.space, grid_h, m_grid);
     exec.fence();
@@ -1594,8 +1589,7 @@ protected:
   std::unique_ptr<GridValueArray>
   model_values_unlocked() const {
     fence_unlocked();
-    auto& exec =
-      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     if (m_model.is_allocated()) {
       auto model_h = K::create_mirror(m_model);
       K::deep_copy(exec.space, model_h, m_model);
@@ -1743,7 +1737,7 @@ protected:
         K::deep_copy(m_exec_spaces[0].space, m_model, ost->m_model);
       }
     }
-    m_current = StreamPhase::PRE_GRIDDING;
+    next_pre_compute_exec_space_unlocked();
   }
 
   /** copy Mueller indexes to device */
@@ -1753,7 +1747,7 @@ protected:
     const std::string& name,
     const std::vector<iarray<N>>& mindexes) {
 
-    auto& esp = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    auto& esp = m_exec_spaces[next_pre_compute_exec_space()];
     impl::mindex_view<memory_space> result(name);
     auto mueller_indexes_h = K::create_mirror_view(result);
     size_t mr = 0;
@@ -1803,8 +1797,10 @@ protected:
   next_exec_space_unlocked(StreamPhase next) const {
     int old_idx = m_exec_space_indexes.front();
     int new_idx = old_idx;
-    if (m_current == StreamPhase::GRIDDING
-        && next == StreamPhase::PRE_GRIDDING) {
+    if ((m_current == StreamPhase::DEGRIDDING
+         || m_current == StreamPhase::GRIDDING)
+        && (next == StreamPhase::PRE_GRIDDING
+            || next == StreamPhase::PRE_DEGRIDDING)) {
       if (m_max_active_tasks > 1) {
         m_exec_space_indexes.push_back(old_idx);
         m_exec_space_indexes.pop_front();
@@ -1828,9 +1824,31 @@ protected:
     return next_exec_space_unlocked(next);
   }
 
+  virtual int
+  next_pre_compute_exec_space_unlocked() const {
+    return next_exec_space_unlocked(StreamPhase::PRE_GRIDDING);
+  }
+
+  int
+  next_pre_compute_exec_space() const {
+    std::scoped_lock lock(m_mtx);
+    return next_pre_compute_exec_space_unlocked();
+  }
+
+  virtual int
+  next_compute_exec_space_unlocked() const {
+    return next_exec_space_unlocked(StreamPhase::GRIDDING);
+  }
+
+  int
+  next_compute_exec_space() const {
+    std::scoped_lock lock(m_mtx);
+    return next_compute_exec_space_unlocked();
+  }
+
   void
   switch_cf_pool() {
-    auto esp_idx = next_exec_space(StreamPhase::PRE_GRIDDING);
+    auto esp_idx = next_pre_compute_exec_space();
     m_cf_indexes.push_back(m_cf_indexes.front());
     m_cf_indexes.pop_front();
     auto& [cf, last] = m_cfs[m_cf_indexes.front()];
@@ -1860,7 +1878,7 @@ protected:
         decltype(m_grid)(
           K::view_alloc(
             "grid",
-            m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
+            m_exec_spaces[next_pre_compute_exec_space()].space),
           grid_layout::dimensions(m_grid_size_local));
 #ifndef NDEBUG
     std::cout << "alloc grid sz " << m_grid.extent(0)
@@ -1890,13 +1908,13 @@ protected:
           decltype(m_grid_weights)(
             K::view_alloc(
               "grid_weights",
-              m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
+              m_exec_spaces[next_pre_compute_exec_space()].space),
             int(m_grid_size_local[int(impl::core::GridAxis::mrow)]),
             int(m_grid_size_local[int(impl::core::GridAxis::channel)]));
     }
     if (std::holds_alternative<const StateT*>(source)) {
       auto st = std::get<const StateT*>(source);
-      auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+      auto& exec = m_exec_spaces[next_pre_compute_exec_space()];
       K::deep_copy(exec.space, m_grid, st->m_grid);
       if (also_weights)
         K::deep_copy(exec.space, m_grid_weights, st->m_grid_weights);

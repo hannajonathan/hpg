@@ -33,6 +33,11 @@ Error::mpi_type() const {
 
 Error::~Error() {}
 
+OddNumberStreamsError::OddNumberStreamsError()
+  : Error(
+    "Number of additional tasks must be odd",
+    ErrorType::OddNumberStreams) {}
+
 InvalidCommunicatorSizeError::InvalidCommunicatorSizeError()
   : Error(
     "Communicator size too small",
@@ -117,7 +122,8 @@ create_impl(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   MPI_Comm comm,
   unsigned vis_part_size,
-  const ReplicatedGridDecomposition& grid_part) {
+  const ReplicatedGridDecomposition& grid_part,
+  VisibilityDistribution visibility_distribution) {
 
   using namespace ::hpg::mpi;
 
@@ -241,66 +247,147 @@ create_impl(
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
   case ::hpg::Device::Serial:
-    result =
-      std::make_shared<StateT<::hpg::Device::Serial>>(
-        vis_comm,
-        grid_comm,
-        grid_bricks[grid_brick_index],
-        replica_comm,
-        plane_comm,
-        max_active_tasks,
-        visibility_batch_size,
-        max_avg_channels_per_vis,
-        init_cf_shape,
-        grid_size,
-        grid_scale,
-        mueller_indexes,
-        conjugate_mueller_indexes,
-        implementation_versions);
+    switch (visibility_distribution) {
+    case VisibilityDistribution::Broadcast:
+      result =
+        std::make_shared<
+          StateT<::hpg::Device::Serial, VisibilityDistribution::Broadcast>>(
+          vis_comm,
+          grid_comm,
+          grid_bricks[grid_brick_index],
+          replica_comm,
+          plane_comm,
+          max_active_tasks,
+          visibility_batch_size,
+          max_avg_channels_per_vis,
+          init_cf_shape,
+          grid_size,
+          grid_scale,
+          mueller_indexes,
+          conjugate_mueller_indexes,
+          implementation_versions);
+      break;
+    case VisibilityDistribution::Pipeline:
+      result =
+        std::make_shared<
+          StateT<::hpg::Device::Serial, VisibilityDistribution::Pipeline>>(
+          vis_comm,
+          grid_comm,
+          grid_bricks[grid_brick_index],
+          replica_comm,
+          plane_comm,
+          max_active_tasks,
+          visibility_batch_size,
+          max_avg_channels_per_vis,
+          init_cf_shape,
+          grid_size,
+          grid_scale,
+          mueller_indexes,
+          conjugate_mueller_indexes,
+          implementation_versions);
+      break;
+    default:
+      assert(false);
+      break;
+    }
 #else
     assert(false);
 #endif // HPG_ENABLE_SERIAL
     break;
 #ifdef HPG_ENABLE_OPENMP
   case ::hpg::Device::OpenMP:
-    result =
-      std::make_shared<StateT<::hpg::Device::OpenMP>>(
-        vis_comm,
-        grid_comm,
-        grid_bricks[grid_brick_index],
-        replica_comm,
-        plane_comm,
-        max_active_tasks,
-        visibility_batch_size,
-        max_avg_channels_per_vis,
-        init_cf_shape,
-        grid_size,
-        grid_scale,
-        mueller_indexes,
-        conjugate_mueller_indexes,
-        implementation_versions);
+    switch (visibility_distribution) {
+    case VisibilityDistribution::Broadcast:
+      result =
+        std::make_shared<
+          StateT<::hpg::Device::OpenMP, VisibilityDistribution::Broadcast>>(
+            vis_comm,
+            grid_comm,
+            grid_bricks[grid_brick_index],
+            replica_comm,
+            plane_comm,
+            max_active_tasks,
+            visibility_batch_size,
+            max_avg_channels_per_vis,
+            init_cf_shape,
+            grid_size,
+            grid_scale,
+            mueller_indexes,
+            conjugate_mueller_indexes,
+            implementation_versions);
+      break;
+    case VisibilityDistribution::Pipeline:
+      result =
+        std::make_shared<
+          StateT<::hpg::Device::OpenMP, VisibilityDistribution::Pipeline>>(
+            vis_comm,
+            grid_comm,
+            grid_bricks[grid_brick_index],
+            replica_comm,
+            plane_comm,
+            max_active_tasks,
+            visibility_batch_size,
+            max_avg_channels_per_vis,
+            init_cf_shape,
+            grid_size,
+            grid_scale,
+            mueller_indexes,
+            conjugate_mueller_indexes,
+            implementation_versions);
+      break;
+    default:
+      assert(false);
+      break;
+    }
 #else
     assert(false);
 #endif // HPG_ENABLE_OPENMP
     break;
 #ifdef HPG_ENABLE_CUDA
   case ::hpg::Device::Cuda:
-    result =
-      std::make_shared<StateT<::hpg::Device::Cuda>>(
-        vis_comm,
-        grid_comm,
-        grid_bricks[grid_brick_index],
-        replica_comm,
-        plane_comm,
-        max_active_tasks,
-        visibility_batch_size,
-        max_avg_channels_per_vis,
-        init_cf_shape,
-        grid_size,
-        grid_scale,
-        mueller_indexes,
-        conjugate_mueller_indexes,
-        implementation_versions);
+    switch (visibility_distribution) {
+    case VisibilityDistribution::Broadcast:
+      result =
+        std::make_shared<
+          StateT<::hpg::Device::Cuda, VisibilityDistribution::Broadcast>>(
+            vis_comm,
+            grid_comm,
+            grid_bricks[grid_brick_index],
+            replica_comm,
+            plane_comm,
+            max_active_tasks,
+            visibility_batch_size,
+            max_avg_channels_per_vis,
+            init_cf_shape,
+            grid_size,
+            grid_scale,
+            mueller_indexes,
+            conjugate_mueller_indexes,
+            implementation_versions);
+      break;
+    case VisibilityDistribution::Pipeline:
+      result =
+        std::make_shared<
+          StateT<::hpg::Device::Cuda, VisibilityDistribution::Pipeline>>(
+          vis_comm,
+          grid_comm,
+          grid_bricks[grid_brick_index],
+          replica_comm,
+          plane_comm,
+          max_active_tasks,
+          visibility_batch_size,
+          max_avg_channels_per_vis,
+          init_cf_shape,
+          grid_size,
+          grid_scale,
+          mueller_indexes,
+          conjugate_mueller_indexes,
+          implementation_versions);
+      break;
+    default:
+      assert(false);
+      break;
+    }
 #else
     assert(false);
 #endif //HPG_ENABLE_CUDA
@@ -328,9 +415,13 @@ GridderState::create(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   MPI_Comm comm,
   unsigned vis_part_size,
-  const ReplicatedGridDecomposition& grid_part) noexcept {
+  const ReplicatedGridDecomposition& grid_part,
+  VisibilityDistribution visibility_distribution) noexcept {
 
   using val_t = std::tuple<::hpg::GridderState, bool, bool>;
+
+  if (max_added_tasks % 2 == 0)
+    return rval<val_t>(std::make_unique<OddNumberStreamsError>());
 
   if (grid_size[2] != mueller_indexes.size()
       || grid_size[2] != conjugate_mueller_indexes.size())
@@ -366,7 +457,8 @@ GridderState::create(
 #endif
       comm,
       vis_part_size,
-      grid_part);
+      grid_part,
+      visibility_distribution);
   auto vis_part_root =
     impl->is_visibility_partition_root()
     && impl->is_replica_partition_root();
@@ -395,7 +487,8 @@ GridderState::create2d(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   MPI_Comm comm,
   unsigned vis_part_size,
-  unsigned grid_part_size) noexcept {
+  unsigned grid_part_size,
+  VisibilityDistribution visibility_distribution) noexcept {
 
   using val_t = std::tuple<::hpg::GridderState, bool, bool>;
 
@@ -437,7 +530,8 @@ GridderState::create2d(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
       comm,
       vis_part_size,
-      ReplicatedGridDecomposition(decomp_sizes));
+      ReplicatedGridDecomposition(decomp_sizes),
+      visibility_distribution);
 }
 
 static ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
@@ -478,7 +572,8 @@ Gridder::create(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   MPI_Comm comm,
   unsigned vis_part_size,
-  const ReplicatedGridDecomposition& grid_part) noexcept {
+  const ReplicatedGridDecomposition& grid_part,
+  VisibilityDistribution visibility_distribution) noexcept {
 
   return
     apply_gridder(
@@ -497,7 +592,8 @@ Gridder::create(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         comm,
         vis_part_size,
-        grid_part));
+        grid_part,
+        visibility_distribution));
 }
 
 ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
@@ -516,7 +612,8 @@ Gridder::create2d(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   MPI_Comm comm,
   unsigned vis_part_size,
-  unsigned grid_part_size) noexcept {
+  unsigned grid_part_size,
+  VisibilityDistribution visibility_distribution) noexcept {
 
   return
     apply_gridder(
@@ -535,7 +632,8 @@ Gridder::create2d(
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
         comm,
         vis_part_size,
-        grid_part_size));
+        grid_part_size,
+        visibility_distribution));
 }
 
 // Local Variables:

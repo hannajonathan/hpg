@@ -484,6 +484,46 @@ struct VectorNPol {
     }
   }
 
+  /** resize vector */
+  void
+  resize(size_t n) const {
+    switch (m_npol) {
+    case 1:
+      m_v1->resize(n);
+      break;
+    case 2:
+      m_v2->resize(n);
+      break;
+    case 3:
+      m_v3->resize(n);
+      break;
+    case 4:
+      m_v4->resize(n);
+      break;
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+  template <unsigned M>
+  E<M>*
+  data() {
+    if (m_npol == M)
+      return vect(std::integral_constant<unsigned, M>()).data();
+    else
+      return nullptr;
+  }
+
+  template <unsigned M>
+  const E<M>*
+  data() const {
+    if (m_npol == M)
+      return vect(std::integral_constant<unsigned, M>()).data();
+    else
+      return nullptr;
+  }
+
   /** total number of stored values
    *
    * number of polarization multiplied by size of vector
@@ -604,6 +644,26 @@ private:
       assert(false);
       break;
     }
+  }
+
+  std::vector<E<1>>&
+  vect(const std::integral_constant<unsigned, 1>::type&) {
+    return *m_v1;
+  }
+
+  std::vector<E<2>>&
+  vect(const std::integral_constant<unsigned, 2>::type&) {
+    return *m_v2;
+  }
+
+  std::vector<E<3>>&
+  vect(const std::integral_constant<unsigned, 3>::type&) {
+    return *m_v3;
+  }
+
+  std::vector<E<4>>&
+  vect(const std::integral_constant<unsigned, 4>::type&) {
+    return *m_v4;
   }
 };
 
