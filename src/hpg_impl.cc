@@ -202,6 +202,7 @@ runtime::impl::min_cf_buffer_size(
 #endif
   default:
     assert(false);
+    alloc_sz = 0;
     break;
   }
   return rval<size_t>((alloc_sz + (sizeof(cf_t) - 1)) / sizeof(cf_t));

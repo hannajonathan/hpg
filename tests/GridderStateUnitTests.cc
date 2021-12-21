@@ -336,8 +336,8 @@ struct ConeCFArray final
 
     std::complex<hpg::grid_value_fp> gvis(vis);
     bool result = true;
-    for (int x = 0; result && x < grid_size[0]; ++x)
-      for (int y = 0; result && y < grid_size[1]; ++y) {
+    for (unsigned x = 0; result && x < grid_size[0]; ++x)
+      for (unsigned  y = 0; result && y < grid_size[1]; ++y) {
         auto g = (*grid)(x, y, 0, 0);
         std::complex<hpg::grid_value_fp> cf;
         if (grid_coord[0] <= x && x < grid_coord[0] + 2 * m_radius + 1
@@ -385,15 +385,12 @@ struct ConeCFArray final
     const hpg::vis_frequency_fp& freq,
     const hpg::vis_uvw_t& uvw) const {
 
-    auto [grid_coord, cf_major, cf_minor] =
-      coords(grid_size, grid_scale, freq, uvw);
-
     std::array<std::array<int, 2>, 2> measured_footprint{
       std::array<int, 2>{2 * int(grid_size[0]), 2 * int(grid_size[1])},
       std::array<int, 2>{-1, -1}
     };
-    for (int x = 0; x < grid_size[0]; ++x)
-      for (int y = 0; y < grid_size[1]; ++y)
+    for (int x = 0; x < int(grid_size[0]); ++x)
+      for (int y = 0; y < int(grid_size[1]); ++y)
         if ((*grid)(x, y, mrow, 0) != hpg::GridValueArray::value_type(0)) {
           measured_footprint[0][0] = std::min(measured_footprint[0][0], x);
           measured_footprint[0][1] = std::min(measured_footprint[0][1], y);
@@ -455,7 +452,7 @@ create_cf(
       oversampling * sz[0] * oversampling * sz[1] * sz[2] * sz[3];
     vs.reserve(num_values);
     std::uniform_real_distribution<hpg::cf_fp> dist(-1.0, 1.0);
-    for (auto i = 0; i < num_values; ++i)
+    for (unsigned i = 0; i < num_values; ++i)
       vs.emplace_back(dist(gen), dist(gen));
     values.push_back(std::move(vs));
   }
@@ -492,7 +489,7 @@ init_visibilities(
   auto y0 = (cf.oversampling() * (grid_size[1] - 2)) / 2;
   double uscale = grid_scale[0] * cf.oversampling() * inv_lambda;
   double vscale = grid_scale[1] * cf.oversampling() * inv_lambda;
-  for (auto i = 0; i < num_vis; ++i) {
+  for (unsigned i = 0; i < num_vis; ++i) {
     auto grp = dist_cfgrp(gen);
     auto cfextents = cf.extents(grp);
     std::uniform_int_distribution<unsigned> dist_cfchannel(0, cfextents[3] - 1);
@@ -601,7 +598,7 @@ TEST(GridderState, ConstructorArgs) {
       {{0}, {0}, {0}, {0}},
       {{0}, {0}, {0}, {0}});
   ASSERT_TRUE(hpg::is_value(gs1_or_err));
-  auto gs1 = hpg::get_value(gs1_or_err);
+  auto gs1 = hpg::get_value(std::move(gs1_or_err));
 
   EXPECT_TRUE(gs0.is_null());
   EXPECT_FALSE(gs1.is_null());
@@ -1458,10 +1455,6 @@ TEST(GridderState, GridOne) {
             return std::make_tuple(std::move(gv), std::move(gw));
           });
         };
-  const std::array<hpg::grid_scale_fp, 2> fine_scale{
-    grid_scale[0] * cf_oversampling,
-    grid_scale[1] * cf_oversampling
-  };
 
   const hpg::vis_uvw_t uvw{2344.1, 638.066, -1826.55};
   auto [ll, ur] = cf.cf_footprint(grid_size, grid_scale, freq, uvw);

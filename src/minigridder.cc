@@ -293,9 +293,9 @@ struct TrialSpec {
 
   unsigned index;
   hpg::Device device;
+  int streams;
   Op op;
   bool sow;
-  int streams;
   std::vector<std::vector<int>> mueller_indexes;
   int gsize;
   std::vector<int> cfsize;
@@ -700,7 +700,7 @@ run_hpg_trial_op(
   GridlikeFn gfn) {
 
   std::queue<InputData> ids;
-  for (unsigned i = 0; i < spec.repeats; ++i)
+  for (int i = 0; i < spec.repeats; ++i)
     ids.push(input_data);
 
   std::unique_ptr<hpg::GridValueArray> model;
@@ -908,7 +908,9 @@ run_trials(
         for (auto& mindexes : mueller_indexes) {
           for (auto& cfsize : cfsizes) {
             for (auto& oversampling : oversamplings) {
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
               for (auto& kernel : kernels) {
+#endif
                 for (auto& op : ops) {
                   for (auto sow : update_grid_weights) {
                     const auto input_data =
@@ -956,7 +958,9 @@ run_trials(
                     }
                   }
                 }
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
               }
+#endif
             }
           }
         }

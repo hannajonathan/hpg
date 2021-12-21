@@ -138,7 +138,7 @@ create_cf(
       oversampling * sz[0] * oversampling * sz[1] * sz[2] * sz[3];
     vs.reserve(num_values);
     std::uniform_real_distribution<hpg::cf_fp> dist(-1.0, 1.0);
-    for (auto i = 0; i < num_values; ++i)
+    for (unsigned i = 0; i < num_values; ++i)
       vs.emplace_back(dist(gen), dist(gen));
     values.push_back(std::move(vs));
   }
@@ -172,7 +172,7 @@ init_visibilities(
   auto y0 = (cf.oversampling() * (grid_size[1] - 2)) / 2;
   double uscale = grid_scale[0] * cf.oversampling() * inv_lambda;
   double vscale = grid_scale[1] * cf.oversampling() * inv_lambda;
-  for (auto i = 0; i < num_vis; ++i) {
+  for (unsigned i = 0; i < num_vis; ++i) {
     auto grp = dist_cfgrp(gen);
     auto cfextents = cf.extents(grp);
     std::uniform_int_distribution<unsigned> dist_cfchannel(0, cfextents[3] - 1);

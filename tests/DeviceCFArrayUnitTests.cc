@@ -245,7 +245,7 @@ init_visibilities(
   auto y0 = (cf->oversampling() * (grid_size[1] - 2)) / 2;
   double uscale = grid_scale[0] * cf->oversampling() * inv_lambda;
   double vscale = grid_scale[1] * cf->oversampling() * inv_lambda;
-  for (auto i = 0; i < num_vis; ++i) {
+  for (unsigned i = 0; i < num_vis; ++i) {
     auto grp = dist_cfgrp(gen);
     auto cfextents = cf->extents(grp);
     std::uniform_int_distribution<unsigned> dist_cfchannel(0, cfextents[3] - 1);
@@ -402,9 +402,9 @@ TEST(DeviceCFArray, Layout) {
         0,
         array.data()));
   auto ext = cf.extents(0);
-  auto mueller = 0;
-  auto y = 0;
-  auto x = 0;
+  unsigned mueller = 0;
+  unsigned y = 0;
+  unsigned x = 0;
   for (size_t i = 0; i < array.size(); ++i) {
     auto d = EncodedCFArray::decode(array[i]);
     EXPECT_EQ(d[2], mueller);
