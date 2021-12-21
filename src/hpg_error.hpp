@@ -35,6 +35,7 @@ enum class HPG_EXPORT ErrorType {
   ExcessiveVisibilityChannels,
   UpdateWeightsWithoutGridding,
   GridChannelMapsSize,
+  InvalidGriddingContext,
   Other
 };
 
@@ -140,6 +141,12 @@ struct GridChannelMapsSizeError
   : public Error {
 
   GridChannelMapsSizeError();
+};
+
+struct InvalidGriddingContextError
+  : public Error {
+
+  InvalidGriddingContextError();
 };
 
 }  // end namespace hpg

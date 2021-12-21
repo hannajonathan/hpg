@@ -72,6 +72,11 @@ GridChannelMapsSizeError::GridChannelMapsSizeError()
     "size of visibilites vector",
     ErrorType::GridChannelMapsSize) {}
 
+InvalidGriddingContextError::InvalidGriddingContextError()
+  : Error(
+    "Gridding context identifier is out of bounds",
+    ErrorType::InvalidGriddingContext) {}
+
 // Local Variables:
 // mode: c++
 // c-basic-offset: 2
