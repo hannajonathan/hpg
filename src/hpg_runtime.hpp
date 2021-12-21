@@ -86,16 +86,22 @@ struct /*HPG_EXPORT*/ State {
     const noexcept = 0;
 
   virtual std::optional<std::unique_ptr<Error>>
-  allocate_convolution_function_region(const CFArrayShape* shape) = 0;
+  allocate_convolution_function_region(
+    unsigned context,
+    const CFArrayShape* shape) = 0;
 
   virtual std::optional<std::unique_ptr<Error>>
-  set_convolution_function(Device host_device, CFArray&& cf) = 0;
+  set_convolution_function(
+    unsigned context,
+    Device host_device,
+    CFArray&& cf) = 0;
 
   virtual std::optional<std::unique_ptr<Error>>
   set_model(Device host_device, GridValueArray&& gv) = 0;
 
   virtual std::variant<std::unique_ptr<Error>, maybe_vis_t>
   grid_visibilities(
+    unsigned context,
     Device host_device,
     VisDataVector&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1058,17 +1064,17 @@ public:
   }
 
   virtual std::optional<std::unique_ptr<Error>>
-  allocate_convolution_function_region(const CFArrayShape* shape) override {
-    fence();
-    for (auto& [cf, last] : m_cfs) {
-      last = std::nullopt;
-      cf.prepare_pool(shape, true);
-    }
+  allocate_convolution_function_region(
+    unsigned context,
+    const CFArrayShape* shape) override {
     return std::nullopt;
   }
 
   virtual std::optional<std::unique_ptr<Error>>
-  set_convolution_function(Device host_device, CFArray&& cf_array) override {
+  set_convolution_function(
+    unsigned context,
+    Device host_device,
+    CFArray&& cf_array) override {
 
     switch_cf_pool();
     auto& exec = m_exec_spaces[next_pre_compute_exec_space()];
@@ -1141,6 +1147,7 @@ public:
   template <unsigned N>
   maybe_vis_t
   default_grid_visibilities(
+    unsigned context,
     Device /*host_device*/,
     std::vector<::hpg::VisData<N>>&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1210,6 +1217,7 @@ public:
   template <unsigned N>
   maybe_vis_t
   grid_visibilities(
+    unsigned context,
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1233,6 +1241,7 @@ public:
     case 0:
       return
         default_grid_visibilities(
+          context,
           host_device,
           std::move(visibilities),
           std::move(wgt_values),
@@ -1267,6 +1276,7 @@ public:
 
   virtual std::variant<std::unique_ptr<Error>, maybe_vis_t>
   grid_visibilities(
+    unsigned context,
     Device host_device,
     VisDataVector&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1282,6 +1292,7 @@ public:
     case 1:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v1),
           std::move(wgt_values),
@@ -1295,6 +1306,7 @@ public:
     case 2:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v2),
           std::move(wgt_values),
@@ -1308,6 +1320,7 @@ public:
     case 3:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v3),
           std::move(wgt_values),
@@ -1321,6 +1334,7 @@ public:
     case 4:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v4),
           std::move(wgt_values),
@@ -1934,7 +1948,8 @@ struct /*HPG_EXPORT*/ GridderState {
   allocate_convolution_function_region(GS&& st, const CFArrayShape* shape) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
-    if (auto error = result.m_impl->allocate_convolution_function_region(shape);
+    if (auto error =
+        result.m_impl->allocate_convolution_function_region(0, shape);
         error)
       return std::move(error.value());
     else
@@ -1948,7 +1963,8 @@ struct /*HPG_EXPORT*/ GridderState {
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
       if (auto error =
-          result.m_impl->set_convolution_function(host_device, std::move(cf));
+          result.m_impl
+            ->set_convolution_function(0, host_device, std::move(cf));
           error)
         return std::move(error.value());
       else
@@ -2027,6 +2043,7 @@ struct /*HPG_EXPORT*/ GridderState {
     ::hpg::GridderState result(std::forward<GS>(st));
     auto err_or_maybevis =
       result.m_impl->grid_visibilities(
+        0,
         host_device,
         std::move(visibilities),
         std::move(wgt),
