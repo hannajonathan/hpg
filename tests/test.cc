@@ -76,7 +76,7 @@ create_cf(const std::array<unsigned, 4>& size, Generator& gen) {
   std::vector<std::complex<hpg::cf_fp>> values;
   values.reserve(num_values);
   std::uniform_real_distribution<hpg::cf_fp> dist(-1.0, 1.0);
-  for (auto i = 0; i < num_values; ++i)
+  for (unsigned i = 0; i < num_values; ++i)
     values.emplace_back(dist(gen), dist(gen));
   return MyCFArray(size, values);
 }
@@ -113,7 +113,7 @@ init_visibilities(
     / (grid_scale[1] * cf_oversampling * inv_lambda);
   std::uniform_real_distribution<hpg::vis_uvw_fp> dist_u(-ulim, ulim);
   std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
-  for (auto i = 0; i < num_vis; ++i) {
+  for (unsigned i = 0; i < num_vis; ++i) {
     vis.push_back(
       hpg::VisData<1>(
         {std::complex<hpg::visibility_fp>(dist_vis(gen), dist_vis(gen))},
@@ -130,10 +130,10 @@ init_visibilities(
 std::complex<hpg::grid_value_fp>
 sum_grid(const hpg::GridValueArray* array) {
   std::complex<hpg::grid_value_fp> result;
-  for (auto i = 0; i < array->extent(0); ++i)
-    for (auto j = 0; j < array->extent(1); ++j)
-      for (auto k = 0; k < array->extent(2); ++k)
-        for (auto m = 0; m < array->extent(3); ++m)
+  for (size_t i = 0; i < array->extent(0); ++i)
+    for (size_t j = 0; j < array->extent(1); ++j)
+      for (size_t k = 0; k < array->extent(2); ++k)
+        for (size_t m = 0; m < array->extent(3); ++m)
           result += (*array)(i, j, k, m);
   return result;
 }
@@ -206,8 +206,8 @@ run_tests(
     std::cout << "gridded" << std::endl;
     auto weights = g0.grid_weights();
     std::cout << "weights";
-    for (auto copol = 0; copol < grid_size[2]; ++copol)
-      for (auto ch = 0; ch < grid_size[3]; ++ch)
+    for (unsigned copol = 0; copol < grid_size[2]; ++copol)
+      for (unsigned ch = 0; ch < grid_size[3]; ++ch)
         std::cout << " " << weights->operator()(copol, ch);
     std::cout << std::endl;
     {

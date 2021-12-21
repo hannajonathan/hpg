@@ -616,9 +616,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   , m_mueller_indexes(mueller_indexes)
   , m_conjugate_mueller_indexes(conjugate_mueller_indexes)
   , m_num_visibilities(num_visibilities)
-  , m_visibilities(visibilities)
   , m_visibility_offset(visibility_offset)
   , m_visibility_inc(visibility_inc)
+  , m_visibilities(visibilities)
   , m_viswgts(viswgts)
   , m_viswgt_col_index(viswgt_col_index)
   , m_viswgt_row_index(viswgt_row_index)
@@ -753,7 +753,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
                 cphase<execution_space>(-phi_X - phi_Y(Y + cf_min[1]));
               const auto mv = model_vis(X, Y, gpol) * screen;
               // loop over visibility polarizations
-              for (int vpol = 0; vpol < N; ++vpol) {
+              for (int vpol = 0; vpol < int(N); ++vpol) {
                 if (const auto mindex = degridding_mindex(gpol, vpol);
                     mindex >= 0) {
                   cf_value_t cfv = cf_vis(X, Y, mindex);
@@ -771,7 +771,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       // apply weights and phasor to compute predicted visibilities
       auto conj_phasor = vis.m_phasor;
       conj_phasor.imag() *= -1;
-      for (int vpol = 0; vpol < N; ++vpol)
+      for (int vpol = 0; vpol < int(N); ++vpol)
         result.vals[vpol] =
           (vis_array.vis[vpol]
            / ((vis_array.wgt[vpol] != acc_cf_value_t(0))
@@ -823,7 +823,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       // results in scratch memory because gridding on the Y axis accesses the phase
       // screen values for every row of the Mueller matrix column
       compute_phase_screen(team_member, vis, phscr);
-      for (int j = m_viswgt_row_index(i); j < m_viswgt_row_index(i + 1); ++j) {
+      for (unsigned j = m_viswgt_row_index(i);
+           j < m_viswgt_row_index(i + 1);
+           ++j) {
         if (does_overlap_grid_channel_section(
               m_viswgt_col_index(j) - m_grid_min_local[int(GridAxis::channel)],
               m_grid_size_local)) {
@@ -1068,7 +1070,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
             viswgt * cphase<execution_space>(phi_X + phi_Y(Y + cf_min[1]));
           grid_value_t gv(0);
           // loop over visibility polarizations
-          for (int vpol = 0; vpol < N; ++vpol) {
+          for (int vpol = 0; vpol < int(N); ++vpol) {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
               cf_value_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
@@ -1085,7 +1087,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       K::PerTeam(team_member),
       [&]() {
         grid_weight_value_t twgt = 0;
-        for (int vpol = 0; vpol < N; ++vpol)
+        for (int vpol = 0; vpol < int(N); ++vpol)
           twgt += grid_weight_value_t(mag(grid_wgt.vals[vpol]) * viswgt);
         K::atomic_add(&grid_weights(gpol, grid_channel), twgt);
       });
@@ -1162,7 +1164,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
             viswgt * cphase<execution_space>(phi_X + phi_Y(Y + cf_min[1]));
           grid_value_t gv(0);
           // loop over visibility polarizations
-          for (int vpol = 0; vpol < N; ++vpol) {
+          for (int vpol = 0; vpol < int(N); ++vpol) {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
               cf_value_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
@@ -1203,7 +1205,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       // the results in scratch memory because gridding on the Y axis accesses
       // the phase screen values for every row of the Mueller matrix column
       compute_phase_screen(team_member, vis, phscr);
-      for (int j = m_viswgt_row_index(i); j < m_viswgt_row_index(i + 1); ++j)
+      for (unsigned j = m_viswgt_row_index(i);
+           j < m_viswgt_row_index(i + 1);
+           ++j)
         if (does_overlap_grid_channel_section(
               m_viswgt_col_index(j) - m_grid_min_local[int(GridAxis::channel)],
               m_grid_size_local))
