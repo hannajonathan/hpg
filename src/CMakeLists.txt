@@ -43,7 +43,7 @@ set(HAVE_CUDA -1)
 
 # find Kokkos
 #
-find_package(Kokkos
+find_package(Kokkos 3.5.00
   REQUIRED COMPONENTS kokkos kokkoscore
   OPTIONAL_COMPONENTS CUDA)
 if(Hpg_ENABLE_SERIAL)
