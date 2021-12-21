@@ -162,7 +162,7 @@ if(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
   set(HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     ${Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS})
 endif()
-
+target_compile_options(hpg_hpg PRIVATE -Wno-unknown-pragmas)
 target_link_libraries(hpg_hpg PRIVATE Kokkos::kokkoscore)
 
 # set the HPG_ENABLE_* variables in the parent scope based on
