@@ -46,6 +46,9 @@ struct /*HPG_EXPORT*/ State {
   device() const noexcept = 0;
 
   virtual unsigned
+  num_exec_contexts() const noexcept = 0;
+
+  virtual unsigned
   visibility_gridder_version() const noexcept = 0;
 
   virtual unsigned
@@ -232,18 +235,13 @@ struct /*HPG_EXPORT*/ DeviceTraits<K::Cuda> {
 
 /** names for stream states */
 enum class /*HPG_EXPORT*/ StreamPhase {
-  PRE_DEGRIDDING,
-  DEGRIDDING,
-  PRE_GRIDDING,
-  GRIDDING,
+  COPY,
+  COMPUTE,
 };
 
 /** formatted output for StreamPhase value */
 std::ostream&
 operator<<(std::ostream& str, const StreamPhase& ph);
-
-template <Device D>
-struct StateT;
 
 /** memory pool and views therein for elements of a (sparse) CF */
 template <Device D>
@@ -258,7 +256,6 @@ struct /*HPG_EXPORT*/ CFPool final {
       memory_space>;
   using cfh_view = typename cfd_view::HostMirror;
 
-  StateT<D> *state;
   K::View<impl::cf_t*, memory_space> pool;
   unsigned num_cf_groups;
   unsigned max_cf_extent_y;
@@ -267,17 +264,7 @@ struct /*HPG_EXPORT*/ CFPool final {
   K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS> cf_radii;
 
   CFPool()
-    : state(nullptr)
-    , num_cf_groups(0)
-    , max_cf_extent_y(0) {
-
-    for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i)
-      cf_d[i] = cfd_view();
-  }
-
-  CFPool(StateT<D>* st)
-    : state(st)
-    , num_cf_groups(0)
+    : num_cf_groups(0)
     , max_cf_extent_y(0) {
 
     for (size_t i = 0; i < HPG_MAX_NUM_CF_GROUPS; ++i)
@@ -286,71 +273,39 @@ struct /*HPG_EXPORT*/ CFPool final {
 
   CFPool(const CFPool& other) = delete;
 
-  CFPool(CFPool&& other) noexcept {
-
-    if (other.state)
-      other.state->fence_unlocked();
-    std::swap(pool, other.pool);
-    std::swap(num_cf_groups, other.num_cf_groups);
-    std::swap(max_cf_extent_y, other.max_cf_extent_y);
-    std::swap(cf_d, other.cf_d);
-    std::swap(cf_h, other.cf_h);
-    std::swap(cf_radii, other.cf_radii);
-  }
+  CFPool(CFPool&& other) = delete;
 
   CFPool&
-  operator=(const CFPool& rhs) {
-
-    // TODO: make this exception-safe?
-    reset();
-    num_cf_groups = rhs.num_cf_groups;
-    max_cf_extent_y = rhs.max_cf_extent_y;
-    cf_radii = rhs.cf_radii;
-    if (rhs.pool.extent(0) > 0) {
-      pool =
-        decltype(pool)(
-          K::ViewAllocateWithoutInitializing("cf"),
-          rhs.pool.extent(0));
-      // use the rhs execution space for the copy, because otherwise we'd need a
-      // fence on that execution space after the copy in any case, and this way
-      // we can possibly avoid a fence before the copy
-      K::deep_copy(
-        rhs.state
-          ->m_exec_spaces[
-            rhs.state->next_pre_compute_exec_space_unlocked()].space,
-        pool,
-        rhs.pool);
-      rhs.state->fence_unlocked();
-      for (size_t i = 0; i < num_cf_groups; ++i) {
-        // don't need cf_h, since the previous fence ensures that the copy from
-        // host has completed
-        cf_d[i] =
-          cfd_view(
-            pool.data() + (rhs.cf_d[i].data() - rhs.pool.data()),
-            rhs.cf_d[i].layout());
-      }
-    }
-    return *this;
-  }
+  operator=(const CFPool& rhs) = delete;
 
   CFPool&
-  operator=(CFPool&& rhs) noexcept {
-
-    if (state)
-      state->fence_unlocked();
-    if (rhs.state)
-      rhs.state->fence_unlocked();
-    std::swap(pool, rhs.pool);
-    std::swap(num_cf_groups, rhs.num_cf_groups);
-    std::swap(max_cf_extent_y, rhs.max_cf_extent_y);
-    std::swap(cf_d, rhs.cf_d);
-    std::swap(cf_h, rhs.cf_h);
-    std::swap(cf_radii, rhs.cf_radii);
-    return *this;
-  }
+  operator=(CFPool&& rhs) = delete;
 
   virtual ~CFPool() {
     reset();
+  }
+
+  void
+  copy_from(execution_space espace, const CFPool& other) {
+    // caller must ensure that it's safe to overwrite array values in this
+    // instance, and to read array values from 'other'
+    num_cf_groups = other.num_cf_groups;
+    max_cf_extent_y = other.max_cf_extent_y;
+    cf_h.clear();
+    cf_radii = other.cf_radii;
+    if (pool.is_allocated())
+      K::resize(pool, other.pool.extent(0));
+    else
+      pool =
+        decltype(pool)(
+          K::ViewAllocateWithoutInitializing("cf"),
+          other.pool.extent(0));
+    K::deep_copy(espace, pool, other.pool);
+    for (unsigned grp = 0; grp < num_cf_groups; ++grp)
+      cf_d[grp] =
+        cfd_view(
+          pool.data() + (other.cf_d[grp].data() - other.pool.data()),
+          other.cf_d[grp].layout());
   }
 
   static size_t
@@ -504,7 +459,7 @@ struct /*HPG_EXPORT*/ CFPool final {
 
   void
   reset(bool free_pool = true) {
-    if (state && pool.is_allocated()) {
+    if (pool.is_allocated()) {
       if (free_pool)
         pool = decltype(pool)();
       cf_h.clear();
@@ -515,130 +470,344 @@ struct /*HPG_EXPORT*/ CFPool final {
   }
 };
 
-/** container for data and views associated with one stream of an execution
- * space*/
+/** container for all CFPool instances managed by a StateT instance */
 template <Device D>
-struct /*HPG_EXPORT*/ ExecSpace final {
+struct CFPoolRepo {
+public:
+
+  using pool_type = std::shared_ptr<CFPool<D>>;
+
+private:
+
+  std::set<pool_type> m_pools;
+
+public:
+
+  CFPoolRepo() {}
+
+  CFPoolRepo(size_t n) {
+    std::generate_n(
+      std::inserter(m_pools, m_pools.end()),
+      n,
+      [] { return std::make_shared<CFPool<D>>(); });
+  }
+
+  CFPoolRepo(const CFPoolRepo&) = delete;
+
+  CFPoolRepo(CFPoolRepo&& other) noexcept
+    : m_pools(std::move(other).m_pools) {}
+
+  CFPoolRepo&
+  operator=(const CFPoolRepo&) = delete;
+
+  CFPoolRepo&
+  operator=(const CFPoolRepo&& rhs) noexcept {
+    m_pools = std::move(rhs).m_pools;
+    return *this;
+  }
+
+  std::map<const CFPool<D>*, std::weak_ptr<CFPool<D>>>
+  copy_from(
+    typename CFPool<D>::execution_space espace,
+    const CFPoolRepo<D>& other) {
+    // caller must ensure that it's safe to overwrite values in this instance,
+    // and to read values from 'other'
+
+    while (m_pools.size() > other.size())
+      m_pools.erase(m_pools.end());
+    while (m_pools.size() < other.size())
+      m_pools.insert(std::make_shared<CFPool<D>>());
+    std::map<const CFPool<D>*, std::weak_ptr<CFPool<D>>> result;
+    for (auto dst = m_pools.begin(), src = other.m_pools.begin();
+         dst != m_pools.end();
+         ++dst, ++src) {
+      (*dst)->copy_from(espace, **src);
+      result[(*src).get()] = *dst;
+    }
+    // NB: the return value holds bare pointers to CFPool instances in 'other'
+    // to avoid changing the reference count of those instances
+    return result;
+  }
+
+  pool_type
+  get_unused_pool() {
+    auto result =
+      std::find_if(
+        m_pools.begin(),
+        m_pools.end(),
+        [](const auto& p) { assert(p); return p.use_count() == 1; });
+    return (result != m_pools.end()) ? *result : pool_type();
+  }
+
+  size_t
+  size() const {
+    return m_pools.size();
+  }
+
+  template <typename F>
+  void
+  for_all_cf_pools(F&& f) {
+    for (auto& pool: m_pools)
+      f(pool);
+  }
+};
+
+template <Device D, typename T, typename S=T>
+struct StreamVector {
   using kokkos_device = typename impl::DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
+  using memory_traits =
+    std::conditional_t<
+      std::is_same_v<memory_space, K::HostSpace>,
+      K::MemoryUnmanaged,
+      K::MemoryManaged>;
 
-  execution_space space;
-  impl::visbuff_view<memory_space> visbuff;
-  impl::gvisbuff_view<memory_space> gvisbuff;
-  std::variant<
-    impl::visdata_view<1, memory_space>,
-    impl::visdata_view<2, memory_space>,
-    impl::visdata_view<3, memory_space>,
-    impl::visdata_view<4, memory_space>> visibilities;
-  std::variant<
-    impl::vector_view<impl::visdata_t<1>>,
-    impl::vector_view<impl::visdata_t<2>>,
-    impl::vector_view<impl::visdata_t<3>>,
-    impl::vector_view<impl::visdata_t<4>>> visibilities_h;
-  std::variant<
-    std::vector<::hpg::VisData<1>>,
-    std::vector<::hpg::VisData<2>>,
-    std::vector<::hpg::VisData<3>>,
-    std::vector<::hpg::VisData<4>>> vis_vector;
-  mutable State::maybe_vis_t vis_promise;
-  size_t num_visibilities;
-  impl::weight_values_view<memory_space> weight_values;
-  impl::vector_view<vis_weight_fp> weight_values_h;
-  std::vector<vis_weight_fp> weight_values_vector;
-  impl::weight_col_index_view<memory_space> weight_col_index;
-  impl::vector_view<unsigned> weight_col_index_h;
-  std::vector<unsigned> weight_col_index_vector;
-  impl::weight_row_index_view<memory_space> weight_row_index;
-  impl::vector_view<size_t> weight_row_index_h;
-  std::vector<size_t> weight_row_index_vector;
+  // TODO: improve the test for binary compatibility of T and S
+  static_assert(sizeof(T) == sizeof(S));
 
-  ExecSpace(execution_space sp)
-    : space(sp) {
+  size_t m_max_size;
+  K::View<T*, memory_space, memory_traits> m_values_d;
+  K::View<T*, memory_space, K::MemoryUnmanaged> m_values;
+  std::vector<S> m_vector;
+  bool m_persistent_vector;
+
+  StreamVector()
+    : m_persistent_vector(false) {}
+
+  StreamVector(const char* name, size_t max_size)
+    : m_max_size(max_size) {
+
+    if constexpr (!std::is_same_v<K::HostSpace, memory_space>)
+      m_values_d =
+        decltype(m_values_d)(
+          K::ViewAllocateWithoutInitializing(name),
+          m_max_size);
   }
 
-  ExecSpace(const ExecSpace&) = delete;
-
-  ExecSpace(ExecSpace&& other) noexcept
-    : space(std::move(other).space)
-    , visbuff(std::move(other).visbuff)
-    , gvisbuff(std::move(other).gvisbuff)
-    , visibilities(std::move(other).visibilities)
-    , visibilities_h(std::move(other).visibilities_h)
-    , vis_vector(std::move(other).vis_vector)
-    , vis_promise(std::move(other).vis_promise)
-    , num_visibilities(std::move(other).num_visibilities)
-    , weight_values(std::move(other).weight_values)
-    , weight_values_h(std::move(other).weight_values_h)
-    , weight_values_vector(std::move(other).weight_values_vector)
-    , weight_col_index(std::move(other).weight_col_index)
-    , weight_col_index_h(std::move(other).weight_col_index_h)
-    , weight_col_index_vector(std::move(other).weight_col_index_vector)
-    , weight_row_index(std::move(other).weight_row_index)
-    , weight_row_index_h(std::move(other).weight_row_index_h)
-    , weight_row_index_vector(std::move(other).weight_row_index_vector) {
+  size_t
+  max_size() const {
+    return m_max_size;
   }
 
-  virtual ~ExecSpace() {}
+  size_t
+  size() const {
+    return m_values.is_allocated() ? m_values.extent(0) : 0;
+  }
 
-  ExecSpace&
-  operator=(ExecSpace&& rhs) noexcept {
-    space = std::move(rhs).space;
-    visbuff = std::move(rhs).visbuff;
-    gvisbuff = std::move(rhs).gvisbuff;
-    visibilities = std::move(rhs).visibilities;
-    visibilities_h = std::move(rhs).visibilities_h;
-    vis_vector = std::move(rhs).vis_vector;
-    vis_promise = std::move(rhs).vis_promise;
-    num_visibilities = std::move(rhs).num_visibilities;
-    weight_values = std::move(rhs).weight_values;
-    weight_values_h = std::move(rhs).weight_values_h;
-    weight_values_vector = std::move(rhs).weight_values_vector;
-    weight_col_index = std::move(rhs).weight_col_index;
-    weight_col_index_h = std::move(rhs).weight_col_index_h;
-    weight_col_index_vector = std::move(rhs).weight_col_index_vector;
-    weight_row_index = std::move(rhs).weight_row_index;
-    weight_row_index_h = std::move(rhs).weight_row_index_h;
-    weight_row_index_vector = std::move(rhs).weight_row_index_vector;
+  void
+  set(execution_space espace, bool persistent, std::vector<S>&& vector) {
+    m_vector = std::move(vector);
+    if constexpr (!std::is_same_v<K::HostSpace, memory_space>)
+      assert(m_vector.size() <= m_values_d.extent(0));
+    m_persistent_vector = persistent;
+    if (m_vector.size() > 0) {
+      if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
+        K::View<T*, K::HostSpace>
+          values_h(reinterpret_cast<T*>(m_vector.data()), m_vector.size());
+        m_values = decltype(m_values)(m_values_d.data(), m_vector.size());
+        K::deep_copy(espace, m_values, values_h);
+      } else {
+        m_values_d =
+          decltype(m_values_d)(
+            reinterpret_cast<T*>(m_vector.data()),
+            m_vector.size());
+        m_values = m_values_d;
+      }
+    } else {
+      m_values_d = decltype(m_values_d)();
+      m_values = decltype(m_values)();
+    }
+  }
+
+  void
+  copy_from(const StreamVector& other, execution_space espace) {
+    if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
+      m_persistent_vector = other.m_persistent_vector;
+      if (m_persistent_vector)
+        m_vector = other.m_vector;
+      m_values_d =
+        decltype(m_values_d)(
+          K::ViewAllocateWithoutInitializing(other.m_values_d.label()),
+          other.m_values_d.extent(0));
+      m_values = decltype(m_values)(m_values_d.data(), other.m_values.extent(0));
+      K::deep_copy(espace, m_values, other.m_values);
+    } else {
+      m_persistent_vector = other.m_persistent_vector;
+      m_vector = other.m_vector;
+      m_values_d =
+        decltype(m_values_d)(
+          reinterpret_cast<T*>(m_vector.data()),
+          m_vector.size());
+      m_values = m_values_d;
+    }
+  }
+};
+
+/** container for data and views associated with one stream of an
+ * ExecutionContext */
+template <Device D>
+struct /*HPG_EXPORT*/ StreamContext final {
+  using kokkos_device = typename impl::DeviceT<D>::kokkos_device;
+  using execution_space = typename kokkos_device::execution_space;
+  using memory_space = typename execution_space::memory_space;
+  using weight_traits =
+    std::conditional_t<
+      std::is_same_v<memory_space, K::HostSpace>,
+      K::MemoryUnmanaged,
+      K::MemoryManaged>;
+
+  execution_space m_space;
+  impl::gvisbuff_view<memory_space> m_gvisbuff;
+  mutable State::maybe_vis_t m_vis_promise;
+  size_t m_max_num_channels;
+
+  std::variant<
+    StreamVector<D, impl::visdata_t<1>, ::hpg::VisData<1>>,
+    StreamVector<D, impl::visdata_t<2>, ::hpg::VisData<2>>,
+    StreamVector<D, impl::visdata_t<3>, ::hpg::VisData<3>>,
+    StreamVector<D, impl::visdata_t<4>, ::hpg::VisData<4>>> m_visibilities;
+  StreamVector<D, vis_weight_fp> m_weight_values;
+  StreamVector<D, unsigned> m_weight_col_index;
+  StreamVector<D, size_t> m_weight_row_index;
+
+  StreamContext() = delete;
+
+  StreamContext(
+    execution_space sp,
+    unsigned npol,
+    size_t max_num_vis,
+    size_t max_num_channels)
+    : m_space(sp)
+    , m_max_num_channels(max_num_channels)
+    , m_weight_values("weight_values", m_max_num_channels)
+    , m_weight_col_index("weight_col_index", m_max_num_channels)
+    , m_weight_row_index("weight_row_index", max_num_vis + 1) {
+
+    assert(0 < npol && npol <= 4);
+    const char* vbname = "visibility_buffer";
+    switch (npol) {
+    case 1:
+      m_visibilities =
+        StreamVector<D, impl::visdata_t<1>, ::hpg::VisData<1>>(
+          vbname,
+          max_num_vis);
+      break;
+    case 2:
+      m_visibilities =
+        StreamVector<D, impl::visdata_t<2>, ::hpg::VisData<2>>(
+          vbname,
+          max_num_vis);
+      break;
+    case 3:
+      m_visibilities =
+        StreamVector<D, impl::visdata_t<3>, ::hpg::VisData<3>>(
+          vbname,
+          max_num_vis);
+      break;
+    case 4:
+      m_visibilities =
+        StreamVector<D, impl::visdata_t<4>, ::hpg::VisData<4>>(
+          vbname,
+          max_num_vis);
+      break;
+    default:
+      std::abort();
+      break;
+    }
+    m_gvisbuff =
+      decltype(m_gvisbuff)(
+        K::ViewAllocateWithoutInitializing("gvis_buffer"),
+        max_num_vis);
+  }
+
+  StreamContext(const StreamContext&) = delete;
+
+  StreamContext(StreamContext&& other) noexcept = default;
+
+  virtual ~StreamContext() {}
+
+  StreamContext&
+  operator=(StreamContext&& rhs) noexcept {
+    fence();
+    std::swap(*this, rhs);
     return *this;
+  }
+
+  StreamContext&
+  operator=(const StreamContext&) = delete;
+
+  size_t
+  max_num_vis() const {
+    return
+      std::visit(
+        overloaded {
+          [](auto& v) { return v.max_size(); }
+        },
+        m_visibilities);
+  }
+
+  size_t
+  num_vis() const {
+    return
+      std::visit(
+        overloaded {
+          [](auto& v) { return v.size(); }
+            },
+        m_visibilities);
+  }
+
+  size_t
+  max_num_channels() const {
+    return m_max_num_channels;
+  }
+
+  unsigned
+  num_polarizations() const {
+    return unsigned(m_visibilities.index()) + 1;
+  }
+
+  void
+  copy_from(const StreamContext& other) {
+    // caller must ensure that it's safe to overwrite values in this instance,
+    // and to read values from 'other'
+    assert(max_num_vis() == other.max_num_vis());
+    assert(max_num_channels() == other.max_num_channels());
+
+    m_max_num_channels = other.max_num_channels();
+
+    std::visit(
+      overloaded {
+        [this, &other](auto& v) {
+          using v_t = std::remove_reference_t<decltype(v)>;
+          v.copy_from(std::get<v_t>(other.m_visibilities), m_space);
+        }
+      },
+      m_visibilities);
+    m_weight_values.copy_from(other.m_weight_values, m_space);
+    m_weight_col_index.copy_from(other.m_weight_col_index, m_space);
+    m_weight_row_index.copy_from(other.m_weight_row_index, m_space);
+
+    K::deep_copy(m_space, m_gvisbuff, other.m_gvisbuff);
   }
 
   template <unsigned N>
   constexpr impl::visdata_view<N, memory_space>
   visdata() {
-    return std::get<impl::visdata_view<N, memory_space>>(visibilities);
+    return
+      std::get<StreamVector<D, impl::visdata_t<N>, ::hpg::VisData<N>>>(
+        m_visibilities).m_values;
   }
 
   template <unsigned N>
   size_t
   copy_visibilities_to_device(std::vector<::hpg::VisData<N>>&& in_vis) {
 
-    num_visibilities = in_vis.size();
-    if (num_visibilities > 0) {
-      visibilities_h =
-        impl::vector_view<impl::visdata_t<N>>(
-          reinterpret_cast<impl::visdata_t<N>*>(in_vis.data()),
-          num_visibilities);
-      auto hview =
-        std::get<impl::vector_view<impl::visdata_t<N>>>(
-          visibilities_h);
-      if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
-        visibilities =
-          impl::visdata_view<N, memory_space>(
-            reinterpret_cast<impl::visdata_t<N>*>(visbuff.data()),
-            num_visibilities);
-        auto dview =
-          K::subview(visdata<N>(), std::pair((size_t)0, num_visibilities));
-        K::deep_copy(space, dview, hview);
-      } else {
-        visibilities =
-          impl::visdata_view<N, memory_space>(
-            reinterpret_cast<impl::visdata_t<N>*>(&hview(0)),
-            num_visibilities);
-      }
-    }
-    vis_vector = std::move(in_vis);
-    return num_visibilities;
+    auto& v =
+      std::get<StreamVector<D, impl::visdata_t<N>, ::hpg::VisData<N>>>(
+        m_visibilities);
+    v.set(m_space, true, std::move(in_vis));
+    return v.size();
   }
 
   std::tuple<size_t, size_t>
@@ -647,61 +816,12 @@ struct /*HPG_EXPORT*/ ExecSpace final {
     std::vector<unsigned>&& in_weight_col_index,
     std::vector<size_t>&& in_weight_row_index) {
 
-    weight_values_vector = std::move(in_weight_values);
-    weight_col_index_vector = std::move(in_weight_col_index);
-    weight_row_index_vector = std::move(in_weight_row_index);
+    m_weight_values.set(m_space, false, std::move(in_weight_values));
+    m_weight_col_index.set(m_space, false, std::move(in_weight_col_index));
+    m_weight_row_index.set(m_space, false, std::move(in_weight_row_index));
 
-    if (weight_row_index_vector.size() > 0) {
-      weight_values_h =
-        impl::vector_view<vis_weight_fp>(
-          weight_values_vector.data(),
-          weight_values_vector.size());
-      weight_col_index_h =
-        impl::vector_view<unsigned>(
-          weight_col_index_vector.data(),
-          weight_col_index_vector.size());
-      weight_row_index_h =
-        impl::vector_view<size_t>(
-          weight_row_index_vector.data(),
-          weight_row_index_vector.size());
-      if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
-        {
-          auto weight_values_d =
-            K::subview(
-              weight_values,
-              std::pair((size_t)0, weight_values_vector.size()));
-          K::deep_copy(space, weight_values_d, weight_values_h);
-        }
-        {
-          auto weight_col_index_d =
-            K::subview(
-              weight_col_index,
-              std::pair((size_t)0, weight_col_index_vector.size()));
-          K::deep_copy(space, weight_col_index_d, weight_col_index_h);
-        }
-        {
-          auto weight_row_index_d =
-            K::subview(
-              weight_row_index,
-              std::pair((size_t)0, weight_row_index_vector.size()));
-          K::deep_copy(space, weight_row_index_d, weight_row_index_h);
-        }
-      } else {
-        weight_values =
-          impl::weight_values_view<memory_space>(
-            weight_values_h.data(),
-            weight_values_vector.size());
-        weight_col_index =
-          impl::weight_col_index_view<memory_space>(
-            weight_col_index_h.data(),
-            weight_col_index_vector.size());
-        weight_row_index =
-          impl::weight_row_index_view<memory_space>(
-            weight_row_index_h.data(),
-            weight_row_index_vector.size());
-      }
-    }
-    return {weight_values_vector.size(), weight_row_index_vector.size()};
+    return
+      {m_weight_values.m_vector.size(), m_weight_row_index.m_vector.size()};
   }
 
   State::maybe_vis_t
@@ -709,53 +829,390 @@ struct /*HPG_EXPORT*/ ExecSpace final {
 
     State::maybe_vis_t result;
     if (return_visibilities) {
-      vis_promise =
+      m_vis_promise =
         std::make_shared<std::shared_ptr<std::optional<VisDataVector>>>(
           std::make_shared<std::optional<VisDataVector>>(std::nullopt));
-      result = vis_promise;
-      std::visit(
-        overloaded {
-          [this](auto& v) {
-            using v_t =
-              std::remove_const_t<std::remove_reference_t<decltype(v)>>;
-            if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
-              constexpr unsigned N = v_t::value_type::npol;
-              if (num_visibilities > 0) {
+      result = m_vis_promise;
+      if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
+        std::visit(
+          overloaded {
+            [this](auto& v) {
+              using dev_value_t = typename decltype(v.m_values)::value_type;
+              if (v.size() > 0) {
                 auto hview =
-                  std::get<impl::vector_view<impl::visdata_t<N>>>(
-                    visibilities_h);
+                  K::View<dev_value_t*, K::HostSpace, K::MemoryUnmanaged>(
+                    reinterpret_cast<dev_value_t*>(v.m_vector.data()),
+                    v.m_vector.size());
                 auto dview =
                   K::subview(
-                    visdata<N>(),
-                    std::pair((size_t)0, num_visibilities));
-                K::deep_copy(space, hview, dview);
+                    visdata<dev_value_t::npol>(),
+                    std::pair((size_t)0, v.m_vector.size()));
+                K::deep_copy(m_space, hview, dview);
               }
             }
-          }
-        },
-        vis_vector);
+          },
+          m_visibilities);
+      }
     }
     return result;
   }
 
   void
-  fence() noexcept {
-    space.fence();
-    if (vis_promise) {
+  fence() const noexcept {
+    m_space.fence();
+    if (m_vis_promise) {
       std::visit(
         overloaded {
           [this](auto& v) {
-            using v_t =
-              std::remove_const_t<std::remove_reference_t<decltype(v)>>;
             auto vdv =
               std::make_shared<std::optional<VisDataVector>>(
-                VisDataVector(std::get<v_t>(std::move(vis_vector))));
-            std::atomic_store(&*vis_promise, vdv);
+                VisDataVector(std::move(v.m_vector)));
+            std::atomic_store(&*m_vis_promise, vdv);
           }
         },
-        vis_vector);
-      vis_promise.reset();
+        m_visibilities);
+      m_vis_promise.reset();
     }
+  }
+};
+
+// FIXME: remove
+template <Device D>
+using ExecSpace = StreamContext<D>;
+
+template <Device D>
+class ExecutionContextGroup;
+
+template <Device D>
+class /*HPG_EXPORT*/ ExecutionContext {
+public:
+
+  using pool_type = typename CFPoolRepo<D>::pool_type;
+  using kokkos_device = typename impl::DeviceT<D>::kokkos_device;
+  using execution_space = typename kokkos_device::execution_space;
+
+protected:
+
+  friend class ExecutionContextGroup<D>;
+
+  struct StreamState {
+    StreamContext<D> m_context;
+    pool_type m_cf_pool;
+    StreamPhase m_phase;
+  };
+
+  // CFPoolRepo instance should be owned by an instance of ExecutionContextGroup
+  // (or similar)
+  CFPoolRepo<D>* m_cf_pool_repo;
+
+  std::deque<StreamState> m_streams;
+
+public:
+
+  ExecutionContext(
+    unsigned npol,
+    size_t max_num_vis,
+    size_t max_num_channels,
+    size_t num_extra_streams,
+    CFPoolRepo<D>* cf_pool_repo)
+    : m_cf_pool_repo(cf_pool_repo) {
+
+    assert(cf_pool_repo->size() >= num_extra_streams + 1);
+    std::vector<int> weights(num_extra_streams + 1);
+    std::fill_n(weights.begin(), weights.size(), 1);
+    for (auto& s:
+           K::Experimental::partition_space(execution_space(), weights))
+      m_streams.push_back(
+        StreamState{
+          StreamContext<D>(
+            s,
+            npol,
+            max_num_vis,
+            max_num_channels),
+          nullptr,
+          StreamPhase::COPY});
+  }
+
+  ExecutionContext(ExecutionContext&& other)
+    : m_cf_pool_repo(std::move(other).m_cf_pool_repo)
+    , m_streams(std::move(other).m_streams) {}
+
+  ExecutionContext&
+  operator=(ExecutionContext&& rhs) {
+    fence();
+    std::swap(*this, rhs);
+    return *this;
+  }
+
+  unsigned
+  num_polarizations() const {
+    if (m_streams.size() > 0)
+      return m_streams.front().m_context.num_polarizations();
+    return 0;
+  }
+
+  size_t
+  streams_size() const {
+    return m_streams.size();
+  }
+
+  template <typename F>
+  void
+  for_all_stream_contexts(F&& f) {
+    for (auto& s : m_streams)
+      f(s.m_context);
+  }
+
+  template <typename F, typename T>
+  T
+  fold_left_over_stream_contexts(const T& t, F&& f) {
+    T result = t;
+    for (auto& s : m_streams)
+      result = f(result, s);
+    return result;
+  }
+
+  template <typename F>
+  void
+  for_all_cf_pools(F&& f) {
+    m_cf_pool_repo->for_all_cf_pools(
+      [this, &f](auto& pool) {
+        if (fold_left_over_stream_contexts(
+              false,
+              [&pool](bool match, auto& sc) {
+                return match || sc.m_cf_pool == pool;
+              }))
+          f(pool);
+      });
+  }
+
+  pool_type&
+  current_cf_pool() {
+    return m_streams.front().m_cf_pool;
+  }
+
+  const pool_type&
+  current_cf_pool() const {
+    return m_streams.front().m_cf_pool;
+  }
+
+  StreamContext<D>&
+  current_stream_context() {
+    return m_streams.front().m_context;
+  }
+
+  const StreamContext<D>&
+  current_stream_context() const {
+    return m_streams.front().m_context;
+  }
+
+  execution_space&
+  current_exec_space() {
+    return current_stream_context().m_space;
+  }
+
+  void
+  switch_to_copy(bool new_cf) {
+    if (m_streams.front().m_phase == StreamPhase::COMPUTE) {
+      next_stream();
+      if (new_cf)
+        next_cf_pool();
+      m_streams.front().m_phase = StreamPhase::COPY;
+    }
+    // don't need to do anything if the head stream is in COPY phase and the
+    // caller asked for a new CFPool, as in that case it's OK to simply allow
+    // the caller to overwrite the current CFPool instead of using another
+    // instance
+  }
+
+  void
+  switch_to_compute() {
+    m_streams.front().m_phase = StreamPhase::COMPUTE;
+  }
+
+  void
+  next_stream() {
+    // rotate the head stream to the tail
+    m_streams.push_back(std::move(m_streams.front()));
+    m_streams.pop_front();
+    // set new head stream CFPool to same instance as previous head stream
+    m_streams.front().m_cf_pool = m_streams.back().m_cf_pool;
+  }
+
+  void
+  next_cf_pool() {
+    // try to acquire an unused CFPool
+    pool_type new_pool = m_cf_pool_repo->get_unused_pool();
+    if (!new_pool) {
+      // no CFPool is unused -- fence the current stream and all other streams
+      // using the same CFPool instance, and remove that CFPool from all
+      // streams, then it becomes unused and the this stream can acquire it
+      {
+        pool_type current_pool = m_streams.front().m_cf_pool;
+        for (auto& s : m_streams)
+          if (s.m_cf_pool && s.m_cf_pool == current_pool) {
+            s.m_context.fence();
+            s.m_cf_pool.reset();
+          }
+      }
+      new_pool = m_cf_pool_repo->get_unused_pool();
+      assert(new_pool);
+    }
+    m_streams.front().m_cf_pool = new_pool;
+  }
+
+  void
+  fence() const {
+    for (auto& s : m_streams)
+      s.m_context.fence();
+  }
+};
+
+template <Device D>
+class /*HPG_EXPORT*/ ExecutionContextGroup {
+
+  CFPoolRepo<D> m_cf_pool_repo;
+
+  std::vector<ExecutionContext<D>> m_execution_contexts;
+
+  using execution_space = typename ExecutionContext<D>::execution_space;
+
+public:
+
+  using size_type = typename decltype(m_execution_contexts)::size_type;
+
+  ExecutionContextGroup() {}
+
+  ExecutionContextGroup(
+    unsigned npol,
+    size_t max_num_vis,
+    size_t max_num_channels,
+    const std::vector<size_t>& num_extra_streams,
+    size_t pool_size)
+    : m_cf_pool_repo(pool_size) {
+
+    for (auto& n: num_extra_streams)
+      m_execution_contexts
+        .emplace_back(npol, max_num_vis, max_num_channels, n, &m_cf_pool_repo);
+    for (auto& ec : m_execution_contexts)
+      ec.next_cf_pool();
+  }
+
+  ExecutionContextGroup(const ExecutionContextGroup& other)
+    : m_cf_pool_repo(other.m_cf_pool_repo.size()) {
+
+    other.fence();
+    execution_space espace;
+    auto npol = other.num_polarizations();
+    auto cf_map = m_cf_pool_repo.copy_from(espace, other.m_cf_pool_repo);
+    auto max_num_vis = other[0].current_stream_context().max_num_vis();
+    auto max_num_channels =
+      other[0].current_stream_context().max_num_channels();
+    for (auto& ec: other.m_execution_contexts) {
+      m_execution_contexts.emplace_back(
+        npol,
+        max_num_vis,
+        max_num_channels,
+        ec.streams_size() - 1,
+        &m_cf_pool_repo);
+      auto& new_ct = m_execution_contexts.back();
+      for (size_t i = 0; i < ec.streams_size(); ++i) {
+        auto& src = ec.m_streams[i];
+        auto& dst = new_ct.m_streams[i];
+        dst.m_context.copy_from(src.m_context);
+        if (src.m_cf_pool)
+          dst.m_cf_pool = cf_map.at(src.m_cf_pool.get()).lock();
+      }
+    }
+    espace.fence();
+  }
+
+  ExecutionContextGroup(ExecutionContextGroup&& other)
+    : m_cf_pool_repo(std::move(other).m_cf_pool_repo)
+    , m_execution_contexts(std::move(other).m_execution_contexts) {
+
+    for (auto& ec : m_execution_contexts)
+      ec.m_cf_pool_repo = &m_cf_pool_repo;
+  }
+
+  ExecutionContextGroup&
+  operator=(ExecutionContextGroup&& rhs) {
+
+    m_cf_pool_repo = std::move(rhs).m_cf_pool_repo;
+    m_execution_contexts = std::move(rhs).m_execution_contexts;
+    for (auto& ec : m_execution_contexts)
+      ec.m_cf_pool_repo = &m_cf_pool_repo;
+    return *this;
+  }
+
+  ExecutionContextGroup&
+  operator=(const ExecutionContextGroup& rhs) {
+    ExecutionContextGroup tmp(rhs);
+    fence();
+    std::swap(*this, tmp);
+    return *this;
+  }
+
+  size_type
+  size() const {
+    return m_execution_contexts.size();
+  }
+
+  ExecutionContext<D>&
+  operator[](size_type i) {
+    return m_execution_contexts[i];
+  }
+
+  const ExecutionContext<D>&
+  operator[](size_type i) const {
+    return m_execution_contexts[i];
+  }
+
+  unsigned
+  num_polarizations() const {
+    if (size() > 0)
+      return m_execution_contexts[0].num_polarizations();
+    return 0;
+  }
+
+  void
+  switch_to_copy() {
+    for (auto& ec : m_execution_contexts)
+      ec.switch_to_copy(false);
+  }
+
+  void
+  switch_to_compute() {
+    for (auto& ec : m_execution_contexts)
+      ec.switch_to_compute();
+  }
+
+  template <typename F>
+  void
+  for_all_stream_contexts(F&& f) {
+    for (auto& ec : m_execution_contexts)
+      ec.for_all_stream_contexts(f);
+  }
+
+  template <typename F, typename T>
+  T
+  fold_left_over_stream_contexts(const T& t, F&& f) {
+    T result = t;
+    for (auto& ec : m_execution_contexts)
+      result = ec.fold_left_over_stream_contexts(result, f);
+    return result;
+  }
+
+  template <typename F>
+  void
+  for_all_cf_pools(F&& f) {
+    m_cf_pool_repo.for_all_cf_pools(std::forward<F>(f));
+  }
+
+  void
+  fence() const {
+    for (auto& ec : m_execution_contexts)
+      ec.fence();
   }
 };
 
@@ -794,22 +1251,13 @@ public:
   impl::const_mindex_view<memory_space> m_mueller_indexes;
   impl::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
 
-  // use multiple execution spaces to support overlap of data copying with
-  // computation when possible
-  std::vector<std::conditional_t<std::is_void_v<stream_type>, int, stream_type>>
-    m_streams;
-
 protected:
 
   mutable std::mutex m_mtx;
   // access to the following members in const methods must be protected by m_mtx
   // (intentionally do not provide any thread safety guarantee outside of const
   // methods!)
-  mutable std::vector<ExecSpace<D>> m_exec_spaces;
-  mutable std::vector<std::tuple<CFPool<D>, std::optional<int>>> m_cfs;
-  mutable std::deque<int> m_exec_space_indexes;
-  mutable std::deque<int> m_cf_indexes;
-  mutable StreamPhase m_current = StreamPhase::PRE_GRIDDING;
+  mutable ExecutionContextGroup<D> m_exec_contexts;
 
 public:
 
@@ -824,7 +1272,8 @@ public:
     const std::array<grid_scale_fp, 2>& grid_scale,
     const IArrayVector& mueller_indexes,
     const IArrayVector& conjugate_mueller_indexes,
-    const std::array<unsigned, 4>& implementation_versions)
+    const std::array<unsigned, 4>& implementation_versions,
+    ExecutionContextGroup<D>&& exec_contexts)
     : m_device(D)
     , m_max_active_tasks(
       std::min(max_active_tasks, device_traits::active_task_limit))
@@ -832,7 +1281,8 @@ public:
     , m_max_avg_channels_per_vis(max_avg_channels_per_vis)
     , m_grid_scale({grid_scale[0], grid_scale[1]})
     , m_num_polarizations(mueller_indexes.m_npol)
-    , m_implementation_versions(implementation_versions) {
+    , m_implementation_versions(implementation_versions)
+    , m_exec_contexts(std::move(exec_contexts)) {
 
     m_grid_size_global[int(impl::core::GridAxis::x)] =
       grid_size_global[GridValueArray::Axis::x];
@@ -861,13 +1311,44 @@ public:
     m_grid_size_local[int(impl::core::GridAxis::channel)] =
       grid_size_local[GridValueArray::Axis::channel];
 
-    init_state(init_cf_shape);
+    init_cfs(init_cf_shape);
     m_mueller_indexes =
       init_mueller("mueller_indexes", mueller_indexes);
     m_conjugate_mueller_indexes =
       init_mueller("conjugate_mueller_indexes", conjugate_mueller_indexes);
     new_grid(true, true);
   }
+
+  StateT(
+    unsigned max_active_tasks,
+    size_t visibility_batch_size,
+    unsigned max_avg_channels_per_vis,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size_global,
+    const std::array<unsigned, 4>& grid_offset_local,
+    const std::array<unsigned, 4>& grid_size_local,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const IArrayVector& mueller_indexes,
+    const IArrayVector& conjugate_mueller_indexes,
+    const std::array<unsigned, 4>& implementation_versions)
+  : StateT(
+    max_active_tasks,
+    visibility_batch_size,
+    max_avg_channels_per_vis,
+    init_cf_shape,
+    grid_size_global,
+    grid_offset_local,
+    grid_size_local,
+    grid_scale,
+    mueller_indexes,
+    conjugate_mueller_indexes,
+    implementation_versions,
+    {ExecutionContextGroup<D>(
+      mueller_indexes.m_npol,
+      visibility_batch_size,
+      max_avg_channels_per_vis * visibility_batch_size,
+      {size_t(max_active_tasks - 1)},
+      max_active_tasks)}) {}
 
   StateT(const StateT& st)
     : m_device(D)
@@ -883,46 +1364,30 @@ public:
 
     std::scoped_lock lock(st.m_mtx);
     st.fence_unlocked();
-    init_state(&st);
+    m_exec_contexts = st.m_exec_contexts;
+    copy_model(st);
     m_mueller_indexes = st.m_mueller_indexes;
     m_conjugate_mueller_indexes = st.m_conjugate_mueller_indexes;
     new_grid(&st, true);
   }
 
   StateT(StateT&& st) noexcept
-    : m_device(D) {
-
-    m_max_active_tasks = std::move(st).m_max_active_tasks;
-    m_visibility_batch_size = std::move(st).m_visibility_batch_size;
-    m_max_avg_channels_per_vis = std::move(st).m_max_avg_channels_per_vis;
-    m_grid_size_global = std::move(st).m_grid_size_global;
-    m_grid_offset_local = std::move(st).m_grid_offset_local;
-    m_grid_size_local = std::move(st).m_grid_size_local;
-    m_grid_scale = std::move(st).m_grid_scale;
-    m_num_polarizations = std::move(st).m_num_polarizations;
-    m_implementation_versions = std::move(st).m_implementation_versions;
-
-    m_grid = std::move(st).m_grid;
-    m_grid_weights = std::move(st).m_grid_weights;
-    m_model = std::move(st).m_model;
-    m_mueller_indexes = std::move(st).m_mueller_indexes;
-    m_conjugate_mueller_indexes = std::move(st).m_conjugate_mueller_indexes;
-    m_streams = std::move(st).m_streams;
-    m_exec_spaces = std::move(st).m_exec_spaces;
-    m_exec_space_indexes = std::move(st).m_exec_space_indexes;
-    m_current = std::move(st).m_current;
-
-    m_cf_indexes = std::move(st).m_cf_indexes;
-    m_cfs.resize(m_max_active_tasks);
-    for (auto& [cf, last] : m_cfs)
-      cf.state = this;
-    for (size_t i = 0; i < m_max_active_tasks; ++i) {
-      auto tmp_cf = std::move(m_cfs[i]);
-      std::get<0>(tmp_cf).state = this;
-      m_cfs[i] = std::move(st.m_cfs[i]);
-      st.m_cfs[i] = std::move(tmp_cf);
-    }
-  }
+    : m_device(D)
+    , m_max_active_tasks(std::move(st).m_max_active_tasks)
+    , m_visibility_batch_size(std::move(st).m_visibility_batch_size)
+    , m_max_avg_channels_per_vis(std::move(st).m_max_avg_channels_per_vis)
+    , m_grid_size_global(std::move(st).m_grid_size_global)
+    , m_grid_offset_local(std::move(st).m_grid_offset_local)
+    , m_grid_size_local(std::move(st).m_grid_size_local)
+    , m_grid_scale(std::move(st).m_grid_scale)
+    , m_num_polarizations(std::move(st).m_num_polarizations)
+    , m_implementation_versions(std::move(st).m_implementation_versions)
+    , m_grid(std::move(st).m_grid)
+    , m_grid_weights(std::move(st).m_grid_weights)
+    , m_model(std::move(st).m_model)
+    , m_mueller_indexes(std::move(st).m_mueller_indexes)
+    , m_conjugate_mueller_indexes(std::move(st).m_conjugate_mueller_indexes)
+    , m_exec_contexts(std::move(st).m_exec_contexts) {}
 
   virtual ~StateT() {
     fence();
@@ -931,15 +1396,6 @@ public:
     m_model = decltype(m_model)();
     m_mueller_indexes = decltype(m_mueller_indexes)();
     m_conjugate_mueller_indexes = decltype(m_conjugate_mueller_indexes)();
-    for (auto& [cf, last] : m_cfs)
-      cf.reset();
-    m_exec_spaces.clear();
-    if constexpr(!std::is_void_v<stream_type>) {
-      for (auto& str : m_streams) {
-        auto rc = device_traits::destroy_stream(str);
-        assert(rc);
-      }
-    }
   }
 
   StateT&
@@ -964,6 +1420,11 @@ public:
   Device
   device() const noexcept override {
     return m_device;
+  }
+
+  unsigned
+  num_exec_contexts() const noexcept override {
+    return m_exec_contexts.size();
   }
 
   unsigned
@@ -1059,14 +1520,24 @@ public:
     std::scoped_lock lock(m_mtx);
     return
       shape
-      ? std::get<0>(m_cfs[0]).pool_size(shape)
-      : std::get<0>(m_cfs[m_cf_indexes.front()]).pool.extent(0);
+      ? m_exec_contexts[0].current_cf_pool()->pool_size(shape)
+      : m_exec_contexts[0].current_cf_pool()->pool.extent(0);
   }
 
   virtual std::optional<std::unique_ptr<Error>>
   allocate_convolution_function_region(
     unsigned context,
     const CFArrayShape* shape) override {
+
+    if (context >= m_exec_contexts.size())
+      return
+        std::make_optional(std::make_unique<InvalidGriddingContextError>());
+
+    m_exec_contexts.fence();
+    m_exec_contexts[context].for_all_cf_pools(
+      [shape](auto& cf) {
+        cf->prepare_pool(shape, true);
+      });
     return std::nullopt;
   }
 
@@ -1076,15 +1547,19 @@ public:
     Device host_device,
     CFArray&& cf_array) override {
 
-    switch_cf_pool();
-    auto& exec = m_exec_spaces[next_pre_compute_exec_space()];
-    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
+    if (context >= m_exec_contexts.size())
+      return
+        std::make_optional(std::make_unique<InvalidGriddingContextError>());
+
+    m_exec_contexts[context].switch_to_copy(true);
+    auto& espace = m_exec_contexts[context].current_exec_space();
+    auto& cf = m_exec_contexts[context].current_cf_pool();
     try {
-      cf.add_device_cfs(
-        exec.space,
+      cf->add_device_cfs(
+        espace,
         std::move(dynamic_cast<typename impl::DeviceCFArray<D>&&>(cf_array)));
     } catch (const std::bad_cast&) {
-      cf.add_host_cfs(host_device, exec.space, std::move(cf_array));
+      cf->add_host_cfs(host_device, espace, std::move(cf_array));
     }
     return std::nullopt;
   }
@@ -1110,8 +1585,7 @@ public:
           m_grid_size_local);
 
     fence();
-    auto& exec = m_exec_spaces[next_pre_compute_exec_space()];
-
+    m_exec_contexts.switch_to_copy();
     if (!m_model.is_allocated())
       m_model =
         decltype(m_model)(
@@ -1121,7 +1595,7 @@ public:
     try {
       impl::GridValueViewArray<D> gvv =
         std::move(dynamic_cast<impl::GridValueViewArray<D>&&>(gv));
-      K::deep_copy(exec.space, m_model, gvv.grid);
+      K::deep_copy(m_exec_contexts[0].current_exec_space(), m_model, gvv.grid);
     } catch (const std::bad_cast&) {
       auto model_h = K::create_mirror_view(m_model);
       switch (host_device) {
@@ -1139,7 +1613,7 @@ public:
         return std::make_unique<DisabledHostDeviceError>();
         break;
       }
-      K::deep_copy(exec.space, m_model, model_h);
+      K::deep_copy(m_exec_contexts[0].current_exec_space(), m_model, model_h);
     }
     return std::nullopt;
   }
@@ -1158,35 +1632,37 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-    auto& exec_pre = m_exec_spaces[next_pre_compute_exec_space()];
-    int len = exec_pre.copy_visibilities_to_device(std::move(visibilities));
-    exec_pre.copy_weights_to_device(
+    m_exec_contexts[context].switch_to_copy(false);
+    auto& sc_copy = m_exec_contexts[context].current_stream_context();
+    int len = sc_copy.copy_visibilities_to_device(std::move(visibilities));
+    sc_copy.copy_weights_to_device(
       std::move(wgt_values),
       std::move(wgt_col_index),
       std::move(wgt_row_index));
 
-    auto& exec_grid = m_exec_spaces[next_compute_exec_space()];
-    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
-    auto& gvisbuff = exec_grid.gvisbuff;
+    m_exec_contexts[context].switch_to_compute();
+    auto& sc_grid = m_exec_contexts[context].current_stream_context();
+    auto& cf = m_exec_contexts[context].current_cf_pool();
+    auto& gvisbuff = sc_grid.m_gvisbuff;
     using gvis0 =
       typename std::remove_reference_t<decltype(gvisbuff)>::value_type;
-    K::deep_copy(exec_grid.space, gvisbuff, gvis0());
+    K::deep_copy(sc_grid.m_space, gvisbuff, gvis0());
 
     auto gridder =
       impl::core::VisibilityGridder(
-        exec_grid.space,
-        cf.cf_d,
-        cf.cf_radii,
-        cf.max_cf_extent_y,
+        sc_grid.m_space,
+        cf->cf_d,
+        cf->cf_radii,
+        cf->max_cf_extent_y,
         m_mueller_indexes,
         m_conjugate_mueller_indexes,
         len,
         0,
         1,
-        exec_grid.template visdata<N>(),
-        exec_grid.weight_values,
-        exec_grid.weight_col_index,
-        exec_grid.weight_row_index,
+        sc_grid.template visdata<N>(),
+        sc_grid.m_weight_values.m_values,
+        sc_grid.m_weight_col_index.m_values,
+        sc_grid.m_weight_row_index.m_values,
         gvisbuff,
         m_grid_scale,
         m_grid,
@@ -1211,7 +1687,7 @@ public:
       else
         gridder.grid_all_no_weights(len);
     }
-    return exec_grid.copy_visibilities_to_host(return_visibilities);
+    return sc_grid.copy_visibilities_to_host(return_visibilities);
   }
 
   template <unsigned N>
@@ -1252,21 +1728,6 @@ public:
           return_visibilities,
           do_grid);
       break;
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-    case 1:
-      return
-        alt_grid_visibilities(
-          host_device,
-          std::move(visibilities),
-          std::move(wgt_values),
-          std::move(wgt_col_index),
-          std::move(wgt_row_index),
-          update_grid_weights,
-          do_degrid,
-          return_visibilities,
-          do_grid);
-      break;
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     default:
       assert(false);
       std::abort();
@@ -1287,6 +1748,9 @@ public:
     bool return_visibilities,
     bool do_grid)
     override {
+
+    if (context >= m_exec_contexts.size())
+      return std::make_unique<InvalidGriddingContextError>();
 
     switch (visibilities.m_npol) {
     case 1:
@@ -1424,18 +1888,18 @@ public:
 
   virtual void
   fill_grid(const impl::gv_t& val) override {
-    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     auto g_h = K::create_mirror_view(m_grid);
     K::deep_copy(g_h, impl::gv_t(0));
-    K::deep_copy(exec.space, m_grid, g_h);
+    m_exec_contexts.switch_to_copy();
+    K::deep_copy(m_exec_contexts[0].current_exec_space(), m_grid, g_h);
   };
 
   virtual void
   fill_grid_weights(const grid_value_fp& val) override {
-    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     auto w_h = K::create_mirror_view(m_grid_weights);
     K::deep_copy(w_h, grid_value_fp(0));
-    K::deep_copy(exec.space, m_grid_weights, w_h);
+    m_exec_contexts.switch_to_copy();
+    K::deep_copy(m_exec_contexts[0].current_exec_space(), m_grid_weights, w_h);
   };
 
   virtual void
@@ -1446,8 +1910,9 @@ public:
 
   virtual void
   normalize_by_weights(grid_value_fp wfactor) override {
+    m_exec_contexts.switch_to_compute();
     impl::core::GridNormalizer(
-      m_exec_spaces[next_compute_exec_space()].space,
+      m_exec_contexts[0].current_exec_space(),
       m_grid,
       m_grid_weights,
       wfactor)
@@ -1458,13 +1923,14 @@ public:
   apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place)
     override {
 
+    m_exec_contexts.switch_to_compute();
     std::optional<std::unique_ptr<Error>> err;
     if (in_place) {
       switch (fft_version()) {
       case 0:
         err =
           impl::FFT<execution_space>::in_place_kernel(
-            m_exec_spaces[next_compute_exec_space()].space,
+            m_exec_contexts[0].current_exec_space(),
             sign,
             m_grid);
         break;
@@ -1481,7 +1947,7 @@ public:
       case 0:
         err =
           impl::FFT<execution_space>::out_of_place_kernel(
-            m_exec_spaces[next_compute_exec_space()].space,
+            m_exec_contexts[0].current_exec_space(),
             sign,
             pre_grid,
             m_grid);
@@ -1493,7 +1959,7 @@ public:
     }
     // apply normalization
     impl::core::GridNormalizer(
-      m_exec_spaces[next_compute_exec_space()].space,
+      m_exec_contexts[0].current_exec_space(),
       m_grid,
       norm)
       .normalize();
@@ -1504,6 +1970,7 @@ public:
   apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place)
     override {
 
+    m_exec_contexts.switch_to_compute();
     std::optional<std::unique_ptr<Error>> err;
     if (m_model.is_allocated()){
       if (in_place) {
@@ -1511,7 +1978,7 @@ public:
         case 0:
           err =
             impl::FFT<execution_space>::in_place_kernel(
-              m_exec_spaces[next_compute_exec_space()].space,
+              m_exec_contexts[0].current_exec_space(),
               sign,
               m_model);
           break;
@@ -1531,7 +1998,7 @@ public:
         case 0:
           err =
             impl::FFT<execution_space>::out_of_place_kernel(
-              m_exec_spaces[next_compute_exec_space()].space,
+              m_exec_contexts[0].current_exec_space(),
               sign,
               pre_model,
               m_model);
@@ -1543,7 +2010,7 @@ public:
       }
       // apply normalization
       impl::core::GridNormalizer(
-        m_exec_spaces[next_compute_exec_space()].space,
+        m_exec_contexts[0].current_exec_space(),
         m_model,
         norm)
         .normalize();
@@ -1553,8 +2020,9 @@ public:
 
   virtual void
   shift_grid(ShiftDirection direction) override {
+    m_exec_contexts.switch_to_compute();
     impl::core::GridShifter(
-      m_exec_spaces[next_compute_exec_space()].space,
+      m_exec_contexts[0].current_exec_space(),
       direction,
       m_grid)
       .shift();
@@ -1562,8 +2030,9 @@ public:
 
   virtual void
   shift_model(ShiftDirection direction) override {
+    m_exec_contexts.switch_to_compute();
     impl::core::GridShifter(
-      m_exec_spaces[next_compute_exec_space()].space,
+      m_exec_contexts[0].current_exec_space(),
       direction,
       m_model)
       .shift();
@@ -1573,41 +2042,41 @@ protected:
 
   void
   fence_unlocked() const noexcept {
-    for (auto& i : m_exec_space_indexes) {
-      auto& exec = m_exec_spaces[i];
-      exec.fence();
-    }
-    next_pre_compute_exec_space_unlocked();
+    m_exec_contexts.fence();
+    m_exec_contexts.switch_to_copy();
   }
 
   std::unique_ptr<GridWeightArray>
   grid_weights_unlocked() const {
     fence_unlocked();
-    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     auto wgts_h = K::create_mirror(m_grid_weights);
-    K::deep_copy(exec.space, wgts_h, m_grid_weights);
-    exec.fence();
+    m_exec_contexts.switch_to_copy();
+    K::deep_copy(
+      m_exec_contexts[0].current_exec_space(),
+      wgts_h,
+      m_grid_weights);
+    m_exec_contexts[0].current_stream_context().fence();
     return std::make_unique<impl::GridWeightViewArray<D>>(wgts_h);
   }
 
   std::unique_ptr<GridValueArray>
   grid_values_unlocked() const noexcept {
     fence_unlocked();
-    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     auto grid_h = K::create_mirror(m_grid);
-    K::deep_copy(exec.space, grid_h, m_grid);
-    exec.fence();
+    m_exec_contexts.switch_to_copy();
+    K::deep_copy(m_exec_contexts[0].current_exec_space(), grid_h, m_grid);
+    m_exec_contexts[0].current_stream_context().fence();
     return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
   }
 
   std::unique_ptr<GridValueArray>
   model_values_unlocked() const {
     fence_unlocked();
-    auto& exec = m_exec_spaces[next_pre_compute_exec_space_unlocked()];
     if (m_model.is_allocated()) {
       auto model_h = K::create_mirror(m_model);
-      K::deep_copy(exec.space, model_h, m_model);
-      exec.fence();
+      m_exec_contexts.switch_to_copy();
+      K::deep_copy(m_exec_contexts[0].current_exec_space(), model_h, m_model);
+      m_exec_contexts[0].current_stream_context().fence();
       return std::make_unique<impl::GridValueViewArray<D>>(model_h);
     } else {
       std::array<unsigned, 4> ex{
@@ -1631,127 +2100,37 @@ protected:
     std::swap(m_grid_offset_local, other.m_grid_offset_local);
     std::swap(m_grid_scale, other.m_grid_scale);
     std::swap(m_implementation_versions, other.m_implementation_versions);
+    std::swap(m_exec_contexts[0], other.m_exec_contexts[0]);
 
     std::swap(m_grid, other.m_grid);
     std::swap(m_grid_weights, other.m_grid_weights);
     std::swap(m_model, other.m_model);
     std::swap(m_mueller_indexes, other.m_mueller_indexes);
     std::swap(m_conjugate_mueller_indexes, other.m_conjugate_mueller_indexes);
-    std::swap(m_streams, other.m_streams);
-    std::swap(m_exec_spaces, other.m_exec_spaces);
-    std::swap(m_exec_space_indexes, other.m_exec_space_indexes);
-    std::swap(m_current, other.m_current);
-
-    for (size_t i = 0; i < m_max_active_tasks; ++i) {
-      auto tmp_cf = std::move(m_cfs[i]);
-      std::get<0>(tmp_cf).state = this;
-      m_cfs[i] = std::move(other.m_cfs[i]);
-      other.m_cfs[i] = std::move(tmp_cf);
-    }
-    std::swap(m_cf_indexes, other.m_cf_indexes);
   }
 
   void
-  init_state(const std::variant<const CFArrayShape*, const StateT*>& init) {
-    m_streams.resize(m_max_active_tasks);
-    m_cfs.resize(m_max_active_tasks);
-    for (unsigned i = 0; i < m_max_active_tasks; ++i) {
-      if constexpr (!std::is_void_v<stream_type>) {
-        auto rc = device_traits::create_stream(m_streams[i]);
-        assert(rc);
-        m_exec_spaces.emplace_back(execution_space(m_streams[i]));
-        if (std::holds_alternative<const CFArrayShape*>(init)) {
-          m_exec_space_indexes.push_back(i);
-          m_cf_indexes.push_back(i);
-        }
-      } else {
-        m_exec_spaces.emplace_back(execution_space());
-        if (std::holds_alternative<const CFArrayShape*>(init)) {
-          m_exec_space_indexes.push_back(i);
-          m_cf_indexes.push_back(i);
-        }
-      }
-      auto& esp = m_exec_spaces.back();
-      if constexpr (!std::is_same_v<K::HostSpace, memory_space>) {
-        esp.visbuff =
-          decltype(esp.visbuff)(
-            K::ViewAllocateWithoutInitializing("visibility_buffer"),
-            m_visibility_batch_size);
-        auto max_num_channels =
-          m_max_avg_channels_per_vis * m_visibility_batch_size;
-        esp.weight_values =
-          decltype(esp.weight_values)(
-            K::ViewAllocateWithoutInitializing("weight_values"),
-            max_num_channels);
-        esp.weight_col_index =
-          decltype(esp.weight_col_index)(
-            K::ViewAllocateWithoutInitializing("weight_col_index"),
-            max_num_channels);
-        esp.weight_row_index =
-          decltype(esp.weight_row_index)(
-            K::ViewAllocateWithoutInitializing("weight_row_index"),
-            m_visibility_batch_size + 1);
-      }
-      esp.gvisbuff =
-        decltype(esp.gvisbuff)(
-          K::ViewAllocateWithoutInitializing("gvis_buffer"),
-          m_visibility_batch_size);
-    }
+  init_cfs(const CFArrayShape* init_cf_shape) {
+    m_exec_contexts.switch_to_copy();
+    m_exec_contexts.for_all_cf_pools(
+      [init_cf_shape](auto& p) {
+        p->prepare_pool(init_cf_shape, true);
+      });
+  }
 
-    if (std::holds_alternative<const CFArrayShape*>(init)) {
-      const CFArrayShape* init_cf_shape = std::get<const CFArrayShape*>(init);
-      for (auto& [cf, last] : m_cfs) {
-        cf.state = this;
-        cf.prepare_pool(init_cf_shape, true);
-        last.reset();
-      }
-    } else {
-      const StateT* ost = std::get<const StateT*>(init);
-      for (auto& i : ost->m_exec_space_indexes) {
-        auto& esp = m_exec_spaces[i];
-        m_exec_space_indexes.push_back(i);
-        auto& st_esp = ost->m_exec_spaces[i];
-        K::deep_copy(esp.space, esp.visbuff, st_esp.visbuff);
-        K::deep_copy(esp.space, esp.gvisbuff, st_esp.gvisbuff);
-        if constexpr (std::is_same_v<K::HostSpace, memory_space>) {
-          std::visit(
-            overloaded {
-              [&esp](auto& v) {
-                esp.visibilities = v;
-              }
-            },
-            st_esp.visibilities);
-        } else {
-          std::visit(
-            overloaded {
-              [&esp](auto& v) {
-                using v_t = std::remove_reference_t<decltype(v)>;
-                constexpr unsigned N = v_t::value_type::npol;
-                esp.visibilities =
-                  impl::visdata_view<N, memory_space>(
-                    reinterpret_cast<impl::visdata_t<N>*>(esp.visbuff.data()),
-                    v.extent(0));
-              }
-            },
-            st_esp.visibilities);
-        }
-        // FIXME: esp.copy_state = st_esp.copy_state;
-      }
-      for (auto& i : ost->m_cf_indexes) {
-        auto& [cf, last] = m_cfs[i];
-        m_cf_indexes.push_back(i);
-        cf = std::get<0>(ost->m_cfs[i]);
-        cf.state = this;
-      }
-      if (ost->m_model.is_allocated()) {
-        m_model =
-          decltype(m_model)(
-            K::ViewAllocateWithoutInitializing("model"),
-            grid_layout::dimensions(m_grid_size_local));
-        K::deep_copy(m_exec_spaces[0].space, m_model, ost->m_model);
-      }
+  void
+  copy_model(const StateT& st) {
+    m_exec_contexts.switch_to_copy();
+    if (st.m_model.is_allocated()) {
+      m_model =
+        decltype(m_model)(
+          K::ViewAllocateWithoutInitializing("model"),
+          grid_layout::dimensions(m_grid_size_local));
+      K::deep_copy(
+        m_exec_contexts[0].current_exec_space(),
+        m_model,
+        st.m_model);
     }
-    next_pre_compute_exec_space_unlocked();
   }
 
   /** copy Mueller indexes to device */
@@ -1761,7 +2140,6 @@ protected:
     const std::string& name,
     const std::vector<iarray<N>>& mindexes) {
 
-    auto& esp = m_exec_spaces[next_pre_compute_exec_space()];
     impl::mindex_view<memory_space> result(name);
     auto mueller_indexes_h = K::create_mirror_view(result);
     size_t mr = 0;
@@ -1776,7 +2154,11 @@ protected:
     for (; mr < result.extent(0); ++mr)
       for (size_t mc = 0; mc < result.extent(1); ++mc)
         mueller_indexes_h(mr, mc) = -1;
-    K::deep_copy(esp.space, result, mueller_indexes_h);
+    m_exec_contexts.switch_to_copy();
+    K::deep_copy(
+      m_exec_contexts[0].current_exec_space(),
+      result,
+      mueller_indexes_h);
     return result;
   }
 
@@ -1805,83 +2187,14 @@ protected:
 
 protected:
 
-  friend class CFPool<D>;
-
-  int
-  next_exec_space_unlocked(StreamPhase next) const {
-    int old_idx = m_exec_space_indexes.front();
-    int new_idx = old_idx;
-    if ((m_current == StreamPhase::DEGRIDDING
-         || m_current == StreamPhase::GRIDDING)
-        && (next == StreamPhase::PRE_GRIDDING
-            || next == StreamPhase::PRE_DEGRIDDING)) {
-      if (m_max_active_tasks > 1) {
-        m_exec_space_indexes.push_back(old_idx);
-        m_exec_space_indexes.pop_front();
-        new_idx = m_exec_space_indexes.front();
-      }
-      m_exec_spaces[new_idx].fence();
-      std::get<1>(m_cfs[m_cf_indexes.front()]) = new_idx;
-    }
-#ifndef NDEBUG
-    std::cout << m_current << "(" << old_idx << ")->"
-              << next << "(" << new_idx << ")"
-              << std::endl;
-#endif // NDEBUG
-    m_current = next;
-    return new_idx;
-  }
-
-  int
-  next_exec_space(StreamPhase next) const {
-    std::scoped_lock lock(m_mtx);
-    return next_exec_space_unlocked(next);
-  }
-
-  virtual int
-  next_pre_compute_exec_space_unlocked() const {
-    return next_exec_space_unlocked(StreamPhase::PRE_GRIDDING);
-  }
-
-  int
-  next_pre_compute_exec_space() const {
-    std::scoped_lock lock(m_mtx);
-    return next_pre_compute_exec_space_unlocked();
-  }
-
-  virtual int
-  next_compute_exec_space_unlocked() const {
-    return next_exec_space_unlocked(StreamPhase::GRIDDING);
-  }
-
-  int
-  next_compute_exec_space() const {
-    std::scoped_lock lock(m_mtx);
-    return next_compute_exec_space_unlocked();
-  }
-
-  void
-  switch_cf_pool() {
-    auto esp_idx = next_pre_compute_exec_space();
-    m_cf_indexes.push_back(m_cf_indexes.front());
-    m_cf_indexes.pop_front();
-    auto& [cf, last] = m_cfs[m_cf_indexes.front()];
-    if (last.value_or(esp_idx) != esp_idx)
-      m_exec_spaces[last.value()].fence();
-    last = esp_idx;
-  }
-
-protected:
-
   void
   new_grid(std::variant<const StateT*, bool> source, bool also_weights) {
 
     const bool create_without_init =
       std::holds_alternative<const StateT*>(source) || !std::get<bool>(source);
+    if (!create_without_init)
+      m_exec_contexts.switch_to_copy();
 
-    // in the following, we don't call next_exec_space() except when a stream is
-    // required, as there are code paths that never use a stream, and thus we
-    // can avoid unnecessary stream switches
     if (create_without_init)
       m_grid =
         decltype(m_grid)(
@@ -1890,9 +2203,7 @@ protected:
     else
       m_grid =
         decltype(m_grid)(
-          K::view_alloc(
-            "grid",
-            m_exec_spaces[next_pre_compute_exec_space()].space),
+          K::view_alloc("grid", m_exec_contexts[0].current_exec_space()),
           grid_layout::dimensions(m_grid_size_local));
 #ifndef NDEBUG
     std::cout << "alloc grid sz " << m_grid.extent(0)
@@ -1922,16 +2233,18 @@ protected:
           decltype(m_grid_weights)(
             K::view_alloc(
               "grid_weights",
-              m_exec_spaces[next_pre_compute_exec_space()].space),
+              m_exec_contexts[0].current_exec_space()),
             int(m_grid_size_local[int(impl::core::GridAxis::mrow)]),
             int(m_grid_size_local[int(impl::core::GridAxis::channel)]));
     }
     if (std::holds_alternative<const StateT*>(source)) {
       auto st = std::get<const StateT*>(source);
-      auto& exec = m_exec_spaces[next_pre_compute_exec_space()];
-      K::deep_copy(exec.space, m_grid, st->m_grid);
+      K::deep_copy(m_exec_contexts[0].current_exec_space(), m_grid, st->m_grid);
       if (also_weights)
-        K::deep_copy(exec.space, m_grid_weights, st->m_grid_weights);
+        K::deep_copy(
+          m_exec_contexts[0].current_exec_space(),
+          m_grid_weights,
+          st->m_grid_weights);
     }
   }
 };

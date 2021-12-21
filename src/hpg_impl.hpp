@@ -367,27 +367,15 @@ using weight_view_memory_traits =
 
 /** view for values in CRS representation of weights */
 template <typename memory_space>
-using weight_values_view =
-  K::View<
-    vis_weight_fp*,
-    memory_space,
-    weight_view_memory_traits<memory_space>>;
+using weight_values_view = K::View<vis_weight_fp*, memory_space>;
 
 /** view for column index in CRS representation of weights */
 template <typename memory_space>
-using weight_col_index_view =
-  K::View<
-    unsigned*,
-    memory_space,
-    weight_view_memory_traits<memory_space>>;
+using weight_col_index_view = K::View<unsigned*, memory_space>;
 
 /** view for row index in CRS representation of weights */
 template <typename memory_space>
-using weight_row_index_view =
-  K::View<
-    size_t*,
-    memory_space,
-    weight_view_memory_traits<memory_space>>;
+using weight_row_index_view = K::View<size_t*, memory_space>;
 
 /** fftw function class templated on fp precision */
 template <typename T>

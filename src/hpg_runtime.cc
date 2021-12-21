@@ -21,11 +21,11 @@ namespace hpg::runtime {
 std::ostream&
 operator<<(std::ostream& str, const StreamPhase& ph) {
   switch (ph) {
-  case StreamPhase::PRE_GRIDDING:
-    str << "PRE_GRIDDING";
+  case StreamPhase::COPY:
+    str << "COPY";
     break;
-  case StreamPhase::GRIDDING:
-    str << "GRIDDING";
+  case StreamPhase::COMPUTE:
+    str << "COMPUTE";
     break;
   }
   return str;
