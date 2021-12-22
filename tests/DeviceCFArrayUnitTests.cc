@@ -496,6 +496,7 @@ TEST(DeviceCFArray, Gridding) {
         hpg::GridderState::create<1>(
           default_device,
           0,
+          0,
           num_vis,
           1,
           &cf,
@@ -515,6 +516,7 @@ TEST(DeviceCFArray, Gridding) {
       hpg::flatmap(
         hpg::GridderState::create<1>(
           default_device,
+          0,
           0,
           num_vis,
           1,
@@ -583,6 +585,7 @@ TEST(DeviceCFArray, Efficiency) {
             return
               hpg::GridderState::create<1>(
                 default_device,
+                0,
                 0,
                 10,
                 1,
@@ -699,6 +702,7 @@ TEST(DeviceCFArray, RWGridding) {
         hpg::GridderState::create<1>(
           default_device,
           0,
+          0,
           num_vis,
           1,
           &cf,
@@ -718,6 +722,7 @@ TEST(DeviceCFArray, RWGridding) {
       hpg::flatmap(
         hpg::GridderState::create<1>(
           default_device,
+          0,
           0,
           num_vis,
           1,
@@ -772,6 +777,7 @@ TEST(DeviceCFArray, RWEfficiency) {
             return
               hpg::GridderState::create<1>(
                 default_device,
+                0,
                 0,
                 10,
                 1,

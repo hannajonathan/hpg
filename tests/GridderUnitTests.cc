@@ -253,6 +253,7 @@ TEST(Gridder, ConstructorArgs) {
       hpg::Gridder::create<1>(
         default_device,
         0,
+        0,
         batch_size,
         1,
         &cf,
@@ -266,7 +267,8 @@ TEST(Gridder, ConstructorArgs) {
   EXPECT_EQ(g1.device(), default_device);
   EXPECT_EQ(g1.grid_size(), grid_size);
   EXPECT_EQ(g1.grid_scale(), grid_scale);
-  EXPECT_EQ(g1.max_added_tasks(), 0);
+  EXPECT_EQ(g1.num_active_tasks(), 1);
+  EXPECT_EQ(g1.num_contexts(), 1);
   EXPECT_EQ(g1.visibility_batch_size(), batch_size);
   EXPECT_EQ(
     g1.convolution_function_region_size(nullptr),
@@ -285,6 +287,7 @@ TEST(Gridder, Copies) {
     std::get<1>(
       hpg::Gridder::create<1>(
         default_device,
+        0,
         0,
         batch_size,
         1,
@@ -328,6 +331,7 @@ TEST(Gridder, Moves) {
       hpg::Gridder::create<1>(
         default_device,
         0,
+        0,
         batch_size,
         1,
         &cf,
@@ -370,6 +374,7 @@ TEST(Gridder, InitValues) {
       hpg::Gridder::create<1>(
         default_device,
         0,
+        0,
         10,
         1,
         &cf,
@@ -400,6 +405,7 @@ TEST(Gridder, CF) {
     std::get<1>(
       hpg::Gridder::create<1>(
         default_device,
+        0,
         0,
         22,
         1,
@@ -436,6 +442,7 @@ TEST(Gridder, Reset) {
     std::get<1>(
       hpg::Gridder::create<1>(
         default_device,
+        0,
         0,
         num_vis,
         1,

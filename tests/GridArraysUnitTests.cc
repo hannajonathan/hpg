@@ -290,6 +290,7 @@ TEST(GridArrays, GridValueReadWrite) {
     hpg::GridderState::create<1>(
       default_device,
       0,
+      0,
       4,
       1,
       &cf,
@@ -332,6 +333,7 @@ TEST(GridArrays, CopyToValuesLayouts) {
   auto gs_or_err =
     hpg::GridderState::create<1>(
       default_device,
+      0,
       0,
       4,
       1,
@@ -529,6 +531,7 @@ TEST(GridArrays, CopyToWeightsLayouts) {
     hpg::GridderState::create<1>(
       default_device,
       0,
+      0,
       4,
       1,
       &cf,
@@ -607,6 +610,7 @@ TEST(GridArrays, CompareLayouts) {
         return
           hpg::GridderState::create<1>(
             default_device,
+            0,
             0,
             num_vis,
             1,
