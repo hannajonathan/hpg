@@ -1175,6 +1175,18 @@ protected:
  * Note, however, that the value of s0 in the previous example after the call to
  * fence() will be in the null state, which is likely not of much further use to
  * the caller.
+ *
+ * In general, GridderState methods are not thread-safe, with the following
+ * exceptions
+ * - const methods
+ * - non-const methods with a gridding "context" argument, under the certain
+ *   conditions
+ * const methods are always thread-safe, whereas the context-dependent non-const
+ * methods are thread-safe under specific conditions only. The condition for
+ * thread safety with context-dependent non-const methods is that calls to
+ * methods of an instance using a given context value must be serialized by the
+ * caller. One approach to meet this requirement is to assign each context to
+ * exactly one thread, but other approaches are possible.
  */
 class HPG_EXPORT GridderState {
 protected:
@@ -2372,6 +2384,11 @@ GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs);
  * supported by a device, a call may nevertheless block at times, depending upon
  * the internal state of the Gridder instance. See GridderState for more
  * information.
+ *
+ * Generally, the only methods of this class that are potentially thread-safe
+ * are those that take a gridding "context" argument, but only under certain
+ * conditions. See the description of thread-safety in the GridderState
+ * description for details.
  *
  * @sa GridderState
  */
