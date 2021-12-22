@@ -159,6 +159,7 @@ run_tests(
       std::get<1>(
         hpg::GridderState::create<1>(
           D,
+          0,
           2,
           vis.size(),
           1,
@@ -185,9 +186,9 @@ run_tests(
     std::cout << "Gridder " << dev_name << std::endl;
     auto g0 =
       std::get<1>(
-        hpg::Gridder
-        ::create<1>(
+        hpg::Gridder::create<1>(
           D,
+          0,
           2,
           vis.size(),
           1,
@@ -252,9 +253,9 @@ dump_grids(
 
   auto g0 =
     std::get<1>(
-      hpg::Gridder
-      ::create<1>(
+      hpg::Gridder::create<1>(
         D,
+        0,
         2,
         vis.size(),
         1,

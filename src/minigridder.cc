@@ -722,6 +722,7 @@ run_hpg_trial_op(
         return
           hpg::GridderState::create(
             spec.device,
+            0,
             spec.streams - 1,
             input_data.visibilities.size(),
             1,

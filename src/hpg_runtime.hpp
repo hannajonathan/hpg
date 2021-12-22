@@ -61,7 +61,7 @@ struct /*HPG_EXPORT*/ State {
   grid_shifter_version() const noexcept = 0;
 
   virtual unsigned
-  max_active_tasks() const noexcept = 0;
+  num_active_tasks() const noexcept = 0;
 
   virtual size_t
   visibility_batch_size() const noexcept = 0;
@@ -89,9 +89,7 @@ struct /*HPG_EXPORT*/ State {
     const noexcept = 0;
 
   virtual std::optional<std::unique_ptr<Error>>
-  allocate_convolution_function_region(
-    unsigned context,
-    const CFArrayShape* shape) = 0;
+  allocate_convolution_function_region(const CFArrayShape* shape) = 0;
 
   virtual std::optional<std::unique_ptr<Error>>
   set_convolution_function(
@@ -530,12 +528,12 @@ public:
   }
 
   pool_type
-  get_unused_pool() {
+  get_unused_pool() const noexcept {
     auto result =
       std::find_if(
         m_pools.begin(),
         m_pools.end(),
-        [](const auto& p) { assert(p); return p.use_count() == 1; });
+        [](const auto& p) { return p.use_count() == 1; });
     return (result != m_pools.end()) ? *result : pool_type();
   }
 
@@ -1223,7 +1221,7 @@ struct /*HPG_EXPORT*/ StateT
 public:
 
   Device m_device; /**< device type */
-  unsigned m_max_active_tasks; /**< maximum number of active tasks */
+  unsigned m_num_active_tasks; /**< number of active tasks */
   size_t m_visibility_batch_size; /**< number of visibilities to sent to
                                        gridding kernel at once */
   size_t m_max_avg_channels_per_vis; /**< max avg number of channel indexes for
@@ -1251,6 +1249,15 @@ public:
   impl::const_mindex_view<memory_space> m_mueller_indexes;
   impl::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
 
+private:
+
+  static std::vector<size_t>
+  repeated_value(unsigned n, size_t v) {
+    std::vector<size_t> result(n);
+    std::fill(result.begin(), result.end(), v);
+    return result;
+  }
+
 protected:
 
   mutable std::mutex m_mtx;
@@ -1275,7 +1282,7 @@ public:
     const std::array<unsigned, 4>& implementation_versions,
     ExecutionContextGroup<D>&& exec_contexts)
     : m_device(D)
-    , m_max_active_tasks(
+    , m_num_active_tasks(
       std::min(max_active_tasks, device_traits::active_task_limit))
     , m_visibility_batch_size(visibility_batch_size)
     , m_max_avg_channels_per_vis(max_avg_channels_per_vis)
@@ -1320,7 +1327,8 @@ public:
   }
 
   StateT(
-    unsigned max_active_tasks,
+    unsigned num_contexts,
+    unsigned max_active_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -1332,7 +1340,7 @@ public:
     const IArrayVector& conjugate_mueller_indexes,
     const std::array<unsigned, 4>& implementation_versions)
   : StateT(
-    max_active_tasks,
+    num_contexts * max_active_tasks_per_context,
     visibility_batch_size,
     max_avg_channels_per_vis,
     init_cf_shape,
@@ -1343,16 +1351,16 @@ public:
     mueller_indexes,
     conjugate_mueller_indexes,
     implementation_versions,
-    {ExecutionContextGroup<D>(
+    ExecutionContextGroup<D>(
       mueller_indexes.m_npol,
       visibility_batch_size,
       max_avg_channels_per_vis * visibility_batch_size,
-      {size_t(max_active_tasks - 1)},
-      max_active_tasks)}) {}
+      repeated_value(num_contexts, max_active_tasks_per_context),
+      num_contexts * max_active_tasks_per_context)) {}
 
   StateT(const StateT& st)
     : m_device(D)
-    , m_max_active_tasks(st.m_max_active_tasks)
+    , m_num_active_tasks(st.m_num_active_tasks)
     , m_visibility_batch_size(st.m_visibility_batch_size)
     , m_max_avg_channels_per_vis(st.m_max_avg_channels_per_vis)
     , m_grid_size_global(st.m_grid_size_global)
@@ -1373,7 +1381,7 @@ public:
 
   StateT(StateT&& st) noexcept
     : m_device(D)
-    , m_max_active_tasks(std::move(st).m_max_active_tasks)
+    , m_num_active_tasks(std::move(st).m_num_active_tasks)
     , m_visibility_batch_size(std::move(st).m_visibility_batch_size)
     , m_max_avg_channels_per_vis(std::move(st).m_max_avg_channels_per_vis)
     , m_grid_size_global(std::move(st).m_grid_size_global)
@@ -1448,8 +1456,8 @@ public:
   }
 
   unsigned
-  max_active_tasks() const noexcept override {
-    return m_max_active_tasks;
+  num_active_tasks() const noexcept override {
+    return m_num_active_tasks;
   }
 
   size_t
@@ -1525,16 +1533,10 @@ public:
   }
 
   virtual std::optional<std::unique_ptr<Error>>
-  allocate_convolution_function_region(
-    unsigned context,
-    const CFArrayShape* shape) override {
-
-    if (context >= m_exec_contexts.size())
-      return
-        std::make_optional(std::make_unique<InvalidGriddingContextError>());
+  allocate_convolution_function_region(const CFArrayShape* shape) override {
 
     m_exec_contexts.fence();
-    m_exec_contexts[context].for_all_cf_pools(
+    m_exec_contexts.for_all_cf_pools(
       [shape](auto& cf) {
         cf->prepare_pool(shape, true);
       });
@@ -2043,7 +2045,6 @@ protected:
   void
   fence_unlocked() const noexcept {
     m_exec_contexts.fence();
-    m_exec_contexts.switch_to_copy();
   }
 
   std::unique_ptr<GridWeightArray>
@@ -2090,7 +2091,7 @@ protected:
 
   void
   swap(StateT& other) noexcept {
-    assert(m_max_active_tasks == other.m_max_active_tasks);
+    assert(m_num_active_tasks == other.m_num_active_tasks);
     std::swap(m_visibility_batch_size, other.m_visibility_batch_size);
     std::swap(
       m_max_avg_channels_per_vis,
@@ -2258,11 +2259,13 @@ struct /*HPG_EXPORT*/ GridderState {
 
   template <typename GS>
   static std::variant<std::unique_ptr<Error>, ::hpg::GridderState>
-  allocate_convolution_function_region(GS&& st, const CFArrayShape* shape) {
+  allocate_convolution_function_region(
+    GS&& st,
+    const CFArrayShape* shape) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
     if (auto error =
-        result.m_impl->allocate_convolution_function_region(0, shape);
+        result.m_impl->allocate_convolution_function_region(shape);
         error)
       return std::move(error.value());
     else
@@ -2271,13 +2274,17 @@ struct /*HPG_EXPORT*/ GridderState {
 
   template <typename GS>
   static std::variant<std::unique_ptr<Error>, ::hpg::GridderState>
-  set_convolution_function(GS&& st, Device host_device, CFArray&& cf) {
+  set_convolution_function(
+    GS&& st,
+    unsigned context,
+    Device host_device,
+    CFArray&& cf) {
 
     if (host_devices().count(host_device) > 0) {
       ::hpg::GridderState result(std::forward<GS>(st));
       if (auto error =
           result.m_impl
-            ->set_convolution_function(0, host_device, std::move(cf));
+            ->set_convolution_function(context, host_device, std::move(cf));
           error)
         return std::move(error.value());
       else
@@ -2309,6 +2316,7 @@ struct /*HPG_EXPORT*/ GridderState {
     std::tuple<::hpg::GridderState, future<VisDataVector>>>
   grid_visibilities(
     GS&& st,
+    unsigned context,
     Device host_device,
     VisDataVector&& visibilities,
     const std::vector<std::map<unsigned, vis_weight_fp>>& grid_channel_maps,
@@ -2356,7 +2364,7 @@ struct /*HPG_EXPORT*/ GridderState {
     ::hpg::GridderState result(std::forward<GS>(st));
     auto err_or_maybevis =
       result.m_impl->grid_visibilities(
-        0,
+        context,
         host_device,
         std::move(visibilities),
         std::move(wgt),

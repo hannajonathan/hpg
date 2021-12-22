@@ -590,6 +590,7 @@ TEST(GridderState, ConstructorArgs) {
     hpg::GridderState::create<1>(
       default_device,
       0,
+      0,
       batch_size,
       max_avg_channels_per_vis,
       &cf,
@@ -606,7 +607,8 @@ TEST(GridderState, ConstructorArgs) {
   EXPECT_EQ(gs1.grid_size(), grid_size);
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
   EXPECT_EQ(gs1.num_polarizations(), 1);
-  EXPECT_EQ(gs1.max_added_tasks(), 0);
+  EXPECT_EQ(gs1.num_active_tasks(), 1);
+  EXPECT_EQ(gs1.num_contexts(), 1);
   EXPECT_EQ(gs1.visibility_batch_size(), batch_size);
   EXPECT_EQ(gs1.max_avg_channels_per_vis(), max_avg_channels_per_vis);
   EXPECT_EQ(
@@ -616,6 +618,7 @@ TEST(GridderState, ConstructorArgs) {
   auto gs2_or_err =
     hpg::GridderState::create<1>(
       default_device,
+      0,
       0,
       batch_size,
       max_avg_channels_per_vis,
@@ -632,6 +635,7 @@ TEST(GridderState, ConstructorArgs) {
   auto gs3_or_err =
     hpg::GridderState::create<1>(
       default_device,
+      0,
       0,
       batch_size,
       max_avg_channels_per_vis,
@@ -662,6 +666,7 @@ TEST(GridderState, Copies) {
     hpg::get_value(
       hpg::GridderState::create<1>(
         default_device,
+        0,
         0,
         batch_size,
         max_avg_channels_per_vis,
@@ -712,6 +717,7 @@ TEST(GridderState, Moves) {
       hpg::GridderState::create<1>(
         default_device,
         0,
+        0,
         batch_size,
         1,
         &cf,
@@ -755,6 +761,7 @@ TEST(GridderState, InitValues) {
       hpg::GridderState::create<1>(
         default_device,
         0,
+        0,
         15,
         1,
         &cf,
@@ -788,6 +795,7 @@ TEST(GridderState, SetModel) {
     hpg::get_value(
       hpg::GridderState::create<1>(
         default_device,
+        0,
         0,
         15,
         1,
@@ -831,6 +839,7 @@ TEST(GridderState, CopyOrMove) {
     hpg::get_value(
       hpg::GridderState::create<1>(
         default_device,
+        0,
         0,
         num_vis,
         1,
@@ -922,6 +931,7 @@ TEST(GridderState, Reset) {
       hpg::GridderState::create<1>(
         default_device,
         0,
+        0,
         num_vis,
         1,
         &cf,
@@ -980,6 +990,7 @@ TEST(GridderState, Sequences) {
     hpg::get_value(
       hpg::GridderState::create<1>(
         default_device,
+        0,
         1,
         num_vis,
         1,
@@ -1053,6 +1064,7 @@ TEST(GridderState, GriddingError) {
       hpg::get_value(
         hpg::GridderState::create<2>(
           default_device,
+          0,
           1,
           num_vis,
           max_avg_channels_per_vis,
@@ -1079,6 +1091,7 @@ TEST(GridderState, GriddingError) {
     hpg::get_value(
       hpg::GridderState::create<1>(
         default_device,
+        0,
         1,
         num_vis,
         max_avg_channels_per_vis,
@@ -1199,6 +1212,7 @@ TEST(GridderState, Serialization) {
               hpg::GridderState::create<1>(
                 default_device,
                 0,
+                0,
                 num_vis,
                 1,
                 static_cast<const hpg::CFArray*>(&cfs[i]),
@@ -1281,6 +1295,7 @@ TEST(GridderState, Batching) {
     hpg::get_value(
       hpg::GridderState::create<1>(
         default_device,
+        0,
         1,
         num_vis - 1,
         1,
@@ -1344,9 +1359,9 @@ TEST(GridderState, Gridding) {
         hpg::RvalM<void, hpg::GridderState>::pure(
           [=]() {
             return
-              hpg::GridderState
-              ::create<1>(
+              hpg::GridderState::create<1>(
                 default_device,
+                0,
                 0,
                 1,
                 1,
@@ -1419,6 +1434,7 @@ TEST(GridderState, GridOne) {
               hpg::GridderState::create<1>(
                 default_device,
                 0,
+                0,
                 1,
                 1,
                 &cf,
@@ -1485,9 +1501,9 @@ TEST(GridderState, GridNone) {
         hpg::RvalM<void, hpg::GridderState>::pure(
           [=]() {
             return
-              hpg::GridderState
-              ::create<1>(
+              hpg::GridderState::create<1>(
                 default_device,
+                0,
                 0,
                 1,
                 1,
@@ -1544,6 +1560,7 @@ TEST(GridderState, ZeroModel) {
   auto gs1_or_err =
     hpg::GridderState::create<2>(
       default_device,
+      0,
       0,
       1,
       1,
@@ -1619,6 +1636,7 @@ TEST(GridderState, ModelFFT) {
     hpg::get_value(
       hpg::GridderState::create<1>(
         default_device,
+        0,
         0,
         15,
         1,
@@ -1725,6 +1743,7 @@ TEST(GridderState, OneFFT) {
       hpg::GridderState::create<1>(
         default_device,
         0,
+        0,
         15,
         1,
         &cf,
@@ -1768,6 +1787,7 @@ TEST(GridderState, ResidualVisibilities) {
     auto gs1_or_err =
       hpg::GridderState::create<2>(
         default_device,
+        0,
         0,
         1,
         1,
@@ -1835,9 +1855,9 @@ TEST(GridderState, EmptyCF) {
         hpg::RvalM<void, hpg::GridderState>::pure(
           [=]() {
             return
-              hpg::GridderState
-              ::create<1>(
+              hpg::GridderState::create<1>(
                 default_device,
+                0,
                 0,
                 1,
                 1,
@@ -1884,6 +1904,7 @@ TEST(GridderState, ShiftCycle) {
             return
               hpg::GridderState::create<1>(
                 default_device,
+                0,
                 0,
                 num_vis,
                 1,
@@ -1963,9 +1984,9 @@ TEST(GridderState, CompareExp) {
         hpg::RvalM<void, hpg::GridderState>::pure(
           [=]() {
             return
-              hpg::GridderState
-              ::create<1>(
+              hpg::GridderState::create<1>(
                 default_device,
+                0,
                 0,
                 1,
                 1,
@@ -2011,7 +2032,196 @@ TEST(GridderState, CompareExp) {
   EXPECT_TRUE(values_eq(g0.get(), g1.get()));
   EXPECT_TRUE(values_eq(w0.get(), w1.get()));
 }
-#endif
+#endif // HPG_DELTA_EXPERIMENTAL_ONLY
+
+#ifndef HPG_DELTA_EXPERIMENTAL_ONLY
+TEST(GridderState, Contexts) {
+  std::array<unsigned, 4> grid_size{16, 15, 1, 3};
+  std::array<hpg::grid_scale_fp, 2> grid_scale{0.1, -0.1};
+
+  auto padding = 2 * hpg::CFArray::padding;
+  std::array<std::vector<std::array<unsigned, 4>>, 2>
+    cf_sizes{
+      std::vector<std::array<unsigned, 4>>{{3 + padding, 3 + padding, 1, 3}},
+      std::vector<std::array<unsigned, 4>>{{2 + padding, 2 + padding, 1, 2}}};
+
+  std::mt19937 rng(42);
+
+  std::array<MyCFArray, 2> cfs{
+    create_cf(10, cf_sizes[0], rng),
+    create_cf(10, cf_sizes[1], rng)};
+
+  std::array<std::vector<hpg::VisData<1>>, 2> vis;
+  std::array<std::vector<std::map<unsigned, hpg::vis_weight_fp>>, 2> ch_maps;
+  const size_t num_vis = 1000;
+  for (size_t i = 0; i < 2; ++i)
+    init_visibilities(
+      num_vis,
+      grid_size,
+      grid_scale,
+      cfs[i],
+      rng,
+      vis[i],
+      ch_maps[i]);
+
+  // check initialization of contexts
+  {
+    auto g0_or_err =
+      hpg::GridderState::create<1>(
+        default_device,
+        1,
+        0,
+        num_vis,
+        1,
+        static_cast<const hpg::CFArray*>(&cfs[0]),
+        grid_size,
+        grid_scale,
+        {{0}},
+        {{0}});
+    ASSERT_TRUE(hpg::is_value(g0_or_err));
+    auto g0 = hpg::get_value(std::move(g0_or_err));
+    EXPECT_EQ(g0.num_contexts(), 2);
+    if (default_device == hpg::Device::Cuda)
+      EXPECT_EQ(g0.num_active_tasks(), 2);
+    else
+      EXPECT_EQ(g0.num_active_tasks(), 1);
+    auto g1_or_err =
+      std::move(g0)
+      .set_convolution_function(default_host_device, MyCFArray(cfs[0]), 2);
+    ASSERT_TRUE(hpg::is_error(g1_or_err));
+    EXPECT_EQ(
+      hpg::get_error(std::move(g1_or_err))->type(),
+      hpg::ErrorType::InvalidGriddingContext);
+  }
+
+  // First grid vis[0] using cfs[0], then vis[1] with cfs[1] using a single
+  // context
+  auto r1 =
+    hpg::RvalM<void, hpg::GridderState>::pure(
+      [=]() {
+        return
+          hpg::GridderState::create<1>(
+            default_device,
+            0,
+            0,
+            num_vis,
+            1,
+            static_cast<const hpg::CFArray*>(&cfs[0]),
+            grid_size,
+            grid_scale,
+            {{0}},
+            {{0}});
+      })
+    .and_then(
+      [=](auto&& gs) mutable {
+        return
+          std::move(gs)
+          .set_convolution_function(default_host_device, MyCFArray(cfs[0]));
+      })
+    .and_then(
+      [=](auto&& gs) mutable {
+        return
+          std::move(gs)
+          .grid_visibilities(
+            default_host_device,
+            std::vector<hpg::VisData<1>>(vis[0]),
+            ch_maps[0],
+            true);
+      })
+    .and_then(
+      [=](auto&& gs) mutable {
+        return
+          std::move(gs)
+          .set_convolution_function(default_host_device, MyCFArray(cfs[1]));
+      })
+    .and_then(
+      [=](auto&& gs) mutable {
+        return
+          std::move(gs)
+          .grid_visibilities(
+            default_host_device,
+            std::vector<hpg::VisData<1>>(vis[1]),
+            ch_maps[1],
+            true);
+      })
+    .map(
+      [](auto&& gs) {
+        auto [gs1, gv] = std::move(gs).grid_values();
+        auto [gs2, gw] = std::move(gs1).grid_weights();
+        return std::make_tuple(std::move(gv), std::move(gw));
+      })();
+
+  // grid vis[0] with cfs[0] in one context and vis[1] with cfs[1] in the other
+  // context, setting both cfs first and then gridding both vis
+  auto r2 =
+    hpg::RvalM<void, hpg::GridderState>::pure(
+      [=]() {
+        return
+          hpg::GridderState::create<1>(
+            default_device,
+            1,
+            0,
+            num_vis,
+            1,
+            static_cast<const hpg::CFArray*>(&cfs[0]),
+            grid_size,
+            grid_scale,
+            {{0}},
+            {{0}});
+      })
+    .and_then(
+      [=](auto&& gs) mutable {
+        return
+          std::move(gs).set_convolution_function(
+            default_host_device,
+            MyCFArray(cfs[0]),
+            0);
+      })
+    .and_then(
+      [=](auto&& gs) mutable {
+        return
+          std::move(gs).set_convolution_function(
+            default_host_device,
+            MyCFArray(cfs[1]),
+            1);
+      })
+    .and_then(
+      [=](auto&& gs) mutable {
+        return
+          std::move(gs)
+          .grid_visibilities(
+            default_host_device,
+            std::vector<hpg::VisData<1>>(vis[0]),
+            ch_maps[0],
+            true,
+            0);
+      })
+    .and_then(
+      [=](auto&& gs) mutable {
+        return
+          std::move(gs)
+          .grid_visibilities(
+            default_host_device,
+            std::vector<hpg::VisData<1>>(vis[1]),
+            ch_maps[1],
+            true,
+            1);
+      })
+    .map(
+      [](auto&& gs) {
+        auto [gs1, gv] = std::move(gs).grid_values();
+        auto [gs2, gw] = std::move(gs1).grid_weights();
+        return std::make_tuple(std::move(gv), std::move(gw));
+      })();
+
+  ASSERT_TRUE(hpg::is_value(r1));
+  auto [gv1, gw1] = hpg::get_value(std::move(r1));
+  ASSERT_TRUE(hpg::is_value(r2));
+  auto [gv2, gw2] = hpg::get_value(std::move(r2));
+  EXPECT_TRUE(values_eq(gv1.get(), gv2.get()));
+  EXPECT_TRUE(values_eq(gw1.get(), gw2.get()));
+}
+#endif // !HPG_DELTA_EXPERIMENTAL_ONLY
 
 int
 main(int argc, char **argv) {
