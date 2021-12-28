@@ -33,11 +33,6 @@ Error::mpi_type() const {
 
 Error::~Error() {}
 
-OddNumberStreamsError::OddNumberStreamsError()
-  : Error(
-    "Number of additional tasks must be odd",
-    ErrorType::OddNumberStreams) {}
-
 InvalidCommunicatorSizeError::InvalidCommunicatorSizeError()
   : Error(
     "Communicator size too small",
@@ -109,7 +104,8 @@ ReplicatedGridDecomposition::size() const {
 static std::shared_ptr<::hpg::mpi::runtime::State>
 create_impl(
   ::hpg::Device device,
-  unsigned max_added_tasks,
+  unsigned num_added_contexts,
+  unsigned max_added_tasks_per_context,
   size_t visibility_batch_size,
   unsigned max_avg_channels_per_vis,
   const ::hpg::CFArrayShape* init_cf_shape,
@@ -201,7 +197,7 @@ create_impl(
   for (size_t i = 0; i < grid_bricks.size(); ++i) {
     bool my_brick =
       replica_rank <= grid_rank
-      && grid_rank < replica_rank + grid_bricks[i].num_replicas;
+      && grid_rank < replica_rank + int(grid_bricks[i].num_replicas);
     int ch =
       int(grid_bricks[i].offset[runtime::ReplicatedGridBrick::Axis::channel]);
     if (my_brick) {
@@ -241,7 +237,8 @@ create_impl(
   std::array<unsigned, 4> implementation_versions{0, 0, 0, 0};
 #endif
 
-  const unsigned max_active_tasks = max_added_tasks + 1;
+  const unsigned num_contexts = num_added_contexts + 1;
+  const unsigned max_active_tasks_per_context = max_added_tasks_per_context + 1;
 
   std::shared_ptr<State> result;
   switch (device) {
@@ -257,7 +254,8 @@ create_impl(
           grid_bricks[grid_brick_index],
           replica_comm,
           plane_comm,
-          max_active_tasks,
+          num_contexts,
+          max_active_tasks_per_context,
           visibility_batch_size,
           max_avg_channels_per_vis,
           init_cf_shape,
@@ -271,20 +269,21 @@ create_impl(
       result =
         std::make_shared<
           StateT<::hpg::Device::Serial, VisibilityDistribution::Pipeline>>(
-          vis_comm,
-          grid_comm,
-          grid_bricks[grid_brick_index],
-          replica_comm,
-          plane_comm,
-          max_active_tasks,
-          visibility_batch_size,
-          max_avg_channels_per_vis,
-          init_cf_shape,
-          grid_size,
-          grid_scale,
-          mueller_indexes,
-          conjugate_mueller_indexes,
-          implementation_versions);
+            vis_comm,
+            grid_comm,
+            grid_bricks[grid_brick_index],
+            replica_comm,
+            plane_comm,
+            num_contexts,
+            max_active_tasks_per_context,
+            visibility_batch_size,
+            max_avg_channels_per_vis,
+            init_cf_shape,
+            grid_size,
+            grid_scale,
+            mueller_indexes,
+            conjugate_mueller_indexes,
+            implementation_versions);
       break;
     default:
       assert(false);
@@ -306,7 +305,8 @@ create_impl(
             grid_bricks[grid_brick_index],
             replica_comm,
             plane_comm,
-            max_active_tasks,
+            num_contexts,
+            max_active_tasks_per_context,
             visibility_batch_size,
             max_avg_channels_per_vis,
             init_cf_shape,
@@ -325,7 +325,8 @@ create_impl(
             grid_bricks[grid_brick_index],
             replica_comm,
             plane_comm,
-            max_active_tasks,
+            num_contexts,
+            max_active_tasks_per_context,
             visibility_batch_size,
             max_avg_channels_per_vis,
             init_cf_shape,
@@ -355,7 +356,8 @@ create_impl(
             grid_bricks[grid_brick_index],
             replica_comm,
             plane_comm,
-            max_active_tasks,
+            num_contexts,
+            max_active_tasks_per_context,
             visibility_batch_size,
             max_avg_channels_per_vis,
             init_cf_shape,
@@ -369,20 +371,21 @@ create_impl(
       result =
         std::make_shared<
           StateT<::hpg::Device::Cuda, VisibilityDistribution::Pipeline>>(
-          vis_comm,
-          grid_comm,
-          grid_bricks[grid_brick_index],
-          replica_comm,
-          plane_comm,
-          max_active_tasks,
-          visibility_batch_size,
-          max_avg_channels_per_vis,
-          init_cf_shape,
-          grid_size,
-          grid_scale,
-          mueller_indexes,
-          conjugate_mueller_indexes,
-          implementation_versions);
+            vis_comm,
+            grid_comm,
+            grid_bricks[grid_brick_index],
+            replica_comm,
+            plane_comm,
+            num_contexts,
+            max_active_tasks_per_context,
+            visibility_batch_size,
+            max_avg_channels_per_vis,
+            init_cf_shape,
+            grid_size,
+            grid_scale,
+            mueller_indexes,
+            conjugate_mueller_indexes,
+            implementation_versions);
       break;
     default:
       assert(false);
@@ -402,7 +405,8 @@ create_impl(
 ::hpg::rval_t<std::tuple<::hpg::GridderState, bool, bool>>
 GridderState::create(
   Device device,
-  unsigned max_added_tasks,
+  unsigned num_added_contexts,
+  unsigned max_added_tasks_per_context,
   size_t visibility_batch_size,
   unsigned max_avg_channels_per_vis,
   const CFArrayShape* init_cf_shape,
@@ -420,9 +424,6 @@ GridderState::create(
 
   using val_t = std::tuple<::hpg::GridderState, bool, bool>;
 
-  if (max_added_tasks % 2 == 0)
-    return rval<val_t>(std::make_unique<OddNumberStreamsError>());
-
   if (grid_size[2] != mueller_indexes.size()
       || grid_size[2] != conjugate_mueller_indexes.size())
     return rval<val_t>(std::make_unique<InvalidNumberMuellerIndexRowsError>());
@@ -435,7 +436,7 @@ GridderState::create(
 
   int comm_size;
   MPI_Comm_size(comm, &comm_size);
-  if (comm_size < grid_part.size())
+  if (size_t(comm_size) < grid_part.size())
     return rval<val_t>(std::make_unique<InvalidCommunicatorSizeError>());
 
   if (!grid_part.conforms_to(grid_size))
@@ -444,7 +445,8 @@ GridderState::create(
   auto impl =
     create_impl(
       device,
-      max_added_tasks,
+      num_added_contexts,
+      max_added_tasks_per_context,
       visibility_batch_size,
       max_avg_channels_per_vis,
       init_cf_shape,
@@ -474,7 +476,8 @@ GridderState::create(
 ::hpg::rval_t<std::tuple<::hpg::GridderState, bool, bool>>
 GridderState::create2d(
   Device device,
-  unsigned max_added_tasks,
+  unsigned num_added_contexts,
+  unsigned max_added_tasks_per_context,
   size_t visibility_batch_size,
   unsigned max_avg_channels_per_vis,
   const CFArrayShape* init_cf_shape,
@@ -517,7 +520,8 @@ GridderState::create2d(
   return
     create(
       device,
-      max_added_tasks,
+      num_added_contexts,
+      max_added_tasks_per_context,
       visibility_batch_size,
       max_avg_channels_per_vis,
       init_cf_shape,
@@ -559,7 +563,8 @@ apply_gridder(
 ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
 Gridder::create(
   Device device,
-  unsigned max_added_tasks,
+  unsigned num_added_contexts,
+  unsigned max_added_tasks_per_context,
   size_t visibility_batch_size,
   unsigned max_avg_channels_per_vis,
   const CFArrayShape* init_cf_shape,
@@ -579,7 +584,8 @@ Gridder::create(
     apply_gridder(
       GridderState::create(
         device,
-        max_added_tasks,
+        num_added_contexts,
+        max_added_tasks_per_context,
         visibility_batch_size,
         max_avg_channels_per_vis,
         init_cf_shape,
@@ -599,7 +605,8 @@ Gridder::create(
 ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
 Gridder::create2d(
   Device device,
-  unsigned max_added_tasks,
+  unsigned num_added_contexts,
+  unsigned max_added_tasks_per_context,
   size_t visibility_batch_size,
   unsigned max_avg_channels_per_vis,
   const CFArrayShape* init_cf_shape,
@@ -619,7 +626,8 @@ Gridder::create2d(
     apply_gridder(
       GridderState::create2d(
         device,
-        max_added_tasks,
+        num_added_contexts,
+        max_added_tasks_per_context,
         visibility_batch_size,
         max_avg_channels_per_vis,
         init_cf_shape,

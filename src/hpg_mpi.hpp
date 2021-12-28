@@ -27,7 +27,6 @@ namespace hpg::mpi {
 /** MPI error types
  */
 enum class HPG_EXPORT ErrorType {
-  OddNumberStreams,
   InvalidCommunicatorSize,
   NullCommunicator,
   NonconformingGridPartition,
@@ -55,12 +54,6 @@ public:
 
   /** destructor */
   virtual ~Error();
-};
-
-struct OddNumberStreamsError
-  : public Error {
-
-  OddNumberStreamsError();
 };
 
 struct InvalidCommunicatorSizeError
@@ -111,8 +104,12 @@ namespace GridderState {
   /** factory method
    *
    * @param device gridder device type
-   * @param max_added_tasks maximum number of additional tasks; must be an odd
-   * number (actual number may be less than requested)
+   * @param num_added_contexts number of additional gridding execution contexts
+   * (total number of contexts is one greater than this value; however, the
+   * actual number of contexts allocated will be twice the aforementioned
+   * "total" when using the VisibilityDistribution::Pipeline algorithm)
+   * @param max_added_tasks_per_context maximum number of additional tasks
+   * (actual number may be less than requested)
    * @param visibility_batch_size batch size for number of VisData elements
    * (N.B: this value is currently a hard limit of the implementation that
    * governs the maximum number of elements in a vector of VisData elements
@@ -135,13 +132,15 @@ namespace GridderState {
    * @param visibility_distribution visibility distribution algorithm for grid
    * partition
    *
-   * max_added_tasks may be used to control the level of concurrency available
-   * to the GridderState instance. In all cases, at least one task is
-   * employed, but some devices support additional, concurrent tasks.
+   * max_added_tasks_per_context may be used to control the level of concurrency
+   * available to the GridderState instance. In all cases, at least one task is
+   * employed, but some devices support additional, concurrent tasks. Support
+   * for multiple, largely independent degridding/gridding contexts at the user
+   * level is enabled through num_added_contexts.
    *
-   * The values of max_added_tasks, visibility_batch_size and
-   * max_avg_channels_per_vis have effects on the amount of memory allocated
-   * on the selected gridder device.
+   * The values of num_added_contexts, max_added_tasks_per_context,
+   * visibility_batch_size, max_avg_channels_per_vis and visibility_distribution
+   * have effects on the amount of memory allocated on the selected device.
    *
    * Does not throw an exception if device argument names an unsupported device
    *
@@ -151,7 +150,8 @@ namespace GridderState {
   rval_t<std::tuple<::hpg::GridderState, bool, bool>>
   create(
     Device device,
-    unsigned max_added_tasks,
+    unsigned num_added_contexts,
+    unsigned max_added_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -170,8 +170,12 @@ namespace GridderState {
   /** factory method
    *
    * @param device gridder device type
-   * @param max_added_tasks maximum number of additional tasks; must be an odd
-   * number (actual number may be less than requested)
+   * @param num_added_contexts number of additional gridding execution contexts
+   * (total number of contexts is one greater than this value; however, the
+   * actual number of contexts allocated will be twice the aforementioned
+   * "total" when using the VisibilityDistribution::Pipeline algorithm)
+   * @param max_added_tasks_per_context maximum number of additional tasks
+   * (actual number may be less than requested)
    * @param visibility_batch_size batch size for number of VisData elements
    * (N.B: this value is currently a hard limit of the implementation that
    * governs the maximum number of elements in a vector of VisData elements
@@ -194,6 +198,16 @@ namespace GridderState {
    * @param visibility_distribution visibility distribution algorithm for grid
    * partition
    *
+   * max_added_tasks_per_context may be used to control the level of concurrency
+   * available to the GridderState instance. In all cases, at least one task is
+   * employed, but some devices support additional, concurrent tasks. Support
+   * for multiple, largely independent degridding/gridding contexts at the user
+   * level is enabled through num_added_contexts.
+   *
+   * The values of num_added_contexts, max_added_tasks_per_context,
+   * visibility_batch_size, max_avg_channels_per_vis and visibility_distribution
+   * have effects on the amount of memory allocated on the selected device.
+   *
    * Does not throw an exception if device argument names an unsupported
    * device. This function creates a new communicator from comm with a 2d
    * topology of the requested dimensions.
@@ -204,7 +218,8 @@ namespace GridderState {
   rval_t<std::tuple<::hpg::GridderState, bool, bool>>
   create2d(
     Device device,
-    unsigned max_added_tasks,
+    unsigned num_added_contexts,
+    unsigned max_added_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -233,7 +248,8 @@ namespace GridderState {
   rval_t<std::tuple<::hpg::GridderState, bool, bool>>
   create(
     Device device,
-    unsigned max_added_tasks,
+    unsigned num_added_contexts,
+    unsigned max_added_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -252,7 +268,8 @@ namespace GridderState {
     return
       create(
         device,
-        max_added_tasks,
+        num_added_contexts,
+        max_added_tasks_per_context,
         visibility_batch_size,
         max_avg_channels_per_vis,
         init_cf_shape,
@@ -282,7 +299,8 @@ namespace GridderState {
   rval_t<std::tuple<::hpg::GridderState, bool, bool>>
   create2d(
     Device device,
-    unsigned max_added_tasks,
+    unsigned num_added_contexts,
+    unsigned max_added_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -301,7 +319,8 @@ namespace GridderState {
     return
       create2d(
         device,
-        max_added_tasks,
+        num_added_contexts,
+        max_added_tasks_per_context,
         visibility_batch_size,
         max_avg_channels_per_vis,
         init_cf_shape,
@@ -328,7 +347,8 @@ namespace Gridder {
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create(
     Device device,
-    unsigned max_added_tasks,
+    unsigned num_added_contexts,
+    unsigned max_added_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -347,7 +367,8 @@ namespace Gridder {
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create2d(
     Device device,
-    unsigned max_added_tasks,
+    unsigned num_added_contexts,
+    unsigned max_added_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -375,7 +396,8 @@ namespace Gridder {
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create(
     Device device,
-    unsigned max_added_tasks,
+    unsigned num_added_contexts,
+    unsigned max_added_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -394,7 +416,8 @@ namespace Gridder {
     return
       create(
         device,
-        max_added_tasks,
+        num_added_contexts,
+        max_added_tasks_per_context,
         visibility_batch_size,
         max_avg_channels_per_vis,
         init_cf_shape,
@@ -415,7 +438,8 @@ namespace Gridder {
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create2d(
     Device device,
-    unsigned max_added_tasks,
+    unsigned num_added_contexts,
+    unsigned max_added_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -434,7 +458,8 @@ namespace Gridder {
     return
       create2d(
         device,
-        max_added_tasks,
+        num_added_contexts,
+        max_added_tasks_per_context,
         visibility_batch_size,
         max_avg_channels_per_vis,
         init_cf_shape,
