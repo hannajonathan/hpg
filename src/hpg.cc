@@ -372,7 +372,7 @@ GridderState::is_null() const noexcept {
 }
 
 size_t
-GridderState::convolution_function_region_size(const CFArrayShape* shape)
+GridderState::convolution_function_region_size(const CFArrayShape& shape)
   const noexcept {
 
   ProfileRegion region("GridderState::convolution_function_region_size");
@@ -380,9 +380,19 @@ GridderState::convolution_function_region_size(const CFArrayShape* shape)
   return m_impl->convolution_function_region_size(shape);
 }
 
+rval_t<size_t>
+GridderState::current_convolution_function_region_size(unsigned context)
+  const noexcept {
+
+  ProfileRegion
+    region("GridderState::current_convolution_function_region_size");
+
+  return m_impl->current_convolution_function_region_size(context);
+}
+
 rval_t<GridderState>
 GridderState::allocate_convolution_function_region(
-  const CFArrayShape* shape) const & {
+  const CFArrayShape& shape) const & {
 
   ProfileRegion
     region("GridderState::allocate_convolution_function_region_const");
@@ -396,7 +406,7 @@ GridderState::allocate_convolution_function_region(
 
 rval_t<GridderState>
 GridderState::allocate_convolution_function_region(
-  const CFArrayShape* shape) && {
+  const CFArrayShape& shape) && {
 
   ProfileRegion region("GridderState::allocate_convolution_function_region");
 
@@ -1170,15 +1180,22 @@ Gridder::num_polarizations() const noexcept {
 }
 
 size_t
-Gridder::convolution_function_region_size(const CFArrayShape* shape)
+Gridder::convolution_function_region_size(const CFArrayShape& shape)
   const noexcept {
 
   return state.convolution_function_region_size(shape);
 }
 
+rval_t<size_t>
+Gridder::current_convolution_function_region_size(unsigned context)
+  const noexcept {
+
+  return state.current_convolution_function_region_size(context);
+}
+
 opt_error_t
 Gridder::allocate_convolution_function_region(
-  const CFArrayShape* shape) {
+  const CFArrayShape& shape) {
 #if HPG_API >= 17
   return
     fold(

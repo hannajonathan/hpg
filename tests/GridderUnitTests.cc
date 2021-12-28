@@ -270,9 +270,9 @@ TEST(Gridder, ConstructorArgs) {
   EXPECT_EQ(g1.num_active_tasks(), 1);
   EXPECT_EQ(g1.num_contexts(), 1);
   EXPECT_EQ(g1.visibility_batch_size(), batch_size);
-  EXPECT_EQ(
-    g1.convolution_function_region_size(nullptr),
-    g1.convolution_function_region_size(&cf));
+  auto sz_or_err = g1.current_convolution_function_region_size();
+  ASSERT_TRUE(hpg::is_value(sz_or_err));
+  EXPECT_EQ(hpg::get_value(sz_or_err), g1.convolution_function_region_size(cf));
 }
 
 // test that Gridder copies have correct parameters
@@ -303,9 +303,11 @@ TEST(Gridder, Copies) {
   EXPECT_EQ(g1.grid_size(), grid_size);
   EXPECT_EQ(g1.grid_scale(), grid_scale);
   EXPECT_EQ(g1.visibility_batch_size(), batch_size);
-  EXPECT_EQ(
-    g1.convolution_function_region_size(nullptr),
-    g0.convolution_function_region_size(nullptr));
+  auto sz0_or_err = g0.current_convolution_function_region_size();
+  auto sz1_or_err = g1.current_convolution_function_region_size();
+  ASSERT_TRUE(hpg::is_value(sz0_or_err));
+  ASSERT_TRUE(hpg::is_value(sz1_or_err));
+  EXPECT_EQ(hpg::get_value(sz1_or_err), hpg::get_value(sz0_or_err));
 
   hpg::Gridder g2(g0);
   EXPECT_FALSE(g0.is_null());
@@ -313,9 +315,9 @@ TEST(Gridder, Copies) {
   EXPECT_EQ(g2.grid_size(), grid_size);
   EXPECT_EQ(g2.grid_scale(), grid_scale);
   EXPECT_EQ(g2.visibility_batch_size(), batch_size);
-  EXPECT_EQ(
-    g2.convolution_function_region_size(nullptr),
-    g0.convolution_function_region_size(nullptr));
+  auto sz2_or_err = g2.current_convolution_function_region_size();
+  ASSERT_TRUE(hpg::is_value(sz2_or_err));
+  EXPECT_EQ(hpg::get_value(sz2_or_err), hpg::get_value(sz0_or_err));
 }
 
 // test that Gridder moves have expected outcomes
@@ -339,7 +341,8 @@ TEST(Gridder, Moves) {
         grid_scale,
         {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
-  auto cf_region_sz = g0.convolution_function_region_size(nullptr);
+  auto cf_region_sz =
+    hpg::get_value(g0.current_convolution_function_region_size());
   hpg::Gridder g1 = std::move(g0);
 
   EXPECT_TRUE(g0.is_null());
@@ -348,7 +351,7 @@ TEST(Gridder, Moves) {
   EXPECT_EQ(g1.grid_scale(), grid_scale);
   EXPECT_EQ(g1.visibility_batch_size(), batch_size);
   EXPECT_EQ(
-    g1.convolution_function_region_size(nullptr),
+    hpg::get_value(g1.current_convolution_function_region_size()),
     cf_region_sz);
 
   hpg::Gridder g2(std::move(g1));
@@ -358,7 +361,7 @@ TEST(Gridder, Moves) {
   EXPECT_EQ(g2.grid_scale(), grid_scale);
   EXPECT_EQ(g2.visibility_batch_size(), batch_size);
   EXPECT_EQ(
-    g2.convolution_function_region_size(nullptr),
+    hpg::get_value(g2.current_convolution_function_region_size()),
     cf_region_sz);
 }
 

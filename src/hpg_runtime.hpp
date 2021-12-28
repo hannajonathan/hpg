@@ -85,11 +85,15 @@ struct /*HPG_EXPORT*/ State {
   num_polarizations() const noexcept = 0;
 
   virtual size_t
-  convolution_function_region_size(const CFArrayShape* shape)
+  convolution_function_region_size(const CFArrayShape& shape)
+    const noexcept = 0;
+
+  virtual rval_t<size_t>
+  current_convolution_function_region_size(unsigned context)
     const noexcept = 0;
 
   virtual std::optional<std::unique_ptr<Error>>
-  allocate_convolution_function_region(const CFArrayShape* shape) = 0;
+  allocate_convolution_function_region(const CFArrayShape& shape) = 0;
 
   virtual std::optional<std::unique_ptr<Error>>
   set_convolution_function(
@@ -307,7 +311,7 @@ struct /*HPG_EXPORT*/ CFPool final {
   }
 
   static size_t
-  cf_size(const CFArrayShape* cf, unsigned grp) {
+  cf_size(const CFArrayShape& cf, unsigned grp) {
     auto layout = impl::CFLayout<kokkos_device>::dimensions(cf, grp);
     // TODO: it would be best to use the following to compute
     // allocation size, but it is not implemented in Kokkos
@@ -325,16 +329,15 @@ struct /*HPG_EXPORT*/ CFPool final {
   }
 
   static size_t
-  pool_size(const CFArrayShape* cf) {
+  pool_size(const CFArrayShape& cf) {
     size_t result = 0;
-    if (cf)
-      for (unsigned grp = 0; grp < cf->num_groups(); ++grp)
-        result += cf_size(cf, grp);
+    for (unsigned grp = 0; grp < cf.num_groups(); ++grp)
+      result += cf_size(cf, grp);
     return result;
   }
 
   void
-  prepare_pool(const CFArrayShape* cf, bool force = false) {
+  prepare_pool(const CFArrayShape& cf, bool force = false) {
     auto current_pool_size = pool.extent(0);
     auto min_pool = pool_size(cf);
     reset((min_pool > current_pool_size) || force);
@@ -362,13 +365,13 @@ struct /*HPG_EXPORT*/ CFPool final {
 
   void
   add_host_cfs(Device host_device, execution_space espace, CFArray&& cf_array) {
-    prepare_pool(&cf_array);
+    prepare_pool(cf_array);
     num_cf_groups = 0;
     size_t offset = 0;
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
         pool.data() + offset,
-        impl::CFLayout<kokkos_device>::dimensions(&cf_array, grp));
+        impl::CFLayout<kokkos_device>::dimensions(cf_array, grp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
                 << " " << cf_init.extent(1)
@@ -410,7 +413,7 @@ struct /*HPG_EXPORT*/ CFPool final {
         assert(false);
         break;
       }
-      offset += cf_size(&cf_array, grp);
+      offset += cf_size(cf_array, grp);
       add_cf_group(cf_array.radii(grp), cf_init, cf_h);
     }
   }
@@ -420,13 +423,13 @@ struct /*HPG_EXPORT*/ CFPool final {
     execution_space espace,
     typename impl::DeviceCFArray<D>&& cf_array) {
 
-    prepare_pool(&cf_array);
+    prepare_pool(cf_array);
     num_cf_groups = 0;
     size_t offset = 0;
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
         pool.data() + offset,
-        impl::CFLayout<kokkos_device>::dimensions(&cf_array, grp));
+        impl::CFLayout<kokkos_device>::dimensions(cf_array, grp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
                 << " " << cf_init.extent(1)
@@ -445,7 +448,7 @@ struct /*HPG_EXPORT*/ CFPool final {
 #endif // NDEBUG
 
       K::deep_copy(espace, cf_init, cf_array.m_views[grp]);
-      offset += cf_size(&cf_array, grp);
+      offset += cf_size(cf_array, grp);
       add_cf_group(
         cf_array.radii(grp),
         cf_init,
@@ -1321,7 +1324,8 @@ public:
     m_grid_size_local[int(impl::core::GridAxis::channel)] =
       grid_size_local[GridValueArray::Axis::channel];
 
-    init_cfs(init_cf_shape);
+    if (init_cf_shape)
+      init_cfs(*init_cf_shape);
     m_mueller_indexes =
       init_mueller("mueller_indexes", mueller_indexes);
     m_conjugate_mueller_indexes =
@@ -1525,17 +1529,25 @@ public:
   }
 
   virtual size_t
-  convolution_function_region_size(const CFArrayShape* shape)
+  convolution_function_region_size(const CFArrayShape& shape)
     const noexcept override {
     std::scoped_lock lock(m_mtx);
-    return
-      shape
-      ? m_exec_contexts[0].current_cf_pool()->pool_size(shape)
-      : m_exec_contexts[0].current_cf_pool()->pool.extent(0);
+    return m_exec_contexts[0].current_cf_pool()->pool_size(shape);
+  }
+
+  virtual rval_t<size_t>
+  current_convolution_function_region_size(unsigned context)
+    const noexcept override {
+
+    if (context >= m_exec_contexts.size())
+      return std::make_unique<InvalidGriddingContextError>();
+
+    std::scoped_lock lock(m_mtx);
+    return m_exec_contexts[context].current_cf_pool()->pool.extent(0);
   }
 
   virtual std::optional<std::unique_ptr<Error>>
-  allocate_convolution_function_region(const CFArrayShape* shape) override {
+  allocate_convolution_function_region(const CFArrayShape& shape) override {
 
     m_exec_contexts.fence();
     m_exec_contexts.for_all_cf_pools(
@@ -2112,10 +2124,10 @@ protected:
   }
 
   void
-  init_cfs(const CFArrayShape* init_cf_shape) {
+  init_cfs(const CFArrayShape& init_cf_shape) {
     m_exec_contexts.switch_to_copy();
     m_exec_contexts.for_all_cf_pools(
-      [init_cf_shape](auto& p) {
+      [&init_cf_shape](auto& p) {
         p->prepare_pool(init_cf_shape, true);
       });
   }
@@ -2262,7 +2274,7 @@ struct /*HPG_EXPORT*/ GridderState {
   static std::variant<std::unique_ptr<Error>, ::hpg::GridderState>
   allocate_convolution_function_region(
     GS&& st,
-    const CFArrayShape* shape) {
+    const CFArrayShape& shape) {
 
     ::hpg::GridderState result(std::forward<GS>(st));
     if (auto error =
