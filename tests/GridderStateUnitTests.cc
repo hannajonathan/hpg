@@ -2081,10 +2081,7 @@ TEST(GridderState, Contexts) {
     ASSERT_TRUE(hpg::is_value(g0_or_err));
     auto g0 = hpg::get_value(std::move(g0_or_err));
     EXPECT_EQ(g0.num_contexts(), 2);
-    if (default_device == hpg::Device::Cuda)
-      EXPECT_EQ(g0.num_active_tasks(), 2);
-    else
-      EXPECT_EQ(g0.num_active_tasks(), 1);
+    EXPECT_EQ(g0.num_active_tasks(), g0.num_contexts());
     auto g1_or_err =
       std::move(g0)
       .set_convolution_function(default_host_device, MyCFArray(cfs[0]), 2);

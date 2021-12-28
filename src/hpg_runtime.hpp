@@ -874,10 +874,6 @@ struct /*HPG_EXPORT*/ StreamContext final {
   }
 };
 
-// FIXME: remove
-template <Device D>
-using ExecSpace = StreamContext<D>;
-
 template <Device D>
 class ExecutionContextGroup;
 
@@ -911,12 +907,12 @@ public:
     unsigned npol,
     size_t max_num_vis,
     size_t max_num_channels,
-    size_t num_extra_streams,
+    size_t num_streams,
     CFPoolRepo<D>* cf_pool_repo)
     : m_cf_pool_repo(cf_pool_repo) {
 
-    assert(cf_pool_repo->size() >= num_extra_streams + 1);
-    std::vector<int> weights(num_extra_streams + 1);
+    assert(cf_pool_repo->size() >= num_streams);
+    std::vector<int> weights(num_streams);
     std::fill_n(weights.begin(), weights.size(), 1);
     for (auto& s:
            K::Experimental::partition_space(execution_space(), weights))
@@ -1085,11 +1081,11 @@ public:
     unsigned npol,
     size_t max_num_vis,
     size_t max_num_channels,
-    const std::vector<size_t>& num_extra_streams,
+    const std::vector<size_t>& num_streams,
     size_t pool_size)
     : m_cf_pool_repo(pool_size) {
 
-    for (auto& n: num_extra_streams)
+    for (auto& n: num_streams)
       m_execution_contexts
         .emplace_back(npol, max_num_vis, max_num_channels, n, &m_cf_pool_repo);
     for (auto& ec : m_execution_contexts)
@@ -1111,7 +1107,7 @@ public:
         npol,
         max_num_vis,
         max_num_channels,
-        ec.streams_size() - 1,
+        ec.streams_size(),
         &m_cf_pool_repo);
       auto& new_ct = m_execution_contexts.back();
       for (size_t i = 0; i < ec.streams_size(); ++i) {
@@ -1207,6 +1203,14 @@ public:
     m_cf_pool_repo.for_all_cf_pools(std::forward<F>(f));
   }
 
+  unsigned
+  total_streams() const {
+    unsigned result = 0;
+    for (auto& ec : m_execution_contexts)
+      result += ec.streams_size();
+    return result;
+  }
+
   void
   fence() const {
     for (auto& ec : m_execution_contexts)
@@ -1221,7 +1225,6 @@ struct /*HPG_EXPORT*/ StateT
 public:
 
   Device m_device; /**< device type */
-  unsigned m_num_active_tasks; /**< number of active tasks */
   size_t m_visibility_batch_size; /**< number of visibilities to sent to
                                        gridding kernel at once */
   size_t m_max_avg_channels_per_vis; /**< max avg number of channel indexes for
@@ -1249,7 +1252,7 @@ public:
   impl::const_mindex_view<memory_space> m_mueller_indexes;
   impl::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
 
-private:
+protected:
 
   static std::vector<size_t>
   repeated_value(unsigned n, size_t v) {
@@ -1258,7 +1261,10 @@ private:
     return result;
   }
 
-protected:
+  static unsigned
+  limit_tasks(unsigned n) {
+    return std::min(n, device_traits::active_task_limit);
+  }
 
   mutable std::mutex m_mtx;
   // access to the following members in const methods must be protected by m_mtx
@@ -1269,7 +1275,6 @@ protected:
 public:
 
   StateT(
-    unsigned max_active_tasks,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -1282,8 +1287,6 @@ public:
     const std::array<unsigned, 4>& implementation_versions,
     ExecutionContextGroup<D>&& exec_contexts)
     : m_device(D)
-    , m_num_active_tasks(
-      std::min(max_active_tasks, device_traits::active_task_limit))
     , m_visibility_batch_size(visibility_batch_size)
     , m_max_avg_channels_per_vis(max_avg_channels_per_vis)
     , m_grid_scale({grid_scale[0], grid_scale[1]})
@@ -1340,7 +1343,6 @@ public:
     const IArrayVector& conjugate_mueller_indexes,
     const std::array<unsigned, 4>& implementation_versions)
   : StateT(
-    num_contexts * max_active_tasks_per_context,
     visibility_batch_size,
     max_avg_channels_per_vis,
     init_cf_shape,
@@ -1355,12 +1357,13 @@ public:
       mueller_indexes.m_npol,
       visibility_batch_size,
       max_avg_channels_per_vis * visibility_batch_size,
-      repeated_value(num_contexts, max_active_tasks_per_context),
-      num_contexts * max_active_tasks_per_context)) {}
+      repeated_value(
+        num_contexts,
+        limit_tasks(max_active_tasks_per_context)),
+      num_contexts * limit_tasks(max_active_tasks_per_context))) {}
 
   StateT(const StateT& st)
     : m_device(D)
-    , m_num_active_tasks(st.m_num_active_tasks)
     , m_visibility_batch_size(st.m_visibility_batch_size)
     , m_max_avg_channels_per_vis(st.m_max_avg_channels_per_vis)
     , m_grid_size_global(st.m_grid_size_global)
@@ -1381,7 +1384,6 @@ public:
 
   StateT(StateT&& st) noexcept
     : m_device(D)
-    , m_num_active_tasks(std::move(st).m_num_active_tasks)
     , m_visibility_batch_size(std::move(st).m_visibility_batch_size)
     , m_max_avg_channels_per_vis(std::move(st).m_max_avg_channels_per_vis)
     , m_grid_size_global(std::move(st).m_grid_size_global)
@@ -1457,7 +1459,7 @@ public:
 
   unsigned
   num_active_tasks() const noexcept override {
-    return m_num_active_tasks;
+    return m_exec_contexts.total_streams();
   }
 
   size_t
@@ -2091,7 +2093,6 @@ protected:
 
   void
   swap(StateT& other) noexcept {
-    assert(m_num_active_tasks == other.m_num_active_tasks);
     std::swap(m_visibility_batch_size, other.m_visibility_batch_size);
     std::swap(
       m_max_avg_channels_per_vis,
