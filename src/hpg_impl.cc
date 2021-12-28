@@ -155,7 +155,7 @@ runtime::impl::min_cf_buffer_size(
 #ifdef HPG_ENABLE_SERIAL
   case Device::Serial: {
     using kokkos_device = DeviceT<Device::Serial>::kokkos_device;
-    auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
+    auto layout = CFLayout<kokkos_device>::dimensions(cf, grp);
     alloc_sz =
       cf_view<typename kokkos_device::array_layout, K::HostSpace>
       ::required_allocation_size(
@@ -171,7 +171,7 @@ runtime::impl::min_cf_buffer_size(
 #ifdef HPG_ENABLE_OPENMP
   case Device::OpenMP: {
     using kokkos_device = DeviceT<Device::OpenMP>::kokkos_device;
-    auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
+    auto layout = CFLayout<kokkos_device>::dimensions(cf, grp);
     alloc_sz =
       cf_view<typename kokkos_device::array_layout, K::HostSpace>
       ::required_allocation_size(
@@ -187,7 +187,7 @@ runtime::impl::min_cf_buffer_size(
 #ifdef HPG_ENABLE_CUDA
   case Device::Cuda: {
     using kokkos_device = DeviceT<Device::Cuda>::kokkos_device;
-    auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
+    auto layout = CFLayout<kokkos_device>::dimensions(cf, grp);
     alloc_sz =
       cf_view<typename kokkos_device::array_layout, K::HostSpace>
       ::required_allocation_size(

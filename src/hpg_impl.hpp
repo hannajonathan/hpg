@@ -239,13 +239,11 @@ struct /*HPG_EXPORT*/ CFLayout {
    * create Kokkos layout using given CFArray slice
    *
    * logical index order matches CFAxis definition
-   *
-   * @todo: verify these layouts
    */
   static layout
-  dimensions(const CFArrayShape* cf, unsigned grp) {
-    auto extents = cf->extents(grp);
-    auto os = cf->oversampling();
+  dimensions(const CFArrayShape& cf, unsigned grp) {
+    auto extents = cf.extents(grp);
+    auto os = cf.oversampling();
     std::array<int, 6> dims{
       int((extents[CFArray::Axis::x] + os - 1) / os),
       int((extents[CFArray::Axis::y] + os - 1) / os),
@@ -1345,7 +1343,7 @@ public:
       m_arrays.emplace_back(hpg::get_value(min_cf_buffer_size(D, shape, grp)));
       m_views.emplace_back(
         m_arrays.back().data(),
-        cflayout::dimensions(this, m_extents.size() - 1));
+        cflayout::dimensions(*this, m_extents.size() - 1));
     }
   }
 
@@ -1369,7 +1367,7 @@ public:
       m_arrays.push_back(std::move(vals));
       m_views.emplace_back(
         m_arrays.back().data(),
-        cflayout::dimensions(this, m_extents.size() - 1));
+        cflayout::dimensions(*this, m_extents.size() - 1));
     }
   }
 
@@ -1488,7 +1486,7 @@ layout_for_device(
 
   using kokkos_device = typename DeviceT<D>::kokkos_device;
 
-  auto layout = CFLayout<kokkos_device>::dimensions(&cf, grp);
+  auto layout = CFLayout<kokkos_device>::dimensions(cf, grp);
   typename DeviceCFArray<D>::cfd_view_h
     cfd(reinterpret_cast<cf_t*>(dst), layout);
   switch (host_device) {

@@ -1416,12 +1416,20 @@ public:
    * region, as asynchronously executing tasks may be using different
    * convolution functions.
    *
-   * @param shape if non-null, the memory needed for a CFArray of the given
-   * shape; if null, the size of the currently allocated region in the
-   * target
+   * @param shape CFArrayShape instance
    */
   size_t
-  convolution_function_region_size(const CFArrayShape* shape) const noexcept;
+  convolution_function_region_size(const CFArrayShape& shape) const noexcept;
+
+  /** size (in bytes) of region currently allocated for CFArray elements in a
+   * gridding execution context
+   *
+   * @param context gridding execution context
+   *
+   * @return size of CFArray allocation in context, or Error
+   */
+  rval_t<size_t>
+  current_convolution_function_region_size(unsigned context = 0) const noexcept;
 
   /** allocate memory for convolution function
    *
@@ -1431,9 +1439,8 @@ public:
    * than earlier calls, it may be advantageous to use this method in order to
    * allocate the maximum memory that will be required by the sequence before
    * starting the sequence, which will then permit the sequence to proceed
-   * without any reallocations. To release all memory allocated for the
-   * convolution function, the caller may pass a null pointer for the method
-   * argument. Invokes fence() on the target.
+   * without any reallocations. Note that the same allocation is made by this
+   * method in all gridding execution contexts. Invokes fence() on the target.
    *
    * @param shape shape of CFArray for which to allocate memory (per task)
    *
@@ -1441,7 +1448,7 @@ public:
    * allocated for convolution function, or error
    */
   rval_t<GridderState>
-  allocate_convolution_function_region(const CFArrayShape* shape) const &;
+  allocate_convolution_function_region(const CFArrayShape& shape) const &;
 
   /** allocate memory for convolution function
    *
@@ -1461,7 +1468,7 @@ public:
    * allocated for convolution function, or error
    */
   rval_t<GridderState>
-  allocate_convolution_function_region(const CFArrayShape* shape) &&;
+  allocate_convolution_function_region(const CFArrayShape& shape) &&;
 
   /** set convolution function
    *
@@ -2596,11 +2603,20 @@ public:
    * region, as asynchronously executing tasks may be using different
    * convolution functions.
    *
-   * @param shape if non-null, the memory needed for a CFArray of the given
-   * shape; if null, the size of the currently allocated region in the target
+   * @param shape CFArrayShape instance
    */
   size_t
-  convolution_function_region_size(const CFArrayShape* shape) const noexcept;
+  convolution_function_region_size(const CFArrayShape& shape) const noexcept;
+
+  /** size (in bytes) of region currently allocated for CFArray elements in a
+   * gridding execution context
+   *
+   * @param context gridding execution context
+   *
+   * @return size of CFArray allocation in context, or Error
+   */
+  rval_t<size_t>
+  current_convolution_function_region_size(unsigned context = 0) const noexcept;
 
   /** allocate memory for convolution function
    *
@@ -2610,9 +2626,8 @@ public:
    * than earlier calls, it may be advantageous to use this method in order to
    * allocate the maximum memory that will be required by the sequence before
    * starting the sequence, which will then permit the sequence to proceed
-   * without any reallocations. To release all memory allocated for the
-   * convolution function, the caller may pass a null pointer for the method
-   * argument. Invokes fence() on the target.
+   * without any reallocations. Note that the same allocation is made by this
+   * method in all gridding execution contexts. Invokes fence() on the target.
    *
    * @param shape shape of CFArray for which to allocate memory (per task)
    *
@@ -2620,7 +2635,7 @@ public:
    * allocated for convolution function, or error
    */
   opt_error_t
-  allocate_convolution_function_region(const CFArrayShape* shape);
+  allocate_convolution_function_region(const CFArrayShape& shape);
 
   /** set convolution function
    *

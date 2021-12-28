@@ -611,9 +611,11 @@ TEST(GridderState, ConstructorArgs) {
   EXPECT_EQ(gs1.num_contexts(), 1);
   EXPECT_EQ(gs1.visibility_batch_size(), batch_size);
   EXPECT_EQ(gs1.max_avg_channels_per_vis(), max_avg_channels_per_vis);
+  auto sz_or_err = gs1.current_convolution_function_region_size();
+  ASSERT_TRUE(hpg::is_value(sz_or_err));
   EXPECT_EQ(
-    gs1.convolution_function_region_size(nullptr),
-    gs1.convolution_function_region_size(&cf));
+    hpg::get_value(sz_or_err),
+    gs1.convolution_function_region_size(cf));
 
   auto gs2_or_err =
     hpg::GridderState::create<1>(
@@ -684,9 +686,11 @@ TEST(GridderState, Copies) {
   EXPECT_EQ(gs1.num_polarizations(), 1);
   EXPECT_EQ(gs1.visibility_batch_size(), batch_size);
   EXPECT_EQ(gs1.max_avg_channels_per_vis(), max_avg_channels_per_vis);
-  EXPECT_EQ(
-    gs0.convolution_function_region_size(nullptr),
-    gs1.convolution_function_region_size(nullptr));
+  auto sz0_or_err = gs0.current_convolution_function_region_size();
+  auto sz1_or_err = gs1.current_convolution_function_region_size();
+  ASSERT_TRUE(hpg::is_value(sz0_or_err));
+  ASSERT_TRUE(hpg::is_value(sz1_or_err));
+  EXPECT_EQ(hpg::get_value(sz0_or_err), hpg::get_value(sz1_or_err));
 
   hpg::GridderState gs2(gs0);
   EXPECT_FALSE(gs0.is_null());
@@ -696,9 +700,8 @@ TEST(GridderState, Copies) {
   EXPECT_EQ(gs2.num_polarizations(), 1);
   EXPECT_EQ(gs2.visibility_batch_size(), batch_size);
   EXPECT_EQ(gs2.max_avg_channels_per_vis(), max_avg_channels_per_vis);
-  EXPECT_EQ(
-    gs0.convolution_function_region_size(nullptr),
-    gs2.convolution_function_region_size(nullptr));
+  auto sz2_or_err = gs2.current_convolution_function_region_size();
+  EXPECT_EQ(hpg::get_value(sz0_or_err), hpg::get_value(sz2_or_err));
 }
 #endif // HPG_DELTA_EXPERIMENTAL_ONLY
 
@@ -725,7 +728,8 @@ TEST(GridderState, Moves) {
         grid_scale,
         {{0}, {0}, {0}, {0}},
         {{0}, {0}, {0}, {0}}));
-  auto cf_region_size = gs0.convolution_function_region_size(nullptr);
+  auto cf_region_size =
+    hpg::get_value(gs0.current_convolution_function_region_size());
   hpg::GridderState gs1 = std::move(gs0);
 
   EXPECT_TRUE(gs0.is_null());
@@ -734,7 +738,9 @@ TEST(GridderState, Moves) {
   EXPECT_EQ(gs1.grid_scale(), grid_scale);
   EXPECT_EQ(gs1.num_polarizations(), 1);
   EXPECT_EQ(gs1.visibility_batch_size(), batch_size);
-  EXPECT_EQ(gs1.convolution_function_region_size(nullptr), cf_region_size);
+  EXPECT_EQ(
+    hpg::get_value(gs1.current_convolution_function_region_size()),
+    cf_region_size);
 
   hpg::GridderState gs2(std::move(gs1));
   EXPECT_TRUE(gs1.is_null());
@@ -743,7 +749,9 @@ TEST(GridderState, Moves) {
   EXPECT_EQ(gs2.grid_scale(), grid_scale);
   EXPECT_EQ(gs2.num_polarizations(), 1);
   EXPECT_EQ(gs2.visibility_batch_size(), batch_size);
-  EXPECT_EQ(gs2.convolution_function_region_size(nullptr), cf_region_size);
+  EXPECT_EQ(
+    hpg::get_value(gs2.current_convolution_function_region_size()),
+    cf_region_size);
 }
 #endif //HPG_DELTA_EXPERIMENTAL_ONLY
 
