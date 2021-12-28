@@ -1244,8 +1244,7 @@ protected:
    * available to the GridderState instance. In all cases, at least one task is
    * employed, but some devices support additional, concurrent tasks. Support
    * for multiple, largely independent degridding/gridding contexts at the user
-   * level is enabled through num_added_contexts, see grid_visibilities() for
-   * additional information on how to employ multiple contexts.
+   * level is enabled through num_added_contexts.
    *
    * The values of num_added_contexts, max_added_tasks_per_context,
    * visibility_batch_size and max_avg_channels_per_vis have effects on the
@@ -2430,8 +2429,7 @@ protected:
    * available to the GridderState instance. In all cases, at least one task is
    * employed, but some devices support additional, concurrent tasks. Support
    * for multiple, largely independent degridding/gridding contexts at the user
-   * level is enabled through num_added_contexts, see grid_visibilities() for
-   * additional information on how to employ multiple contexts.
+   * level is enabled through num_added_contexts.
    *
    * The values of num_added_contexts, max_added_tasks_per_context,
    * visibility_batch_size and max_avg_channels_per_vis have effects on the
