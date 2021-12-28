@@ -490,7 +490,6 @@ public:
     const ReplicatedGridBrick& grid_brick,
     MPI_Comm replica_comm,
     MPI_Comm plane_comm,
-    unsigned max_active_tasks,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -498,10 +497,10 @@ public:
     const std::array<grid_scale_fp, 2>& grid_scale,
     const IArrayVector& mueller_indexes,
     const IArrayVector& conjugate_mueller_indexes,
-    const std::array<unsigned, 4>& implementation_versions)
+    const std::array<unsigned, 4>& implementation_versions,
+    ::hpg::runtime::ExecutionContextGroup<D>&& exec_contexts)
     : State(vis_comm, grid_comm, replica_comm, plane_comm)
     , ::hpg::runtime::StateT<D>(
-      max_active_tasks,
       visibility_batch_size,
       max_avg_channels_per_vis,
       init_cf_shape,
@@ -517,7 +516,8 @@ public:
       grid_scale,
       mueller_indexes,
       conjugate_mueller_indexes,
-      implementation_versions) {}
+      implementation_versions,
+      std::move(exec_contexts)) {}
 
   StateTBase(const StateTBase& st)
     : State()
@@ -581,10 +581,8 @@ public:
           || non_trivial_replica_partition()) {
         auto is_root =
           is_visibility_partition_root() && is_replica_partition_root();
-        auto& exec =
-          this->m_exec_spaces[
-            this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
-        exec.fence();
+        fence();
+        this->m_exec_contexts[0].switch_to_compute();
         MPI_Reduce(
           (is_visibility_partition_root()
            ? MPI_IN_PLACE
@@ -624,10 +622,8 @@ public:
           || non_trivial_replica_partition()) {
         auto is_root =
           is_visibility_partition_root() && is_replica_partition_root();
-        auto& exec =
-          this->m_exec_spaces[
-            this->next_exec_space_unlocked(StreamPhase::GRIDDING)];
-        exec.fence();
+        fence();
+        this->m_exec_contexts[0].switch_to_compute();
         MPI_Reduce(
           (is_visibility_partition_root() ? MPI_IN_PLACE : this->m_grid.data()),
           this->m_grid.data(),
@@ -659,7 +655,10 @@ public:
   }
 
   virtual std::optional<std::unique_ptr<::hpg::Error>>
-  set_convolution_function(Device host_device, CFArray&& cf_array) override {
+  set_convolution_function(
+    unsigned context,
+    Device host_device,
+    CFArray&& cf_array) override {
 
     // N.B: access cf_array directly only at the root rank of m_grid_comm
     bool is_root = is_grid_partition_root();
@@ -719,11 +718,11 @@ public:
         m_grid_comm);
 
     // all ranks now copy the CF kernels to device memory
-    this->switch_cf_pool();
-    auto& exec =
-      this->m_exec_spaces[this->next_exec_space(StreamPhase::PRE_GRIDDING)];
-    auto& cf = std::get<0>(this->m_cfs[this->m_cf_indexes.front()]);
-    cf.add_device_cfs(exec.space, std::move(dev_cf_array));
+    this->m_exec_contexts[context].switch_to_copy(true);
+    auto& cf = this->m_exec_contexts[context].current_cf_pool();
+    cf->add_device_cfs(
+      this->m_exec_contexts[context].current_exec_space(),
+      std::move(dev_cf_array));
 
     return std::nullopt;
   }
@@ -769,8 +768,7 @@ public:
     }
 
     fence();
-    auto& exec =
-      this->m_exec_spaces[this->next_exec_space(StreamPhase::PRE_GRIDDING)];
+    this->m_exec_contexts.switch_to_copy();
 
     if (!this->m_model.is_allocated())
       this->m_model =
@@ -803,9 +801,12 @@ public:
           break;
         }
       }
-      K::deep_copy(exec.space, this->m_model, gvv.grid);
+      K::deep_copy(
+        this->m_exec_contexts[0].current_exec_space(),
+        this->m_model,
+        gvv.grid);
       if (non_trivial_visibility_partition() || non_trivial_replica_partition())
-        exec.fence();
+        this->m_exec_contexts[0].current_exec_space().fence();
     }
     broadcast_model();
 
@@ -951,6 +952,10 @@ class StateT<D, VisibilityDistribution::Broadcast>
   : public StateTBase<D> {
 public:
 
+  using ::hpg::runtime::StateT<D>::limit_tasks;
+
+  using ::hpg::runtime::StateT<D>::repeated_value;
+
   using typename ::hpg::runtime::StateT<D>::maybe_vis_t;
 
   StateT(
@@ -959,7 +964,8 @@ public:
     const ReplicatedGridBrick& grid_brick,
     MPI_Comm replica_comm,
     MPI_Comm plane_comm,
-    unsigned max_active_tasks,
+    unsigned num_contexts,
+    unsigned max_active_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -974,7 +980,6 @@ public:
     grid_brick,
     replica_comm,
     plane_comm,
-    max_active_tasks,
     visibility_batch_size,
     max_avg_channels_per_vis,
     init_cf_shape,
@@ -982,11 +987,20 @@ public:
     grid_scale,
     mueller_indexes,
     conjugate_mueller_indexes,
-    implementation_versions) {}
+    implementation_versions,
+    ::hpg::runtime::ExecutionContextGroup<D>(
+      mueller_indexes.m_npol,
+      visibility_batch_size,
+      max_avg_channels_per_vis * visibility_batch_size,
+      repeated_value(
+        num_contexts,
+        limit_tasks(max_active_tasks_per_context)),
+      num_contexts * limit_tasks(max_active_tasks_per_context))) {}
 
   template <unsigned N>
   maybe_vis_t
   default_grid_visibilities(
+    unsigned context,
     Device /*host_device*/,
     std::vector<::hpg::VisData<N>>&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1056,41 +1070,42 @@ public:
     MPI_Comm_rank(this->m_replica_comm, &replica_rank);
 
     // copy visibilities and channel mapping vectors to device
-    auto& exec_pre =
-      this->m_exec_spaces[this->next_pre_compute_exec_space()];
-    exec_pre.copy_visibilities_to_device(std::move(visibilities));
-    exec_pre.copy_weights_to_device(
+    this->m_exec_contexts[context].switch_to_copy(false);
+    auto& sc_copy = this->m_exec_contexts[context].current_stream_context();
+    sc_copy.copy_visibilities_to_device(std::move(visibilities));
+    sc_copy.copy_weights_to_device(
       std::move(wgt_values),
       std::move(wgt_col_index),
       std::move(wgt_row_index));
+
     this->m_reduced_grid = this->m_reduced_grid && (len[0] == 0);
     this->m_reduced_weights =
       this->m_reduced_weights && (len[0] == 0 || !update_grid_weights);
 
-    // initialize the gridder object
-    auto& exec_grid = this->m_exec_spaces[this->next_compute_exec_space()];
-    auto& cf = std::get<0>(this->m_cfs[this->m_cf_indexes.front()]);
-    auto& gvisbuff = exec_grid.gvisbuff;
-    K::deep_copy(
-      exec_grid.space,
-      gvisbuff,
-      typename std::remove_reference_t<decltype(gvisbuff)>::value_type());
+    this->m_exec_contexts[context].switch_to_compute();
+    auto& sc_grid = this->m_exec_contexts[context].current_stream_context();
+    auto& cf = this->m_exec_contexts[context].current_cf_pool();
+    auto& gvisbuff = sc_grid.m_gvisbuff;
+    using gvis0 =
+      typename std::remove_reference_t<decltype(gvisbuff)>::value_type;
+    K::deep_copy(sc_grid.m_space, gvisbuff, gvis0());
 
+    // initialize the gridder object
     auto gridder =
       impl::core::VisibilityGridder(
-        exec_grid.space,
-        cf.cf_d,
-        cf.cf_radii,
-        cf.max_cf_extent_y,
+        sc_grid.m_space,
+        cf->cf_d,
+        cf->cf_radii,
+        cf->max_cf_extent_y,
         this->m_mueller_indexes,
         this->m_conjugate_mueller_indexes,
         len[0],
         replica_rank,
         replica_size,
-        exec_grid.template visdata<N>(),
-        exec_grid.weight_values,
-        exec_grid.weight_col_index,
-        exec_grid.weight_row_index,
+        sc_grid.template visdata<N>(),
+        sc_grid.m_weight_values.m_values,
+        sc_grid.m_weight_col_index.m_values,
+        sc_grid.m_weight_row_index.m_values,
         gvisbuff,
         this->m_grid_scale,
         this->m_grid,
@@ -1107,7 +1122,7 @@ public:
       // all ranks. NB: this is a prime area for considering performance
       // improvements, but any solution should be scalable, and at least the
       // following satisfies that criterion
-      exec_grid.fence();
+      sc_grid.fence();
       // Reduce all 4 polarizations, independent of the value of N, in order
       // to allow use of both a predefined datatype and a predefined reduction
       // operator, MPI_SUM. The function hpg::mpi::gvisbuff_datatype() could
@@ -1135,20 +1150,20 @@ public:
     } else {
       gridder.vis_rescale(len[0]);
     }
-
     if (do_grid) {
       if (update_grid_weights)
         gridder.grid_all(len[0]);
       else
         gridder.grid_all_no_weights(len[0]);
     }
-    return exec_grid.copy_visibilities_to_host(return_visibilities);
+    return sc_grid.copy_visibilities_to_host(return_visibilities);
 
   }
 
   template <unsigned N>
   maybe_vis_t
   grid_visibilities(
+    unsigned context,
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1172,6 +1187,7 @@ public:
     case 0:
       return
         default_grid_visibilities(
+          context,
           host_device,
           std::move(visibilities),
           std::move(wgt_values),
@@ -1191,6 +1207,7 @@ public:
 
   virtual std::variant<std::unique_ptr<::hpg::Error>, maybe_vis_t>
   grid_visibilities(
+    unsigned context,
     Device host_device,
     VisDataVector&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1206,6 +1223,7 @@ public:
     case 1:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v1),
           std::move(wgt_values),
@@ -1219,6 +1237,7 @@ public:
     case 2:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v2),
           std::move(wgt_values),
@@ -1232,6 +1251,7 @@ public:
     case 3:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v3),
           std::move(wgt_values),
@@ -1245,6 +1265,7 @@ public:
     case 4:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v4),
           std::move(wgt_values),
@@ -1268,9 +1289,15 @@ class StateT<D, VisibilityDistribution::Pipeline>
   : public StateTBase<D> {
 public:
 
+  using ::hpg::runtime::StateT<D>::limit_tasks;
+
+  using ::hpg::runtime::StateT<D>::repeated_value;
+
   using typename ::hpg::runtime::StateT<D>::maybe_vis_t;
 
   using StreamPhase = ::hpg::runtime::StreamPhase;
+
+  std::array<int, 2> m_seqnums; // FIXME
 
   StateT(
     MPI_Comm vis_comm,
@@ -1278,7 +1305,8 @@ public:
     const ReplicatedGridBrick& grid_brick,
     MPI_Comm replica_comm,
     MPI_Comm plane_comm,
-    unsigned max_active_tasks,
+    unsigned num_contexts_per_phase,
+    unsigned max_active_tasks_per_context,
     size_t visibility_batch_size,
     unsigned max_avg_channels_per_vis,
     const CFArrayShape* init_cf_shape,
@@ -1293,7 +1321,6 @@ public:
     grid_brick,
     replica_comm,
     plane_comm,
-    max_active_tasks,
     visibility_batch_size,
     max_avg_channels_per_vis,
     init_cf_shape,
@@ -1301,31 +1328,22 @@ public:
     grid_scale,
     mueller_indexes,
     conjugate_mueller_indexes,
-    implementation_versions) {
-
-    this->m_current = StreamPhase::PRE_DEGRIDDING;
-  }
-
-  virtual int
-  next_pre_compute_exec_space_unlocked() const override {
-    if (this->m_current == StreamPhase::PRE_DEGRIDDING
-        || this->m_current == StreamPhase::GRIDDING)
-      return this->next_exec_space_unlocked(StreamPhase::PRE_DEGRIDDING);
-    return this->next_exec_space_unlocked(StreamPhase::PRE_GRIDDING);
-  }
-
-  virtual int
-  next_compute_exec_space_unlocked() const override {
-    if (this->m_current == StreamPhase::PRE_DEGRIDDING
-        || this->m_current == StreamPhase::DEGRIDDING)
-      return this->next_exec_space_unlocked(StreamPhase::DEGRIDDING);
-    return this->next_exec_space_unlocked(StreamPhase::GRIDDING);
+    implementation_versions,
+    ::hpg::runtime::ExecutionContextGroup<D>(
+      mueller_indexes.m_npol,
+      visibility_batch_size,
+      max_avg_channels_per_vis * visibility_batch_size,
+      repeated_value(
+        2 * num_contexts_per_phase,
+        limit_tasks(max_active_tasks_per_context)),
+      num_contexts_per_phase
+        * (2 * limit_tasks(max_active_tasks_per_context) + 1))) {
   }
 
   template <unsigned N, typename F>
   void
   cycle_op(
-    ::hpg::runtime::ExecSpace<D>& exec,
+    ::hpg::runtime::StreamContext<D>& stream,
     int& num_vis,
     const int& max_vis,
     const int& max_wgts,
@@ -1338,10 +1356,10 @@ public:
     int right = (rank + 1) % sz;
     int left = (rank + sz - 1) % sz;
 
-    for (size_t i = 0; i < sz; ++i) {
+    for (int i = 0; i < sz; ++i) {
       op(num_vis);
 
-      exec.fence();
+      stream.fence();
 
       // TODO: replace calls to MPI_Sendrecv_replace with MPI-4's
       // MPI_Isendrecv_replace when it's available
@@ -1359,7 +1377,7 @@ public:
         MPI_STATUS_IGNORE);
       // reqs.push_back(MPI_REQUEST_NULL);
       MPI_Sendrecv_replace(
-        exec.weight_values.data(),
+        stream.m_weight_values.m_values.data(),
         max_wgts,
         mpi_datatype<vis_weight_fp>::value(),
         left,
@@ -1370,7 +1388,7 @@ public:
         MPI_STATUS_IGNORE);
       // reqs.push_back(MPI_REQUEST_NULL);
       MPI_Sendrecv_replace(
-        exec.weight_col_index.data(),
+        stream.m_weight_col_index.m_values.data(),
         max_wgts,
         mpi_datatype<unsigned>::value(),
         left,
@@ -1381,7 +1399,7 @@ public:
         MPI_STATUS_IGNORE);
       // reqs.push_back(MPI_REQUEST_NULL);
       MPI_Sendrecv_replace(
-        exec.weight_row_index.data(),
+        stream.m_weight_row_index.m_values.data(),
         max_vis + 1,
         mpi_datatype<size_t>::value(),
         left,
@@ -1391,7 +1409,7 @@ public:
         this->m_grid_comm,
         MPI_STATUS_IGNORE);
       // reqs.push_back(MPI_REQUEST_NULL);
-      auto visdata = exec.template visdata<N>();
+      auto visdata = stream.template visdata<N>();
       MPI_Sendrecv_replace(
         visdata.data(),
         max_vis,
@@ -1404,9 +1422,10 @@ public:
         MPI_STATUS_IGNORE);
       // reqs.push_back(MPI_REQUEST_NULL);
       MPI_Sendrecv_replace(
-        exec.gvisbuff.data(),
+        stream.m_gvisbuff.data(),
         max_vis,
-        mpi_datatype<typename decltype(exec.gvisbuff)::value_type>::value(),
+        mpi_datatype<typename decltype(stream.m_gvisbuff)::value_type>
+          ::value(),
         left,
         0,
         right,
@@ -1420,6 +1439,7 @@ public:
   template <unsigned N>
   maybe_vis_t
   default_grid_visibilities(
+    unsigned context,
     Device /*host_device*/,
     std::vector<::hpg::VisData<N>>&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1451,12 +1471,12 @@ public:
       MPI_INT,
       gsrc,
       0,
-      m_grid_comm,
+      this->m_grid_comm,
       MPI_STATUS_IGNORE);
 
     // decide whether to take any CFs or give any CFs
     decltype(m_seqnums) take_cfs; // the CFs to take from gsrc
-    for (size_t i = 0; i < need_cfs.size(); ++i)
+    for (size_t i = 0; i < m_seqnums.size(); ++i)
       take_cfs[i] = ((next_seqnums[i] != m_seqnums[i]) ? next_seqnums[i] : -1);
     decltype(m_seqnums) give_cfs; // the CFs to give to gsink
     MPI_Sendrecv(
@@ -1470,7 +1490,7 @@ public:
       MPI_INT,
       gsink,
       0,
-      m_grid_comm,
+      this->m_grid_comm,
       MPI_STATUS_IGNORE);
     // transfer needed degridding CFs from gsrc and to gsink
     {
@@ -1479,12 +1499,12 @@ public:
         reqs.push_back(MPI_REQUEST_NULL);
         // MPI_Issend used to ensure the send completes before a receive into
         // the same buffer starts
-        MPI_Issend(FIXME, gsink, 0, m_grid_comm, &reqs.back());
+        MPI_Issend(nullptr/*FIXME*/, 1, MPI_INT, gsink, 0, this->m_grid_comm, &reqs.back());
       }
       // TODO: wait for completion??? seems deadlocky!
       if (take_cfs[0] != -1) {
         reqs.push_back(MPI_REQUEST_NULL);
-        MPI_Irecv(FIXME, gsrc, 0, m_grid_comm, &reqs.back());
+        MPI_Irecv(nullptr/*FIXME*/, 1, MPI_INT, gsrc, 0, this->m_grid_comm, &reqs.back());
       }
       MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
     }
@@ -1496,7 +1516,7 @@ public:
 
     // broadcast info for number of visibilities per rank
     // FIXME: handle case of visibilities.size() < num ranks
-    if (visibilities.size() < gsz)
+    if (visibilities.size() < size_t(gsz))
       std::abort();
     std::array<int, 5> vszs;
     vszs[0] = visibilities.size() / gsz; // min num vis per rank
@@ -1641,38 +1661,38 @@ public:
     MPI_Comm_rank(this->m_replica_comm, &replica_rank);
 
     // copy visibilities and channel mapping vectors to device
-    auto& exec_pre =
-      this->m_exec_spaces[this->next_exec_space(StreamPhase::PRE_GRIDDING)];
-    exec_pre.copy_visibilities_to_device(std::move(visibilities));
-    exec_pre.copy_weights_to_device(
+    this->m_exec_contexts[context].switch_to_copy(false);
+    auto& sc_pre = this->m_exec_contexts[context].current_stream_context();
+    sc_pre.copy_visibilities_to_device(std::move(visibilities));
+    sc_pre.copy_weights_to_device(
       std::move(wgt_values),
       std::move(wgt_col_index),
       std::move(wgt_row_index));
 
     // initialize the gridder object
-    auto& exec_grid =
-      this->m_exec_spaces[this->next_exec_space(StreamPhase::GRIDDING)];
-    auto& cf = std::get<0>(this->m_cfs[this->m_cf_indexes.front()]);
-    auto& gvisbuff = exec_grid.gvisbuff;
+    this->m_exec_contexts[context].switch_to_compute();
+    auto& sc_grid = this->m_exec_contexts[context].current_stream_context();
+    auto& cf = this->m_exec_contexts[context].current_cf_pool();
+    auto& gvisbuff = sc_grid.m_gvisbuff;
     using gvis0 =
       typename std::remove_reference_t<decltype(gvisbuff)>::value_type;
-    K::deep_copy(exec_grid.space, gvisbuff, gvis0());
+    K::deep_copy(sc_grid.m_space, gvisbuff, gvis0());
 
     auto gridder =
       impl::core::VisibilityGridder(
-        exec_grid.space,
-        cf.cf_d,
-        cf.cf_radii,
-        cf.max_cf_extent_y,
+        sc_grid.m_space,
+        cf->cf_d,
+        cf->cf_radii,
+        cf->max_cf_extent_y,
         this->m_mueller_indexes,
         this->m_conjugate_mueller_indexes,
         max_vis,
         replica_rank,
         replica_size,
-        exec_grid.template visdata<N>(),
-        exec_grid.weight_values,
-        exec_grid.weight_col_index,
-        exec_grid.weight_row_index,
+        sc_grid.template visdata<N>(),
+        sc_grid.m_weight_values.m_values,
+        sc_grid.m_weight_col_index.m_values,
+        sc_grid.m_weight_row_index.m_values,
         gvisbuff,
         this->m_grid_scale,
         this->m_grid,
@@ -1684,7 +1704,7 @@ public:
     // use gridder object to invoke degridding and gridding kernels
     if (do_degrid) {
       cycle_op<N>(
-        exec_grid,
+        sc_grid,
         num_vis,
         max_vis,
         max_wgts,
@@ -1700,22 +1720,22 @@ public:
     if (do_grid) {
       if (update_grid_weights)
         cycle_op<N>(
-          exec_grid,
+          sc_grid,
           num_vis,
           max_vis,
           max_wgts,
           [&](int& nv) { gridder.grid_all(nv); });
       else
         cycle_op<N>(
-          exec_grid,
+          sc_grid,
           num_vis,
           max_vis,
           max_wgts,
           [&](int& nv) { gridder.grid_all_no_weights(nv); });
     }
-    auto result = exec_grid.copy_visibilities_to_host(return_visibilities);
+    auto result = sc_grid.copy_visibilities_to_host(return_visibilities);
     if (return_visibilities) {
-      exec_grid.fence();
+      sc_grid.fence();
       auto rvis = std::move(***result);
 
       std::vector<int> nvis(gsz);
@@ -1759,6 +1779,7 @@ public:
   template <unsigned N>
   maybe_vis_t
   grid_visibilities(
+    unsigned context,
     Device host_device,
     std::vector<::hpg::VisData<N>>&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1782,6 +1803,7 @@ public:
     case 0:
       return
         default_grid_visibilities(
+          context,
           host_device,
           std::move(visibilities),
           std::move(wgt_values),
@@ -1801,6 +1823,7 @@ public:
 
   virtual std::variant<std::unique_ptr<::hpg::Error>, maybe_vis_t>
   grid_visibilities(
+    unsigned context,
     Device host_device,
     VisDataVector&& visibilities,
     std::vector<vis_weight_fp>&& wgt_values,
@@ -1816,6 +1839,7 @@ public:
     case 1:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v1),
           std::move(wgt_values),
@@ -1829,6 +1853,7 @@ public:
     case 2:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v2),
           std::move(wgt_values),
@@ -1842,6 +1867,7 @@ public:
     case 3:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v3),
           std::move(wgt_values),
@@ -1855,6 +1881,7 @@ public:
     case 4:
       return
         grid_visibilities(
+          context,
           host_device,
           std::move(*visibilities.m_v4),
           std::move(wgt_values),
