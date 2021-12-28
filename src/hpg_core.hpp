@@ -852,8 +852,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 
   void
-  degrid_all(const int& num_vis) {
-    m_num_visibilities = num_vis;
+  degrid_all() const {
     K::parallel_for(
       "degrid_all",
       K::TeamPolicy<execution_space, DegridAll>(
@@ -899,8 +898,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 
   void
-  vis_copy_residual_and_rescale(const int& num_vis) {
-    m_num_visibilities = num_vis;
+  vis_copy_residual_and_rescale() const {
     K::parallel_for(
       "vis_copy_residual_and_rescale",
       K::TeamPolicy<execution_space, VisCopyResidualAndRescale>(
@@ -942,8 +940,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 
   void
-  vis_rescale(const int& num_vis) {
-    m_num_visibilities = num_vis;
+  vis_rescale() const {
     K::parallel_for(
       "vis_rescale",
       K::TeamPolicy<execution_space, VisRescale>(
@@ -985,8 +982,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 
   void
-  vis_copy_predicted(const int& num_vis) {
-    m_num_visibilities = num_vis;
+  vis_copy_predicted() const {
     K::parallel_for(
       "vis_copy_predicted",
       K::TeamPolicy<execution_space, VisCopyPredicted>(
@@ -1265,8 +1261,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 
   void
-  grid_all_no_weights(const int& num_vis) {
-    m_num_visibilities = num_vis;
+  grid_all_no_weights() const {
     K::parallel_for(
       "gridding_no_weights",
       K::TeamPolicy<execution_space, GridAllNoWeights>(
@@ -1322,8 +1317,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 
   void
-  grid_all(const int& num_vis) {
-    m_num_visibilities = num_vis;
+  grid_all() const {
     K::parallel_for(
       "gridding_weights",
       K::TeamPolicy<execution_space, GridAll>(
