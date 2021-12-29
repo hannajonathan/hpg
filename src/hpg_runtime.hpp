@@ -949,7 +949,7 @@ public:
   }
 
   size_t
-  streams_size() const {
+  num_streams() const {
     return m_streams.size();
   }
 
@@ -1110,10 +1110,10 @@ public:
         npol,
         max_num_vis,
         max_num_channels,
-        ec.streams_size(),
+        ec.num_streams(),
         &m_cf_pool_repo);
       auto& new_ct = m_execution_contexts.back();
-      for (size_t i = 0; i < ec.streams_size(); ++i) {
+      for (size_t i = 0; i < ec.num_streams(); ++i) {
         auto& src = ec.m_streams[i];
         auto& dst = new_ct.m_streams[i];
         dst.m_context.copy_from(src.m_context);
@@ -1210,7 +1210,7 @@ public:
   total_streams() const {
     unsigned result = 0;
     for (auto& ec : m_execution_contexts)
-      result += ec.streams_size();
+      result += ec.num_streams();
     return result;
   }
 
