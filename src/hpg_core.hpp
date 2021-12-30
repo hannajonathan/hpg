@@ -503,7 +503,7 @@ template <
   typename VisWgtValuesView,
   typename VisWgtColIndexView,
   typename VisWgtRowIndexView,
-  typename GVisbuffView,
+  typename GVisView,
   typename GridScale,
   typename GridView,
   typename GridWeightView,
@@ -525,9 +525,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   static_assert(
     std::is_same_v<
-      typename GVisbuffView::value_type,
+      typename GVisView::value_type,
       poln_array_type<visibility_fp_t, N>>);
-  static_assert(GVisbuffView::rank == 1);
+  static_assert(GVisView::rank == 1);
 
   static_assert(
     std::is_same_v<typename MIndexView::non_const_data_type, int[4][4]>);
@@ -573,7 +573,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   viswgt_const_view m_viswgts;
   viswgt_col_index_const_view m_viswgt_col_index;
   viswgt_row_index_const_view m_viswgt_row_index;
-  GVisbuffView m_gvisbuff;
+  GVisView m_gvis;
   K::Array<GridScale, 2> m_grid_scale;
   GridView m_grid;
   GridWeightView m_grid_weights;
@@ -603,7 +603,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const VisWgtValuesView& viswgts,
     const VisWgtColIndexView& viswgt_col_index,
     const VisWgtRowIndexView& viswgt_row_index,
-    const GVisbuffView& gvisbuff,
+    const GVisView& gvis,
     const K::Array<GridScale, 2>& grid_scale,
     const GridView& grid,
     const GridWeightView& grid_weights,
@@ -622,7 +622,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   , m_viswgts(viswgts)
   , m_viswgt_col_index(viswgt_col_index)
   , m_viswgt_row_index(viswgt_row_index)
-  , m_gvisbuff(gvisbuff)
+  , m_gvis(gvis)
   , m_grid_scale(grid_scale)
   , m_grid(grid)
   , m_grid_weights(grid_weights)
@@ -785,7 +785,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   //
   // DegridAll
   //
-  // degrid all visibilities in m_visibilities to m_gvisbuff
+  // degrid all visibilities in m_visibilities to m_gvis
   //
 
   struct DegridAll{};
@@ -845,10 +845,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     }
     K::single(
       K::PerTeam(team_member),
-      [&]() {
-        reinterpret_cast<poln_array_type<visibility_fp_t, N>&>(m_gvisbuff(i)) =
-          gvis;
-      });
+      [&]() { m_gvis(i) = gvis; });
   }
 
   void
@@ -866,7 +863,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   //
   // VisCopyResidualAndRescale
   //
-  // copy residual visibilities to m_visibilities, then prepare m_gvisbuff for
+  // copy residual visibilities to m_visibilities, then prepare m_gvis for
   // gridding by rescaling visibilities
   //
 
@@ -888,7 +885,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     auto i = team_member.league_rank() * m_visibility_inc + m_visibility_offset;
     auto& vis = m_visibilities(i);
     auto phasor = cphase<execution_space>(vis.m_d_phase);
-    auto& gvis = m_gvisbuff(i);
+    auto& gvis = m_gvis(i);
     K::parallel_for(
       K::TeamThreadRange(team_member, N),
       [&](const int vpol) {
@@ -911,7 +908,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   //
   // VisRescale
   //
-  // prepare m_gvisbuff for gridding by rescaling visibilities
+  // prepare m_gvis for gridding by rescaling visibilities
   //
 
   struct VisRescale{};
@@ -931,7 +928,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     auto i = team_member.league_rank() * m_visibility_inc + m_visibility_offset;
     auto& vis = m_visibilities(i);
     auto phasor = cphase<execution_space>(vis.m_d_phase);
-    auto& gvis = m_gvisbuff(i);
+    auto& gvis = m_gvis(i);
     K::parallel_for(
       K::TeamThreadRange(team_member, N),
       [&](const int vpol) {
@@ -953,7 +950,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   //
   // VisCopyPredicted
   //
-  // copy visibilities from m_gvisbuff to m_visibilities
+  // copy visibilities from m_gvis to m_visibilities
   //
 
   struct VisCopyPredicted{};
@@ -973,7 +970,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
     auto i = team_member.league_rank() * m_visibility_inc + m_visibility_offset;
     auto& vis = m_visibilities(i);
-    auto& gvis = m_gvisbuff(i);
+    auto& gvis = m_gvis(i);
     K::parallel_for(
       K::TeamThreadRange(team_member, N),
       [&](const int vpol) {
@@ -1184,7 +1181,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
     vis_t vis(
       m_visibilities(i),
-      reinterpret_cast<K::Array<visibility_t, N>&>(m_gvisbuff(i).vals),
+      reinterpret_cast<K::Array<visibility_t, N>&>(m_gvis(i).vals),
       m_grid_min_local,
       m_grid_size_global,
       m_grid_scale,
@@ -1220,7 +1217,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   //
   // GridAllNoWeights
   //
-  // grid visibilities in m_gvisbuff, without updating m_weights
+  // grid visibilities in m_gvis, without updating m_weights
   //
 
   struct GridAllNoWeights{};
@@ -1275,7 +1272,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   //
   // GridAll
   //
-  // grid visibilities in m_gvisbuff with updates to m_weights
+  // grid visibilities in m_gvis with updates to m_weights
   //
 
   struct GridAll{};
@@ -1337,7 +1334,7 @@ template <
   typename VisWgtValuesView,
   typename VisWgtColIndexView,
   typename VisWgtRowIndexView,
-  typename GVisbuffView,
+  typename GVisView,
   typename GridScale,
   typename GridView,
   typename GridWeightView,
@@ -1356,7 +1353,7 @@ VisibilityGridder(
   const VisWgtValuesView&,
   const VisWgtColIndexView&,
   const VisWgtRowIndexView&,
-  const GVisbuffView&,
+  const GVisView&,
   const K::Array<GridScale, 2>&,
   const GridView&,
   const GridWeightView&,
@@ -1372,7 +1369,7 @@ VisibilityGridder<
   VisWgtValuesView,
   VisWgtColIndexView,
   VisWgtRowIndexView,
-  GVisbuffView,
+  GVisView,
   GridScale,
   GridView,
   GridWeightView,

@@ -338,13 +338,9 @@ template <unsigned N, typename memory_space>
 using visdata_view =
   K::View<visdata_t<N>*, memory_space, K::MemoryTraits<K::Unmanaged>>;
 
-/** view for backing buffer of visdata views in ExecSpace */
-template <typename memory_space>
-using visbuff_view = K::View<visdata_t<4>*, memory_space>;
-
-/** view for backing buffer of gvisvals views in ExecSpace */
+/** view for predicted/residual visibilities */
 template <unsigned N, typename memory_space>
-using gvisbuff_view =
+using gvis_view =
   K::View<core::poln_array_type<visibility_fp, N>*, memory_space>;
 
 /** view for Mueller element index matrix */
