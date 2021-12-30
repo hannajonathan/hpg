@@ -526,7 +526,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   static_assert(
     std::is_same_v<
       typename GVisbuffView::value_type,
-      poln_array_type<visibility_fp_t, 4>>);
+      poln_array_type<visibility_fp_t, N>>);
   static_assert(GVisbuffView::rank == 1);
 
   static_assert(

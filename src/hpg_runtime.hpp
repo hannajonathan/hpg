@@ -597,6 +597,21 @@ struct StreamVector {
   }
 
   void
+  resize(size_t sz) {
+    assert(sz < m_max_size);
+    if constexpr (std::is_same_v<K::HostSpace, memory_space>) {
+      m_vector.resize(sz);
+      m_values_d =
+        decltype(m_values_d)(
+          reinterpret_cast<T*>(m_vector.data()),
+          m_vector.size());
+      m_values = m_values_d;
+    } else {
+      m_values = decltype(m_values)(m_values_d.data(), sz);
+    }
+  }
+
+  void
   set(execution_space espace, bool persistent, std::vector<S>&& vector) {
     m_vector = std::move(vector);
     if constexpr (!std::is_same_v<K::HostSpace, memory_space>)
@@ -659,10 +674,14 @@ struct /*HPG_EXPORT*/ StreamContext final {
       K::MemoryManaged>;
 
   execution_space m_space;
-  impl::gvisbuff_view<memory_space> m_gvisbuff;
   mutable State::maybe_vis_t m_vis_promise;
   size_t m_max_num_channels;
 
+  std::variant<
+    StreamVector<D, impl::core::poln_array_type<visibility_fp, 1>>,
+    StreamVector<D, impl::core::poln_array_type<visibility_fp, 2>>,
+    StreamVector<D, impl::core::poln_array_type<visibility_fp, 3>>,
+    StreamVector<D, impl::core::poln_array_type<visibility_fp, 4>>> m_gvisbuff;
   std::variant<
     StreamVector<D, impl::visdata_t<1>, ::hpg::VisData<1>>,
     StreamVector<D, impl::visdata_t<2>, ::hpg::VisData<2>>,
@@ -687,11 +706,16 @@ struct /*HPG_EXPORT*/ StreamContext final {
 
     assert(0 < npol && npol <= 4);
     const char* vbname = "visibility_buffer";
+    const char* gvbname = "gvis_buffer";
     switch (npol) {
     case 1:
       m_visibilities =
         StreamVector<D, impl::visdata_t<1>, ::hpg::VisData<1>>(
           vbname,
+          max_num_vis);
+      m_gvisbuff =
+        StreamVector<D, impl::core::poln_array_type<visibility_fp, 1>>(
+          gvbname,
           max_num_vis);
       break;
     case 2:
@@ -699,11 +723,19 @@ struct /*HPG_EXPORT*/ StreamContext final {
         StreamVector<D, impl::visdata_t<2>, ::hpg::VisData<2>>(
           vbname,
           max_num_vis);
+      m_gvisbuff =
+        StreamVector<D, impl::core::poln_array_type<visibility_fp, 2>>(
+          gvbname,
+          max_num_vis);
       break;
     case 3:
       m_visibilities =
         StreamVector<D, impl::visdata_t<3>, ::hpg::VisData<3>>(
           vbname,
+          max_num_vis);
+      m_gvisbuff =
+        StreamVector<D, impl::core::poln_array_type<visibility_fp, 3>>(
+          gvbname,
           max_num_vis);
       break;
     case 4:
@@ -711,15 +743,15 @@ struct /*HPG_EXPORT*/ StreamContext final {
         StreamVector<D, impl::visdata_t<4>, ::hpg::VisData<4>>(
           vbname,
           max_num_vis);
+      m_gvisbuff =
+        StreamVector<D, impl::core::poln_array_type<visibility_fp, 4>>(
+          gvbname,
+          max_num_vis);
       break;
     default:
       std::abort();
       break;
     }
-    m_gvisbuff =
-      decltype(m_gvisbuff)(
-        K::ViewAllocateWithoutInitializing("gvis_buffer"),
-        max_num_vis);
   }
 
   StreamContext(const StreamContext&) = delete;
@@ -785,11 +817,17 @@ struct /*HPG_EXPORT*/ StreamContext final {
         }
       },
       m_visibilities);
+    std::visit(
+      overloaded {
+        [this, &other](auto& v) {
+          using v_t = std::remove_reference_t<decltype(v)>;
+          v.copy_from(std::get<v_t>(other.m_gvisbuff), m_space);
+        }
+      },
+      m_gvisbuff);
     m_weight_values.copy_from(other.m_weight_values, m_space);
     m_weight_col_index.copy_from(other.m_weight_col_index, m_space);
     m_weight_row_index.copy_from(other.m_weight_row_index, m_space);
-
-    K::deep_copy(m_space, m_gvisbuff, other.m_gvisbuff);
   }
 
   template <unsigned N>
@@ -801,6 +839,14 @@ struct /*HPG_EXPORT*/ StreamContext final {
   }
 
   template <unsigned N>
+  constexpr impl::gvisbuff_view<N, memory_space>
+  gvisbuff() {
+    return
+      std::get<StreamVector<D, impl::core::poln_array_type<visibility_fp, N>>>(
+        m_gvisbuff).m_values;
+  }
+
+  template <unsigned N>
   size_t
   copy_visibilities_to_device(std::vector<::hpg::VisData<N>>&& in_vis) {
 
@@ -808,6 +854,10 @@ struct /*HPG_EXPORT*/ StreamContext final {
       std::get<StreamVector<D, impl::visdata_t<N>, ::hpg::VisData<N>>>(
         m_visibilities);
     v.set(m_space, true, std::move(in_vis));
+    auto& gv =
+      std::get<StreamVector<D, impl::core::poln_array_type<visibility_fp, N>>>(
+        m_gvisbuff);
+    gv.resize(v.size());
     return v.size();
   }
 
@@ -1659,7 +1709,7 @@ public:
     m_exec_contexts[context].switch_to_compute();
     auto& sc_grid = m_exec_contexts[context].current_stream_context();
     auto& cf = m_exec_contexts[context].current_cf_pool();
-    auto& gvisbuff = sc_grid.m_gvisbuff;
+    auto gvisbuff = sc_grid.template gvisbuff<N>();
     using gvis0 =
       typename std::remove_reference_t<decltype(gvisbuff)>::value_type;
     K::deep_copy(sc_grid.m_space, gvisbuff, gvis0());
