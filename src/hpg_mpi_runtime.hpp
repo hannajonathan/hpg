@@ -574,6 +574,16 @@ public:
     return *this;
   }
 
+  virtual unsigned
+  degrid_execution_context(unsigned c) noexcept {
+    return c;
+  }
+
+  virtual unsigned
+  grid_execution_context(unsigned c) noexcept {
+    return c;
+  }
+
   void
   reduce_weights_unlocked() const {
     if (!m_reduced_weights) {
@@ -688,19 +698,24 @@ public:
             reinterpret_cast<CFArray::value_type*>(
               dev_cf_array.m_arrays[grp].data()));
       }
-      shape.reserve(1 + dev_cf_array.num_groups() * (CFArrayShape::rank - 1));
+      shape.reserve(1 + dev_cf_array.num_groups() * CFArrayShape::rank);
       shape.push_back(dev_cf_array.oversampling());
       for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp)
         for (auto& e : dev_cf_array.extents(grp))
           shape.push_back(e);
       shape_sz = int(shape.size());
     }
-    MPI_Bcast(&shape_sz, 1, mpi_datatype<int>::value(), 0, m_grid_comm);
+    MPI_Bcast(
+      &shape_sz,
+      1,
+      mpi_datatype<decltype(shape_sz)>::value(),
+      0,
+      m_grid_comm);
     shape.resize(shape_sz);
     MPI_Bcast(
       shape.data(),
       shape_sz,
-      mpi_datatype<unsigned>::value(),
+      mpi_datatype<decltype(shape)::value_type>::value(),
       0,
       m_grid_comm);
 
@@ -718,10 +733,11 @@ public:
         m_grid_comm);
 
     // all ranks now copy the CF kernels to device memory
-    this->m_exec_contexts[context].switch_to_copy(true);
-    auto& cf = this->m_exec_contexts[context].current_cf_pool();
+    auto ctx = degrid_execution_context(context);
+    this->m_exec_contexts[ctx].switch_to_copy(true);
+    auto& cf = this->m_exec_contexts[ctx].current_cf_pool();
     cf->add_device_cfs(
-      this->m_exec_contexts[context].current_exec_space(),
+      this->m_exec_contexts[ctx].current_exec_space(),
       std::move(dev_cf_array));
 
     return std::nullopt;
@@ -748,13 +764,13 @@ public:
         MPI_Bcast(
           model_sz.data(),
           4,
-          mpi_datatype<unsigned>::value(),
+          mpi_datatype<decltype(model_sz)::value_type>::value(),
           0,
           m_replica_comm);
       MPI_Bcast(
         model_sz.data(),
         4,
-        mpi_datatype<unsigned>::value(),
+        mpi_datatype<decltype(model_sz)::value_type>::value(),
         0,
         m_vis_comm);
       if (this->m_grid_size_local[0] != model_sz[0]
@@ -931,13 +947,13 @@ protected:
       MPI_Bcast(
         this->m_model.data(),
         this->m_model.span(),
-        mpi_datatype<impl::gv_t>::value(),
+        mpi_datatype<typename decltype(this->m_model)::value_type>::value(),
         0,
         m_replica_comm);
     MPI_Bcast(
       this->m_model.data(),
       this->m_model.span(),
-      mpi_datatype<impl::gv_t>::value(),
+      mpi_datatype<typename decltype(this->m_model)::value_type>::value(),
       0,
       m_vis_comm);
   }
@@ -1025,7 +1041,9 @@ public:
       MPI_Ibcast(
         visibilities.data(),
         visibilities.size(),
-        mpi_datatype<::hpg::VisData<N>>::value(),
+        mpi_datatype<
+          typename std::remove_reference_t<decltype(visibilities)>::value_type>
+          ::value(),
         0,
         this->m_grid_comm,
         &reqs.back());
@@ -1085,10 +1103,10 @@ public:
     this->m_exec_contexts[context].switch_to_compute();
     auto& sc_grid = this->m_exec_contexts[context].current_stream_context();
     auto& cf = this->m_exec_contexts[context].current_cf_pool();
-    auto gvisbuff = sc_grid.template gvisbuff<N>();
+    auto gvis = sc_grid.template gvis_view<N>();
     using gvis0 =
-      typename std::remove_reference_t<decltype(gvisbuff)>::value_type;
-    K::deep_copy(sc_grid.m_space, gvisbuff, gvis0());
+      typename std::remove_reference_t<decltype(gvis)>::value_type;
+    K::deep_copy(sc_grid.m_space, gvis, gvis0());
 
     // initialize the gridder object
     auto gridder =
@@ -1106,7 +1124,7 @@ public:
         sc_grid.m_weight_values.m_values,
         sc_grid.m_weight_col_index.m_values,
         sc_grid.m_weight_row_index.m_values,
-        gvisbuff,
+        gvis,
         this->m_grid_scale,
         this->m_grid,
         this->m_grid_weights,
@@ -1116,7 +1134,7 @@ public:
 
     // use gridder object to invoke degridding and gridding kernels
     if (do_degrid) {
-      gridder.degrid_all(len[0]);
+      gridder.degrid_all();
       // Whenever any visibilities are mapped to grid channels on multiple
       // ranks, we need to reduce the degridded visibility values from and to
       // all ranks. NB: this is a prime area for considering performance
@@ -1134,27 +1152,27 @@ public:
       // profiling, but for now, we go with the simpler approach.
       static_assert(
         sizeof(
-          typename std::remove_reference_t<decltype(gvisbuff)>::value_type)
+          typename std::remove_reference_t<decltype(gvis)>::value_type)
         == N * sizeof(K::complex<visibility_fp>));
       MPI_Allreduce(
         MPI_IN_PLACE,
-        gvisbuff.data(),
+        gvis.data(),
         N * len[0],
         mpi_datatype<K::complex<visibility_fp>>::value(),
         MPI_SUM,
         this->m_grid_comm);
       if (do_grid)
-        gridder.vis_copy_residual_and_rescale(len[0]);
+        gridder.vis_copy_residual_and_rescale();
       else
-        gridder.vis_copy_predicted(len[0]);
+        gridder.vis_copy_predicted();
     } else {
-      gridder.vis_rescale(len[0]);
+      gridder.vis_rescale();
     }
     if (do_grid) {
       if (update_grid_weights)
-        gridder.grid_all(len[0]);
+        gridder.grid_all();
       else
-        gridder.grid_all_no_weights(len[0]);
+        gridder.grid_all_no_weights();
     }
     return sc_grid.copy_visibilities_to_host(return_visibilities);
 
@@ -1299,6 +1317,16 @@ public:
 
   std::array<int, 2> m_seqnums; // FIXME
 
+  std::vector<MPI_Request> m_shift_requests;
+
+  // TODO: can this algorithm be sensibly reduced in the case of a grid
+  // partition size of one by unifying the degridding and gridding contexts?
+  // Doing this would remove the pipeline delay, which exists currently even for
+  // a pipeline size of one, reduce memory consumption, and become basically
+  // equivalent to the sequential runtime gridder (in the grid partition
+  // dimension). Some places in the code to consider this option are marked with
+  // "***".
+
   StateT(
     MPI_Comm vis_comm,
     MPI_Comm grid_comm,
@@ -1334,106 +1362,131 @@ public:
       visibility_batch_size,
       max_avg_channels_per_vis * visibility_batch_size,
       repeated_value(
-        2 * num_contexts_per_phase,
+        2 * num_contexts_per_phase, // ***
         limit_tasks(max_active_tasks_per_context)),
       num_contexts_per_phase
         * (2 * limit_tasks(max_active_tasks_per_context) + 1))) {
   }
 
-  template <unsigned N, typename F>
+  virtual unsigned
+  degrid_execution_context(unsigned c) noexcept override {
+    return 2 * c; // ***
+  }
+
+  virtual unsigned
+  grid_execution_context(unsigned c) noexcept override {
+    return 2 * c + 1; // ***
+  }
+
+  template <typename S, typename V>
   void
-  cycle_op(
-    ::hpg::runtime::StreamContext<D>& stream,
-    int& num_vis,
-    const int& max_vis,
-    const int& max_wgts,
-    F&& op) const {
+  shift_context_data(S& src_d, S& dst_d, S& src_g, S& dst_g, V&& v) {
+    // For this, we consider a logical pipeline of size 2 * size_gc, and all
+    // ranks make two calls to MPI_Isend/MPI_Irecv pairs to move sets of
+    // visibilities and weights around the logical pipeline. In the first call,
+    // all ranks send data in the degrid_execution_context with the message tag
+    // 0, and in the second call, all ranks send data in the
+    // grid_execution_context with message tag 1. On the receive side, in the
+    // first call, data are received in the degrid_execution_context with
+    // message tag 0 on all ranks but the root, which receives message tag 1;
+    // and in the second call, data are received in the grid_execution_context
+    // with message tag 1 on all ranks but the root, which receives message tag
+    // 0.
+    int size_gc;
+    MPI_Comm_size(this->m_grid_comm, &size_gc);
+    int rank_gc;
+    MPI_Comm_rank(this->m_grid_comm, &rank_gc);
 
-    int sz;
-    MPI_Comm_size(this->m_grid_comm, &sz);
-    int rank;
-    MPI_Comm_rank(this->m_grid_comm, &rank);
-    int right = (rank + 1) % sz;
-    int left = (rank + sz - 1) % sz;
+    auto dest = (rank_gc + 1) % size_gc;
+    auto source = (rank_gc + size_gc - 1) % size_gc;
 
-    for (int i = 0; i < sz; ++i) {
-      op(num_vis);
+    auto sendvect_d = v(src_d);
+    auto recvvect_d = v(dst_d);
+    auto sendvect_g = v(src_g);
+    auto recvvect_g = v(dst_g);
 
-      stream.fence();
+    const std::array<int, 2> sendcounts{
+      sendvect_d.m_values.extent_int(0),
+      sendvect_g.m_values.extent_int(0)};
+    std::array<int, 2> recvcounts;
 
-      // TODO: replace calls to MPI_Sendrecv_replace with MPI-4's
-      // MPI_Isendrecv_replace when it's available
-      // std::vector<MPI_Request> reqs;
-      // reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Sendrecv_replace(
-        &num_vis,
-        1,
-        MPI_INT,
-        left,
-        0,
-        right,
-        0,
-        this->m_grid_comm,
-        MPI_STATUS_IGNORE);
-      // reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Sendrecv_replace(
-        stream.m_weight_values.m_values.data(),
-        max_wgts,
-        mpi_datatype<vis_weight_fp>::value(),
-        left,
-        0,
-        right,
-        0,
-        this->m_grid_comm,
-        MPI_STATUS_IGNORE);
-      // reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Sendrecv_replace(
-        stream.m_weight_col_index.m_values.data(),
-        max_wgts,
-        mpi_datatype<unsigned>::value(),
-        left,
-        0,
-        right,
-        0,
-        this->m_grid_comm,
-        MPI_STATUS_IGNORE);
-      // reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Sendrecv_replace(
-        stream.m_weight_row_index.m_values.data(),
-        max_vis + 1,
-        mpi_datatype<size_t>::value(),
-        left,
-        0,
-        right,
-        0,
-        this->m_grid_comm,
-        MPI_STATUS_IGNORE);
-      // reqs.push_back(MPI_REQUEST_NULL);
-      auto visdata = stream.template visdata<N>();
-      MPI_Sendrecv_replace(
-        visdata.data(),
-        max_vis,
-        mpi_datatype<typename decltype(visdata)::value_type>::value(),
-        left,
-        0,
-        right,
-        0,
-        this->m_grid_comm,
-        MPI_STATUS_IGNORE);
-      // reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Sendrecv_replace(
-        stream.m_gvisbuff.data(),
-        max_vis,
-        mpi_datatype<typename decltype(stream.m_gvisbuff)::value_type>
-          ::value(),
-        left,
-        0,
-        right,
-        0,
-        this->m_grid_comm,
-        MPI_STATUS_IGNORE);
-      // MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
-    }
+    MPI_Sendrecv(
+      sendcounts.data(),
+      sendcounts.size(),
+      MPI_INT,
+      dest,
+      -1,
+      recvcounts.data(),
+      recvcounts.size(),
+      MPI_INT,
+      source,
+      -1,
+      this->m_grid_comm,
+      MPI_STATUS_IGNORE);
+
+    recvvect_d.resize(size_t(recvcounts[0]));
+    recvvect_g.resize(size_t(recvcounts[1]));
+
+    auto& sendview_d = sendvect_d.m_values;
+    auto& recvview_d = recvvect_d.m_values;
+    auto& sendview_g = sendvect_g.m_values;
+    auto& recvview_g = recvvect_g.m_values;
+
+    const MPI_Datatype dt =
+      mpi_datatype<
+        typename std::remove_reference_t<decltype(sendview_d)>::value_type>
+        ::value();
+
+    // All source buffers are in compute phase, and destination buffers in the
+    // following copy phase, but when there is only one stream in an execution
+    // context, buffers in that context are identical and this implementation
+    // fails.
+
+    assert(sendview_d.data() != recvview_d.data());
+    assert(sendview_g.data() != recvview_g.data());
+
+    // Note that we have changed the order here of send/recv calls a bit from
+    // the logical description at the top of this method.
+
+    m_shift_requests.push_back(MPI_REQUEST_NULL);
+    MPI_Irecv(
+      recvview_d.data(),
+      recvcounts[0],
+      dt,
+      source,
+      ((rank_gc == 0) ? 1 : 0),
+      this->m_grid_comm,
+      &m_shift_requests.back());
+
+    m_shift_requests.push_back(MPI_REQUEST_NULL);
+    MPI_Irecv(
+      recvview_g.data(),
+      recvcounts[1],
+      dt,
+      source,
+      ((rank_gc == 0) ? 0 : 1),
+      this->m_grid_comm,
+      &m_shift_requests.back());
+
+    m_shift_requests.push_back(MPI_REQUEST_NULL);
+    MPI_Isend(
+      sendview_d.data(),
+      sendcounts[0],
+      dt,
+      dest,
+      0,
+      this->m_grid_comm,
+      &m_shift_requests.back());
+
+    m_shift_requests.push_back(MPI_REQUEST_NULL);
+    MPI_Isend(
+      sendview_g.data(),
+      sendcounts[1],
+      dt,
+      dest,
+      1,
+      this->m_grid_comm,
+      &m_shift_requests.back());
   }
 
   template <unsigned N>
@@ -1450,329 +1503,223 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-    int gsz;
-    MPI_Comm_size(this->m_grid_comm, &gsz);
-    int grnk;
-    MPI_Comm_rank(this->m_grid_comm, &grnk);
-    int gsrc = (grnk + gsz - 1) % gsz; // data source rank
-    int gsink = (grnk + 1) % gsz; // data sink rank
+    // TODO: for now, assume that the set of flags don't change in calls to this
+    // method; ultimately, we could carry the flags with each set of
+    // visibilities going around the pipeline, or just proclaim that it is
+    // erroneous to change the flag values from one set of visibilities to the
+    // next (in what scope?)
 
-    // get sequence numbers of CFs needed by next visibility sets, will be <0 if
-    // there is an empty set
-    decltype(m_seqnums) next_seqnums;
-    MPI_Sendrecv(
-      m_seqnums.data(),
-      m_seqnums.size(),
-      MPI_INT,
-      gsink,
-      0,
-      next_seqnums.data(),
-      m_seqnums.size(),
-      MPI_INT,
-      gsrc,
-      0,
-      this->m_grid_comm,
-      MPI_STATUS_IGNORE);
+    // outline:
+    // - at root rank in degrid_execution_context, copy new set of visibilities
+    //   and weights to device (doing this first allows the "set CF", "grid vis"
+    //   sequence to use a common execution context, like in the sequential
+    //   runtime)
+    // - set up VisibilityGridder in degrid_execution_context, do degridding
+    // - also in degrid_execution_context, at tail rank, compute residual or
+    //   predicted visibilities
+    // - set up VisibilityGridder in grid_execution_context, do gridding
+    // - shift visibilities and CFs in pipeline, both execution contexts
+    // - at root rank in degrid_execution_context return residual/predicted
+    //   visibilities
 
-    // decide whether to take any CFs or give any CFs
-    decltype(m_seqnums) take_cfs; // the CFs to take from gsrc
-    for (size_t i = 0; i < m_seqnums.size(); ++i)
-      take_cfs[i] = ((next_seqnums[i] != m_seqnums[i]) ? next_seqnums[i] : -1);
-    decltype(m_seqnums) give_cfs; // the CFs to give to gsink
-    MPI_Sendrecv(
-      take_cfs.data(),
-      take_cfs.size(),
-      MPI_INT,
-      gsrc,
-      0,
-      give_cfs.data(),
-      give_cfs.size(),
-      MPI_INT,
-      gsink,
-      0,
-      this->m_grid_comm,
-      MPI_STATUS_IGNORE);
-    // transfer needed degridding CFs from gsrc and to gsink
+    int size_gc;
+    MPI_Comm_size(this->m_grid_comm, &size_gc);
+    int rank_gc;
+    MPI_Comm_rank(this->m_grid_comm, &rank_gc);
+
+    int size_rc;
+    MPI_Comm_size(this->m_replica_comm, &size_rc);
+    int rank_rc;
+    MPI_Comm_rank(this->m_replica_comm, &rank_rc);
+
+    maybe_vis_t result;
+
+    // wait for completion of previous pipeline data shifts
+    MPI_Waitall(
+      m_shift_requests.size(),
+      m_shift_requests.data(),
+      MPI_STATUSES_IGNORE);
+    m_shift_requests.clear();
+
+    // copy new set of visibilities and weights to the device on root rank in
+    // degrid_execution_context
+    //
+    if (rank_gc == 0) {
+      auto& ctx =
+        this->m_exec_contexts[this->degrid_execution_context(context)];
+      ctx.switch_to_copy(false);
+      auto& sc = ctx.current_stream_context();
+      // a fence is needed here to complete the future of returned visibilities
+      // from the previous call to this method. TODO: find a better approach?
+      // The explicit fence on the StreamContext instance is needed because of
+      // the way StreamContext completes the future returned by the previous
+      // call to this method, so any change here will depend on a change to
+      // StreamContext and how it deals with the future for the returned
+      // visibilities.
+      sc.fence();
+
+      sc.copy_visibilities_to_device(std::move(visibilities));
+      sc.copy_weights_to_device(
+        std::move(wgt_values),
+        std::move(wgt_col_index),
+        std::move(wgt_row_index));
+    }
+
+    // do work in degridding context
+    //
     {
-      std::vector<MPI_Request> reqs;
-      if (give_cfs[0] != -1) {
-        reqs.push_back(MPI_REQUEST_NULL);
-        // MPI_Issend used to ensure the send completes before a receive into
-        // the same buffer starts
-        MPI_Issend(nullptr/*FIXME*/, 1, MPI_INT, gsink, 0, this->m_grid_comm, &reqs.back());
+      auto& ctx =
+        this->m_exec_contexts[this->degrid_execution_context(context)];
+      ctx.switch_to_compute();
+      auto& sc = ctx.current_stream_context();
+      auto& cf = ctx.current_cf_pool();
+
+      auto gridder =
+        impl::core::VisibilityGridder(
+          sc.m_space,
+          cf->cf_d,
+          cf->cf_radii,
+          cf->max_cf_extent_y,
+          this->m_mueller_indexes,
+          this->m_conjugate_mueller_indexes,
+          sc.num_vis(),
+          rank_rc,
+          size_rc,
+          sc.template visdata<N>(),
+          sc.m_weight_values.m_values,
+          sc.m_weight_col_index.m_values,
+          sc.m_weight_row_index.m_values,
+          sc.template gvis_view<N>(),
+          this->m_grid_scale,
+          this->m_grid,
+          this->m_grid_weights,
+          this->m_model,
+          this->m_grid_offset_local,
+          this->m_grid_size_global);
+
+      // do degridding
+      //
+      if (do_degrid)
+        gridder.degrid_all();
+
+      // compute predicted or residual visibilities at tail rank
+      //
+      if (rank_gc == size_gc - 1) {
+        if (do_degrid)
+          if (do_grid)
+            gridder.vis_copy_residual_and_rescale();
+          else
+            gridder.vis_copy_predicted();
+        else
+          gridder.vis_rescale();
       }
-      // TODO: wait for completion??? seems deadlocky!
-      if (take_cfs[0] != -1) {
-        reqs.push_back(MPI_REQUEST_NULL);
-        MPI_Irecv(nullptr/*FIXME*/, 1, MPI_INT, gsrc, 0, this->m_grid_comm, &reqs.back());
-      }
-      MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
-    }
-    if (next_seqnums[0] >= 0)
-      m_seqnums[0] = next_seqnums[0];
-
-    // FIXME: replicas should _not_ process only every nth visibility, as the
-    // set of visibilities is already being partitioned equally among ranks
-
-    // broadcast info for number of visibilities per rank
-    // FIXME: handle case of visibilities.size() < num ranks
-    if (visibilities.size() < size_t(gsz))
-      std::abort();
-    std::array<int, 5> vszs;
-    vszs[0] = visibilities.size() / gsz; // min num vis per rank
-    vszs[1] = visibilities.size() % gsz; // remainder of num vis over ranks
-    vszs[2] = this->m_reduced_grid && visibilities.empty();
-    vszs[3] =
-      this->m_reduced_weights && (visibilities.empty() || !update_grid_weights);
-    vszs[4] = 0;
-    for (size_t i = 0; i < wgt_row_index.size(); ++i)
-      vszs[4] =
-        std::max(vszs[4], int(wgt_row_index[i + 1] - wgt_row_index[i]));
-    MPI_Bcast(vszs.data(), vszs.size(), MPI_INT, 0, this->m_grid_comm);
-    auto& min_vis = vszs[0];
-    auto& rem_vis = vszs[1];
-    auto max_vis = min_vis + ((rem_vis > 0) ? 1 : 0);
-    this->m_reduced_grid = vszs[2];
-    this->m_reduced_weights = vszs[3];
-    auto& max_wgts = vszs[4];
-    // num vis at this rank
-    int num_vis = min_vis + ((grnk < rem_vis) ? 1 : 0);
-
-    // scatter input data to all ranks
-    {
-      std::vector<MPI_Request> reqs;
-
-      // scatter share of visibilities to all ranks
-      std::vector<int> vis_sendcounts;
-      vis_sendcounts.reserve(gsz);
-      std::vector<int> vis_displs;
-      vis_displs.reserve(gsz);
-      for (int i = 0; i < gsz; ++i) {
-        vis_sendcounts.push_back(min_vis + ((i < rem_vis) ? 1 : 0));
-        vis_displs.push_back(i * min_vis + std::min(i, rem_vis));
-      }
-      // increase size of visibilities vector on non-root ranks
-      visibilities.resize(std::max(visibilities.size(), size_t(max_vis)));
-      reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Iscatterv(
-        visibilities.data(),
-        vis_sendcounts.data(),
-        vis_displs.data(),
-        mpi_datatype<::hpg::VisData<N>>::value(),
-        this->is_grid_partition_root() ? MPI_IN_PLACE : visibilities.data(),
-        num_vis,
-        mpi_datatype<::hpg::VisData<N>>::value(),
-        0,
-        this->m_grid_comm,
-        &reqs.back());
-
-      // scatter share of wgt_row_index values to all ranks according to local
-      // set of visibilities
-      std::vector<int> wri_sendcounts;
-      wri_sendcounts.reserve(gsz);
-      std::vector<int> wri_displs;
-      wri_displs.reserve(gsz);
-      for (int i = 0; i < gsz; ++i) {
-        wri_sendcounts.push_back(min_vis + 1 + ((i < rem_vis) ? 1 : 0));
-        wri_displs.push_back(i * min_vis + std::min(i, rem_vis));
-      }
-      // increase size of wgt_row_index vector on non-root ranks
-      wgt_row_index.resize(std::max(wgt_row_index.size(), size_t(max_vis + 1)));
-      reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Iscatterv(
-        wgt_row_index.data(),
-        wri_sendcounts.data(),
-        wri_displs.data(),
-        mpi_datatype<
-          std::remove_reference_t<decltype(wgt_row_index)>::value_type>
-          ::value(),
-        this->is_grid_partition_root() ? MPI_IN_PLACE : wgt_row_index.data(),
-        num_vis + 1,
-        mpi_datatype<
-          std::remove_reference_t<decltype(wgt_row_index)>::value_type>
-          ::value(),
-        0,
-        this->m_grid_comm,
-        &reqs.back());
-      // adjust wgt_row_index values to reflect local arrays
-      for (int i = 0; i <= num_vis; ++i)
-        wgt_row_index[i] -= wgt_row_index[0];
-
-      // scatter share of wgt_col_index and wgt_values to all ranks according to
-      // local set of visibilities
-      int num_wgt_values = int(wgt_row_index[num_vis]);
-      // increase size of wgt_col_index and wgt_values on non-root ranks
-      wgt_col_index.resize(std::max(int(wgt_col_index.size()), max_wgts));
-      wgt_values.resize(std::max(int(wgt_values.size()), max_wgts));
-      std::vector<int> wv_sendcounts;
-      wv_sendcounts.reserve(gsz);
-      std::vector<int> wv_displs;
-      wv_displs.reserve(gsz);
-      for (int i = 0; i < gsz; ++i) {
-        auto begin_wgt_row_idx =
-          wgt_row_index[i * min_vis + std::min(i, rem_vis)];
-        auto end_wgt_row_idx =
-          wgt_row_index[(i + 1) * min_vis + std::min(i + 1, rem_vis)];
-        wv_sendcounts.push_back(end_wgt_row_idx - begin_wgt_row_idx);
-        wv_displs.push_back(begin_wgt_row_idx);
-      }
-      reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Iscatterv(
-        wgt_col_index.data(),
-        wv_sendcounts.data(),
-        wv_displs.data(),
-        mpi_datatype<
-          std::remove_reference_t<decltype(wgt_col_index)>::value_type>
-          ::value(),
-        this->is_grid_partition_root() ? MPI_IN_PLACE : wgt_col_index.data(),
-        num_wgt_values,
-        mpi_datatype<
-          std::remove_reference_t<decltype(wgt_col_index)>::value_type>
-          ::value(),
-        0,
-        this->m_grid_comm,
-        &reqs.back());
-      reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Iscatterv(
-        wgt_values.data(),
-        wv_sendcounts.data(),
-        wv_displs.data(),
-        mpi_datatype<
-          std::remove_reference_t<decltype(wgt_values)>::value_type>::value(),
-        this->is_grid_partition_root() ? MPI_IN_PLACE : wgt_values.data(),
-        num_wgt_values,
-        mpi_datatype<
-          std::remove_reference_t<decltype(wgt_values)>::value_type>::value(),
-        0,
-        this->m_grid_comm,
-        &reqs.back());
-      MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
-
-      // resize input vectors...actually reduces them only on rank 0
-      visibilities.resize(max_vis);
-      wgt_values.resize(max_wgts);
-      wgt_col_index.resize(max_wgts);
-      wgt_row_index.resize(max_vis + 1);
     }
 
-    int replica_size;
-    MPI_Comm_size(this->m_replica_comm, &replica_size);
-    int replica_rank;
-    MPI_Comm_rank(this->m_replica_comm, &replica_rank);
-
-    // copy visibilities and channel mapping vectors to device
-    this->m_exec_contexts[context].switch_to_copy(false);
-    auto& sc_pre = this->m_exec_contexts[context].current_stream_context();
-    sc_pre.copy_visibilities_to_device(std::move(visibilities));
-    sc_pre.copy_weights_to_device(
-      std::move(wgt_values),
-      std::move(wgt_col_index),
-      std::move(wgt_row_index));
-
-    // initialize the gridder object
-    this->m_exec_contexts[context].switch_to_compute();
-    auto& sc_grid = this->m_exec_contexts[context].current_stream_context();
-    auto& cf = this->m_exec_contexts[context].current_cf_pool();
-    auto& gvisbuff = sc_grid.m_gvisbuff;
-    using gvis0 =
-      typename std::remove_reference_t<decltype(gvisbuff)>::value_type;
-    K::deep_copy(sc_grid.m_space, gvisbuff, gvis0());
-
-    auto gridder =
-      impl::core::VisibilityGridder(
-        sc_grid.m_space,
-        cf->cf_d,
-        cf->cf_radii,
-        cf->max_cf_extent_y,
-        this->m_mueller_indexes,
-        this->m_conjugate_mueller_indexes,
-        max_vis,
-        replica_rank,
-        replica_size,
-        sc_grid.template visdata<N>(),
-        sc_grid.m_weight_values.m_values,
-        sc_grid.m_weight_col_index.m_values,
-        sc_grid.m_weight_row_index.m_values,
-        gvisbuff,
-        this->m_grid_scale,
-        this->m_grid,
-        this->m_grid_weights,
-        this->m_model,
-        this->m_grid_offset_local,
-        this->m_grid_size_global);
-
-    // use gridder object to invoke degridding and gridding kernels
-    if (do_degrid) {
-      cycle_op<N>(
-        sc_grid,
-        num_vis,
-        max_vis,
-        max_wgts,
-        [&](int& nv){ gridder.degrid_all(nv); });
-      if (do_grid)
-        gridder.vis_copy_residual_and_rescale(num_vis);
-      else
-        gridder.vis_copy_predicted(num_vis);
-    } else {
-      gridder.vis_rescale(num_vis);
-    }
-
+    // do gridding (in gridding context)
+    //
     if (do_grid) {
+      auto& ctx =
+        this->m_exec_contexts[this->grid_execution_context(context)];
+      ctx.switch_to_compute();
+      auto& sc = ctx.current_stream_context();
+      auto& cf = ctx.current_cf_pool();
+
+      auto num_vis = sc.num_vis();
+
+      auto gridder =
+        impl::core::VisibilityGridder(
+          sc.m_space,
+          cf->cf_d,
+          cf->cf_radii,
+          cf->max_cf_extent_y,
+          this->m_mueller_indexes,
+          this->m_conjugate_mueller_indexes,
+          num_vis,
+          rank_rc,
+          size_rc,
+          sc.template visdata<N>(),
+          sc.m_weight_values.m_values,
+          sc.m_weight_col_index.m_values,
+          sc.m_weight_row_index.m_values,
+          sc.template gvis_view<N>(),
+          this->m_grid_scale,
+          this->m_grid,
+          this->m_grid_weights,
+          this->m_model,
+          this->m_grid_offset_local,
+          this->m_grid_size_global);
+
       if (update_grid_weights)
-        cycle_op<N>(
-          sc_grid,
-          num_vis,
-          max_vis,
-          max_wgts,
-          [&](int& nv) { gridder.grid_all(nv); });
+        gridder.grid_all();
       else
-        cycle_op<N>(
-          sc_grid,
-          num_vis,
-          max_vis,
-          max_wgts,
-          [&](int& nv) { gridder.grid_all_no_weights(nv); });
-    }
-    auto result = sc_grid.copy_visibilities_to_host(return_visibilities);
-    if (return_visibilities) {
-      sc_grid.fence();
-      auto rvis = std::move(***result);
+        gridder.grid_all_no_weights();
 
-      std::vector<int> nvis(gsz);
-      MPI_Gather(
-        &num_vis,
-        1,
-        MPI_INT,
-        nvis.data(),
-        1,
-        MPI_INT,
-        0,
-        this->m_grid_comm);
-      auto total_vis = std::accumulate(nvis.begin(), nvis.end(), 0);
-
-      // gather share of visibilities from all ranks
-      rvis.resize(std::max(int(rvis.size()), total_vis));
-      std::vector<int> recvcounts;
-      recvcounts.reserve(gsz);
-      std::vector<int> displs;
-      displs.reserve(gsz);
-      int displ = 0;
-      for (int i = 0; i < gsz; ++i) {
-        recvcounts.push_back(nvis[i]);
-        displs.push_back(displ);
-        displ += nvis[i];
-      }
-      MPI_Gatherv(
-        this->is_grid_partition_root() ? MPI_IN_PLACE : rvis.template data<N>(),
-        num_vis,
-        mpi_datatype<::hpg::VisData<N>>::value(),
-        rvis.template data<N>(),
-        recvcounts.data(),
-        displs.data(),
-        mpi_datatype<::hpg::VisData<N>>::value(),
-        0,
-        this->m_grid_comm);
+      this->m_reduced_grid = this->m_reduced_grid && (num_vis == 0);
+      this->m_reduced_weights =
+        this->m_reduced_weights && (num_vis == 0 || !update_grid_weights);
     }
+
+    // do pipeline shift of data (visibilities and weights) in both contexts
+    //
+    {
+      auto& ctx_d =
+        this->m_exec_contexts[this->degrid_execution_context(context)];
+      ctx_d.switch_to_compute();
+      auto& src_d = ctx_d.current_stream_context();
+      ctx_d.switch_to_copy(false);
+      auto& dst_d = ctx_d.current_stream_context();
+
+      auto& ctx_g =
+        this->m_exec_contexts[this->grid_execution_context(context)];
+      ctx_g.switch_to_compute();
+      auto& src_g = ctx_g.current_stream_context();
+      ctx_g.switch_to_copy(false);
+      auto& dst_g = ctx_g.current_stream_context();
+
+      // FIXME: shift CFs
+
+      shift_context_data(
+        src_d,
+        dst_d,
+        src_g,
+        dst_g,
+        [](auto& sc) { return sc.template visibilities<N>(); });
+      shift_context_data(
+        src_d,
+        dst_d,
+        src_g,
+        dst_g,
+        [](auto& sc) { return sc.m_weight_values; });
+      shift_context_data(
+        src_d,
+        dst_d,
+        src_g,
+        dst_g,
+        [](auto& sc) { return sc.m_weight_col_index; });
+      shift_context_data(
+        src_d,
+        dst_d,
+        src_g,
+        dst_g,
+        [](auto& sc) { return sc.m_weight_row_index; });
+      src_d.fence(); // degridding must complete before shifting gvis
+      shift_context_data(
+        src_d,
+        dst_d,
+        src_g,
+        dst_g,
+        [](auto& sc) { return sc.template gvis<N>(); });
+    }
+
+    // return visibilities at root rank in degridding execution context
+    //
+    if (rank_gc == 0) {
+      auto& ctx =
+        this->m_exec_contexts[this->degrid_execution_context(context)];
+      auto& sc = ctx.current_stream_context();
+      result = sc.copy_visibilities_to_host(return_visibilities);
+    }
+
     return result;
   }
 
