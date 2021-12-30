@@ -478,9 +478,17 @@ public:
 
   using pool_type = std::shared_ptr<CFPool<D>>;
 
+  using id_type = unsigned;
+
 private:
 
   std::set<pool_type> m_pools;
+
+  mutable std::map<id_type, std::weak_ptr<CFPool<D>>> m_pool_ids;
+
+  mutable std::mutex m_mtx;
+
+  mutable id_type m_next_id;
 
 public:
 
@@ -496,14 +504,19 @@ public:
   CFPoolRepo(const CFPoolRepo&) = delete;
 
   CFPoolRepo(CFPoolRepo&& other) noexcept
-    : m_pools(std::move(other).m_pools) {}
+    : m_pools(std::move(other).m_pools)
+    , m_pool_ids(std::move(other).m_pool_ids)
+    , m_next_id(std::move(other).m_next_id) {}
 
   CFPoolRepo&
   operator=(const CFPoolRepo&) = delete;
 
   CFPoolRepo&
   operator=(const CFPoolRepo&& rhs) noexcept {
+    std::scoped_lock lck(m_mtx);
     m_pools = std::move(rhs).m_pools;
+    m_pool_ids = std::move(rhs).m_pool_ids;
+    m_next_id = std::move(rhs).m_next_id;
     return *this;
   }
 
@@ -511,33 +524,49 @@ public:
   copy_from(
     typename CFPool<D>::execution_space espace,
     const CFPoolRepo<D>& other) {
+
+    std::scoped_lock lck(m_mtx, other.m_mtx);
     // caller must ensure that it's safe to overwrite values in this instance,
-    // and to read values from 'other'
+    // and to read values from 'other'...basically fence all streams using the
+    // two instances prior to calling this method
 
     while (m_pools.size() > other.size())
       m_pools.erase(m_pools.end());
     while (m_pools.size() < other.size())
       m_pools.insert(std::make_shared<CFPool<D>>());
+    m_pool_ids.clear();
     std::map<const CFPool<D>*, std::weak_ptr<CFPool<D>>> result;
     for (auto dst = m_pools.begin(), src = other.m_pools.begin();
          dst != m_pools.end();
          ++dst, ++src) {
       (*dst)->copy_from(espace, **src);
+      auto maybe_id = other.get_id(*src);
+      assert(maybe_id);
+      m_pool_ids[maybe_id.value()] = *dst;
       result[(*src).get()] = *dst;
     }
+    m_next_id = other.m_next_id;
     // NB: the return value holds bare pointers to CFPool instances in 'other'
     // to avoid changing the reference count of those instances
     return result;
   }
 
   pool_type
-  get_unused_pool() const noexcept {
+  get_unused_pool(const std::optional<id_type>& id = std::nullopt) noexcept {
+    std::scoped_lock lck(m_mtx);
     auto result =
       std::find_if(
         m_pools.begin(),
         m_pools.end(),
         [](const auto& p) { return p.use_count() == 1; });
-    return (result != m_pools.end()) ? *result : pool_type();
+    if (result != m_pools.end()) {
+      if (id)
+        set_id(*result, id.value());
+      else
+        set_id(*result, m_next_id++);
+      return *result;
+    }
+    return pool_type();
   }
 
   size_t
@@ -548,8 +577,48 @@ public:
   template <typename F>
   void
   for_all_cf_pools(F&& f) {
+    std::scoped_lock lck(m_mtx);
     for (auto& pool: m_pools)
       f(pool);
+  }
+
+  pool_type
+  find_pool(id_type id) const {
+    std::scoped_lock lck(m_mtx);
+    if (m_pool_ids.count(id) > 0)
+      return m_pool_ids.at(id).lock();
+    return nullptr;
+  }
+
+  void
+  set_id(const pool_type& p, id_type id) {
+    std::scoped_lock lck(m_mtx);
+    if (m_pools.count(p) > 0) {
+      auto pid =
+        std::find_if(
+          m_pool_ids.begin(),
+          m_pool_ids.end(),
+          [&p](auto& i_p) {
+            return std::get<1>(i_p).lock() == p;
+          });
+      if (pid != m_pool_ids.end())
+        m_pool_ids.erase(pid);
+      m_pool_ids[id] = p;
+    }
+  }
+
+  std::optional<id_type>
+  get_id(const pool_type& p) const {
+    std::scoped_lock lck(m_mtx);
+    auto ip =
+      std::find_if(
+        m_pool_ids.begin(),
+        m_pool_ids.end(),
+        [&p](auto& i_p) {
+          return std::get<1>(i_p).lock() == p;
+        });
+    return
+      (ip != m_pool_ids.end()) ? std::make_optional(ip->first) : std::nullopt;
   }
 };
 
@@ -939,6 +1008,7 @@ protected:
   std::deque<StreamState> m_streams;
 
 public:
+  using pool_id_type = typename CFPoolRepo<D>::id_type;
 
   ExecutionContext(
     unsigned npol,
@@ -1043,11 +1113,14 @@ public:
   }
 
   void
-  switch_to_copy(bool new_cf) {
+  switch_to_copy(
+    bool new_cf,
+    const std::optional<pool_id_type>& id = std::nullopt) {
+
     if (m_streams.front().m_phase == StreamPhase::COMPUTE) {
       next_stream();
       if (new_cf)
-        next_cf_pool();
+        next_cf_pool(id);
       m_streams.front().m_phase = StreamPhase::COPY;
     }
     // don't need to do anything if the head stream is in COPY phase and the
@@ -1071,12 +1144,17 @@ public:
   }
 
   void
-  next_cf_pool() {
-    // try to acquire an unused CFPool
-    pool_type new_pool = m_cf_pool_repo->get_unused_pool();
+  next_cf_pool(const std::optional<pool_id_type>& id = std::nullopt) {
+    pool_type new_pool;
+    // try to acquire CFPool with given id
+    if (id)
+      new_pool = m_cf_pool_repo->find_pool(id.value());
+    // try to acquire an unused CFPool (and set its id)
+    if (!new_pool)
+      new_pool = m_cf_pool_repo->get_unused_pool(id);
     if (!new_pool) {
-      // no CFPool is unused -- fence the current stream and all other streams
-      // using the same CFPool instance, and remove that CFPool from all
+      // no CFPool is available -- fence the current stream and all other
+      // streams using the same CFPool instance, and remove that CFPool from all
       // streams, then it becomes unused and the this stream can acquire it
       {
         pool_type current_pool = m_streams.front().m_cf_pool;
@@ -1086,7 +1164,7 @@ public:
             s.m_cf_pool.reset();
           }
       }
-      new_pool = m_cf_pool_repo->get_unused_pool();
+      new_pool = m_cf_pool_repo->get_unused_pool(id);
       assert(new_pool);
     }
     m_streams.front().m_cf_pool = new_pool;
