@@ -607,6 +607,8 @@ struct StreamVector {
           m_vector.size());
       m_values = m_values_d;
     } else {
+      if (m_persistent_vector)
+        m_vector.resize(sz);
       m_values = decltype(m_values)(m_values_d.data(), sz);
     }
   }
@@ -646,7 +648,8 @@ struct StreamVector {
         decltype(m_values_d)(
           K::ViewAllocateWithoutInitializing(other.m_values_d.label()),
           other.m_values_d.extent(0));
-      m_values = decltype(m_values)(m_values_d.data(), other.m_values.extent(0));
+      m_values =
+        decltype(m_values)(m_values_d.data(), other.m_values.extent(0));
       K::deep_copy(espace, m_values, other.m_values);
     } else {
       m_persistent_vector = other.m_persistent_vector;
