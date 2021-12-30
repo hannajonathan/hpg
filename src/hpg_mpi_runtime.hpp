@@ -1085,7 +1085,7 @@ public:
     this->m_exec_contexts[context].switch_to_compute();
     auto& sc_grid = this->m_exec_contexts[context].current_stream_context();
     auto& cf = this->m_exec_contexts[context].current_cf_pool();
-    auto& gvisbuff = sc_grid.m_gvisbuff;
+    auto gvisbuff = sc_grid.template gvisbuff<N>();
     using gvis0 =
       typename std::remove_reference_t<decltype(gvisbuff)>::value_type;
     K::deep_copy(sc_grid.m_space, gvisbuff, gvis0());
@@ -1135,11 +1135,11 @@ public:
       static_assert(
         sizeof(
           typename std::remove_reference_t<decltype(gvisbuff)>::value_type)
-        == 4 * sizeof(K::complex<visibility_fp>));
+        == N * sizeof(K::complex<visibility_fp>));
       MPI_Allreduce(
         MPI_IN_PLACE,
         gvisbuff.data(),
-        4 * len[0],
+        N * len[0],
         mpi_datatype<K::complex<visibility_fp>>::value(),
         MPI_SUM,
         this->m_grid_comm);

@@ -343,9 +343,9 @@ template <typename memory_space>
 using visbuff_view = K::View<visdata_t<4>*, memory_space>;
 
 /** view for backing buffer of gvisvals views in ExecSpace */
-template <typename memory_space>
+template <unsigned N, typename memory_space>
 using gvisbuff_view =
-  K::View<core::poln_array_type<visibility_fp, 4>*, memory_space>;
+  K::View<core::poln_array_type<visibility_fp, N>*, memory_space>;
 
 /** view for Mueller element index matrix */
 template <typename memory_space>
