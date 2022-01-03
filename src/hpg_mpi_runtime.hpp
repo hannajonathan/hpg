@@ -301,6 +301,16 @@ struct mpi_datatype<impl::core::VisData<N, V, F, P, U, G>> {
   }
 };
 
+union GriddingFlags {
+  uint8_t u;
+  struct {
+    bool update_grid_weights: 1;
+    bool do_degrid: 1;
+    bool return_visibilities: 1;
+    bool do_grid: 1;
+  } b;
+};
+
 struct ReplicatedGridBrick {
   // three axes are x, y, and channel; mrow partition not supported
   static constexpr unsigned rank = 3;
@@ -628,85 +638,6 @@ public:
   }
 
   virtual std::optional<std::unique_ptr<::hpg::Error>>
-  set_convolution_function(
-    unsigned context,
-    Device host_device,
-    CFArray&& cf_array) override {
-
-    // N.B: access cf_array directly only at the root rank of m_grid_comm
-    bool is_root = is_grid_partition_root();
-
-    // Broadcast the cf_array in m_grid_comm, but as the equivalent of a
-    // impl::DeviceCFArray for efficiency. Note that we broadcast the data among
-    // host memories, which allows us to defer any device fence for as long as
-    // possible.
-
-    // format: vector of unsigned: (oversampling, <for each group> extent[0],
-    // extent[1], extent[2], ...extent[CFArrayShape:rank - 1])
-    std::vector<unsigned> shape;
-    int shape_sz;
-    using DevCFArray = typename impl::DeviceCFArray<D>;
-    DevCFArray dev_cf_array;
-
-    if (is_root) {
-      try {
-        dev_cf_array = dynamic_cast<DevCFArray&&>(cf_array);
-      } catch (const std::bad_cast&) {
-        dev_cf_array = DevCFArray(cf_array);
-        for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp)
-          impl::layout_for_device<D>(
-            host_device,
-            cf_array,
-            grp,
-            reinterpret_cast<CFArray::value_type*>(
-              dev_cf_array.m_arrays[grp].data()));
-      }
-      shape.reserve(1 + dev_cf_array.num_groups() * CFArrayShape::rank);
-      shape.push_back(dev_cf_array.oversampling());
-      for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp)
-        for (auto& e : dev_cf_array.extents(grp))
-          shape.push_back(e);
-      shape_sz = int(shape.size());
-    }
-    MPI_Bcast(
-      &shape_sz,
-      1,
-      mpi_datatype<decltype(shape_sz)>::value(),
-      0,
-      m_grid_comm);
-    shape.resize(shape_sz);
-    MPI_Bcast(
-      shape.data(),
-      shape_sz,
-      mpi_datatype<decltype(shape)::value_type>::value(),
-      0,
-      m_grid_comm);
-
-    // initialize the dev_cf_array on non-root ranks
-    if (!is_root)
-      dev_cf_array = DevCFArray(DevCFShape(shape));
-
-    // broadcast dev_cf_array values
-    for (unsigned grp = 0; grp < dev_cf_array.num_groups(); ++grp)
-      MPI_Bcast(
-        dev_cf_array.m_arrays[grp].data(),
-        dev_cf_array.m_arrays[grp].size(),
-        mpi_datatype<CFArray::value_type>::value(),
-        0,
-        m_grid_comm);
-
-    // all ranks now copy the CF kernels to device memory
-    auto ctx = degrid_execution_context(context);
-    this->m_exec_contexts[ctx].switch_to_copy(true);
-    auto& cf = this->m_exec_contexts[ctx].current_cf_pool();
-    cf->add_device_cfs(
-      this->m_exec_contexts[ctx].current_exec_space(),
-      std::move(dev_cf_array));
-
-    return std::nullopt;
-  }
-
-  virtual std::optional<std::unique_ptr<::hpg::Error>>
   set_model(Device host_device, GridValueArray&& gv) override {
 
     // N.B: access gv directly only at the root rank of m_vis_comm and only in
@@ -975,6 +906,83 @@ public:
         num_contexts,
         limit_tasks(max_active_tasks_per_context)),
       num_contexts * limit_tasks(max_active_tasks_per_context))) {}
+
+  virtual std::optional<std::unique_ptr<::hpg::Error>>
+  set_convolution_function(
+    unsigned context,
+    Device host_device,
+    CFArray&& cf_array) override {
+
+    // N.B: access cf_array directly only at the root rank of m_grid_comm
+    bool is_root = this->is_grid_partition_root();
+
+    // Broadcast the cf_array in m_grid_comm, but as the equivalent of a
+    // impl::DeviceCFArray for efficiency. Note that we broadcast the data among
+    // host memories, which allows us to defer any device fence for as long as
+    // possible.
+
+    // format: vector of unsigned: (oversampling, <for each group> extent[0],
+    // extent[1], extent[2], ...extent[CFArrayShape:rank - 1])
+    std::vector<unsigned> shape;
+    int shape_sz;
+    using DevCFArray = typename impl::DeviceCFArray<D>;
+    DevCFArray dev_cf_array;
+
+    if (is_root) {
+      try {
+        dev_cf_array = dynamic_cast<DevCFArray&&>(cf_array);
+      } catch (const std::bad_cast&) {
+        dev_cf_array = DevCFArray(cf_array);
+        for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp)
+          impl::layout_for_device<D>(
+            host_device,
+            cf_array,
+            grp,
+            reinterpret_cast<CFArray::value_type*>(
+              dev_cf_array.m_arrays[grp].data()));
+      }
+      shape.reserve(1 + dev_cf_array.num_groups() * CFArrayShape::rank);
+      shape.push_back(dev_cf_array.oversampling());
+      for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp)
+        for (auto& e : dev_cf_array.extents(grp))
+          shape.push_back(e);
+      shape_sz = int(shape.size());
+    }
+    MPI_Bcast(
+      &shape_sz,
+      1,
+      mpi_datatype<decltype(shape_sz)>::value(),
+      0,
+      this->m_grid_comm);
+    shape.resize(shape_sz);
+    MPI_Bcast(
+      shape.data(),
+      shape_sz,
+      mpi_datatype<decltype(shape)::value_type>::value(),
+      0,
+      this->m_grid_comm);
+
+    // initialize the dev_cf_array on non-root ranks
+    if (!is_root)
+      dev_cf_array = DevCFArray(::hpg::runtime::DevCFShape(shape));
+
+    // broadcast dev_cf_array values
+    for (unsigned grp = 0; grp < dev_cf_array.num_groups(); ++grp)
+      MPI_Bcast(
+        dev_cf_array.m_arrays[grp].data(),
+        dev_cf_array.m_arrays[grp].size(),
+        mpi_datatype<CFArray::value_type>::value(),
+        0,
+        this->m_grid_comm);
+
+    // all ranks now copy the CF kernels to device memory
+    auto& ctx = this->m_exec_contexts[this->degrid_execution_context(context)];
+    ctx.switch_to_copy(true);
+    auto& cf = ctx.current_cf_pool();
+    cf->add_device_cfs(ctx.current_exec_space(), std::move(dev_cf_array));
+
+    return std::nullopt;
+  }
 
   template <unsigned N>
   maybe_vis_t
@@ -1268,6 +1276,8 @@ public:
 template <Device D>
 class StateT<D, VisibilityDistribution::Pipeline>
   : public StateTBase<D> {
+protected:
+
 public:
 
   using ::hpg::runtime::StateT<D>::limit_tasks;
@@ -1277,8 +1287,6 @@ public:
   using typename ::hpg::runtime::StateT<D>::maybe_vis_t;
 
   using StreamPhase = ::hpg::runtime::StreamPhase;
-
-  std::array<int, 2> m_seqnums; // FIXME
 
   std::vector<MPI_Request> m_shift_requests;
 
@@ -1329,6 +1337,10 @@ public:
         limit_tasks(max_active_tasks_per_context)),
       num_contexts_per_phase
         * (2 * limit_tasks(max_active_tasks_per_context) + 1))) {
+    this->m_exec_contexts.for_all_stream_contexts(
+      [](auto& sc) {
+        sc.m_user_data = GriddingFlags();
+      });
   }
 
   virtual unsigned
@@ -1341,6 +1353,15 @@ public:
     return 2 * c + 1; // ***
   }
 
+private:
+
+  MPI_Request*
+  add_request(std::vector<MPI_Request>& reqs) {
+    reqs.push_back(MPI_REQUEST_NULL);
+    return &reqs.back();
+  }
+
+public:
   template <typename S, typename V>
   void
   shift_context_data(S& src_d, S& dst_d, S& src_g, S& dst_g, V&& v) {
@@ -1411,7 +1432,6 @@ public:
     // Note that we have changed the order here of send/recv calls a bit from
     // the logical description at the top of this method.
 
-    m_shift_requests.push_back(MPI_REQUEST_NULL);
     MPI_Irecv(
       recvview_d.data(),
       recvcounts[0],
@@ -1419,9 +1439,8 @@ public:
       source,
       ((rank_gc == 0) ? 1 : 0),
       this->m_grid_comm,
-      &m_shift_requests.back());
+      add_request(m_shift_requests));
 
-    m_shift_requests.push_back(MPI_REQUEST_NULL);
     MPI_Irecv(
       recvview_g.data(),
       recvcounts[1],
@@ -1429,9 +1448,8 @@ public:
       source,
       ((rank_gc == 0) ? 0 : 1),
       this->m_grid_comm,
-      &m_shift_requests.back());
+      add_request(m_shift_requests));
 
-    m_shift_requests.push_back(MPI_REQUEST_NULL);
     MPI_Isend(
       sendview_d.data(),
       sendcounts[0],
@@ -1439,9 +1457,8 @@ public:
       dest,
       0,
       this->m_grid_comm,
-      &m_shift_requests.back());
+      add_request(m_shift_requests));
 
-    m_shift_requests.push_back(MPI_REQUEST_NULL);
     MPI_Isend(
       sendview_g.data(),
       sendcounts[1],
@@ -1449,7 +1466,295 @@ public:
       dest,
       1,
       this->m_grid_comm,
-      &m_shift_requests.back());
+      add_request(m_shift_requests));
+  }
+
+  void
+  shift_cfs(
+    ::hpg::runtime::ExecutionContext<D>& ctx_d,
+    ::hpg::runtime::ExecutionContext<D>& ctx_g) {
+    // NB: this eventually calls switch_to_copy() on each context
+
+    int size_gc;
+    MPI_Comm_size(this->m_grid_comm, &size_gc);
+    int rank_gc;
+    MPI_Comm_rank(this->m_grid_comm, &rank_gc);
+
+    auto dest = (rank_gc + 1) % size_gc;
+    auto source = (rank_gc + size_gc - 1) % size_gc;
+
+    std::array<typename ::hpg::runtime::CFPoolRepo<D>::id_type, 2> cf_ids{
+      ctx_d.current_cf_pool_id(),
+      ctx_g.current_cf_pool_id()};
+    decltype(cf_ids) next_cf_ids;
+    {
+      MPI_Datatype dt =
+        mpi_datatype<typename decltype(cf_ids)::value_type>::value();
+      MPI_Request req;
+      MPI_Irecv(
+        next_cf_ids.data(),
+        next_cf_ids.size(),
+        dt,
+        source,
+        0,
+        this->m_grid_comm, &req);
+      MPI_Send(cf_ids.data(), cf_ids.size(), dt, dest, 0, this->m_grid_comm);
+      MPI_Wait(&req, MPI_STATUS_IGNORE);
+    }
+    if (rank_gc == 0) // rank 0 never receives an upstream CF for degridding
+      next_cf_ids[0] == cf_ids[0];
+    std::array<bool, 2> do_send;
+    std::array<bool, 2> do_recv{
+      cf_ids[0] != next_cf_ids[0] && !ctx_d.find_pool(next_cf_ids[0]),
+      cf_ids[1] != next_cf_ids[1] && !ctx_g.find_pool(next_cf_ids[1])};
+    {
+      MPI_Datatype dt =
+        mpi_datatype<typename decltype(do_send)::value_type>::value();
+      MPI_Request req;
+      MPI_Irecv(
+        do_send.data(),
+        do_send.size(),
+        dt,
+        dest,
+        0,
+        this->m_grid_comm,
+        &req);
+      MPI_Send(do_recv.data(), do_recv.size(), dt, source, 0, this->m_grid_comm);
+      MPI_Wait(&req, MPI_STATUS_IGNORE);
+    }
+
+    // exchange CF metadata
+    auto src_cf_d = ctx_d.current_cf_pool();
+    auto src_cf_g = ctx_g.current_cf_pool();
+    ctx_d.switch_to_copy(cf_ids[0] != next_cf_ids[0], next_cf_ids[0]);
+    ctx_g.switch_to_copy(cf_ids[1] != next_cf_ids[1], next_cf_ids[1]);
+    auto dst_cf_d = ctx_d.current_cf_pool();
+    auto dst_cf_g = ctx_g.current_cf_pool();
+    // num groups
+    unsigned dst_num_groups_d = 0, dst_num_groups_g = 0;
+    {
+      std::vector<MPI_Request> reqs;
+      if (do_send[0])
+        MPI_Isend(
+          &src_cf_d->num_cf_groups,
+          1,
+          mpi_datatype<
+            typename std::remove_reference_t<decltype(src_cf_d->num_cf_groups)>>
+            ::value(),
+          dest,
+          0,
+          this->m_grid_comm,
+          add_request(reqs));
+      if (do_send[1])
+        MPI_Isend(
+          &src_cf_g->num_cf_groups,
+          1,
+          mpi_datatype<
+            typename std::remove_reference_t<decltype(src_cf_g->num_cf_groups)>>
+            ::value(),
+          dest,
+          0,
+          this->m_grid_comm,
+          add_request(reqs));
+      if (do_recv[0])
+        MPI_Irecv(
+          &dst_num_groups_d,
+          1,
+          mpi_datatype<decltype(dst_num_groups_d)>::value(),
+          source,
+          0,
+          this->m_grid_comm,
+          add_request(reqs));
+      if (do_recv[1])
+        MPI_Irecv(
+          &dst_num_groups_g,
+          1,
+          mpi_datatype<decltype(dst_num_groups_g)>::value(),
+          source,
+          0,
+          this->m_grid_comm,
+          add_request(reqs));
+      MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
+    }
+    // shape
+    {
+      ::hpg::runtime::DevCFShape dst_shape_d(dst_num_groups_d);
+      ::hpg::runtime::DevCFShape dst_shape_g(dst_num_groups_g);
+      auto src_shape_d = src_cf_d->shape();
+      auto src_shape_g = src_cf_g->shape();
+      std::vector<MPI_Request> reqs;
+      if (do_send[0])
+        MPI_Isend(
+          src_shape_d.m_shape.data(),
+          src_shape_d.m_shape.size(),
+          mpi_datatype<typename decltype(src_shape_d.m_shape)::value_type>
+            ::value(),
+          dest,
+          0,
+          this->m_grid_comm,
+          add_request(reqs));
+      if (do_send[1])
+        MPI_Isend(
+          src_shape_g.m_shape.data(),
+          src_shape_g.m_shape.size(),
+          mpi_datatype<typename decltype(src_shape_g.m_shape)::value_type>
+            ::value(),
+          dest,
+          0,
+          this->m_grid_comm,
+          add_request(reqs));
+      if (do_recv[0])
+        MPI_Irecv(
+          dst_shape_d.m_shape.data(),
+          dst_shape_d.m_shape.size(),
+          mpi_datatype<typename decltype(dst_shape_d.m_shape)::value_type>
+            ::value(),
+          source,
+          0,
+          this->m_grid_comm,
+          add_request(reqs));
+      if (do_recv[1])
+        MPI_Irecv(
+          dst_shape_g.m_shape.data(),
+          dst_shape_g.m_shape.size(),
+          mpi_datatype<typename decltype(dst_shape_g.m_shape)::value_type>
+            ::value(),
+          source,
+          0,
+          this->m_grid_comm,
+          add_request(reqs));
+      MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
+
+      dst_cf_d->set_shape(dst_shape_d);
+      dst_cf_g->set_shape(dst_shape_g);
+    }
+
+    // exchange CF values
+    if (do_send[0])
+      MPI_Isend(
+        src_cf_d->pool.data(),
+        src_cf_d->size,
+        mpi_datatype<impl::cf_t>::value(),
+        dest,
+        0,
+        this->m_grid_comm,
+        add_request(m_shift_requests));
+    if (do_send[1])
+      MPI_Isend(
+        src_cf_g->pool.data(),
+        src_cf_g->size,
+        mpi_datatype<impl::cf_t>::value(),
+        dest,
+        0,
+        this->m_grid_comm,
+        add_request(m_shift_requests));
+    if (do_recv[0])
+      MPI_Irecv(
+        dst_cf_d->pool.data(),
+        dst_cf_d->size,
+        mpi_datatype<impl::cf_t>::value(),
+        source,
+        0,
+        this->m_grid_comm,
+        add_request(m_shift_requests));
+    if (do_recv[1])
+      MPI_Irecv(
+        dst_cf_g->pool.data(),
+        dst_cf_g->size,
+        mpi_datatype<impl::cf_t>::value(),
+        source,
+        0,
+        this->m_grid_comm,
+        add_request(m_shift_requests));
+  }
+
+  void
+  shift_flags(
+    ::hpg::runtime::StreamContext<D>& src_d,
+    ::hpg::runtime::StreamContext<D>& dst_d,
+    ::hpg::runtime::StreamContext<D>& src_g,
+    ::hpg::runtime::StreamContext<D>& dst_g) {
+
+    int size_gc;
+    MPI_Comm_size(this->m_grid_comm, &size_gc);
+    int rank_gc;
+    MPI_Comm_rank(this->m_grid_comm, &rank_gc);
+
+    auto dest = (rank_gc + 1) % size_gc;
+    auto source = (rank_gc + size_gc - 1) % size_gc;
+
+    const MPI_Datatype dt = mpi_datatype<decltype(GriddingFlags::u)>::value();
+
+    MPI_Irecv(
+      &(std::any_cast<GriddingFlags>(&dst_d.m_user_data)->u),
+      1,
+      dt,
+      source,
+      ((rank_gc == 0) ? 1 : 0),
+      this->m_grid_comm,
+      add_request(m_shift_requests));
+
+    MPI_Irecv(
+      &(std::any_cast<GriddingFlags>(&dst_g.m_user_data)->u),
+      1,
+      dt,
+      source,
+      ((rank_gc == 0) ? 0 : 1),
+      this->m_grid_comm,
+      add_request(m_shift_requests));
+
+    MPI_Isend(
+      &(std::any_cast<GriddingFlags>(&src_d.m_user_data)->u),
+      1,
+      dt,
+      dest,
+      0,
+      this->m_grid_comm,
+      add_request(m_shift_requests));
+
+    MPI_Isend(
+      &(std::any_cast<GriddingFlags>(&src_g.m_user_data)->u),
+      1,
+      dt,
+      dest,
+      1,
+      this->m_grid_comm,
+      add_request(m_shift_requests));
+  }
+
+  virtual std::optional<std::unique_ptr<::hpg::Error>>
+  set_convolution_function(
+    unsigned context,
+    Device host_device,
+    CFArray&& cf_array) override {
+
+    // N.B: access cf_array directly only at the root rank of m_grid_comm
+
+    if (this->is_grid_partition_root()) {
+      using DevCFArray = typename impl::DeviceCFArray<D>;
+      DevCFArray dev_cf_array;
+      try {
+        dev_cf_array = dynamic_cast<DevCFArray&&>(cf_array);
+      } catch (const std::bad_cast&) {
+        dev_cf_array = DevCFArray(cf_array);
+        for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp)
+          impl::layout_for_device<D>(
+            host_device,
+            cf_array,
+            grp,
+            reinterpret_cast<CFArray::value_type*>(
+              dev_cf_array.m_arrays[grp].data()));
+      }
+
+      // copy the CF kernels to device memory
+      auto& ctx =
+        this->m_exec_contexts[this->degrid_execution_context(context)];
+      ctx.switch_to_copy(true);
+      auto& cf = ctx.current_cf_pool();
+      cf->add_device_cfs(ctx.current_exec_space(), std::move(dev_cf_array));
+    }
+
+    return std::nullopt;
   }
 
   template <unsigned N>
@@ -1465,12 +1770,6 @@ public:
     bool do_degrid,
     bool return_visibilities,
     bool do_grid) {
-
-    // TODO: for now, assume that the set of flags don't change in calls to this
-    // method; ultimately, we could carry the flags with each set of
-    // visibilities going around the pipeline, or just proclaim that it is
-    // erroneous to change the flag values from one set of visibilities to the
-    // next (in what scope?)
 
     // outline:
     // - at root rank in degrid_execution_context, copy new set of visibilities
@@ -1526,6 +1825,12 @@ public:
         std::move(wgt_values),
         std::move(wgt_col_index),
         std::move(wgt_row_index));
+
+      auto flags = std::any_cast<GriddingFlags>(&sc.m_user_data);
+      flags->b.update_grid_weights = update_grid_weights;
+      flags->b.do_degrid = do_degrid;
+      flags->b.return_visibilities = return_visibilities;
+      flags->b.do_grid = do_grid;
     }
 
     // do work in degridding context
@@ -1536,6 +1841,7 @@ public:
       ctx.switch_to_compute();
       auto& sc = ctx.current_stream_context();
       auto& cf = ctx.current_cf_pool();
+      auto flags = std::any_cast<GriddingFlags>(sc.m_user_data);
 
       auto gridder =
         impl::core::VisibilityGridder(
@@ -1562,14 +1868,14 @@ public:
 
       // do degridding
       //
-      if (do_degrid)
+      if (flags.b.do_degrid)
         gridder.degrid_all();
 
       // compute predicted or residual visibilities at tail rank
       //
       if (rank_gc == size_gc - 1) {
-        if (do_degrid)
-          if (do_grid)
+        if (flags.b.do_degrid)
+          if (flags.b.do_grid)
             gridder.vis_copy_residual_and_rescale();
           else
             gridder.vis_copy_predicted();
@@ -1580,13 +1886,13 @@ public:
 
     // do gridding (in gridding context)
     //
-    if (do_grid) {
+    {
       auto& ctx =
         this->m_exec_contexts[this->grid_execution_context(context)];
       ctx.switch_to_compute();
       auto& sc = ctx.current_stream_context();
       auto& cf = ctx.current_cf_pool();
-
+      auto flags = std::any_cast<GriddingFlags>(sc.m_user_data);
       auto num_vis = sc.num_vis();
 
       auto gridder =
@@ -1612,34 +1918,40 @@ public:
           this->m_grid_offset_local,
           this->m_grid_size_global);
 
-      if (update_grid_weights)
-        gridder.grid_all();
-      else
-        gridder.grid_all_no_weights();
+      if (flags.b.do_grid) {
+        if (flags.b.update_grid_weights)
+          gridder.grid_all();
+        else
+          gridder.grid_all_no_weights();
 
-      this->m_reduced_grid = this->m_reduced_grid && (num_vis == 0);
-      this->m_reduced_weights =
-        this->m_reduced_weights && (num_vis == 0 || !update_grid_weights);
+        this->m_reduced_grid = this->m_reduced_grid && (num_vis == 0);
+        this->m_reduced_weights =
+          this->m_reduced_weights
+          && (num_vis == 0 || !flags.b.update_grid_weights);
+      }
+      // return visibilities at root rank in gridding execution context
+      //
+      if (rank_gc == 0)
+        result = sc.copy_visibilities_to_host(flags.b.return_visibilities);
     }
-
-    // do pipeline shift of data (visibilities and weights) in both contexts
+    // do pipeline shift of flags and data (visibilities, weights and maybe CFs)
+    // in both contexts
     //
     {
       auto& ctx_d =
         this->m_exec_contexts[this->degrid_execution_context(context)];
       ctx_d.switch_to_compute();
       auto& src_d = ctx_d.current_stream_context();
-      ctx_d.switch_to_copy(false);
-      auto& dst_d = ctx_d.current_stream_context();
 
       auto& ctx_g =
         this->m_exec_contexts[this->grid_execution_context(context)];
       ctx_g.switch_to_compute();
       auto& src_g = ctx_g.current_stream_context();
-      ctx_g.switch_to_copy(false);
-      auto& dst_g = ctx_g.current_stream_context();
 
-      // FIXME: shift CFs
+      shift_cfs(ctx_d, ctx_g);
+
+      auto& dst_d = ctx_d.current_stream_context();
+      auto& dst_g = ctx_g.current_stream_context();
 
       shift_context_data(
         src_d,
@@ -1672,15 +1984,8 @@ public:
         src_g,
         dst_g,
         [](auto& sc) { return sc.template gvis<N>(); });
-    }
 
-    // return visibilities at root rank in degridding execution context
-    //
-    if (rank_gc == 0) {
-      auto& ctx =
-        this->m_exec_contexts[this->degrid_execution_context(context)];
-      auto& sc = ctx.current_stream_context();
-      result = sc.copy_visibilities_to_host(return_visibilities);
+      shift_flags(src_d, dst_d, src_g, dst_g);
     }
 
     return result;
