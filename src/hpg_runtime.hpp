@@ -1164,6 +1164,16 @@ public:
     return m_streams.front().m_cf_pool;
   }
 
+  typename CFPoolRepo<D>::id_type
+  current_cf_pool_id() const {
+    return m_cf_pool_repo->get_id(current_cf_pool()).value();
+  }
+
+  pool_type
+  find_pool(typename CFPoolRepo<D>::id_type id) const {
+    return m_cf_pool_repo->find_pool(id);
+  }
+
   StreamContext<D>&
   current_stream_context() {
     return m_streams.front().m_context;
