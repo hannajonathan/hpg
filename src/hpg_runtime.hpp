@@ -553,7 +553,7 @@ private:
 
   mutable std::map<id_type, std::weak_ptr<CFPool<D>>> m_pool_ids;
 
-  mutable std::mutex m_mtx;
+  mutable std::recursive_mutex m_mtx;
 
   mutable id_type m_next_id;
 
