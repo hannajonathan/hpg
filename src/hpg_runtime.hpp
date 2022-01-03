@@ -608,8 +608,8 @@ public:
          ++dst, ++src) {
       (*dst)->copy_from(espace, **src);
       auto maybe_id = other.get_id(*src);
-      assert(maybe_id);
-      m_pool_ids[maybe_id.value()] = *dst;
+      if (maybe_id)
+        m_pool_ids[maybe_id.value()] = *dst;
       result[(*src).get()] = *dst;
     }
     m_next_id = other.m_next_id;
