@@ -1181,20 +1181,22 @@ public:
 
   void
   switch_to_copy(
-    bool new_cf,
+    bool change_cf,
     const std::optional<pool_id_type>& id = std::nullopt) {
 
     if (m_streams.front().m_phase == StreamPhase::COMPUTE) {
       next_stream();
-      if (new_cf)
+      if (change_cf)
         next_cf_pool(id);
-      m_streams.front().m_phase = StreamPhase::COPY;
+    } else if (change_cf && id) {
+      next_cf_pool(id);
     }
     // don't need to do anything if the head stream is in COPY phase and the
     // caller asked for a new CFPool, as in that case it's OK to simply allow
     // the caller to overwrite the current CFPool instead of using another
     // instance
-  }
+    m_streams.front().m_phase = StreamPhase::COPY;
+}
 
   void
   switch_to_compute() {
