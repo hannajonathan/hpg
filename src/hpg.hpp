@@ -696,6 +696,10 @@ public:
   /** rank of array */
   static constexpr unsigned rank = 5;
 
+  /** padding, in units of major increments (not oversampled), on every edge of
+   * CF support domain */
+  static constexpr unsigned padding = 2;
+
   /** oversampling factor */
   virtual unsigned
   oversampling() const;
@@ -707,6 +711,16 @@ public:
   /** array extents for a given group */
   virtual std::array<unsigned, rank - 1>
   extents(unsigned grp) const;
+
+  /** half-widths of CF support domain for a given group index */
+  std::array<unsigned, 2>
+  radii(unsigned grp) const {
+    auto os = oversampling();
+    auto ext = extents(grp);
+    return {
+      ((ext[0] - 2 * padding * os) / os) / 2,
+      ((ext[1] - 2 * padding * os) / os) / 2};
+  }
 
   /** default constructor */
   CFArrayShape() {}
@@ -722,10 +736,6 @@ public:
 
   /** element value type */
   using value_type = std::complex<cf_fp>;
-
-  /** padding, in units of major increments (not oversampled), on every edge of
-   * CF support domain */
-  static constexpr unsigned padding = 2;
 
   /** ordered index axis names */
   // note: changes in this must be coordinated with changes in the element
@@ -758,16 +768,6 @@ public:
     unsigned channel,
     unsigned group)
     const;
-
-  /** half-widths of CF support domain for a given group index */
-  std::array<unsigned, 2>
-  radii(unsigned grp) const {
-    auto os = oversampling();
-    auto ext = extents(grp);
-    return {
-      ((ext[0] - 2 * padding * os) / os) / 2,
-      ((ext[1] - 2 * padding * os) / os) / 2};
-  }
 
   /** destructor */
   virtual ~CFArray() {}
