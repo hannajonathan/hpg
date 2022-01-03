@@ -831,6 +831,8 @@ struct /*HPG_EXPORT*/ StreamContext final {
   StreamVector<D, unsigned> m_weight_col_index;
   StreamVector<D, size_t> m_weight_row_index;
 
+  std::any m_user_data;
+
   StreamContext() = delete;
 
   StreamContext(
