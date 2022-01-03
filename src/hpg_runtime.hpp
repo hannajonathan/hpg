@@ -298,6 +298,7 @@ struct /*HPG_EXPORT*/ CFPool final {
   K::Array<cfd_view, HPG_MAX_NUM_CF_GROUPS> cf_d; // unmanaged (in pool)
   std::vector<std::any> cf_h;
   K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS> cf_radii;
+  size_t size;
 
   CFPool()
     : num_cf_groups(0)
@@ -327,6 +328,7 @@ struct /*HPG_EXPORT*/ CFPool final {
     // instance, and to read array values from 'other'
     num_cf_groups = other.num_cf_groups;
     max_cf_extent_y = other.max_cf_extent_y;
+    size = other.size;
     cf_h.clear();
     cf_radii = other.cf_radii;
     if (pool.is_allocated())
@@ -336,7 +338,7 @@ struct /*HPG_EXPORT*/ CFPool final {
         decltype(pool)(
           K::ViewAllocateWithoutInitializing("cf"),
           other.pool.extent(0));
-    K::deep_copy(espace, pool, other.pool);
+    K::deep_copy(espace, pool, other.pool); // TODO: copy only "size" elements
     for (unsigned grp = 0; grp < num_cf_groups; ++grp)
       cf_d[grp] =
         cfd_view(
@@ -401,10 +403,10 @@ struct /*HPG_EXPORT*/ CFPool final {
   add_host_cfs(Device host_device, execution_space espace, CFArray&& cf_array) {
     prepare_pool(cf_array);
     num_cf_groups = 0;
-    size_t offset = 0;
+    size = 0;
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
-        pool.data() + offset,
+        pool.data() + size,
         impl::CFLayout<kokkos_device>::dimensions(cf_array, grp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
@@ -447,7 +449,7 @@ struct /*HPG_EXPORT*/ CFPool final {
         assert(false);
         break;
       }
-      offset += cf_size(cf_array, grp);
+      size += cf_size(cf_array, grp);
       add_cf_group(cf_array.radii(grp), cf_init, cf_h);
     }
   }
@@ -459,10 +461,10 @@ struct /*HPG_EXPORT*/ CFPool final {
 
     prepare_pool(cf_array);
     num_cf_groups = 0;
-    size_t offset = 0;
+    size = 0;
     for (unsigned grp = 0; grp < cf_array.num_groups(); ++grp) {
       cfd_view cf_init(
-        pool.data() + offset,
+        pool.data() + size,
         impl::CFLayout<kokkos_device>::dimensions(cf_array, grp));
 #ifndef NDEBUG
       std::cout << "alloc cf sz " << cf_init.extent(0)
@@ -482,7 +484,7 @@ struct /*HPG_EXPORT*/ CFPool final {
 #endif // NDEBUG
 
       K::deep_copy(espace, cf_init, cf_array.m_views[grp]);
-      offset += cf_size(cf_array, grp);
+      size += cf_size(cf_array, grp);
       add_cf_group(
         cf_array.radii(grp),
         cf_init,
