@@ -322,6 +322,22 @@ struct /*HPG_EXPORT*/ CFPool final {
     reset();
   }
 
+  DevCFShape
+  shape() const {
+    std::vector<unsigned> sh;
+    sh.reserve(num_cf_groups * (CFArrayShape::rank - 1) + 1);
+    if (num_cf_groups > 0) {
+      sh.push_back(cf_d[0].extent(int(impl::core::CFAxis::x_minor)));
+      for (unsigned i = 0; i < num_cf_groups; ++i) {
+        sh.push_back(cf_d[i].extent(int(impl::core::CFAxis::x_major)) * sh[0]);
+        sh.push_back(cf_d[i].extent(int(impl::core::CFAxis::y_major)) * sh[0]);
+        sh.push_back(cf_d[i].extent(int(impl::core::CFAxis::mueller)));
+        sh.push_back(cf_d[i].extent(int(impl::core::CFAxis::channel)));
+      }
+    }
+    return DevCFShape(sh);
+  }
+
   void
   copy_from(execution_space espace, const CFPool& other) {
     // caller must ensure that it's safe to overwrite array values in this
@@ -385,11 +401,12 @@ struct /*HPG_EXPORT*/ CFPool final {
   add_cf_group(
     const std::array<unsigned, 2>& radii,
     cfd_view cfd,
-    std::any cfh) {
+    std::optional<std::any> cfh) {
 
     assert(num_cf_groups < HPG_MAX_NUM_CF_GROUPS);
     cf_d[num_cf_groups] = cfd;
-    cf_h.push_back(cfh);
+    if (cfh)
+      cf_h.push_back(cfh.value());
     cf_radii[num_cf_groups] =
       {int(radii[0]), int(radii[1])};
     ++num_cf_groups;
@@ -491,6 +508,20 @@ struct /*HPG_EXPORT*/ CFPool final {
         std::make_tuple(
           std::move(cf_array.m_arrays[grp]),
           cf_array.m_views[grp]));
+    }
+  }
+
+  void
+  set_shape(const DevCFShape& shape) {
+    prepare_pool(shape);
+    num_cf_groups = 0;
+    size = 0;
+    for (unsigned grp = 0; grp < shape.num_groups(); ++grp) {
+      cfd_view cf_init(
+        pool.data() + size,
+        impl::CFLayout<kokkos_device>::dimensions(shape, grp));
+      size += cf_size(shape, grp);
+      add_cf_group(shape.radii(grp), cf_init, std::nullopt);
     }
   }
 
