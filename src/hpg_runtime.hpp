@@ -245,6 +245,40 @@ enum class /*HPG_EXPORT*/ StreamPhase {
 std::ostream&
 operator<<(std::ostream& str, const StreamPhase& ph);
 
+struct DevCFShape
+  : public CFArrayShape {
+
+  std::vector<unsigned> m_shape;
+
+  DevCFShape(const std::vector<unsigned>& shape)
+    : m_shape(shape) {
+    assert((m_shape.size() == 0) || ((m_shape.size() - 1) % (rank - 1) == 0));
+  }
+
+  DevCFShape(size_t num_grp) {
+    m_shape.resize(1 + num_grp * (rank - 1));
+  }
+
+  unsigned
+  oversampling() const override {
+    return (m_shape.size() > 0) ? m_shape[0] : 0;
+  }
+
+  unsigned
+  num_groups() const override {
+    return
+      (m_shape.size() > 0) ? (unsigned((m_shape.size() - 1) / (rank - 1))) : 0;
+  }
+
+  std::array<unsigned, rank - 1>
+  extents(unsigned grp) const override {
+    std::array<unsigned, rank - 1> result;
+    for (unsigned d = 0; d < rank - 1; ++d)
+      result[d] = m_shape[grp * (rank - 1) + d + 1];
+    return result;
+  }
+};
+
 /** memory pool and views therein for elements of a (sparse) CF */
 template <Device D>
 struct /*HPG_EXPORT*/ CFPool final {

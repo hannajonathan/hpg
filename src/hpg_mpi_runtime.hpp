@@ -311,43 +311,6 @@ struct ReplicatedGridBrick {
   std::array<unsigned, rank> size;
 };
 
-struct DevCFShape
-  : public CFArrayShape {
-
-  unsigned m_oversampling;
-
-  std::vector<std::array<unsigned, rank - 1>> m_extents;
-
-  DevCFShape(const std::vector<unsigned>& shape) {
-    assert(shape.size() > 0);
-    assert((shape.size() - 1) % (rank - 1) == 0);
-
-    m_oversampling = shape[0];
-    m_extents.reserve((shape.size() - 1) / (rank - 1));
-    for (size_t grp = 0; grp < m_extents.size(); ++grp) {
-      std::array<unsigned, rank - 1> ext;
-      for (unsigned d = 0; d < rank - 1; ++d)
-        ext[d] = shape[grp * (rank - 1) + d + 1];
-      m_extents.push_back(ext);
-    }
-  }
-
-  unsigned
-  oversampling() const override {
-    return m_oversampling;
-  }
-
-  unsigned
-  num_groups() const override {
-    return unsigned(m_extents.size());
-  }
-
-  std::array<unsigned, rank - 1>
-  extents(unsigned grp) const override {
-    return m_extents[grp];
-  }
-};
-
 struct /*HPG_EXPORT*/ State
   : virtual public ::hpg::runtime::State {
 
