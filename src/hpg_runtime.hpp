@@ -1927,7 +1927,7 @@ public:
     switch (visibility_gridder_version()) {
     case 0:
       return
-        default_grid_visibilities(
+        default_grid_visibilities<N>(
           context,
           host_device,
           std::move(visibilities),
@@ -2251,7 +2251,7 @@ public:
 
 protected:
 
-  void
+  virtual void
   fence_unlocked() const noexcept {
     m_exec_contexts.fence();
   }

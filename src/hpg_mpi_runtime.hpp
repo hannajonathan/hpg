@@ -308,6 +308,7 @@ union GriddingFlags {
     bool do_degrid: 1;
     bool return_visibilities: 1;
     bool do_grid: 1;
+    bool fence: 1;
   } b;
 };
 
@@ -548,12 +549,12 @@ public:
   }
 
   virtual unsigned
-  degrid_execution_context(unsigned c) noexcept {
+  degrid_execution_context(unsigned c) const noexcept {
     return c;
   }
 
   virtual unsigned
-  grid_execution_context(unsigned c) noexcept {
+  grid_execution_context(unsigned c) const noexcept {
     return c;
   }
 
@@ -1292,6 +1293,8 @@ protected:
 
   mutable std::vector<std::vector<MPI_Request>> m_shift_requests;
 
+  mutable std::vector<bool> m_pipeline_flush;
+
 public:
 
   // TODO: can this algorithm be sensibly reduced in the case of a grid
@@ -1351,19 +1354,19 @@ public:
   }
 
   virtual unsigned
-  degrid_execution_context(unsigned c) noexcept override {
+  degrid_execution_context(unsigned c) const noexcept override {
     return 2 * c; // ***
   }
 
   virtual unsigned
-  grid_execution_context(unsigned c) noexcept override {
+  grid_execution_context(unsigned c) const noexcept override {
     return 2 * c + 1; // ***
   }
 
 private:
 
   MPI_Request*
-  add_request(std::vector<MPI_Request>& reqs) {
+  add_request(std::vector<MPI_Request>& reqs) const {
     reqs.push_back(MPI_REQUEST_NULL);
     return &reqs.back();
   }
@@ -1378,7 +1381,7 @@ protected:
     ::hpg::runtime::StreamContext<D>& dst_d,
     ::hpg::runtime::StreamContext<D>& src_g,
     ::hpg::runtime::StreamContext<D>& dst_g,
-    V&& v) {
+    V&& v) const {
     // For this, we consider a logical pipeline of size 2 * size_gc, and all
     // ranks make two calls to MPI_Isend/MPI_Irecv pairs to move sets of
     // visibilities and weights around the logical pipeline. In the first call,
@@ -1491,7 +1494,7 @@ protected:
   shift_cfs(
     unsigned context,
     ::hpg::runtime::ExecutionContext<D>& ctx_d,
-    ::hpg::runtime::ExecutionContext<D>& ctx_g) {
+    ::hpg::runtime::ExecutionContext<D>& ctx_g) const {
     // NB: this eventually calls switch_to_copy() on each context
 
     int size_gc;
@@ -1703,7 +1706,7 @@ protected:
     ::hpg::runtime::StreamContext<D>& src_d,
     ::hpg::runtime::StreamContext<D>& dst_d,
     ::hpg::runtime::StreamContext<D>& src_g,
-    ::hpg::runtime::StreamContext<D>& dst_g) {
+    ::hpg::runtime::StreamContext<D>& dst_g) const {
 
     int size_gc;
     MPI_Comm_size(this->m_grid_comm, &size_gc);
@@ -1801,20 +1804,8 @@ public:
     bool update_grid_weights,
     bool do_degrid,
     bool return_visibilities,
-    bool do_grid) {
-
-    // outline:
-    // - at root rank in degrid_execution_context, copy new set of visibilities
-    //   and weights to device (doing this first allows the "set CF", "grid vis"
-    //   sequence to use a common execution context, like in the sequential
-    //   runtime)
-    // - set up VisibilityGridder in degrid_execution_context, do degridding
-    // - also in degrid_execution_context, at tail rank, compute residual or
-    //   predicted visibilities
-    // - set up VisibilityGridder in grid_execution_context, do gridding
-    // - shift visibilities and CFs in pipeline, both execution contexts
-    // - at root rank in degrid_execution_context return residual/predicted
-    //   visibilities
+    bool do_grid,
+    bool fence) const {
 
     int size_gc;
     MPI_Comm_size(this->m_grid_comm, &size_gc);
@@ -1852,17 +1843,20 @@ public:
       // visibilities.
       sc.fence();
 
+      auto flags = std::any_cast<GriddingFlags>(&sc.m_user_data);
+      m_pipeline_flush[context] = m_pipeline_flush[context] || fence;
+      m_pipeline_flush[context] = m_pipeline_flush[context] && !flags->b.fence;
+      flags->b.update_grid_weights = update_grid_weights;
+      flags->b.do_degrid = do_degrid;
+      flags->b.return_visibilities = return_visibilities;
+      flags->b.do_grid = do_grid;
+      flags->b.fence = fence;
+
       sc.copy_visibilities_to_device(std::move(visibilities));
       sc.copy_weights_to_device(
         std::move(wgt_values),
         std::move(wgt_col_index),
         std::move(wgt_row_index));
-
-      auto flags = std::any_cast<GriddingFlags>(&sc.m_user_data);
-      flags->b.update_grid_weights = update_grid_weights;
-      flags->b.do_degrid = do_degrid;
-      flags->b.return_visibilities = return_visibilities;
-      flags->b.do_grid = do_grid;
     }
 
     // do work in degridding context
@@ -2055,7 +2049,7 @@ public:
     switch (this->visibility_gridder_version()) {
     case 0:
       return
-        default_grid_visibilities(
+        default_grid_visibilities<N>(
           context,
           host_device,
           std::move(visibilities),
@@ -2065,7 +2059,8 @@ public:
           update_grid_weights,
           do_degrid,
           return_visibilities,
-          do_grid);
+          do_grid,
+          false);
       break;
     default:
       assert(false);
@@ -2150,6 +2145,45 @@ public:
       return std::make_unique<::hpg::Error>("Assertion violation");
       break;
     }
+  }
+
+protected:
+
+  virtual void
+  fence_unlocked() const noexcept override {
+    bool fence_sentinel = true;
+    bool flushing;
+    do {
+      for (unsigned c = 0; c < this->m_exec_contexts.size(); ++c)
+        default_grid_visibilities<1>(
+            c,
+            D,
+            std::vector<::hpg::VisData<1>>(),
+            std::vector<vis_weight_fp>(),
+            std::vector<unsigned>(),
+            std::vector<size_t>(),
+            false,
+            false,
+            false,
+            false,
+            fence_sentinel);
+      fence_sentinel = false;
+      // checking m_pipeline_flush in any single context is sufficient to decide
+      // when the pipeline is in the flushing state
+      assert(
+        std::all_of(
+          m_pipeline_flush.begin() + 1,
+          m_pipeline_flush.end(),
+          [f0 = m_pipeline_flush[0]](auto&& f) { return f == f0; }));
+      flushing = m_pipeline_flush[0];
+      MPI_Bcast(
+        &flushing,
+        1,
+        mpi_datatype<decltype(flushing)>::value(),
+        0,
+        this->m_grid_comm);
+    } while (flushing);
+    this->m_exec_contexts.fence();
   }
 };
 
