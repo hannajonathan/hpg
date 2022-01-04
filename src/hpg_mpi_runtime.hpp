@@ -1362,9 +1362,14 @@ private:
   }
 
 public:
-  template <typename S, typename V>
+  template <typename V>
   void
-  shift_context_data(S& src_d, S& dst_d, S& src_g, S& dst_g, V&& v) {
+  shift_context_data(
+    ::hpg::runtime::StreamContext<D>& src_d,
+    ::hpg::runtime::StreamContext<D>& dst_d,
+    ::hpg::runtime::StreamContext<D>& src_g,
+    ::hpg::runtime::StreamContext<D>& dst_g,
+    V&& v) {
     // For this, we consider a logical pipeline of size 2 * size_gc, and all
     // ranks make two calls to MPI_Isend/MPI_Irecv pairs to move sets of
     // visibilities and weights around the logical pipeline. In the first call,
@@ -1432,41 +1437,45 @@ public:
     // Note that we have changed the order here of send/recv calls a bit from
     // the logical description at the top of this method.
 
-    MPI_Irecv(
-      recvview_d.data(),
-      recvcounts[0],
-      dt,
-      source,
-      ((rank_gc == 0) ? 1 : 0),
-      this->m_grid_comm,
-      add_request(m_shift_requests));
+    if (recvcounts[0] > 0)
+      MPI_Irecv(
+        recvview_d.data(),
+        recvcounts[0],
+        dt,
+        source,
+        ((rank_gc == 0) ? 1 : 0),
+        this->m_grid_comm,
+        add_request(m_shift_requests));
 
-    MPI_Irecv(
-      recvview_g.data(),
-      recvcounts[1],
-      dt,
-      source,
-      ((rank_gc == 0) ? 0 : 1),
-      this->m_grid_comm,
-      add_request(m_shift_requests));
+    if (recvcounts[1] > 0)
+      MPI_Irecv(
+        recvview_g.data(),
+        recvcounts[1],
+        dt,
+        source,
+        ((rank_gc == 0) ? 0 : 1),
+        this->m_grid_comm,
+        add_request(m_shift_requests));
 
-    MPI_Isend(
-      sendview_d.data(),
-      sendcounts[0],
-      dt,
-      dest,
-      0,
-      this->m_grid_comm,
-      add_request(m_shift_requests));
+    if (sendcounts[0] > 0)
+      MPI_Isend(
+        sendview_d.data(),
+        sendcounts[0],
+        dt,
+        dest,
+        0,
+        this->m_grid_comm,
+        add_request(m_shift_requests));
 
-    MPI_Isend(
-      sendview_g.data(),
-      sendcounts[1],
-      dt,
-      dest,
-      1,
-      this->m_grid_comm,
-      add_request(m_shift_requests));
+    if (sendcounts[1] > 0)
+      MPI_Isend(
+        sendview_g.data(),
+        sendcounts[1],
+        dt,
+        dest,
+        1,
+        this->m_grid_comm,
+        add_request(m_shift_requests));
   }
 
   void
@@ -1578,12 +1587,13 @@ public:
     }
     // shape
     {
-      ::hpg::runtime::DevCFShape dst_shape_d(dst_num_groups_d);
-      ::hpg::runtime::DevCFShape dst_shape_g(dst_num_groups_g);
-      auto src_shape_d = src_cf_d->shape();
-      auto src_shape_g = src_cf_g->shape();
+      ::hpg::runtime::DevCFShape src_shape_d;
+      ::hpg::runtime::DevCFShape src_shape_g;
+      ::hpg::runtime::DevCFShape dst_shape_d;
+      ::hpg::runtime::DevCFShape dst_shape_g;
       std::vector<MPI_Request> reqs;
-      if (do_send[0])
+      if (do_send[0]) {
+        src_shape_d = src_cf_d->shape();
         MPI_Isend(
           src_shape_d.m_shape.data(),
           src_shape_d.m_shape.size(),
@@ -1593,7 +1603,9 @@ public:
           0,
           this->m_grid_comm,
           add_request(reqs));
-      if (do_send[1])
+      }
+      if (do_send[1]) {
+        src_shape_g = src_cf_g->shape();
         MPI_Isend(
           src_shape_g.m_shape.data(),
           src_shape_g.m_shape.size(),
@@ -1603,7 +1615,9 @@ public:
           0,
           this->m_grid_comm,
           add_request(reqs));
-      if (do_recv[0])
+      }
+      if (do_recv[0]) {
+        dst_shape_d = ::hpg::runtime::DevCFShape(dst_num_groups_d);
         MPI_Irecv(
           dst_shape_d.m_shape.data(),
           dst_shape_d.m_shape.size(),
@@ -1613,7 +1627,9 @@ public:
           0,
           this->m_grid_comm,
           add_request(reqs));
-      if (do_recv[1])
+      }
+      if (do_recv[1]) {
+        dst_shape_g = ::hpg::runtime::DevCFShape(dst_num_groups_g);
         MPI_Irecv(
           dst_shape_g.m_shape.data(),
           dst_shape_g.m_shape.size(),
@@ -1623,10 +1639,13 @@ public:
           0,
           this->m_grid_comm,
           add_request(reqs));
+      }
       MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
 
-      dst_cf_d->set_shape(dst_shape_d);
-      dst_cf_g->set_shape(dst_shape_g);
+      if (do_recv[0])
+        dst_cf_d->set_shape(dst_shape_d);
+      if (do_recv[1])
+        dst_cf_g->set_shape(dst_shape_g);
     }
 
     // exchange CF values
