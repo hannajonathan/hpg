@@ -25,7 +25,7 @@ option(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   "Enable experimental kernel versions" OFF)
 mark_as_advanced(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
 set(Hpg_MAX_NUM_CF_GROUPS
-  1000 CACHE STRING "Maximum number of CF groups")
+  100 CACHE STRING "Maximum number of CF groups")
 
 # validate value of Hpg_API
 #
