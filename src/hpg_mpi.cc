@@ -240,6 +240,18 @@ create_impl(
   const unsigned num_contexts = num_added_contexts + 1;
   const unsigned max_active_tasks_per_context = max_added_tasks_per_context + 1;
 
+  if (visibility_distribution == VisibilityDistribution::Pipeline
+      && grid_part_size == 1) {
+    visibility_distribution = VisibilityDistribution::Broadcast;
+    std::ostringstream oss;
+    oss
+      << "WARNING: Ignoring request for 'Pipeline' visibility distribution "
+      << "algorithm," << std::endl
+      << "and forcing use of 'Broadcast' algorithm because image grid is not "
+      << "partitioned" << std::endl;
+    std::cerr << oss.str();
+  }
+
   std::shared_ptr<State> result;
   switch (device) {
 #ifdef HPG_ENABLE_SERIAL
