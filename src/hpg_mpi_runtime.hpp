@@ -1288,7 +1288,11 @@ public:
 
   using StreamPhase = ::hpg::runtime::StreamPhase;
 
-  std::vector<MPI_Request> m_shift_requests;
+protected:
+
+  mutable std::vector<std::vector<MPI_Request>> m_shift_requests;
+
+public:
 
   // TODO: can this algorithm be sensibly reduced in the case of a grid
   // partition size of one by unifying the degridding and gridding contexts?
@@ -1337,10 +1341,13 @@ public:
         limit_tasks(max_active_tasks_per_context)),
       num_contexts_per_phase
         * (2 * limit_tasks(max_active_tasks_per_context) + 1))) {
+
     this->m_exec_contexts.for_all_stream_contexts(
       [](auto& sc) {
         sc.m_user_data = GriddingFlags();
       });
+    m_shift_requests.resize(num_contexts_per_phase);
+    m_pipeline_flush.resize(num_contexts_per_phase);
   }
 
   virtual unsigned
@@ -1361,10 +1368,12 @@ private:
     return &reqs.back();
   }
 
-public:
+protected:
+
   template <typename V>
   void
   shift_context_data(
+    unsigned context,
     ::hpg::runtime::StreamContext<D>& src_d,
     ::hpg::runtime::StreamContext<D>& dst_d,
     ::hpg::runtime::StreamContext<D>& src_g,
@@ -1445,7 +1454,7 @@ public:
         source,
         ((rank_gc == 0) ? 1 : 0),
         this->m_grid_comm,
-        add_request(m_shift_requests));
+        add_request(m_shift_requests[context]));
 
     if (recvcounts[1] > 0)
       MPI_Irecv(
@@ -1455,7 +1464,7 @@ public:
         source,
         ((rank_gc == 0) ? 0 : 1),
         this->m_grid_comm,
-        add_request(m_shift_requests));
+        add_request(m_shift_requests[context]));
 
     if (sendcounts[0] > 0)
       MPI_Isend(
@@ -1465,7 +1474,7 @@ public:
         dest,
         0,
         this->m_grid_comm,
-        add_request(m_shift_requests));
+        add_request(m_shift_requests[context]));
 
     if (sendcounts[1] > 0)
       MPI_Isend(
@@ -1475,11 +1484,12 @@ public:
         dest,
         1,
         this->m_grid_comm,
-        add_request(m_shift_requests));
+        add_request(m_shift_requests[context]));
   }
 
   void
   shift_cfs(
+    unsigned context,
     ::hpg::runtime::ExecutionContext<D>& ctx_d,
     ::hpg::runtime::ExecutionContext<D>& ctx_g) {
     // NB: this eventually calls switch_to_copy() on each context
@@ -1657,7 +1667,7 @@ public:
         dest,
         0,
         this->m_grid_comm,
-        add_request(m_shift_requests));
+        add_request(m_shift_requests[context]));
     if (do_send[1])
       MPI_Isend(
         src_cf_g->pool.data(),
@@ -1666,7 +1676,7 @@ public:
         dest,
         0,
         this->m_grid_comm,
-        add_request(m_shift_requests));
+        add_request(m_shift_requests[context]));
     if (do_recv[0])
       MPI_Irecv(
         dst_cf_d->pool.data(),
@@ -1675,7 +1685,7 @@ public:
         source,
         0,
         this->m_grid_comm,
-        add_request(m_shift_requests));
+        add_request(m_shift_requests[context]));
     if (do_recv[1])
       MPI_Irecv(
         dst_cf_g->pool.data(),
@@ -1684,11 +1694,12 @@ public:
         source,
         0,
         this->m_grid_comm,
-        add_request(m_shift_requests));
+        add_request(m_shift_requests[context]));
   }
 
   void
   shift_flags(
+    unsigned context,
     ::hpg::runtime::StreamContext<D>& src_d,
     ::hpg::runtime::StreamContext<D>& dst_d,
     ::hpg::runtime::StreamContext<D>& src_g,
@@ -1711,7 +1722,7 @@ public:
       source,
       ((rank_gc == 0) ? 1 : 0),
       this->m_grid_comm,
-      add_request(m_shift_requests));
+      add_request(m_shift_requests[context]));
 
     MPI_Irecv(
       &(std::any_cast<GriddingFlags>(&dst_g.m_user_data)->u),
@@ -1720,7 +1731,7 @@ public:
       source,
       ((rank_gc == 0) ? 0 : 1),
       this->m_grid_comm,
-      add_request(m_shift_requests));
+      add_request(m_shift_requests[context]));
 
     MPI_Isend(
       &(std::any_cast<GriddingFlags>(&src_d.m_user_data)->u),
@@ -1729,7 +1740,7 @@ public:
       dest,
       0,
       this->m_grid_comm,
-      add_request(m_shift_requests));
+      add_request(m_shift_requests[context]));
 
     MPI_Isend(
       &(std::any_cast<GriddingFlags>(&src_g.m_user_data)->u),
@@ -1738,8 +1749,10 @@ public:
       dest,
       1,
       this->m_grid_comm,
-      add_request(m_shift_requests));
+      add_request(m_shift_requests[context]));
   }
+
+public:
 
   virtual std::optional<std::unique_ptr<::hpg::Error>>
   set_convolution_function(
@@ -1817,10 +1830,10 @@ public:
 
     // wait for completion of previous pipeline data shifts
     MPI_Waitall(
-      m_shift_requests.size(),
-      m_shift_requests.data(),
+      m_shift_requests[context].size(),
+      m_shift_requests[context].data(),
       MPI_STATUSES_IGNORE);
-    m_shift_requests.clear();
+    m_shift_requests[context].clear();
 
     // copy new set of visibilities and weights to the device on root rank in
     // degrid_execution_context
@@ -1953,10 +1966,11 @@ public:
       if (rank_gc == 0)
         result = sc.copy_visibilities_to_host(flags.b.return_visibilities);
     }
-    // do pipeline shift of flags and data (visibilities, weights and maybe CFs)
-    // in both contexts
-    //
+
     {
+      // do pipeline shift of flags and data (visibilities, weights and maybe
+      // CFs) in both contexts
+      //
       auto& ctx_d =
         this->m_exec_contexts[this->degrid_execution_context(context)];
       ctx_d.switch_to_compute();
@@ -1967,30 +1981,34 @@ public:
       ctx_g.switch_to_compute();
       auto& src_g = ctx_g.current_stream_context();
 
-      shift_cfs(ctx_d, ctx_g);
+      shift_cfs(context, ctx_d, ctx_g);
 
       auto& dst_d = ctx_d.current_stream_context();
       auto& dst_g = ctx_g.current_stream_context();
 
       shift_context_data(
+        context,
         src_d,
         dst_d,
         src_g,
         dst_g,
         [](auto& sc) { return sc.template visibilities<N>(); });
       shift_context_data(
+        context,
         src_d,
         dst_d,
         src_g,
         dst_g,
         [](auto& sc) { return sc.m_weight_values; });
       shift_context_data(
+        context,
         src_d,
         dst_d,
         src_g,
         dst_g,
         [](auto& sc) { return sc.m_weight_col_index; });
       shift_context_data(
+        context,
         src_d,
         dst_d,
         src_g,
@@ -1998,13 +2016,14 @@ public:
         [](auto& sc) { return sc.m_weight_row_index; });
       src_d.fence(); // degridding must complete before shifting gvis
       shift_context_data(
+        context,
         src_d,
         dst_d,
         src_g,
         dst_g,
         [](auto& sc) { return sc.template gvis<N>(); });
 
-      shift_flags(src_d, dst_d, src_g, dst_g);
+      shift_flags(context, src_d, dst_d, src_g, dst_g);
     }
 
     return result;
