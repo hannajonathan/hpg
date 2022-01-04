@@ -259,6 +259,8 @@ struct DevCFShape
     m_shape.resize(1 + num_grp * (rank - 1));
   }
 
+  DevCFShape() {}
+
   unsigned
   oversampling() const override {
     return (m_shape.size() > 0) ? m_shape[0] : 0;
