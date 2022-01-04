@@ -9,6 +9,7 @@ High performance gridding (kernel) implementation library.
 * [FFTW](http://fftw.org) (v3.3.8 or later)
 * [CUDA](https://developer.nvidia.com/cuda-toolkit) (optional, v11.0.2 or later)
 * cuFFT (part of CUDA toolkit)
+* MPI (optional, v3 or later)
 
 Compilers:
 * [gcc](https://gcc.gnu.org), v9.3.0 or later
@@ -30,7 +31,8 @@ CMake build options:
 * `Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS`: enable experimental
   compute kernel implementations (advanced feature, default: OFF)
 * `Hpg_MAX_NUM_CF_GROUPS`: maximum number of convolution function
-  groups (default: 1000)
+  groups (default: 100)
+* `Hpg_ENABLE_MPI`: enable experimental MPI runtime (default: `OFF`)
 
 Note that the selected implementation(s) must be enabled in the *Kokkos*
 library installation. When building for *CUDA* using *gcc*, *Kokkos'*
