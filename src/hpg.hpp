@@ -2571,10 +2571,13 @@ public:
         VisDataVector(std::move(visibilities)));
     if (hpg::is_value(fvs_or_err))
       return
-        GridderState::future_visibilities_narrow<N>(
-          hpg::get_value(std::move(fvs_or_err)));
+        rval(
+          GridderState::future_visibilities_narrow<N>(
+            hpg::get_value(std::move(fvs_or_err))));
     else
-      return hpg::get_error(std::move(fvs_or_err));
+      return
+        rval<future<std::vector<VisData<N>>>>(
+          hpg::get_error(std::move(fvs_or_err)));
   }
 
   /** degrid and grid visibilities, returning residual visibilities
@@ -2621,10 +2624,13 @@ public:
         update_grid_weights);
     if (hpg::is_value(fvs_or_err))
       return
-        GridderState::future_visibilities_narrow<N>(
-          hpg::get_value(std::move(fvs_or_err)));
+        rval(
+          GridderState::future_visibilities_narrow<N>(
+            hpg::get_value(std::move(fvs_or_err))));
     else
-      return hpg::get_error(std::move(fvs_or_err));
+      return
+        rval<future<std::vector<VisData<N>>>>(
+          hpg::get_error(std::move(fvs_or_err)));
   }
 
   /** device execution fence

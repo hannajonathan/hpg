@@ -73,9 +73,12 @@ struct MyCFArrayShape
   }
 };
 
-struct MyCFArray final
-  : private MyCFArrayShape, public hpg::CFArray {
 
+struct MyCFArray final
+  : public hpg::CFArray {
+
+  unsigned m_oversampling;
+  std::vector<std::array<unsigned, 4>> m_extents;
   std::vector<std::vector<std::complex<hpg::cf_fp>>> m_values;
 
   MyCFArray() {}
@@ -84,8 +87,12 @@ struct MyCFArray final
     unsigned oversampling,
     const std::vector<std::array<unsigned, 4>>& sizes,
     const std::vector<std::vector<std::complex<hpg::cf_fp>>>& values)
-    : MyCFArrayShape(oversampling, sizes)
+    : m_oversampling(oversampling)
     , m_values(values) {
+
+    for (auto& sz : sizes)
+      m_extents.push_back(
+        {sz[0] * oversampling, sz[1] * oversampling, sz[2], sz[3]});
   }
 
   unsigned
@@ -111,7 +118,6 @@ struct MyCFArray final
     unsigned cube,
     unsigned grp)
     const override {
-
     auto& vals = m_values[grp];
     auto& ext = m_extents[grp];
     return vals[((x * ext[1] + y) * ext[2] + mueller) * ext[3] + cube];
@@ -477,6 +483,82 @@ TEST(Gridder, Reset) {
     EXPECT_FALSE(has_non_zero(values1.get()));
     auto weights1 = g.grid_weights();
     EXPECT_FALSE(has_non_zero(weights1.get()));
+  }
+}
+
+// test residual visibility return functionality
+TEST(Gridder, ResidualVisibilities) {
+  const std::array<unsigned, 4> grid_size{20, 20, 2, 1};
+  const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
+  constexpr unsigned cf_oversampling = 10;
+  constexpr hpg::vis_frequency_fp freq = 3.693e+09;
+  constexpr std::complex<hpg::visibility_fp> vis(1.0, -1.0);
+  constexpr hpg::vis_weight_fp wgt = 1.0;
+  const std::vector<std::array<unsigned, 4>>
+    cf_sizes{{3, 3, 3, 3}, {2, 2, 2, 2}};
+
+  std::mt19937 rng(42);
+  MyCFArray cf = create_cf(cf_oversampling, cf_sizes, rng);
+  hpg::Gridder g;
+  {
+    auto g_or_err =
+      hpg::Gridder::create<2>(
+        default_device,
+        0,
+        1,
+        &cf,
+        grid_size,
+        grid_scale,
+        {{0, -1}, {-1, 0}},
+        {{0, -1}, {-1, 0}}
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        , impl_versions
+#endif
+        );
+    ASSERT_TRUE(hpg::is_value(g_or_err));
+    g = hpg::get_value(std::move(g_or_err));
+    auto opt_err =
+      g.set_convolution_function(default_host_device, MyCFArray(cf));
+    ASSERT_FALSE(opt_err);
+  }
+
+  auto visibilities =
+    std::vector<hpg::VisData<2>>{
+      hpg::VisData<2>(
+        {vis, -vis},
+        {wgt, wgt / 2},
+        freq,
+        0.0,
+        {0.0, 0.0, 0.1},
+        0,
+        {0, 0})};
+
+  {
+    // do gridding
+    auto fv_or_err =
+      g.degrid_grid_get_residual_visibilities(
+        default_host_device,
+        std::vector<hpg::VisData<2>>(visibilities));
+    ASSERT_TRUE(hpg::is_value(fv_or_err));
+    auto fv = hpg::get_value(std::move(fv_or_err));
+    // one try before future has a chance to complete
+    ASSERT_FALSE(fv.get());
+    // ensure that future completes
+    g.fence();
+    // get result of future
+    auto orv = fv.get();
+    ASSERT_TRUE(orv);
+#if HPG_API >= 17
+    // get the residual visibilities
+    auto resvis = std::move(orv).value();
+#else
+    auto resvis = std::move(*orv);
+#endif
+    EXPECT_TRUE(
+      std::mismatch(
+        resvis.begin(), resvis.end(),
+        visibilities.begin(), visibilities.end())
+      == std::make_pair(resvis.end(), visibilities.end()));
   }
 }
 
