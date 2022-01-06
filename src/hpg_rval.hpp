@@ -115,7 +115,7 @@ get_error(RV&& rv) {
 }
 #else // __cplusplus < 201402L
 template <typename RV>
-HPG_EXPORT inline const typename rval_value<RV>::type&
+HPG_EXPORT inline const Error&
 get_error(const RV& rv) {
 # if HPG_API >= 17
 #  error "Unsupported c++ standard and HPG API version"
@@ -124,7 +124,7 @@ get_error(const RV& rv) {
 # endif // HPG_API >= 17
 }
 template <typename RV>
-HPG_EXPORT inline typename rval_value<RV>::type&
+HPG_EXPORT inline Error&
 get_error(RV& rv) {
 # if HPG_API >= 17
 #  error "Unsupported c++ standard and HPG API version"
@@ -133,7 +133,7 @@ get_error(RV& rv) {
 # endif // HPG_API >= 17
 }
 template <typename RV>
-HPG_EXPORT inline typename rval_value<RV>::type&&
+HPG_EXPORT inline Error
 get_error(RV&& rv) {
   return *std::get<0>(std::move(rv));
 }
