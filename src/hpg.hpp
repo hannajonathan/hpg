@@ -2799,7 +2799,7 @@ public:
         context);
     if (hpg::is_value(fvs_or_err))
       return
-        rval(
+        rval<future<std::vector<VisData<N>>>>(
           GridderState::future_visibilities_narrow<N>(
             hpg::get_value(std::move(fvs_or_err))));
     else
@@ -2858,7 +2858,7 @@ public:
         context);
     if (hpg::is_value(fvs_or_err))
       return
-        rval(
+        rval<future<std::vector<VisData<N>>>>(
           GridderState::future_visibilities_narrow<N>(
             hpg::get_value(std::move(fvs_or_err))));
     else
