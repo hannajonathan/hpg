@@ -1735,10 +1735,12 @@ public:
     const noexcept override {
 
     if (context >= m_exec_contexts.size())
-      return std::make_unique<InvalidGriddingContextError>();
+      return rval<size_t>(std::make_unique<InvalidGriddingContextError>());
 
     std::scoped_lock lock(m_mtx);
-    return m_exec_contexts[context].current_cf_pool()->pool.extent(0);
+    return
+      rval<size_t>(
+        m_exec_contexts[context].current_cf_pool()->pool.extent(0));
   }
 
   virtual std::optional<std::unique_ptr<Error>>
