@@ -1405,6 +1405,8 @@ TEST(GridderState, GridOne) {
   auto [g, w] = hpg::get_value(std::move(err_or_result));
   EXPECT_TRUE(
     cf.verify_cf_footprint(0, g.get(), grid_size, grid_scale, vis, freq, uvw));
+  auto val = (*g)(9582, 8536, 0, 0);
+  std::cout << val << std::endl;
 }
 
 TEST(GridderState, GridNone) {
