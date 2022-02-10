@@ -1823,7 +1823,7 @@ TEST(GridderState, ResidualVisibilities) {
   {
     // do gridding
     auto gsfv_or_err =
-      gs.degrid_grid_get_residual_visibilities(
+      std::move(gs).degrid_grid_get_residual_visibilities(
         default_host_device,
         std::vector<hpg::VisData<2>>(visibilities),
         ch_maps);

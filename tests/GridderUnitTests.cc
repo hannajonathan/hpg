@@ -18,6 +18,7 @@
 
 #include <array>
 #include <cassert>
+#include <complex>
 #include <iostream>
 #include <random>
 
@@ -38,6 +39,8 @@ hpg::Device default_device = hpg::Device::Serial;
 #else
 # error "At least one device needs to be enabled"
 #endif
+
+using namespace std::complex_literals;
 
 struct MyCFArrayShape
   : public hpg::CFArrayShape {
@@ -121,6 +124,66 @@ struct MyCFArray final
     auto& vals = m_values[grp];
     auto& ext = m_extents[grp];
     return vals[((x * ext[1] + y) * ext[2] + mueller) * ext[3] + channel];
+  }
+};
+
+struct ConeCFArray final
+  : public hpg::CFArray {
+
+  int m_nmueller;
+  int m_oversampling;
+  int m_radius;
+  int m_oversampled_radius;
+
+  ConeCFArray() {}
+
+  ConeCFArray(unsigned nmueller, unsigned oversampling, unsigned radius)
+    : m_nmueller(nmueller)
+    , m_oversampling(oversampling)
+    , m_radius(radius)
+    , m_oversampled_radius((radius + padding) * oversampling) {
+  }
+
+  ConeCFArray(const ConeCFArray& other)
+    : m_nmueller(other.m_nmueller)
+    , m_oversampling(other.m_oversampling)
+    , m_radius(other.m_radius)
+    , m_oversampled_radius(other.m_oversampled_radius) {
+  }
+
+  unsigned
+  oversampling() const override {
+    return m_oversampling;
+  }
+
+  unsigned
+  num_groups() const override {
+    return 1;
+  }
+
+  std::array<unsigned, 4>
+  extents(unsigned) const override {
+    unsigned w = 2 * m_oversampled_radius + 1;
+    return {w, w, unsigned(m_nmueller), 1};
+  }
+
+  std::complex<hpg::cf_fp>
+  operator()(unsigned x, unsigned y, unsigned mueller, unsigned, unsigned)
+    const override {
+
+    std::complex<float> p(
+      (-m_oversampled_radius + int(x)) + 0.5f,
+      (-m_oversampled_radius + int(y)) + 0.5f);
+    return
+      std::polar(
+        (mueller + 1) * std::max(m_oversampled_radius - std::abs(p), 0.0f),
+        std::arg(std::abs(p.real()) + 1.0if * std::abs(p.imag())));
+  }
+
+  std::complex<hpg::grid_value_fp>
+  operator()(unsigned x, unsigned y, unsigned mueller) const {
+
+    return operator()(x, y, mueller, 0, 0);
   }
 };
 
@@ -482,21 +545,20 @@ TEST(Gridder, Reset) {
 TEST(Gridder, ResidualVisibilities) {
   const std::array<unsigned, 4> grid_size{20, 20, 2, 1};
   const std::array<hpg::grid_scale_fp, 2> grid_scale{0.0476591, 0.0476591};
+  constexpr unsigned cf_radius = 3;
   constexpr unsigned cf_oversampling = 10;
   constexpr hpg::vis_frequency_fp freq = 3.693e+09;
   constexpr std::complex<hpg::visibility_fp> vis(1.0, -1.0);
-  constexpr hpg::vis_weight_fp wgt = 1.0;
-  const std::vector<std::array<unsigned, 4>>
-    cf_sizes{{3, 3, 3, 3}, {2, 2, 2, 2}};
 
-  std::mt19937 rng(42);
-  MyCFArray cf = create_cf(cf_oversampling, cf_sizes, rng);
+  ConeCFArray cf(1, cf_oversampling, cf_radius);
   hpg::Gridder g;
   {
     auto g_or_err =
       hpg::Gridder::create<2>(
         default_device,
         0,
+        0,
+        1,
         1,
         &cf,
         grid_size,
@@ -510,27 +572,22 @@ TEST(Gridder, ResidualVisibilities) {
     ASSERT_TRUE(hpg::is_value(g_or_err));
     g = hpg::get_value(std::move(g_or_err));
     auto opt_err =
-      g.set_convolution_function(default_host_device, MyCFArray(cf));
+      g.set_convolution_function(default_host_device, ConeCFArray(cf));
     ASSERT_FALSE(opt_err);
   }
 
   auto visibilities =
     std::vector<hpg::VisData<2>>{
-      hpg::VisData<2>(
-        {vis, -vis},
-        {wgt, wgt / 2},
-        freq,
-        0.0,
-        {0.0, 0.0, 0.1},
-        0,
-        {0, 0})};
+      hpg::VisData<2>({vis, -vis}, freq, 0.0, {0.0, 0.0, 0.1}, {0, 0})};
 
   {
     // do gridding
+    std::vector<std::map<unsigned, hpg::vis_weight_fp>> ch_maps{{{0, 1.0}}};
     auto fv_or_err =
       g.degrid_grid_get_residual_visibilities(
         default_host_device,
-        std::vector<hpg::VisData<2>>(visibilities));
+        std::vector<hpg::VisData<2>>(visibilities),
+        ch_maps);
     ASSERT_TRUE(hpg::is_value(fv_or_err));
     auto fv = hpg::get_value(std::move(fv_or_err));
     // one try before future has a chance to complete
