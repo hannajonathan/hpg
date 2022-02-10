@@ -736,7 +736,7 @@ struct StreamVector {
 
   void
   resize(size_t sz) {
-    assert(sz < m_max_size);
+    assert(sz <= m_max_size);
     if constexpr (std::is_same_v<K::HostSpace, memory_space>) {
       m_vector.resize(sz);
       m_values_d =
