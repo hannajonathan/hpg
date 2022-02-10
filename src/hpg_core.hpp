@@ -689,32 +689,32 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const model_const_view& model,
     const scratch_phscr_view& phi_Y) {
 
-    const auto min_x = std::max(0, vis.m_grid_coord[0]);
-    const auto max_x =
-      std::min(
-        vis.m_grid_coord[0] + vis.m_cf_size[0],
-        model.extent_int(int(GridAxis::x)));
-    const auto n_x = max_x - min_x;
-    const auto min_y = std::max(0, vis.m_grid_coord[1]);
-    const auto max_y =
-      std::min(
-        vis.m_grid_coord[1] + vis.m_cf_size[1],
-        model.extent_int(int(GridAxis::y)));
-    const auto n_y = max_y - min_y;
-    const auto n_r = model.extent_int(int(GridAxis::mrow));
-
-    const K::Array<int, 2> cf_min{
-      vis.m_cf_major[0] + min_x - vis.m_grid_coord[0],
-      vis.m_cf_major[1] + min_y - vis.m_grid_coord[1]};
-    const K::Array<int, 2> grid_min{min_x, min_y};
-
-    auto degridding_mindex =
-      vis.m_pos_w ? conjugate_mueller_indexes : mueller_indexes;
-    cf_fp cf_im_factor = (vis.m_pos_w ? 1 : -1);
-
     poln_array_type<visibility_fp_t, N> result;
 
     if (model.is_allocated()) {
+      const auto min_x = std::max(0, vis.m_grid_coord[0]);
+      const auto max_x =
+        std::min(
+          vis.m_grid_coord[0] + vis.m_cf_size[0],
+          model.extent_int(int(GridAxis::x)));
+      const auto n_x = max_x - min_x;
+      const auto min_y = std::max(0, vis.m_grid_coord[1]);
+      const auto max_y =
+        std::min(
+          vis.m_grid_coord[1] + vis.m_cf_size[1],
+          model.extent_int(int(GridAxis::y)));
+      const auto n_y = max_y - min_y;
+      const auto n_r = model.extent_int(int(GridAxis::mrow));
+
+      const K::Array<int, 2> cf_min{
+        vis.m_cf_major[0] + min_x - vis.m_grid_coord[0],
+        vis.m_cf_major[1] + min_y - vis.m_grid_coord[1]};
+      const K::Array<int, 2> grid_min{min_x, min_y};
+
+      auto degridding_mindex =
+        vis.m_pos_w ? conjugate_mueller_indexes : mueller_indexes;
+      cf_fp cf_im_factor = (vis.m_pos_w ? 1 : -1);
+
       // model degridding
       static_assert(std::is_same_v<acc_vis_value_t, acc_cf_value_t>);
       vis_array_type<typename acc_vis_value_t::value_type, N> vis_array;
