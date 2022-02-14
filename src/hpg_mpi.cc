@@ -119,7 +119,8 @@ create_impl(
   MPI_Comm comm,
   unsigned vis_part_size,
   const ReplicatedGridDecomposition& grid_part,
-  VisibilityDistribution visibility_distribution) {
+  VisibilityDistribution visibility_distribution,
+  bool split_phase) {
 
   using namespace ::hpg::mpi;
 
@@ -140,22 +141,49 @@ create_impl(
 
   int comm_rank;
   MPI_Comm_rank(comm, &comm_rank);
-  MPI_Comm grid_comm; // grid partition comm
-  MPI_Comm_split(
-    comm,
-    comm_rank / grid_part_size,
-    comm_rank % grid_part_size,
-    &grid_comm);
-  int grid_rank;
-  MPI_Comm_rank(grid_comm, &grid_rank);
+  int split_factor = (split_phase ? 2 : 1);
+
   MPI_Comm vis_comm; // visibility partition comm
   MPI_Comm_split(
     comm,
-    comm_rank % grid_part_size,
-    comm_rank / grid_part_size,
+    comm_rank % (grid_part_size * split_factor),
+    comm_rank / (grid_part_size * split_factor),
     &vis_comm);
   int vis_rank;
   MPI_Comm_rank(vis_comm, &vis_rank);
+
+  MPI_Comm gp_comm;
+  MPI_Comm_split(
+    comm,
+    comm_rank / (grid_part_size * split_factor),
+    comm_rank % (grid_part_size * split_factor),
+    &gp_comm);
+  int gp_rank;
+  MPI_Comm_rank(gp_comm, &gp_rank);
+  MPI_Comm degrid_comm, grid_comm; // sometimes aliases
+  MPI_Comm gpart_comm; // always an alias
+  if (split_phase) {
+    int gp_size;
+    MPI_Comm_size(gp_comm, &gp_size);
+    bool is_degrid = (gp_rank < gp_size / 2);
+    MPI_Comm gp_split;
+    MPI_Comm_split(gp_comm, (is_degrid ? 0 : 1), gp_rank, &gp_split);
+    if (is_degrid) {
+      degrid_comm = gp_split;
+      gpart_comm = degrid_comm;
+      MPI_Intercomm_create(degrid_comm, 0, gp_comm, 0, 0, &grid_comm);
+    } else {
+      grid_comm = gp_split;
+      gpart_comm = grid_comm;
+      MPI_Intercomm_create(grid_comm, 0, gp_comm, 0, 0, &degrid_comm);
+    }
+  } else {
+    degrid_comm = gp_comm;
+    grid_comm = gp_comm;
+    gpart_comm = grid_comm;
+  }
+  int gpart_rank;
+  MPI_Comm_rank(gpart_comm, &gpart_rank);
 
   std::vector<runtime::ReplicatedGridBrick> grid_bricks;
   grid_bricks.reserve(grid_part_size);
@@ -196,8 +224,8 @@ create_impl(
   bool has_split_planes = false;
   for (size_t i = 0; i < grid_bricks.size(); ++i) {
     bool my_brick =
-      replica_rank <= grid_rank
-      && grid_rank < replica_rank + int(grid_bricks[i].num_replicas);
+      replica_rank <= gpart_rank
+      && gpart_rank < replica_rank + int(grid_bricks[i].num_replicas);
     int ch =
       int(grid_bricks[i].offset[runtime::ReplicatedGridBrick::Axis::channel]);
     if (my_brick) {
@@ -210,11 +238,12 @@ create_impl(
       has_replicas = true;
     replica_rank += grid_bricks[i].num_replicas;
   }
+
   MPI_Comm replica_comm = MPI_COMM_SELF;
   if (has_replicas) {
     MPI_Comm c;
     MPI_Comm_split(
-      grid_comm,
+      gpart_comm,
       ((grid_bricks[grid_brick_index].num_replicas > 1)
        ? grid_brick_index
        : MPI_UNDEFINED),
@@ -223,10 +252,13 @@ create_impl(
     if (c != MPI_COMM_NULL)
       replica_comm = c;
   }
+  if (replica_comm == MPI_COMM_SELF)
+    MPI_Comm_dup(MPI_COMM_SELF, &replica_comm);
+
   MPI_Comm plane_comm = MPI_COMM_NULL;
   if (has_split_planes)
     MPI_Comm_split(
-      grid_comm,
+      gpart_comm,
       ((vis_rank == 0) ? ch0 : MPI_UNDEFINED),
       0,
       &plane_comm);
@@ -241,14 +273,15 @@ create_impl(
   const unsigned max_active_tasks_per_context = max_added_tasks_per_context + 1;
 
   if (visibility_distribution == VisibilityDistribution::Pipeline
-      && grid_part_size == 1) {
+      && grid_part_size == 1 && !split_phase) {
     visibility_distribution = VisibilityDistribution::Broadcast;
     std::ostringstream oss;
     oss
       << "WARNING: Ignoring request for 'Pipeline' visibility distribution "
       << "algorithm," << std::endl
       << "and forcing use of 'Broadcast' algorithm because image grid is not "
-      << "partitioned" << std::endl;
+      << "partitioned" << std::endl
+      << "and split phase is not active." << std::endl;
     std::cerr << oss.str();
   }
 
@@ -262,6 +295,8 @@ create_impl(
         std::make_shared<
           StateT<::hpg::Device::Serial, VisibilityDistribution::Broadcast>>(
           vis_comm,
+          gp_comm,
+          degrid_comm,
           grid_comm,
           grid_bricks[grid_brick_index],
           replica_comm,
@@ -282,6 +317,8 @@ create_impl(
         std::make_shared<
           StateT<::hpg::Device::Serial, VisibilityDistribution::Pipeline>>(
             vis_comm,
+            gp_comm,
+            degrid_comm,
             grid_comm,
             grid_bricks[grid_brick_index],
             replica_comm,
@@ -313,6 +350,8 @@ create_impl(
         std::make_shared<
           StateT<::hpg::Device::OpenMP, VisibilityDistribution::Broadcast>>(
             vis_comm,
+            gp_comm,
+            degrid_comm,
             grid_comm,
             grid_bricks[grid_brick_index],
             replica_comm,
@@ -333,6 +372,8 @@ create_impl(
         std::make_shared<
           StateT<::hpg::Device::OpenMP, VisibilityDistribution::Pipeline>>(
             vis_comm,
+            gp_comm,
+            degrid_comm,
             grid_comm,
             grid_bricks[grid_brick_index],
             replica_comm,
@@ -364,6 +405,8 @@ create_impl(
         std::make_shared<
           StateT<::hpg::Device::Cuda, VisibilityDistribution::Broadcast>>(
             vis_comm,
+            gp_comm,
+            degrid_comm,
             grid_comm,
             grid_bricks[grid_brick_index],
             replica_comm,
@@ -384,6 +427,8 @@ create_impl(
         std::make_shared<
           StateT<::hpg::Device::Cuda, VisibilityDistribution::Pipeline>>(
             vis_comm,
+            gp_comm,
+            degrid_comm,
             grid_comm,
             grid_bricks[grid_brick_index],
             replica_comm,
@@ -432,7 +477,8 @@ GridderState::create(
   MPI_Comm comm,
   unsigned vis_part_size,
   const ReplicatedGridDecomposition& grid_part,
-  VisibilityDistribution visibility_distribution) noexcept {
+  VisibilityDistribution visibility_distribution,
+  bool split_phase) noexcept {
 
   using val_t = std::tuple<::hpg::GridderState, bool, bool>;
 
@@ -472,17 +518,18 @@ GridderState::create(
       comm,
       vis_part_size,
       grid_part,
-      visibility_distribution);
+      visibility_distribution,
+      split_phase);
   auto vis_part_root =
     impl->is_visibility_partition_root()
     && impl->is_replica_partition_root();
-  auto grid_part_root = impl->is_grid_partition_root();
+  auto gpart_root = impl->is_gpart_root();
   return
     ::hpg::rval_t<val_t>(
       std::make_tuple(
         ::hpg::GridderState(impl),
         vis_part_root,
-        grid_part_root));
+        gpart_root));
 }
 
 ::hpg::rval_t<std::tuple<::hpg::GridderState, bool, bool>>
@@ -503,7 +550,8 @@ GridderState::create2d(
   MPI_Comm comm,
   unsigned vis_part_size,
   unsigned grid_part_size,
-  VisibilityDistribution visibility_distribution) noexcept {
+  VisibilityDistribution visibility_distribution,
+  bool split_phase) noexcept {
 
   using val_t = std::tuple<::hpg::GridderState, bool, bool>;
 
@@ -547,7 +595,8 @@ GridderState::create2d(
       comm,
       vis_part_size,
       ReplicatedGridDecomposition(decomp_sizes),
-      visibility_distribution);
+      visibility_distribution,
+      split_phase);
 }
 
 static ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
@@ -590,7 +639,8 @@ Gridder::create(
   MPI_Comm comm,
   unsigned vis_part_size,
   const ReplicatedGridDecomposition& grid_part,
-  VisibilityDistribution visibility_distribution) noexcept {
+  VisibilityDistribution visibility_distribution,
+  bool split_phase) noexcept {
 
   return
     apply_gridder(
@@ -611,7 +661,8 @@ Gridder::create(
         comm,
         vis_part_size,
         grid_part,
-        visibility_distribution));
+        visibility_distribution,
+        split_phase));
 }
 
 ::hpg::rval_t<std::tuple<::hpg::Gridder, bool, bool>>
@@ -632,7 +683,8 @@ Gridder::create2d(
   MPI_Comm comm,
   unsigned vis_part_size,
   unsigned grid_part_size,
-  VisibilityDistribution visibility_distribution) noexcept {
+  VisibilityDistribution visibility_distribution,
+  bool split_phase) noexcept {
 
   return
     apply_gridder(
@@ -653,7 +705,8 @@ Gridder::create2d(
         comm,
         vis_part_size,
         grid_part_size,
-        visibility_distribution));
+        visibility_distribution,
+        split_phase));
 }
 
 // Local Variables:

@@ -131,6 +131,7 @@ namespace GridderState {
    * @param grid_part grid partition
    * @param visibility_distribution visibility distribution algorithm for grid
    * partition
+   * @param split_phase true iff degridding and gridding phases are partitioned
    *
    * max_added_tasks_per_context may be used to control the level of concurrency
    * available to the GridderState instance. In all cases, at least one task is
@@ -165,7 +166,8 @@ namespace GridderState {
     MPI_Comm comm,
     unsigned vis_part_size,
     const ReplicatedGridDecomposition& grid_part,
-    VisibilityDistribution visibility_distribution) noexcept;
+    VisibilityDistribution visibility_distribution,
+    bool split_phase) noexcept;
 
   /** factory method
    *
@@ -197,6 +199,7 @@ namespace GridderState {
    * partition)
    * @param visibility_distribution visibility distribution algorithm for grid
    * partition
+   * @param split_phase true iff degridding and gridding phases are partitioned
    *
    * max_added_tasks_per_context may be used to control the level of concurrency
    * available to the GridderState instance. In all cases, at least one task is
@@ -233,7 +236,8 @@ namespace GridderState {
     MPI_Comm comm,
     unsigned vis_part_size,
     unsigned grid_part_size,
-    VisibilityDistribution visibility_distribution) noexcept;
+    VisibilityDistribution visibility_distribution,
+    bool split_phase) noexcept;
 
   /** factory method
    *
@@ -263,7 +267,8 @@ namespace GridderState {
     MPI_Comm comm,
     unsigned vis_part_size,
     const ReplicatedGridDecomposition& grid_part,
-    VisibilityDistribution visibility_distribution) noexcept {
+    VisibilityDistribution visibility_distribution,
+    bool split_phase) noexcept {
 
     return
       create(
@@ -283,7 +288,8 @@ namespace GridderState {
         comm,
         vis_part_size,
         grid_part,
-        visibility_distribution);
+        visibility_distribution,
+        split_phase);
   }
 
   /** factory method
@@ -314,7 +320,8 @@ namespace GridderState {
     MPI_Comm comm,
     unsigned vis_part_size,
     unsigned grid_part_size,
-    VisibilityDistribution visibility_distribution) noexcept {
+    VisibilityDistribution visibility_distribution,
+    bool split_phase) noexcept {
 
     return
       create2d(
@@ -334,7 +341,8 @@ namespace GridderState {
         comm,
         vis_part_size,
         grid_part_size,
-        visibility_distribution);
+        visibility_distribution,
+        split_phase);
   }
 } // end namespace GridderState
 
@@ -362,7 +370,8 @@ namespace Gridder {
     MPI_Comm comm,
     unsigned vis_part_size,
     const ReplicatedGridDecomposition& grid_part,
-    VisibilityDistribution visibility_distribution) noexcept;
+    VisibilityDistribution visibility_distribution,
+    bool split_phase) noexcept;
 
   rval_t<std::tuple<::hpg::Gridder, bool, bool>>
   create2d(
@@ -382,7 +391,8 @@ namespace Gridder {
     MPI_Comm comm,
     unsigned vis_part_size,
     unsigned grid_part_size,
-    VisibilityDistribution visibility_distribution) noexcept;
+    VisibilityDistribution visibility_distribution,
+    bool split_phase) noexcept;
 
   /** Gridder factory method
    *
@@ -411,7 +421,8 @@ namespace Gridder {
     MPI_Comm comm,
     unsigned vis_part_size,
     const ReplicatedGridDecomposition& grid_part,
-    VisibilityDistribution visibility_distribution) noexcept {
+    VisibilityDistribution visibility_distribution,
+    bool split_phase) noexcept {
 
     return
       create(
@@ -431,7 +442,8 @@ namespace Gridder {
         comm,
         vis_part_size,
         grid_part,
-        visibility_distribution);
+        visibility_distribution,
+        split_phase);
   }
 
   template <unsigned N>
@@ -453,7 +465,8 @@ namespace Gridder {
     MPI_Comm comm,
     unsigned vis_part_size,
     unsigned grid_part_size,
-    VisibilityDistribution visibility_distribution) noexcept {
+    VisibilityDistribution visibility_distribution,
+    bool split_phase) noexcept {
 
     return
       create2d(
@@ -473,7 +486,8 @@ namespace Gridder {
         comm,
         vis_part_size,
         grid_part_size,
-        visibility_distribution);
+        visibility_distribution,
+        split_phase);
   }
 
 } // end namespace Gridder

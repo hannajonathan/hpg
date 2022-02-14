@@ -312,6 +312,16 @@ union GriddingFlags {
   } b;
 };
 
+MPI_Comm
+dup_comm(MPI_Comm comm) {
+  MPI_Comm result;
+  if (comm == MPI_COMM_NULL)
+    result = comm;
+  else
+    MPI_Comm_dup(comm, &result);
+  return result;
+}
+
 struct ReplicatedGridBrick {
   // three axes are x, y, and channel; mrow partition not supported
   static constexpr unsigned rank = 3;
@@ -331,9 +341,15 @@ protected:
   // partition
   MPI_Comm m_vis_comm;
 
-  // communicator for subspace of grid plane partition for this element of
-  // visibility partition
-  MPI_Comm m_grid_comm;
+  // Degridding and gridding communicators for subspace of grid plane partition
+  // for this element of visibility partition. Two cases:
+  // - no split phase: all communicators are identical
+  // - with split phase: m_gp_comm is an intra-communicator, another one of
+  //                     other two is an intra-communicator, and the third
+  //                     is an inter-communicator
+  MPI_Comm m_gp_comm; // comm over all of grid partition
+  MPI_Comm m_degrid_comm; // comm over degridding sub-partition
+  MPI_Comm m_grid_comm; // comm over gridding sub-partition
 
   MPI_Comm m_replica_comm;
 
@@ -345,6 +361,8 @@ protected:
 
   State()
     : m_vis_comm(MPI_COMM_NULL)
+    , m_gp_comm(MPI_COMM_NULL)
+    , m_degrid_comm(MPI_COMM_NULL)
     , m_grid_comm(MPI_COMM_NULL)
     , m_replica_comm(MPI_COMM_NULL)
     , m_plane_comm(MPI_COMM_NULL)
@@ -355,10 +373,14 @@ public:
 
   State(
     MPI_Comm vis_comm,
+    MPI_Comm gp_comm,
+    MPI_Comm degrid_comm,
     MPI_Comm grid_comm,
     MPI_Comm replica_comm,
     MPI_Comm plane_comm)
     : m_vis_comm(vis_comm)
+    , m_gp_comm(gp_comm)
+    , m_degrid_comm(degrid_comm)
     , m_grid_comm(grid_comm)
     , m_replica_comm(replica_comm)
     , m_plane_comm(plane_comm)
@@ -366,9 +388,13 @@ public:
     , m_reduced_weights(true) {}
 
   virtual ~State() {
+    if (is_split_phase()) {
+      MPI_Comm_free(&m_degrid_comm);
+      MPI_Comm_free(&m_grid_comm);
+    }
     for (auto& c :
-           {&m_vis_comm, &m_grid_comm, &m_replica_comm, &m_plane_comm}) {
-      if (*c != MPI_COMM_NULL && *c != MPI_COMM_SELF && *c != MPI_COMM_WORLD)
+           {&m_vis_comm, &m_gp_comm, &m_replica_comm, &m_plane_comm}) {
+      if (*c != MPI_COMM_NULL && *c != MPI_COMM_WORLD)
         MPI_Comm_free(c);
     }
   }
@@ -388,14 +414,71 @@ public:
   }
 
   bool
-  non_trivial_grid_partition() const noexcept {
+  non_trivial_gpart() const noexcept {
+    int size;
+    MPI_Comm_size(m_gp_comm, &size);
+    return size > 1;
+  }
+
+  bool
+  is_gpart_root() const noexcept {
+    int rank;
+    MPI_Comm_rank(m_gp_comm, &rank);
+    return rank == 0;
+  }
+
+  bool
+  is_split_phase() const noexcept {
+    return
+      m_gp_comm != MPI_COMM_NULL
+      && m_grid_comm != m_degrid_comm;
+  }
+
+  bool
+  is_degridding() const noexcept {
+    int flag;
+    MPI_Comm_test_inter(m_degrid_comm, &flag);
+    return !bool(flag);
+  }
+
+  bool
+  is_gridding() const noexcept {
+    int flag;
+    MPI_Comm_test_inter(m_grid_comm, &flag);
+    return !bool(flag);
+  }
+
+  bool
+  non_trivial_degridding_partition() const noexcept {
+    if (!is_degridding())
+      return false;
+    int size;
+    MPI_Comm_size(m_degrid_comm, &size);
+    return size > 1;
+  }
+
+  bool
+  non_trivial_gridding_partition() const noexcept {
+    if (!is_gridding())
+      return false;
     int size;
     MPI_Comm_size(m_grid_comm, &size);
     return size > 1;
   }
 
   bool
-  is_grid_partition_root() const noexcept {
+  is_degridding_partition_root() const noexcept {
+    if (!is_degridding())
+      return false;
+    int rank;
+    MPI_Comm_rank(m_degrid_comm, &rank);
+    return rank == 0;
+  }
+
+  bool
+  is_gridding_partition_root() const noexcept {
+    if (!is_gridding())
+      return false;
     int rank;
     MPI_Comm_rank(m_grid_comm, &rank);
     return rank == 0;
@@ -460,6 +543,8 @@ public:
 
   StateTBase(
     MPI_Comm vis_comm,
+    MPI_Comm gp_comm,
+    MPI_Comm degrid_comm,
     MPI_Comm grid_comm,
     const ReplicatedGridBrick& grid_brick,
     MPI_Comm replica_comm,
@@ -473,7 +558,7 @@ public:
     const IArrayVector& conjugate_mueller_indexes,
     const std::array<unsigned, 4>& implementation_versions,
     ::hpg::runtime::ExecutionContextGroup<D>&& exec_contexts)
-    : State(vis_comm, grid_comm, replica_comm, plane_comm)
+    : State(vis_comm, gp_comm, degrid_comm, grid_comm, replica_comm, plane_comm)
     , ::hpg::runtime::StateT<D>(
       visibility_batch_size,
       max_avg_channels_per_vis,
@@ -497,27 +582,17 @@ public:
     : State()
     , ::hpg::runtime::StateT<D>(st) {
 
-    if (st.m_vis_comm != MPI_COMM_NULL) {
-      if (st.m_vis_comm != MPI_COMM_SELF)
-        MPI_Comm_dup(st.m_vis_comm, &m_vis_comm);
-      else
-        m_vis_comm = MPI_COMM_SELF;
+    dup_comm(st.m_vis_comm, &m_vis_comm);
+    dup_comm(st.m_gp_comm, &m_gp_comm);
+    if (!st.split_phase()) {
+      m_grid_comm = m_gp_comm;
+      m_degrid_comm = m_gp_comm;
+    } else {
+      dup_comm(st.m_degrid_comm, &m_degrid_comm);
+      dup_comm(st.m_grid_comm, &m_grid_comm);
     }
-    if (st.m_grid_comm != MPI_COMM_NULL) {
-      if (st.m_grid_comm != MPI_COMM_SELF)
-        MPI_Comm_dup(st.m_grid_comm, &m_grid_comm);
-      else
-        m_grid_comm = MPI_COMM_SELF;
-    }
-    if (st.m_replica_comm != MPI_COMM_NULL) {
-      if (st.m_replica_comm != MPI_COMM_SELF)
-        MPI_Comm_dup(st.m_replica_comm, &m_replica_comm);
-      else
-        m_replica_comm = MPI_COMM_SELF;
-    }
-    if (st.m_plane_comm != MPI_COMM_NULL) {
-      MPI_Comm_dup(st.m_plane_comm, &m_plane_comm);
-    }
+    dup_comm(st.m_replica_comm, &m_replica_comm);
+    dup_comm(st.m_plane_comm, &m_plane_comm);
   }
 
   StateTBase(StateTBase&& st) noexcept
@@ -527,6 +602,8 @@ public:
     std::swap(m_reduced_grid, st.m_reduced_grid);
     std::swap(m_reduced_weights, st.m_reduced_weights);
     std::swap(m_vis_comm, st.m_vis_comm);
+    std::swap(m_gp_comm, st.m_gp_comm);
+    std::swap(m_degrid_comm, st.m_degrid_comm);
     std::swap(m_grid_comm, st.m_grid_comm);
     std::swap(m_replica_comm, st.m_replica_comm);
     std::swap(m_plane_comm, st.m_plane_comm);
@@ -828,6 +905,8 @@ protected:
     ::hpg::runtime::StateT<D>::swap(
       static_cast<::hpg::runtime::StateT<D>&>(other));
     std::swap(m_vis_comm, other.m_vis_comm);
+    std::swap(m_gp_comm, other.m_gp_comm);
+    std::swap(m_degrid_comm, other.m_degrid_comm);
     std::swap(m_grid_comm, other.m_grid_comm);
     std::swap(m_replica_comm, other.m_replica_comm);
     std::swap(m_plane_comm, other.m_plane_comm);
@@ -871,6 +950,7 @@ public:
 
   StateT(
     MPI_Comm vis_comm,
+    MPI_Comm degrid_comm,
     MPI_Comm grid_comm,
     const ReplicatedGridBrick& grid_brick,
     MPI_Comm replica_comm,
@@ -887,6 +967,7 @@ public:
     const std::array<unsigned, 4>& implementation_versions)
   : StateTBase<D>(
     vis_comm,
+    degrid_comm,
     grid_comm,
     grid_brick,
     replica_comm,
@@ -1307,6 +1388,7 @@ public:
 
   StateT(
     MPI_Comm vis_comm,
+    MPI_Comm degrid_comm,
     MPI_Comm grid_comm,
     const ReplicatedGridBrick& grid_brick,
     MPI_Comm replica_comm,
@@ -1323,6 +1405,7 @@ public:
     const std::array<unsigned, 4>& implementation_versions)
   : StateTBase<D>(
     vis_comm,
+    degrid_comm,
     grid_comm,
     grid_brick,
     replica_comm,
