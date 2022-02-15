@@ -756,7 +756,7 @@ struct StreamVector {
     execution_space espace,
     bool persistent,
     std::vector<S>&& vector,
-    bool only_reserve) {
+    bool only_reserve = false) {
 
     m_vector = std::move(vector);
     if constexpr (!std::is_same_v<K::HostSpace, memory_space>)

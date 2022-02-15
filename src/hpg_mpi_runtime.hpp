@@ -582,17 +582,17 @@ public:
     : State()
     , ::hpg::runtime::StateT<D>(st) {
 
-    dup_comm(st.m_vis_comm, &m_vis_comm);
-    dup_comm(st.m_gp_comm, &m_gp_comm);
+    m_vis_comm = dup_comm(st.m_vis_comm);
+    m_gp_comm = dup_comm(st.m_gp_comm);
     if (!st.split_phase()) {
       m_grid_comm = m_gp_comm;
       m_degrid_comm = m_gp_comm;
     } else {
-      dup_comm(st.m_degrid_comm, &m_degrid_comm);
-      dup_comm(st.m_grid_comm, &m_grid_comm);
+      m_degrid_comm = dup_comm(st.m_degrid_comm);
+      m_grid_comm = dup_comm(st.m_grid_comm);
     }
-    dup_comm(st.m_replica_comm, &m_replica_comm);
-    dup_comm(st.m_plane_comm, &m_plane_comm);
+    m_replica_comm = dup_comm(st.m_replica_comm);
+    m_plane_comm = dup_comm(st.m_plane_comm);
   }
 
   StateTBase(StateTBase&& st) noexcept
@@ -637,7 +637,7 @@ public:
 
   void
   reduce_weights_unlocked() const {
-    if (!m_reduced_weights) {
+    if (is_gridding() && !m_reduced_weights) {
       if (non_trivial_visibility_partition()
           || non_trivial_replica_partition()) {
         auto is_root =
@@ -672,13 +672,15 @@ public:
 
   void
   reduce_weights() const {
-    std::scoped_lock lock(this->m_mtx);
-    reduce_weights_unlocked();
+    if (is_gridding()) {
+      std::scoped_lock lock(this->m_mtx);
+      reduce_weights_unlocked();
+    }
   }
 
   void
   reduce_grid_unlocked() const {
-    if (!m_reduced_grid) {
+    if (is_gridding() && !m_reduced_grid) {
       if (non_trivial_visibility_partition()
           || non_trivial_replica_partition()) {
         auto is_root =
@@ -711,12 +713,17 @@ public:
 
   void
   reduce_grid() const {
-    std::scoped_lock lock(this->m_mtx);
-    reduce_grid_unlocked();
+    if (is_gridding()) {
+      std::scoped_lock lock(this->m_mtx);
+      reduce_grid_unlocked();
+    }
   }
 
   virtual std::optional<std::unique_ptr<::hpg::Error>>
   set_model(Device host_device, GridValueArray&& gv) override {
+
+    if (!is_degridding())
+      return std::nullopt;
 
     // N.B: access gv directly only at the root rank of m_vis_comm and only in
     // the root rank of any replicas
@@ -811,6 +818,8 @@ public:
 
   virtual std::unique_ptr<GridWeightArray>
   grid_weights() const override {
+    if (!is_gridding())
+      return nullptr;
     std::scoped_lock lock(this->m_mtx);
     reduce_weights_unlocked();
     return
@@ -821,6 +830,8 @@ public:
 
   virtual std::unique_ptr<GridValueArray>
   grid_values() const override {
+    if (!is_gridding())
+      return nullptr;
     std::scoped_lock lock(this->m_mtx);
     reduce_grid_unlocked();
     return
@@ -832,35 +843,44 @@ public:
   virtual std::unique_ptr<GridValueArray>
   model_values() const override {
     return
-      ((is_visibility_partition_root() && is_replica_partition_root())
+      ((is_degridding()
+        && is_visibility_partition_root()
+        && is_replica_partition_root())
        ? ::hpg::runtime::StateT<D>::model_values()
        : nullptr);
   }
 
   virtual void
   reset_grid() override {
-    fence();
-    this->new_grid(true, true);
-    m_reduced_grid = true;
-    m_reduced_weights = true;
+    if (is_gridding()) {
+      fence();
+      this->new_grid(true, true);
+      m_reduced_grid = true;
+      m_reduced_weights = true;
+    }
   }
 
   virtual void
   normalize_by_weights(grid_value_fp wfactor) override {
-    reduce_weights();
-    reduce_grid();
-    if (is_visibility_partition_root() && is_replica_partition_root())
-      ::hpg::runtime::StateT<D>::normalize_by_weights(wfactor);
+    if (is_gridding()) {
+      reduce_weights();
+      reduce_grid();
+      if (is_visibility_partition_root() && is_replica_partition_root())
+        ::hpg::runtime::StateT<D>::normalize_by_weights(wfactor);
+    }
   }
 
   virtual std::optional<std::unique_ptr<::hpg::Error>>
   apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) override {
     std::optional<std::unique_ptr<::hpg::Error>> err;
-    reduce_grid();
-    if (non_trivial_plane_partition()) {
-      std::abort(); // FIXME
-    } else if (is_visibility_partition_root() && is_replica_partition_root()) {
-      err = ::hpg::runtime::StateT<D>::apply_grid_fft(norm, sign, in_place);
+    if (is_gridding()) {
+      reduce_grid();
+      if (non_trivial_plane_partition()) {
+        std::abort(); // FIXME
+      } else if (is_visibility_partition_root() &&
+                 is_replica_partition_root()) {
+        err = ::hpg::runtime::StateT<D>::apply_grid_fft(norm, sign, in_place);
+      }
     }
     return err;
   }
@@ -869,32 +889,39 @@ public:
   apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place)
     override {
     std::optional<std::unique_ptr<::hpg::Error>> err;
-    if (non_trivial_plane_partition()) {
-      std::abort(); // FIXME
-      broadcast_model();
-    } else {
-      err = ::hpg::runtime::StateT<D>::apply_model_fft(norm, sign, in_place);
+    if (is_degridding()) {
+      if (non_trivial_plane_partition()) {
+        std::abort(); // FIXME
+        broadcast_model();
+      } else {
+        err = ::hpg::runtime::StateT<D>::apply_model_fft(norm, sign, in_place);
+      }
     }
     return err;
   }
 
   virtual void
   shift_grid(ShiftDirection direction) override {
-    reduce_grid();
-    if (non_trivial_plane_partition()) {
-      std::abort(); // FIXME
-    } else if (is_visibility_partition_root() && is_replica_partition_root()) {
-      ::hpg::runtime::StateT<D>::shift_grid(direction);
+    if (is_gridding()) {
+      reduce_grid();
+      if (non_trivial_plane_partition()) {
+        std::abort(); // FIXME
+      } else if (is_visibility_partition_root()
+                 && is_replica_partition_root()) {
+        ::hpg::runtime::StateT<D>::shift_grid(direction);
+      }
     }
   }
 
   virtual void
   shift_model(ShiftDirection direction) override {
-    if (non_trivial_plane_partition()) {
-      std::abort(); // FIXME
-      broadcast_model();
-    } else {
-    ::hpg::runtime::StateT<D>::shift_model(direction);
+    if (is_degridding()) {
+      if (non_trivial_plane_partition()) {
+        std::abort(); // FIXME
+        broadcast_model();
+      } else {
+        ::hpg::runtime::StateT<D>::shift_model(direction);
+      }
     }
   }
 
@@ -917,19 +944,21 @@ protected:
   void
   broadcast_model() noexcept {
     // broadcast the model values
-    if (is_visibility_partition_root())
+    if (is_degridding()) {
+      if (is_visibility_partition_root())
+        MPI_Bcast(
+          this->m_model.data(),
+          this->m_model.span(),
+          mpi_datatype<typename decltype(this->m_model)::value_type>::value(),
+          0,
+          m_replica_comm);
       MPI_Bcast(
         this->m_model.data(),
         this->m_model.span(),
         mpi_datatype<typename decltype(this->m_model)::value_type>::value(),
         0,
-        m_replica_comm);
-    MPI_Bcast(
-      this->m_model.data(),
-      this->m_model.span(),
-      mpi_datatype<typename decltype(this->m_model)::value_type>::value(),
-      0,
-      m_vis_comm);
+        m_vis_comm);
+    }
   }
 };
 
@@ -950,6 +979,7 @@ public:
 
   StateT(
     MPI_Comm vis_comm,
+    MPI_Comm gp_comm,
     MPI_Comm degrid_comm,
     MPI_Comm grid_comm,
     const ReplicatedGridBrick& grid_brick,
@@ -967,6 +997,7 @@ public:
     const std::array<unsigned, 4>& implementation_versions)
   : StateTBase<D>(
     vis_comm,
+    gp_comm,
     degrid_comm,
     grid_comm,
     grid_brick,
@@ -995,8 +1026,8 @@ public:
     Device host_device,
     CFArray&& cf_array) override {
 
-    // N.B: access cf_array directly only at the root rank of m_grid_comm
-    bool is_root = this->is_grid_partition_root();
+    // N.B: access cf_array directly only at the root rank of m_gp_comm
+    bool is_root = this->is_gpart_root();
 
     // Broadcast the cf_array in m_grid_comm, but as the equivalent of a
     // impl::DeviceCFArray for efficiency. Note that we broadcast the data among
@@ -1035,14 +1066,14 @@ public:
       1,
       mpi_datatype<decltype(shape_sz)>::value(),
       0,
-      this->m_grid_comm);
+      this->m_gp_comm);
     shape.resize(shape_sz);
     MPI_Bcast(
       shape.data(),
       shape_sz,
       mpi_datatype<decltype(shape)::value_type>::value(),
       0,
-      this->m_grid_comm);
+      this->m_gp_comm);
 
     // initialize the dev_cf_array on non-root ranks
     if (!is_root)
@@ -1055,7 +1086,7 @@ public:
         dev_cf_array.m_arrays[grp].size(),
         mpi_datatype<CFArray::value_type>::value(),
         0,
-        this->m_grid_comm);
+        this->m_gp_comm);
 
     // all ranks now copy the CF kernels to device memory
     auto& ctx = this->m_exec_contexts[this->degrid_execution_context(context)];
@@ -1080,60 +1111,75 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-    // broadcast all vector values from the grid partition root rank
+    // broadcast vector sizes throughout grid partition
     std::array<MPI_Aint, 3> len;
     len[0] = visibilities.size();
     len[1] = wgt_values.size();
     assert(wgt_values.size() == wgt_col_index.size());
     len[2] = wgt_row_index.size();
-    MPI_Bcast(len.data(), len.size(), MPI_AINT, 0, this->m_grid_comm);
-    visibilities.resize(len[0]);
-    {
-      std::vector<MPI_Request> reqs;
+    MPI_Bcast(len.data(), len.size(), MPI_AINT, 0, this->m_gp_comm);
+    visibilities.resize(len[0]); // needed for both degridding and gridding
+
+    using vis_type =
+      typename std::remove_reference_t<decltype(visibilities)>::value_type;
+
+    // broadcast all visibilities from the degridding root rank
+    std::vector<MPI_Request> reqs;
+    if (!this->is_split_phase() || do_degrid) {
+      if (this->is_degridding()) {
+        reqs.push_back(MPI_REQUEST_NULL);
+        MPI_Ibcast(
+          visibilities.data(),
+          visibilities.size(),
+          mpi_datatype<vis_type> ::value(),
+          0,
+          this->m_degrid_comm,
+          &reqs.back());
+      }
+    } else { // is_split_phase() && !do_degrid
       reqs.push_back(MPI_REQUEST_NULL);
       MPI_Ibcast(
         visibilities.data(),
         visibilities.size(),
-        mpi_datatype<
-          typename std::remove_reference_t<decltype(visibilities)>::value_type>
-          ::value(),
-        0,
-        this->m_grid_comm,
+        mpi_datatype<vis_type> ::value(),
+        (this->is_degridding()
+         ? (this->is_degridding_partition_root() ? MPI_ROOT : MPI_PROC_NULL)
+         : 0),
+        (this->is_degridding() ? this->m_grid_comm : this->m_degrid_comm),
         &reqs.back());
-      wgt_values.resize(len[1]);
-      reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Ibcast(
-        wgt_values.data(),
-        wgt_values.size(),
-        mpi_datatype<
-          std::remove_reference_t<decltype(wgt_values)>::value_type>::value(),
-        0,
-        this->m_grid_comm,
-        &reqs.back());
-      wgt_col_index.resize(len[1]);
-      reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Ibcast(
-        wgt_col_index.data(),
-        wgt_col_index.size(),
-        mpi_datatype<
-          std::remove_reference_t<decltype(wgt_col_index)>::value_type>
-          ::value(),
-        0,
-        this->m_grid_comm,
-        &reqs.back());
-      wgt_row_index.resize(len[2]);
-      reqs.push_back(MPI_REQUEST_NULL);
-      MPI_Ibcast(
-        wgt_row_index.data(),
-        wgt_row_index.size(),
-        mpi_datatype<
-          std::remove_reference_t<decltype(wgt_row_index)>::value_type>
-          ::value(),
-        0,
-        this->m_grid_comm,
-        &reqs.back());
-      MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
     }
+    // broadcast weight values throughout grid partition
+    wgt_values.resize(len[1]);
+    reqs.push_back(MPI_REQUEST_NULL);
+    MPI_Ibcast(
+      wgt_values.data(),
+      wgt_values.size(),
+      mpi_datatype<
+        std::remove_reference_t<decltype(wgt_values)>::value_type>::value(),
+      0,
+      this->m_gp_comm,
+      &reqs.back());
+    wgt_col_index.resize(len[1]);
+    reqs.push_back(MPI_REQUEST_NULL);
+    MPI_Ibcast(
+      wgt_col_index.data(),
+      wgt_col_index.size(),
+      mpi_datatype<
+        std::remove_reference_t<decltype(wgt_col_index)>::value_type>::value(),
+      0,
+      this->m_gp_comm,
+      &reqs.back());
+    wgt_row_index.resize(len[2]);
+    reqs.push_back(MPI_REQUEST_NULL);
+    MPI_Ibcast(
+      wgt_row_index.data(),
+      wgt_row_index.size(),
+      mpi_datatype<
+        std::remove_reference_t<decltype(wgt_row_index)>::value_type>::value(),
+      0,
+      this->m_gp_comm,
+      &reqs.back());
+    MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
 
     int replica_size;
     MPI_Comm_size(this->m_replica_comm, &replica_size);
@@ -1143,7 +1189,11 @@ public:
     // copy visibilities and channel mapping vectors to device
     this->m_exec_contexts[context].switch_to_copy(false);
     auto& sc_copy = this->m_exec_contexts[context].current_stream_context();
-    sc_copy.copy_visibilities_to_device(std::move(visibilities));
+    // visibilities in split phase gridding partition will be garbage, but we
+    // need to reserve the memory for the broadcast of residual visibilities
+    sc_copy.copy_visibilities_to_device(
+      std::move(visibilities),
+      this->is_split_phase());
     sc_copy.copy_weights_to_device(
       std::move(wgt_values),
       std::move(wgt_col_index),
@@ -1159,7 +1209,8 @@ public:
     auto gvis = sc_grid.template gvis_view<N>();
     using gvis0 =
       typename std::remove_reference_t<decltype(gvis)>::value_type;
-    K::deep_copy(sc_grid.m_space, gvis, gvis0());
+    if (do_degrid && this->is_degridding())
+      K::deep_copy(sc_grid.m_space, gvis, gvis0());
 
     // initialize the gridder object
     auto gridder =
@@ -1187,48 +1238,66 @@ public:
 
     // use gridder object to invoke degridding and gridding kernels
     if (do_degrid) {
-      gridder.degrid_all();
-      // Whenever any visibilities are mapped to grid channels on multiple
-      // ranks, we need to reduce the degridded visibility values from and to
-      // all ranks. NB: this is a prime area for considering performance
-      // improvements, but any solution should be scalable, and at least the
-      // following satisfies that criterion
-      sc_grid.fence();
-      // Reduce all 4 polarizations, independent of the value of N, in order
-      // to allow use of both a predefined datatype and a predefined reduction
-      // operator, MPI_SUM. The function hpg::mpi::gvisbuff_datatype() could
-      // be used to define a custom datatype, which would, for N < 4, be
-      // non-contiguous and would also require a custom reduction
-      // operator. The alternative might reduce the size of messages, but
-      // would incur inefficiencies in the execution of the reduction
-      // operation. A comparison between the alternatives might be worth
-      // profiling, but for now, we go with the simpler approach.
-      static_assert(
-        sizeof(
-          typename std::remove_reference_t<decltype(gvis)>::value_type)
-        == N * sizeof(K::complex<visibility_fp>));
-      MPI_Allreduce(
-        MPI_IN_PLACE,
-        gvis.data(),
-        N * len[0],
-        mpi_datatype<K::complex<visibility_fp>>::value(),
-        MPI_SUM,
-        this->m_grid_comm);
-      if (do_grid)
-        gridder.vis_copy_residual_and_rescale();
-      else
+      if (this->is_degridding()) {
+        gridder.degrid_all();
+        // Whenever any visibilities are mapped to grid channels on multiple
+        // ranks, we need to reduce the degridded visibility values from and to
+        // all ranks. NB: this is a prime area for considering performance
+        // improvements, but any solution should be scalable, and at least the
+        // following satisfies that criterion
+        sc_grid.fence();
+        // Reduce all 4 polarizations, independent of the value of N, in order
+        // to allow use of both a predefined datatype and a predefined reduction
+        // operator, MPI_SUM. The function hpg::mpi::gvisbuff_datatype() could
+        // be used to define a custom datatype, which would, for N < 4, be
+        // non-contiguous and would also require a custom reduction
+        // operator. The alternative might reduce the size of messages, but
+        // would incur inefficiencies in the execution of the reduction
+        // operation. A comparison between the alternatives might be worth
+        // profiling, but for now, we go with the simpler approach.
+        static_assert(
+          sizeof(
+            typename std::remove_reference_t<decltype(gvis)>::value_type)
+          == N * sizeof(K::complex<visibility_fp>));
+        // do an intracomm allreduce in all cases (an intercomm allreduce goes
+        // both ways, I think)
+        MPI_Allreduce(
+          MPI_IN_PLACE,
+          gvis.data(),
+          N * len[0],
+          mpi_datatype<K::complex<visibility_fp>>::value(),
+          MPI_SUM,
+          this->m_degrid_comm);
+      }
+      if (do_grid) {
+        if (this->is_degridding())
+          gridder.vis_copy_residual_and_rescale();
+        // in split phase operation, now broadcast residual visibilities to
+        // gridding partition
+        if (this->is_split_phase())
+          MPI_Bcast(
+            gvis.data(),
+            N * len[0],
+            mpi_datatype<K::complex<visibility_fp>>::value(),
+            (this->is_degridding()
+             ? (this->is_degridding_partition_root() ? MPI_ROOT : MPI_PROC_NULL)
+             : 0),
+            (this->is_degridding() ? this->m_grid_comm : this->m_degrid_comm));
+      } else if (this->is_degridding()) {
         gridder.vis_copy_predicted();
-    } else {
-      gridder.vis_rescale();
+      }
     }
-    if (do_grid) {
+    if (do_grid && this->is_gridding()) {
+      if (!do_degrid)
+        gridder.vis_rescale();
       if (update_grid_weights)
         gridder.grid_all();
       else
         gridder.grid_all_no_weights();
     }
-    return sc_grid.copy_visibilities_to_host(return_visibilities);
-
+    return
+      sc_grid.copy_visibilities_to_host(
+        this->is_degridding() && return_visibilities);
   }
 
   template <unsigned N>
@@ -1388,6 +1457,7 @@ public:
 
   StateT(
     MPI_Comm vis_comm,
+    MPI_Comm gp_comm,
     MPI_Comm degrid_comm,
     MPI_Comm grid_comm,
     const ReplicatedGridBrick& grid_brick,
@@ -1405,6 +1475,7 @@ public:
     const std::array<unsigned, 4>& implementation_versions)
   : StateTBase<D>(
     vis_comm,
+    gp_comm,
     degrid_comm,
     grid_comm,
     grid_brick,
