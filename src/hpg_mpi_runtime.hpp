@@ -1548,9 +1548,9 @@ protected:
     // with message tag 1 on all ranks but the root, which receives message tag
     // 0.
     int size_gc;
-    MPI_Comm_size(this->m_grid_comm, &size_gc);
+    MPI_Comm_size(this->m_grid_comm/*FIXME*/, &size_gc);
     int rank_gc;
-    MPI_Comm_rank(this->m_grid_comm, &rank_gc);
+    MPI_Comm_rank(this->m_grid_comm/*FIXME*/, &rank_gc);
 
     auto dest = (rank_gc + 1) % size_gc;
     auto source = (rank_gc + size_gc - 1) % size_gc;
@@ -1576,7 +1576,7 @@ protected:
       MPI_INT,
       source,
       -1,
-      this->m_grid_comm,
+      this->m_grid_comm/*FIXME*/,
       MPI_STATUS_IGNORE);
 
     recvvect_d.resize(size_t(recvcounts[0]));
@@ -1610,7 +1610,7 @@ protected:
         dt,
         source,
         ((rank_gc == 0) ? 1 : 0),
-        this->m_grid_comm,
+        this->m_grid_comm/*FIXME*/,
         add_request(m_shift_requests[context]));
 
     if (recvcounts[1] > 0)
@@ -1620,7 +1620,7 @@ protected:
         dt,
         source,
         ((rank_gc == 0) ? 0 : 1),
-        this->m_grid_comm,
+        this->m_grid_comm/*FIXME*/,
         add_request(m_shift_requests[context]));
 
     if (sendcounts[0] > 0)
@@ -1630,7 +1630,7 @@ protected:
         dt,
         dest,
         0,
-        this->m_grid_comm,
+        this->m_grid_comm/*FIXME*/,
         add_request(m_shift_requests[context]));
 
     if (sendcounts[1] > 0)
@@ -1640,7 +1640,7 @@ protected:
         dt,
         dest,
         1,
-        this->m_grid_comm,
+        this->m_grid_comm/*FIXME*/,
         add_request(m_shift_requests[context]));
   }
 
@@ -1652,9 +1652,9 @@ protected:
     // NB: this eventually calls switch_to_copy() on each context
 
     int size_gc;
-    MPI_Comm_size(this->m_grid_comm, &size_gc);
+    MPI_Comm_size(this->m_grid_comm/*FIXME*/, &size_gc);
     int rank_gc;
-    MPI_Comm_rank(this->m_grid_comm, &rank_gc);
+    MPI_Comm_rank(this->m_grid_comm/*FIXME*/, &rank_gc);
 
     auto dest = (rank_gc + 1) % size_gc;
     auto source = (rank_gc + size_gc - 1) % size_gc;
@@ -1673,8 +1673,8 @@ protected:
         dt,
         source,
         0,
-        this->m_grid_comm, &req);
-      MPI_Send(cf_ids.data(), cf_ids.size(), dt, dest, 0, this->m_grid_comm);
+        this->m_grid_comm/*FIXME*/, &req);
+      MPI_Send(cf_ids.data(), cf_ids.size(), dt, dest, 0, this->m_grid_comm/*FIXME*/);
       MPI_Wait(&req, MPI_STATUS_IGNORE);
     }
     if (rank_gc == 0) // rank 0 never receives an upstream CF for degridding
@@ -1693,9 +1693,9 @@ protected:
         dt,
         dest,
         0,
-        this->m_grid_comm,
+        this->m_grid_comm/*FIXME*/,
         &req);
-      MPI_Send(do_recv.data(), do_recv.size(), dt, source, 0, this->m_grid_comm);
+      MPI_Send(do_recv.data(), do_recv.size(), dt, source, 0, this->m_grid_comm/*FIXME*/);
       MPI_Wait(&req, MPI_STATUS_IGNORE);
     }
 
@@ -1719,7 +1719,7 @@ protected:
             ::value(),
           dest,
           0,
-          this->m_grid_comm,
+          this->m_grid_comm/*FIXME*/,
           add_request(reqs));
       if (do_send[1])
         MPI_Isend(
@@ -1730,7 +1730,7 @@ protected:
             ::value(),
           dest,
           0,
-          this->m_grid_comm,
+          this->m_grid_comm/*FIXME*/,
           add_request(reqs));
       if (do_recv[0])
         MPI_Irecv(
@@ -1739,7 +1739,7 @@ protected:
           mpi_datatype<decltype(dst_num_groups_d)>::value(),
           source,
           0,
-          this->m_grid_comm,
+          this->m_grid_comm/*FIXME*/,
           add_request(reqs));
       if (do_recv[1])
         MPI_Irecv(
@@ -1748,7 +1748,7 @@ protected:
           mpi_datatype<decltype(dst_num_groups_g)>::value(),
           source,
           0,
-          this->m_grid_comm,
+          this->m_grid_comm/*FIXME*/,
           add_request(reqs));
       MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
     }
@@ -1768,7 +1768,7 @@ protected:
             ::value(),
           dest,
           0,
-          this->m_grid_comm,
+          this->m_grid_comm/*FIXME*/,
           add_request(reqs));
       }
       if (do_send[1]) {
@@ -1780,7 +1780,7 @@ protected:
             ::value(),
           dest,
           0,
-          this->m_grid_comm,
+          this->m_grid_comm/*FIXME*/,
           add_request(reqs));
       }
       if (do_recv[0]) {
@@ -1792,7 +1792,7 @@ protected:
             ::value(),
           source,
           0,
-          this->m_grid_comm,
+          this->m_grid_comm/*FIXME*/,
           add_request(reqs));
       }
       if (do_recv[1]) {
@@ -1804,7 +1804,7 @@ protected:
             ::value(),
           source,
           0,
-          this->m_grid_comm,
+          this->m_grid_comm/*FIXME*/,
           add_request(reqs));
       }
       MPI_Waitall(reqs.size(), reqs.data(), MPI_STATUSES_IGNORE);
@@ -1823,7 +1823,7 @@ protected:
         mpi_datatype<impl::cf_t>::value(),
         dest,
         0,
-        this->m_grid_comm,
+        this->m_grid_comm/*FIXME*/,
         add_request(m_shift_requests[context]));
     if (do_send[1])
       MPI_Isend(
@@ -1832,7 +1832,7 @@ protected:
         mpi_datatype<impl::cf_t>::value(),
         dest,
         0,
-        this->m_grid_comm,
+        this->m_grid_comm/*FIXME*/,
         add_request(m_shift_requests[context]));
     if (do_recv[0])
       MPI_Irecv(
@@ -1841,7 +1841,7 @@ protected:
         mpi_datatype<impl::cf_t>::value(),
         source,
         0,
-        this->m_grid_comm,
+        this->m_grid_comm/*FIXME*/,
         add_request(m_shift_requests[context]));
     if (do_recv[1])
       MPI_Irecv(
@@ -1850,7 +1850,7 @@ protected:
         mpi_datatype<impl::cf_t>::value(),
         source,
         0,
-        this->m_grid_comm,
+        this->m_grid_comm/*FIXME*/,
         add_request(m_shift_requests[context]));
   }
 
@@ -1863,9 +1863,9 @@ protected:
     ::hpg::runtime::StreamContext<D>& dst_g) const {
 
     int size_gc;
-    MPI_Comm_size(this->m_grid_comm, &size_gc);
+    MPI_Comm_size(this->m_grid_comm/*FIXME*/, &size_gc);
     int rank_gc;
-    MPI_Comm_rank(this->m_grid_comm, &rank_gc);
+    MPI_Comm_rank(this->m_grid_comm/*FIXME*/, &rank_gc);
 
     auto dest = (rank_gc + 1) % size_gc;
     auto source = (rank_gc + size_gc - 1) % size_gc;
@@ -1878,7 +1878,7 @@ protected:
       dt,
       source,
       ((rank_gc == 0) ? 1 : 0),
-      this->m_grid_comm,
+      this->m_grid_comm/*FIXME*/,
       add_request(m_shift_requests[context]));
 
     MPI_Irecv(
@@ -1887,7 +1887,7 @@ protected:
       dt,
       source,
       ((rank_gc == 0) ? 0 : 1),
-      this->m_grid_comm,
+      this->m_grid_comm/*FIXME*/,
       add_request(m_shift_requests[context]));
 
     MPI_Isend(
@@ -1896,7 +1896,7 @@ protected:
       dt,
       dest,
       0,
-      this->m_grid_comm,
+      this->m_grid_comm/*FIXME*/,
       add_request(m_shift_requests[context]));
 
     MPI_Isend(
@@ -1905,7 +1905,7 @@ protected:
       dt,
       dest,
       1,
-      this->m_grid_comm,
+      this->m_grid_comm/*FIXME*/,
       add_request(m_shift_requests[context]));
   }
 
@@ -1917,9 +1917,9 @@ public:
     Device host_device,
     CFArray&& cf_array) override {
 
-    // N.B: access cf_array directly only at the root rank of m_grid_comm
+    // N.B: access cf_array directly only at the root rank of m_grid_commFIXME
 
-    if (this->is_grid_partition_root()) {
+    if (this->is_gridding_partition_root()) {
       using DevCFArray = typename impl::DeviceCFArray<D>;
       DevCFArray dev_cf_array;
       try {
@@ -1962,9 +1962,9 @@ public:
     bool fence) const {
 
     int size_gc;
-    MPI_Comm_size(this->m_grid_comm, &size_gc);
+    MPI_Comm_size(this->m_grid_comm/*FIXME*/, &size_gc);
     int rank_gc;
-    MPI_Comm_rank(this->m_grid_comm, &rank_gc);
+    MPI_Comm_rank(this->m_grid_comm/*FIXME*/, &rank_gc);
 
     int size_rc;
     MPI_Comm_size(this->m_replica_comm, &size_rc);
@@ -2335,7 +2335,7 @@ protected:
         1,
         mpi_datatype<decltype(flushing)>::value(),
         0,
-        this->m_grid_comm);
+        this->m_grid_comm/*FIXME*/);
     } while (flushing);
     this->m_exec_contexts.fence();
   }
