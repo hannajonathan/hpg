@@ -752,7 +752,12 @@ struct StreamVector {
   }
 
   void
-  set(execution_space espace, bool persistent, std::vector<S>&& vector) {
+  set(
+    execution_space espace,
+    bool persistent,
+    std::vector<S>&& vector,
+    bool only_reserve) {
+
     m_vector = std::move(vector);
     if constexpr (!std::is_same_v<K::HostSpace, memory_space>)
       assert(m_vector.size() <= m_values_d.extent(0));
@@ -762,7 +767,8 @@ struct StreamVector {
         K::View<T*, K::HostSpace>
           values_h(reinterpret_cast<T*>(m_vector.data()), m_vector.size());
         m_values = decltype(m_values)(m_values_d.data(), m_vector.size());
-        K::deep_copy(espace, m_values, values_h);
+        if (!only_reserve)
+          K::deep_copy(espace, m_values, values_h);
       } else {
         m_values_d =
           decltype(m_values_d)(
@@ -976,10 +982,12 @@ struct /*HPG_EXPORT*/ StreamContext final {
 
   template <unsigned N>
   size_t
-  copy_visibilities_to_device(std::vector<::hpg::VisData<N>>&& in_vis) {
+  copy_visibilities_to_device(
+    std::vector<::hpg::VisData<N>>&& in_vis,
+    bool only_reserve = false) {
 
     auto& v = std::get<VisVector<N>>(m_visibilities);
-    v.set(m_space, true, std::move(in_vis));
+    v.set(m_space, true, std::move(in_vis), only_reserve);
     auto& gv = std::get<GVisVector<N>>(m_gvis);
     gv.resize(v.size());
     return v.size();
