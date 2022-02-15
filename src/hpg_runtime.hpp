@@ -1451,9 +1451,13 @@ public:
   using stream_type = typename device_traits::stream_type;
   using grid_layout =  impl::GridLayout<kokkos_device>;
 
-  impl::grid_view<typename grid_layout::layout, memory_space> m_grid;
-  impl::grid_weight_view<typename execution_space::array_layout, memory_space>
+  // m_grid and m_grid_weights are mutable because they are allocated lazily, on
+  // demand
+  mutable impl::grid_view<typename grid_layout::layout, memory_space> m_grid;
+  mutable
+    impl::grid_weight_view<typename execution_space::array_layout, memory_space>
     m_grid_weights;
+  // m_model is only allocated explicitly and doesn't need to be mutable
   impl::grid_view<typename grid_layout::layout, memory_space> m_model;
   impl::const_mindex_view<memory_space> m_mueller_indexes;
   impl::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
@@ -1533,7 +1537,6 @@ public:
       init_mueller("mueller_indexes", mueller_indexes);
     m_conjugate_mueller_indexes =
       init_mueller("conjugate_mueller_indexes", conjugate_mueller_indexes);
-    new_grid(true, true);
   }
 
   StateT(
@@ -1586,7 +1589,8 @@ public:
     copy_model(st);
     m_mueller_indexes = st.m_mueller_indexes;
     m_conjugate_mueller_indexes = st.m_conjugate_mueller_indexes;
-    new_grid(&st, true);
+    if (st.m_grid.is_allocated())
+      new_grid(&st, true);
   }
 
   StateT(StateT&& st) noexcept
@@ -1853,6 +1857,8 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
+    allocate_grid_unlocked();
+
     m_exec_contexts[context].switch_to_copy(false);
     auto& sc_copy = m_exec_contexts[context].current_stream_context();
     int len = sc_copy.copy_visibilities_to_device(std::move(visibilities));
@@ -2051,6 +2057,8 @@ public:
 
   virtual std::shared_ptr<GridWeightArray::value_type>
   grid_weights_ptr() const override {
+    std::scoped_lock lock(m_mtx);
+    allocate_grid_unlocked();
     return
       std::make_shared<
         impl::GridWeightPtr<
@@ -2060,6 +2068,8 @@ public:
 
   virtual size_t
   grid_weights_span() const override {
+    std::scoped_lock lock(m_mtx);
+    allocate_grid_unlocked();
     return m_grid_weights.span();
   }
 
@@ -2071,6 +2081,8 @@ public:
 
   virtual std::shared_ptr<GridValueArray::value_type>
   grid_values_ptr() const override {
+    std::scoped_lock lock(m_mtx);
+    allocate_grid_unlocked();
     return
       std::make_shared<
         impl::GridValuePtr<typename grid_layout::layout, memory_space>>(m_grid)
@@ -2079,6 +2091,8 @@ public:
 
   virtual size_t
   grid_values_span() const override {
+    std::scoped_lock lock(m_mtx);
+    allocate_grid_unlocked();
     return m_grid.span();
   }
 
@@ -2104,11 +2118,13 @@ public:
   virtual void
   reset_grid() override {
     fence();
-    new_grid(true, true);
+    m_grid = decltype(m_grid)();
+    m_grid_weights = decltype(m_grid_weights)();
   }
 
   virtual void
   fill_grid(const impl::gv_t& val) override {
+    allocate_grid_unlocked();
     auto g_h = K::create_mirror_view(m_grid);
     K::deep_copy(g_h, impl::gv_t(0));
     m_exec_contexts.switch_to_copy();
@@ -2117,6 +2133,7 @@ public:
 
   virtual void
   fill_grid_weights(const grid_value_fp& val) override {
+    allocate_grid_unlocked();
     auto w_h = K::create_mirror_view(m_grid_weights);
     K::deep_copy(w_h, grid_value_fp(0));
     m_exec_contexts.switch_to_copy();
@@ -2131,6 +2148,7 @@ public:
 
   virtual void
   normalize_by_weights(grid_value_fp wfactor) override {
+    allocate_grid_unlocked();
     m_exec_contexts.switch_to_compute();
     impl::core::GridNormalizer(
       m_exec_contexts[0].current_exec_space(),
@@ -2144,6 +2162,7 @@ public:
   apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place)
     override {
 
+    allocate_grid_unlocked();
     m_exec_contexts.switch_to_compute();
     std::optional<std::unique_ptr<Error>> err;
     if (in_place) {
@@ -2241,6 +2260,7 @@ public:
 
   virtual void
   shift_grid(ShiftDirection direction) override {
+    allocate_grid_unlocked();
     m_exec_contexts.switch_to_compute();
     impl::core::GridShifter(
       m_exec_contexts[0].current_exec_space(),
@@ -2268,6 +2288,7 @@ protected:
 
   std::unique_ptr<GridWeightArray>
   grid_weights_unlocked() const {
+    allocate_grid_unlocked();
     fence_unlocked();
     auto wgts_h = K::create_mirror(m_grid_weights);
     m_exec_contexts.switch_to_copy();
@@ -2281,6 +2302,7 @@ protected:
 
   std::unique_ptr<GridValueArray>
   grid_values_unlocked() const noexcept {
+    allocate_grid_unlocked();
     fence_unlocked();
     auto grid_h = K::create_mirror(m_grid);
     m_exec_contexts.switch_to_copy();
@@ -2299,12 +2321,8 @@ protected:
       m_exec_contexts[0].current_stream_context().fence();
       return std::make_unique<impl::GridValueViewArray<D>>(model_h);
     } else {
-      std::array<unsigned, 4> ex{
-        unsigned(m_grid.extent(0)),
-        unsigned(m_grid.extent(1)),
-        unsigned(m_grid.extent(2)),
-        unsigned(m_grid.extent(3))};
-      return std::make_unique<impl::UnallocatedModelValueArray>(ex);
+      return
+        std::make_unique<impl::UnallocatedModelValueArray>(grid_size_local());
     }
   }
 
@@ -2407,7 +2425,13 @@ protected:
 protected:
 
   void
-  new_grid(std::variant<const StateT*, bool> source, bool also_weights) {
+  allocate_grid_unlocked() const {
+    if (!m_grid.is_allocated())
+      new_grid(true, true);
+  }
+
+  void
+  new_grid(std::variant<const StateT*, bool> source, bool also_weights) const {
 
     const bool create_without_init =
       std::holds_alternative<const StateT*>(source) || !std::get<bool>(source);
