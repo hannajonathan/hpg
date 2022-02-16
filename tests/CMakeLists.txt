@@ -13,8 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+file(COPY gridone.h5 DESTINATION .)
 add_executable(GridderStateUnitTests GridderStateUnitTests.cc)
-target_link_libraries(GridderStateUnitTests hpg::hpg gtest)
+target_link_libraries(GridderStateUnitTests
+  hpg::hpg
+  hdf5::hdf5_cpp
+  hdf5::hdf5
+  gtest)
 add_test(NAME GridderStateUnitTests COMMAND GridderStateUnitTests)
 set_tests_properties(GridderStateUnitTests PROPERTIES TIMEOUT 45)
 

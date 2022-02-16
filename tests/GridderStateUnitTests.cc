@@ -17,11 +17,14 @@
 #include "hpg.hpp"
 #include "gtest/gtest.h"
 
+#include <H5Cpp.h>
+
 #include <array>
 #include <cassert>
 #include <complex>
 #include <experimental/array>
 #include <iostream>
+#include <filesystem>
 #include <random>
 
 #if defined(HPG_ENABLE_OPENMP)
@@ -43,6 +46,7 @@ hpg::Device default_device = hpg::Device::Serial;
 #endif
 
 using namespace std::complex_literals;
+using namespace std::string_literals;
 
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 # ifndef HPG_GRIDDING_KERNEL_VERSION
@@ -55,6 +59,9 @@ static constexpr std::array<unsigned, 4>
 #endif
 
 #undef SHOW_COORDINATES
+
+std::filesystem::path exec_dir;
+bool write_expected_data_files;
 
 template <typename T>
 struct epsilon {
@@ -1403,10 +1410,57 @@ TEST(GridderState, GridOne) {
   auto err_or_result = test(uvw)();
   ASSERT_TRUE(hpg::is_value(err_or_result));
   auto [g, w] = hpg::get_value(std::move(err_or_result));
-  EXPECT_TRUE(
+  ASSERT_TRUE(
     cf.verify_cf_footprint(0, g.get(), grid_size, grid_scale, vis, freq, uvw));
-  auto val = (*g)(9582, 8536, 0, 0);
-  std::cout << val << std::endl;
+  H5::Exception::dontPrint();
+  const std::filesystem::path gridone_path = exec_dir / "gridone.h5";
+  size_t d = 2;
+  auto dt = H5::ArrayType(H5::PredType::NATIVE_DOUBLE, 1, &d);
+  std::array<size_t, 2>
+    dims{size_t(ur[0] - ll[0] + 1), size_t(ur[1] - ll[1] + 1)};
+  if (!write_expected_data_files) {
+    bool have_gridone;
+    try {
+      have_gridone = H5::H5File::isHdf5(gridone_path);
+    } catch (const H5::Exception&) {
+      have_gridone = false;
+    }
+    EXPECT_TRUE(have_gridone);
+    std::vector<std::complex<double>> expected(dims[0] * dims[1]);
+    auto file = H5::H5File(gridone_path, H5F_ACC_RDONLY);
+    auto dd = file.openDataSet("grid");
+    dd.read(expected.data(), dt);
+    bool eq = true;
+    for (size_t x = ll[0]; eq && x < ur[0]; ++x)
+      for (size_t y = ll[1]; eq && y < ur[1]; ++y) {
+        eq = (*g)(x, y, 0, 0) == expected[(x - ll[0]) * dims[1] + (y - ll[1])];
+        EXPECT_EQ(
+          (*g)(x, y, 0, 0),
+          expected[(x - ll[0]) * dims[1] + (y - ll[1])]);
+      }
+  } else {
+    std::vector<std::complex<double>> buff(g->min_buffer_size());
+    EXPECT_FALSE(
+      g->copy_to(default_host_device, buff.data(), hpg::Layout::Right));
+    auto file = H5::H5File(gridone_path, H5F_ACC_TRUNC);
+    dt.commit(file, "complexdouble");
+    auto st_ds = H5::DataSpace(dims.size(), dims.data());
+    H5::DSetCreatPropList dcpl;
+    dcpl.setDeflate(9);
+    dcpl.setChunk(dims.size(), dims.data());
+    auto dd = file.createDataSet("grid", dt, st_ds, dcpl);
+    std::array<size_t, 2> sz{size_t(grid_size[0]), size_t(grid_size[1])};
+    auto mem_ds = H5::DataSpace(sz.size(), sz.data());
+    std::array<size_t, 2> count{1, 1};
+    std::array<size_t, 2> start{size_t(ll[0]), size_t(ll[1])};
+    mem_ds.selectHyperslab(
+      H5S_SELECT_SET,
+      count.data(),
+      start.data(),
+      dims.data(),
+      dims.data());
+    dd.write(buff.data(), dt, mem_ds);
+  }
 }
 
 TEST(GridderState, GridNone) {
@@ -1965,6 +2019,12 @@ main(int argc, char **argv) {
   std::cout << oss.str() << std::endl;
 
   ::testing::InitGoogleTest(&argc, argv);
+
+  exec_dir = std::filesystem::path(argv[0]).remove_filename();
+  write_expected_data_files = false;
+  for (int c = 0; !write_expected_data_files && c < argc; ++c)
+    write_expected_data_files = "--write-expected"s == argv[c];
+
   int rc;
   {
     // weird, but using ScopeGuard/initialize/finalize at function scope can

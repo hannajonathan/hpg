@@ -61,6 +61,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(Hpg_BUILD_DOCS "Build Doxygen documentation" ON)
 option(Hpg_BUILD_TESTS "Build unit tests" ON)
 
+if(${Hpg_BUILD_TESTS})
+  find_package(HDF5 1.13 REQUIRED COMPONENTS C CXX)
+endif()
+
 # the following are set according to Hpg_ENABLE_* cache variables and
 # the devices enabled by Kokkos (in the src directory)
 set(HPG_ENABLE_SERIAL OFF)
