@@ -503,16 +503,15 @@ init_visibilities(
     double vlim = (y0 - (cfextents[1]) / 2) / vscale;
     std::uniform_real_distribution<hpg::vis_uvw_fp> dist_u(-ulim, ulim);
     std::uniform_real_distribution<hpg::vis_uvw_fp> dist_v(-vlim, vlim);
+    std::array<std::complex<hpg::visibility_fp>, 1>
+      v_vis{std::complex<hpg::visibility_fp>{dist_vis(gen), dist_vis(gen)}};
+    std::array<hpg::vis_weight_fp, 1> v_wgt{dist_weight(gen)};
+    hpg::vis_uvw_t v_uvw{dist_u(gen), dist_v(gen), 0.0};
+    auto v_cb = dist_gcube(gen);
+    std::array<unsigned, 2> v_cfi{dist_cfcube(gen), grp};
+    hpg::cf_phase_gradient_t v_cfg{dist_cfgrad(gen), dist_cfgrad(gen)};
     vis.push_back(
-      hpg::VisData<1>(
-        {std::complex<hpg::visibility_fp>(dist_vis(gen), dist_vis(gen))},
-        {dist_weight(gen)},
-        freq,
-        0.0,
-        hpg::vis_uvw_t({dist_u(gen), dist_v(gen), 0.0}),
-        dist_gcube(gen),
-        {dist_cfcube(gen), grp},
-        {dist_cfgrad(gen), dist_cfgrad(gen)}));
+      hpg::VisData<1>(v_vis, v_wgt, freq, 0.0, v_uvw, v_cb, v_cfi, v_cfg));
   }
 }
 
