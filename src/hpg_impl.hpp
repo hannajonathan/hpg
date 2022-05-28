@@ -523,9 +523,11 @@ struct /*HPG_EXPORT*/ FFT final {
     using scalar_t = typename OG::value_type::value_type;
 
 #ifdef HPG_ENABLE_OPENMP
+# ifdef HPG_ENABLE_SERIAL
     if constexpr (std::is_same_v<execution_space, K::Serial>)
       FFTW<scalar_t>::plan_with_nthreads(1);
     else
+# endif
       FFTW<scalar_t>::plan_with_nthreads(omp_get_max_threads());
 #endif // HPG_ENABLE_OPENMP
 
