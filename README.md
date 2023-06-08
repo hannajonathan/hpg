@@ -5,7 +5,7 @@ High performance gridding (kernel) implementation library.
 ## Build requirements
 
 * [CMake](https://cmake.org) (v3.14 or later)
-* [Kokkos](https://github.com/kokkos/kokkos) (v3.2.00 or later)
+* [Kokkos](https://github.com/kokkos/kokkos) (v3.4.00 or later)
 * [FFTW](http://fftw.org) (v3.3.8 or later)
 * [CUDA](https://developer.nvidia.com/cuda-toolkit) (optional, v11.0.2 or later)
 * cuFFT (part of CUDA toolkit)
@@ -76,6 +76,26 @@ $ spack install \
 ```
 Users are encouraged to find out more at the [Spack web site](https://spack.io).
 
+#### Tests
+
+There's some weirdness about Spack unit testing and HDF5 that I can't
+track, exactly, but there is a workaround. HDF5 is needed by an HPG
+unit test because that test uses an HDF5 file containing a reference grid for
+comparison. The workaround is to build *and load* `hdf5 +cxx ~mpi`
+using Spack before attempting to build HPG. At least this works in a
+Spack environment, which then looks something like the following
+
+``` shell
+$ spack install hdf5 +cxx ~mpi
+$ spack load hdf5
+$ spack env create hpg
+$ spackactivate hpg
+$ spack develop hpg@main -p [PATH_TO_MY_HPG_REPO] # optional, but it's what I do
+$ spack add hpg
+$ spack concretize # optional, but it's worth checking
+$ spack install --test root
+```
+
 ## Using libhpg
 
 The *HPG* installation includes a *CMake* package configuration file
@@ -101,8 +121,3 @@ Most client code should include only the header `hpg.hpp` (using
 by the *HPG* implementation of *Kokkos* types and concepts. However,
 if direct access to the *Kokkos* kernels is desired, the header
 `hpg_impl.h` may be used.
-
-## Getting help
-
-A Google Chat room exists for discussion of *HPG*. If you wish to be invited,
-please send your request to mpokorny at nrao dot edu.
