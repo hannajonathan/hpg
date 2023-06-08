@@ -1413,9 +1413,9 @@ TEST(GridderState, GridOne) {
     cf.verify_cf_footprint(0, g.get(), grid_size, grid_scale, vis, freq, uvw));
   H5::Exception::dontPrint();
   const std::filesystem::path gridone_path = exec_dir / "gridone.h5";
-  size_t d = 2;
+  hsize_t d = 2;
   auto dt = H5::ArrayType(H5::PredType::NATIVE_DOUBLE, 1, &d);
-  std::array<size_t, 2>
+  std::array<hsize_t, 2>
     dims{size_t(ur[0] - ll[0] + 1), size_t(ur[1] - ll[1] + 1)};
   if (!write_expected_data_files) {
     bool have_gridone;
@@ -1448,10 +1448,10 @@ TEST(GridderState, GridOne) {
     dcpl.setDeflate(9);
     dcpl.setChunk(dims.size(), dims.data());
     auto dd = file.createDataSet("grid", dt, st_ds, dcpl);
-    std::array<size_t, 2> sz{size_t(grid_size[0]), size_t(grid_size[1])};
+    std::array<hsize_t, 2> sz{size_t(grid_size[0]), size_t(grid_size[1])};
     auto mem_ds = H5::DataSpace(sz.size(), sz.data());
-    std::array<size_t, 2> count{1, 1};
-    std::array<size_t, 2> start{size_t(ll[0]), size_t(ll[1])};
+    std::array<hsize_t, 2> count{1, 1};
+    std::array<hsize_t, 2> start{size_t(ll[0]), size_t(ll[1])};
     mem_ds.selectHyperslab(
       H5S_SELECT_SET,
       count.data(),
