@@ -42,7 +42,7 @@ if(enable_cuda)
   list(APPEND ENABLED_DEVICES CUDA)
   list(APPEND KOKKOS_COMPONENTS CUDA)
 endif()
-find_package(Kokkos
+find_package(Kokkos 4.0.0
   COMPONENTS ${KOKKOS_COMPONENTS}
   ${extra_args})
 if(Kokkos_FOUND)

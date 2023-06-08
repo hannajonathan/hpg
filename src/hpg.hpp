@@ -49,58 +49,35 @@ namespace hpg {
  * This type is currently identical to the Kokkos type of the same name,
  * although that could change in future versions.
  *
- * If you set num_threads or num_numa to zero or less, Kokkos will try to
- * determine default values if possible or otherwise set them to 1. In
- * particular, Kokkos can use the hwloc library to determine default settings
- * using the assumption that the process binding mask is unique, i.e., that this
- * process does not share any cores with another process. Note that the default
- * value of each parameter is -1.
+ * If you set num_threads to zero or less, Kokkos will try to determine default
+ * values if possible or otherwise set them to 1. In particular, Kokkos can use
+ * the hwloc library to determine default settings using the assumption that the
+ * process binding mask is unique, i.e., that this process does not share any
+ * cores with another process. Note that the default value of each parameter is
+ * -1.
  */
 struct HPG_EXPORT InitArguments {
 
   InitArguments()
     : num_threads(-1)
-    , num_numa(-1)
     , device_id(-1)
-    , ndevices(-1)
-    , skip_device(-1)
     , disable_warnings(false)
+    , print_configuration(false)
     , cleanup_fftw(false) {}
 
-  /** number of threads per NUMA region
-   *
-   * Used in conjunction with num_numa
-   */
+  /** number of threads per NUMA region */
   int num_threads;
-
-  /** number of NUMA regions used by process
-   */
-  int num_numa;
 
   /** device id to be used */
   int device_id;
 
-  /** number of devices to be used per node
-   *
-   * Used when running MPI jobs. Process to device mapping happens by obtaining
-   * the local MPI rank and assigning devices round-robin.
-   */
-  int ndevices;
-
-  /** device to ignore
-   *
-   * Used in conjunction with ndevices.  This is most useful
-   * on workstations with multiple GPUs, one of which is used to drive screen
-   * output.
-   */
-  int skip_device;
-
-  /** disable Kokkos warnings
-   */
+  /** disable Kokkos warnings */
   bool disable_warnings;
 
-  /** cleanup fftw on finalization
-   */
+  /** print configuration */
+  bool print_configuration;
+
+  /** cleanup fftw on finalization */
   bool cleanup_fftw;
 };
 

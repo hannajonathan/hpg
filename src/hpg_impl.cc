@@ -33,14 +33,15 @@ runtime::impl::is_initialized() noexcept {
 bool
 runtime::impl::initialize(const InitArguments& args) {
   bool result = true;
-  K::InitArguments kargs;
-  kargs.num_threads = args.num_threads;
-  kargs.num_numa = args.num_numa;
-  kargs.device_id = args.device_id;
-  kargs.ndevices = args.ndevices;
-  kargs.skip_device = ((args.skip_device >= 0) ? args.skip_device : 9999);
-  kargs.disable_warnings = args.disable_warnings;
-  K::initialize(kargs);
+  K::InitializationSettings ksettings;
+  if (args.num_threads > 0)
+    ksettings.set_num_threads(args.num_threads);
+  if (args.device_id >= 0)
+    ksettings.set_device_id(args.device_id);
+  ksettings
+    .set_disable_warnings(args.disable_warnings)
+    .set_print_configuration(args.print_configuration);
+  K::initialize(ksettings);
 #ifdef HPG_ENABLE_OPENMP
   auto rc = fftw_init_threads();
   result = rc != 0;
