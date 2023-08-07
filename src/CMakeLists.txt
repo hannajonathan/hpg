@@ -19,6 +19,7 @@ option(Hpg_ENABLE_ALL "Enable all devices enabled by Kokkos installation" ON)
 option(Hpg_ENABLE_SERIAL "Enable Serial device" ${Hpg_ENABLE_ALL})
 option(Hpg_ENABLE_OPENMP "Enable OpenMP device" ${Hpg_ENABLE_ALL})
 option(Hpg_ENABLE_CUDA "Enable CUDA device" ${Hpg_ENABLE_ALL})
+option(Hpg_USE_MIXED_PRECISION "Use mixed precision in gridding kernels" OFF)
 set(Hpg_API 11 CACHE STRING "HPG API C++ standard")
 option(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
   "Enable experimental kernel versions" OFF)
@@ -141,6 +142,9 @@ endif()
 if(Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS)
   set(HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     ${Hpg_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS})
+endif()
+if(Hpg_USE_MIXED_PRECISION)
+  set(HPG_USE_MIXED_PRECISION ${Hpg_USE_MIXED_PRECISION})
 endif()
 
 # set the HPG_ENABLE_* variables in the parent scope based on

@@ -31,6 +31,8 @@ CMake build options:
   compute kernel implementations (advanced feature, default: OFF)
 * `Hpg_MAX_NUM_CF_GROUPS`: maximum number of convolution function
   groups (default: 1000)
+* `Hpg_USE_MIXED_PRECISION`: enable gridding kernels with mixed
+  precision
 
 Note that the selected implementation(s) must be enabled in the *Kokkos*
 library installation. When building for *CUDA* using *gcc*, *Kokkos'*
