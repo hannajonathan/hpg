@@ -1,4 +1,4 @@
-// Copyright 2021 Associated Universities, Inc. Washington DC, USA.
+// Copyright 2021-2023 Associated Universities, Inc. Washington DC, USA.
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -81,34 +81,35 @@ enum class /*HPG_EXPORT*/ CFAxis {
 template<typename T, int N>
 struct /*HPG_EXPORT*/ poln_array_type {
 
-  K::complex<T> vals[N];
+  T vals[N];
 
-  KOKKOS_INLINE_FUNCTION   // Default constructor - Initialize to 0's
+  KOKKOS_INLINE_FUNCTION
   poln_array_type() {
     for (int i = 0; i < N; ++i) {
       vals[i] = 0;
     }
   }
-  KOKKOS_INLINE_FUNCTION   // Copy Constructor
+  KOKKOS_INLINE_FUNCTION
   poln_array_type(const poln_array_type& rhs) {
     for (int i = 0; i < N; ++i) {
       vals[i] = rhs.vals[i];
     }
   }
-  KOKKOS_INLINE_FUNCTION   // add operator
+  KOKKOS_INLINE_FUNCTION
   poln_array_type&
-  operator +=(const poln_array_type& src) {
+  operator=(const poln_array_type& src) {
+    for (int i = 0; i < N; ++i) {
+      vals[i] = src.vals[i];
+    }
+    return *this;
+  }
+  KOKKOS_INLINE_FUNCTION
+  poln_array_type&
+  operator+=(const poln_array_type& src) {
     for (int i = 0; i < N; ++i) {
       vals[i] += src.vals[i];
     }
     return *this;
-  }
-  KOKKOS_INLINE_FUNCTION   // volatile add operator
-  void
-  operator +=(const volatile poln_array_type& src) volatile {
-    for (int i = 0; i < N; ++i) {
-      vals[i] += src.vals[i];
-    }
   }
   KOKKOS_INLINE_FUNCTION
   void
@@ -131,21 +132,21 @@ struct /*HPG_EXPORT*/ vis_array_type {
   K::Array<K::complex<T>, N> vis;
   K::Array<K::complex<T>, N> wgt;
 
-  KOKKOS_INLINE_FUNCTION   // Default constructor - Initialize to 0's
+  KOKKOS_INLINE_FUNCTION
   vis_array_type() {
     for (int i = 0; i < N; ++i) {
       vis[i] = 0;
       wgt[i] = 0;
     }
   }
-  KOKKOS_INLINE_FUNCTION   // Copy Constructor
+  KOKKOS_INLINE_FUNCTION
   vis_array_type(const vis_array_type& rhs) {
     for (int i = 0; i < N; ++i) {
       vis[i] = rhs.vis[i];
       wgt[i] = rhs.wgt[i];
     }
   }
-  KOKKOS_INLINE_FUNCTION   // add operator
+  KOKKOS_INLINE_FUNCTION
   vis_array_type&
   operator +=(const vis_array_type& src) {
     for (int i = 0; i < N; ++i) {
@@ -154,35 +155,18 @@ struct /*HPG_EXPORT*/ vis_array_type {
     }
     return *this;
   }
-  KOKKOS_INLINE_FUNCTION   // volatile add operator
-  void
-  operator +=(const volatile vis_array_type& src) volatile {
-    for (int i = 0; i < N; ++i) {
-      vis[i] += src.vis[i];
-      wgt[i] += src.wgt[i];
-    }
-  }
 };
 } // end namespace hpg::runtime::impl::core
 
 namespace Kokkos { //reduction identities must be defined in Kokkos namespace
 /** reduction identity of poln_array_type */
-template<int N>
+template<typename T, int N>
 struct /*HPG_EXPORT*/ reduction_identity<
-  hpg::runtime::impl::core::poln_array_type<float, N>> {
+  hpg::runtime::impl::core::poln_array_type<T, N>> {
 
   KOKKOS_FORCEINLINE_FUNCTION static
-  hpg::runtime::impl::core::poln_array_type<float, N> sum() {
-    return hpg::runtime::impl::core::poln_array_type<float, N>();
-  }
-};
-template<int N>
-struct /*HPG_EXPORT*/ reduction_identity<
-  hpg::runtime::impl::core::poln_array_type<double, N>> {
-
-  KOKKOS_FORCEINLINE_FUNCTION static
-  hpg::runtime::impl::core::poln_array_type<double, N> sum() {
-    return hpg::runtime::impl::core::poln_array_type<double, N>();
+  hpg::runtime::impl::core::poln_array_type<T, N> sum() {
+    return hpg::runtime::impl::core::poln_array_type<T, N>();
   }
 };
 
@@ -208,6 +192,147 @@ struct /*HPG_EXPORT*/ reduction_identity<
 }
 
 namespace hpg::runtime::impl::core {
+
+/*! value type for compensated summation
+ *
+ * \tparam T accumulation value type
+ *
+ * This type implements the compensated summation algorithm for values of type
+ * T. See the article [What every computer scientist should know about
+ * floating-point arithmetic](https://dl.acm.org/doi/10.1145/103162.103163) for
+ * a description of the compensated summation algorithm. Note that this
+ * implementation has been extended to account for the compensation value (err)
+ * of the rhs when two compsum values are added.
+ */
+template <typename T>
+struct compsum {
+
+  T val{}; /*!< accumulated value*/
+  T err{}; /*!< residual error value */
+
+  /*! default constructor */
+  KOKKOS_INLINE_FUNCTION
+  compsum() noexcept = default;
+  /*! (defaulted) copy constructor */
+  KOKKOS_INLINE_FUNCTION
+  compsum(compsum const&) noexcept = default;
+  /*! (defaulted) move constructor */
+  KOKKOS_INLINE_FUNCTION
+  compsum(compsum&&) noexcept = default;
+  /*! construction from value of type T
+   *
+   * Initialize error value to 0
+   */
+  KOKKOS_INLINE_FUNCTION
+  compsum(T const& v) noexcept : val(v) {}
+  /*! construction from rref value of type T
+   *
+   * Initialize error value to 0
+   */
+  KOKKOS_INLINE_FUNCTION
+  compsum(T&& v) noexcept : val(std::move(v)) {}
+  /*! construction from value and error */
+  KOKKOS_INLINE_FUNCTION
+  compsum(T const& v, T const& e) noexcept : val(v), err(e) {}
+  /*! construction from rref value and rref error */
+  KOKKOS_INLINE_FUNCTION
+  compsum(T&& v, T&& e) noexcept : val(std::move(v)), err(std::move(e)) {}
+  /*! (defaulted) destructor */
+  KOKKOS_INLINE_FUNCTION ~compsum() = default;
+  /*! (defaulted) copy assignment */
+  KOKKOS_INLINE_FUNCTION auto
+  operator=(compsum const&) noexcept -> compsum& = default;
+  /*! (defaulted) move assignment */
+  KOKKOS_INLINE_FUNCTION auto
+  operator=(compsum&&) noexcept -> compsum& = default;
+  /*! assignment from value of type T
+   *
+   * Sets error value to 0.
+   */
+  KOKKOS_INLINE_FUNCTION auto
+  operator=(T const& v) noexcept -> compsum& {
+    val = v;
+    err = 0;
+    return *this;
+  }
+  /*! accumulation operator with value of type T
+   *
+   * Implements the compensated summation algorithm.
+   */
+  KOKKOS_INLINE_FUNCTION auto
+  operator+=(T const& rhs) noexcept -> compsum& {
+    auto y = rhs - err;
+    auto t = val + y;
+    err = (t - val) - y;
+    val = t;
+    return *this;
+  }
+  /*! addition operator with value of type T
+   *
+   * Implements the compensated summation algorithm.
+   */
+  KOKKOS_INLINE_FUNCTION auto
+  operator+(T const& rhs) const noexcept -> compsum {
+    auto y = rhs - err;
+    auto t = val + y;
+    return compsum(t, (t - val) - y);
+  }
+  /*! accumulation operator with value of type compsum<T>
+   *
+   * Implements the compensated summation algorithm.
+   */
+  KOKKOS_INLINE_FUNCTION auto
+  operator+=(compsum const& rhs) noexcept -> compsum& {
+    return (*this += rhs.val) += -rhs.err;
+  }
+  /*! addition operator with value of type compsum<T>
+   *
+   * Implements the compensated summation algorithm.
+   */
+  KOKKOS_INLINE_FUNCTION auto
+  operator+(compsum const& rhs) const noexcept -> compsum {
+    return (*this + rhs.val) += -rhs.err;
+  }
+  /*! conversion function to reference to value of type T */
+  KOKKOS_INLINE_FUNCTION explicit operator T const&() const { return val; }
+};
+
+// something to consider when moving to c++20
+//
+///*! concept for identifying a value of type accval<.> */
+//template <typename T>
+//concept CompensatedSum = requires(T a) {
+//  a.val;
+//  a.err;
+//};
+
+// /*! wrapper to get type T of accval<T> */
+// template <typename S, typename T = decltype(S::val)>
+// struct accval_value {
+//   using type = T;
+// };
+// /*! specialization of accval_value for CompensatedSum types */
+// template <typename S>
+// struct accval_value {
+//   using type = S;
+// };
+// /*! alias for accval_type<T>::type */
+// template <typename T>
+// using accval_value_t = typename accval_value<T>::type;
+
+// /*! type trait to deduce CompensatedSum types */
+// template <typename S, typename T = decltype(S::val)>
+// struct is_compensated_sum {
+//   static constexpr bool value = true;
+// };
+// /*! specialization of is_compensated_sum for CompensatedSum types */
+// template <typename S>
+// struct is_compensated_sum {
+//   static constexpr bool value = false;
+// };
+// /*! alias for is_compensated_sum<T>::value */
+// template <typename T>
+// inline constexpr bool is_compensated_sum_v = is_compensated_sum<T>::value;
 
 /** accumulation value type for complex values
  *
@@ -236,6 +361,27 @@ using gv_t = K::complex<grid_value_fp>;
 
 /** portable UVW coordinates type */
 using uvw_t = K::Array<vis_uvw_fp, 3>;
+
+/*! kernel intermediate value types
+ *
+ * \tparam T value type
+ */
+#ifdef HPG_USE_MIXED_PRECISION
+using intermediate_grid_t =
+  K::complex<std::common_type_t<visibility_fp, cf_fp>>;
+using intermediate_grid_value_t = intermediate_grid_t::value_type;
+using intermediate_vis_t = compsum<vis_t>;
+using intermediate_vis_value_t = vis_t;
+using intermediate_weights_t = compsum<cf_t>;
+using intermediate_weights_value_t = cf_t;
+#else
+using intermediate_grid_t = gv_t;
+using intermediate_grid_value_t = gv_t;
+using intermediate_vis_t = acc_vis_t;
+using intermediate_vis_value_t = acc_vis_t;
+using intermediate_weights_t = acc_cf_t;
+using intermediate_weights_value_t = acc_cf_t;
+#endif // HPG_USE_MIXED_PRECISION
 
 /** visibilities plus metadata for gridding */
 template <unsigned N>
@@ -337,7 +483,7 @@ using visbuff_view = K::View<VisData<4>*, memory_space>;
 
 /** view for backing buffer of gvisvals views in ExecSpace */
 template <typename memory_space>
-using gvisbuff_view = K::View<poln_array_type<visibility_fp, 4>*, memory_space>;
+using gvisbuff_view = K::View<poln_array_type<vis_t, 4>*, memory_space>;
 
 /** view for Mueller element index matrix */
 template <typename memory_space>
@@ -359,27 +505,27 @@ using const_mindex_view =
  */
 template <typename execution_space, typename T>
 /*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
-pseudo_atomic_add(volatile K::complex<T>& acc, const K::complex<T>& val) {
-  K::atomic_add(&acc, val);
+pseudo_atomic_add(K::complex<T>* acc, const K::complex<T>& val) {
+  K::atomic_add(acc, val);
 }
 
 #ifdef HPG_ENABLE_CUDA
 template <>
 /*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add<K::Cuda, double>(
-  volatile K::complex<double>& acc, const K::complex<double>& val) {
+  K::complex<double>* acc, const K::complex<double>& val) {
 
-  K::atomic_add(&acc.real(), val.real());
-  K::atomic_add(&acc.imag(), val.imag());
+  K::atomic_add(&acc->real(), val.real());
+  K::atomic_add(&acc->imag(), val.imag());
 }
 
 template <>
 /*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
 pseudo_atomic_add<K::Cuda, float>(
-  volatile K::complex<float>& acc, const K::complex<float>& val) {
+  K::complex<float>* acc, const K::complex<float>& val) {
 
-  K::atomic_add(&acc.real(), val.real());
-  K::atomic_add(&acc.imag(), val.imag());
+  K::atomic_add(&acc->real(), val.real());
+  K::atomic_add(&acc->imag(), val.imag());
 }
 #endif // HPG_ENABLE_CUDA
 
@@ -571,13 +717,16 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
+#ifndef HPG_USE_MIXED_PRECISION
+  using scratch_phscr_t = cf_phase_gradient_fp;
+#else
+  using scratch_phscr_t = visibility_fp;
+#endif // HPG_USE_MIXED_PRECISION
   using scratch_phscr_view =
-    K::View<
-      cf_phase_gradient_fp*,
-    typename execution_space::scratch_memory_space>;
+    K::View<scratch_phscr_t*, typename execution_space::scratch_memory_space>;
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
-  static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
+  static KOKKOS_FUNCTION poln_array_type<vis_t, N>
   degrid_vis(
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
@@ -605,12 +754,15 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       });
     team_member.team_barrier();
 
-    poln_array_type<visibility_fp, N> result;
+    poln_array_type<vis_t, N> result;
 
     if (model.is_allocated()) {
       // model degridding
       static_assert(std::is_same_v<acc_vis_t, acc_cf_t>);
-      vis_array_type<acc_vis_t::value_type, N> vis_array;
+      using vis_array_t = poln_array_type<intermediate_vis_t, N>;
+      vis_array_t vis_array;
+      using wgts_array_t = poln_array_type<intermediate_weights_t, N>;
+      wgts_array_t wgts_array;
 
       // 3d (X, Y, Mueller) subspace of CF for this visibility
       auto cf_vis =
@@ -634,30 +786,33 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
       // loop over model polarizations
       for (int gpol = 0; gpol < N_R; ++gpol) {
-        decltype(vis_array) va;
+        vis_array_t va;
+        wgts_array_t wa;
         // parallel loop over grid X
         K::parallel_reduce(
           K::TeamThreadRange(team_member, N_X),
-          [=](const int X, decltype(vis_array)& vis_array_l) {
-            auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
+          [=](const int& X, vis_array_t& vis_array_l, wgts_array_t& wgts_array_l) {
+            scratch_phscr_t phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
               auto screen = cphase<execution_space>(-phi_X - phi_Y(Y));
-              const auto mv = model_vis(X, Y, gpol) * screen;
+              const auto mv = vis_t(model_vis(X, Y, gpol)) * screen;
               // loop over visibility polarizations
               for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = degridding_mindex(gpol, vpol);
                     mindex >= 0) {
                   cf_t cfv = cf_vis(X, Y, mindex);
                   cfv.imag() *= cf_im_factor;
-                  vis_array_l.vis[vpol] += cfv * mv;
-                  vis_array_l.wgt[vpol] += cfv;
+                  vis_array_l.vals[vpol] += cfv * mv;
+                  wgts_array_l.vals[vpol] += cfv;
                 }
               }
             }
           },
-          K::Sum<decltype(va)>(va));
+          va,
+          wa);
         vis_array += va;
+        wgts_array += wa;
       }
 
       // apply weights and phasor to compute predicted visibilities
@@ -665,10 +820,11 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       conj_phasor.imag() *= -1;
       for (int vpol = 0; vpol < N; ++vpol)
         result.vals[vpol] =
-          (vis_array.vis[vpol]
-           / ((vis_array.wgt[vpol] != (acc_cf_t)0)
-              ? vis_array.wgt[vpol]
-              : (acc_cf_t)1))
+          (intermediate_vis_value_t(vis_array.vals[vpol])
+           / ((intermediate_weights_value_t(wgts_array.vals[vpol]) !=
+               intermediate_weights_value_t(0))
+              ? intermediate_weights_value_t(wgts_array.vals[vpol])
+              : intermediate_weights_value_t(1)))
           * conj_phasor;
     }
     return result;
@@ -731,38 +887,41 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
         vis.m_grid_cube);
 
     // accumulate to grid, and CF weights per visibility polarization
-    poln_array_type<acc_cf_t::value_type, N> grid_wgt;
+    using wgts_array_t = poln_array_type<intermediate_weights_t, N>;
+    wgts_array_t wgts_array;
+
     // parallel loop over grid X
     K::parallel_reduce(
       K::TeamThreadRange(team_member, N_X),
-      [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
-        auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
+      [=](const int X, auto& wgts_array_l) {
+        scratch_phscr_t phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
         // loop over grid Y
         for (int Y = 0; Y < N_Y; ++Y) {
-          const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
-          gv_t gv(0);
+          auto const screen = cphase<execution_space>(phi_X + phi_Y(Y));
+          intermediate_grid_t gv;
           // loop over visibility polarizations
           for (int vpol = 0; vpol < N; ++vpol) {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
               cf_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
-              gv += gv_t(cfv * screen * vis.m_values[vpol]);
-              grid_wgt_l.vals[vpol] += cfv;
+              gv += cfv * screen * vis.m_values[vpol];
+              wgts_array_l.vals[vpol] += cfv;
             }
           }
-          pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
+          pseudo_atomic_add<execution_space>(&grd_vis(X, Y), gv_t(gv));
         }
       },
-      K::Sum<decltype(grid_wgt)>(grid_wgt));
+      K::Sum<wgts_array_t>(wgts_array));
     // compute final weight and add it to weights
     K::single(
       K::PerTeam(team_member),
       [&]() {
-        grid_value_fp twgt = 0;
+        intermediate_weights_value_t::value_type twgt = 0;
         for (int vpol = 0; vpol < N; ++vpol)
           twgt +=
-            grid_value_fp(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]);
-        K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt);
+            mag(intermediate_weights_value_t(wgts_array.vals[vpol]))
+            * vis.m_weights[vpol];
+        K::atomic_add(&weights(gpol, vis.m_grid_cube), grid_value_fp(twgt));
       });
   }
 
@@ -824,20 +983,20 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     K::parallel_for(
       K::TeamThreadRange(team_member, N_X),
       [=](const int X) {
-        auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
+        scratch_phscr_t phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
         // loop over grid Y
         for (int Y = 0; Y < N_Y; ++Y) {
-          const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y));
-          gv_t gv(0);
+          auto const screen = cphase<execution_space>(phi_X + phi_Y(Y));
+          intermediate_grid_t gv;
           // loop over visibility polarizations
           for (int vpol = 0; vpol < N; ++vpol) {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
               cf_t cfv = cf_vis(X, Y, mindex);
               cfv.imag() *= cf_im_factor;
-              gv += gv_t(cfv * screen * vis.m_values[vpol]);
+              gv += cfv * screen * vis.m_values[vpol];
             }
           }
-          pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
+          pseudo_atomic_add<execution_space>(&grd_vis(X, Y), gv_t(gv));
         }
       });
   }
@@ -905,8 +1064,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
             grid_scale,
             cf_radii,
             oversampling);
-          poln_array_type<visibility_fp, N> gvis;
-          // skip this visibility if all of the updated grid points are not
+          poln_array_type<vis_t, N> gvis;
+          // skip this visibility if any of the updated grid points are not
           // within grid bounds
           if (all_within_grid(vis, grid_size)) {
             gvis =
@@ -975,7 +1134,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
               grid_scale,
               cf_radii,
               oversampling);
-            // skip this visibility if all of the updated grid points are not
+            // skip this visibility if any of the updated grid points are not
             // within grid bounds
             if (all_within_grid(vis, grid_size)) {
               grid_vis<cf_layout, grid_layout, memory_space>(
@@ -1008,7 +1167,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
               grid_scale,
               cf_radii,
               oversampling);
-            // skip this visibility if all of the updated grid points are not
+            // skip this visibility if any of the updated grid points are not
             // within grid bounds
             if (all_within_grid(vis, grid_size)) {
               grid_vis_no_weights<cf_layout, grid_layout, memory_space>(
