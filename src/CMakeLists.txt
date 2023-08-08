@@ -1,4 +1,4 @@
-# Copyright 2021 Associated Universities, Inc. Washington DC, USA.
+# Copyright 2021-2023 Associated Universities, Inc. Washington DC, USA.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,7 +43,7 @@ set(HAVE_CUDA -1)
 
 # find Kokkos
 #
-find_package(Kokkos 4.0.0
+find_package(Kokkos 4.1.0
   REQUIRED COMPONENTS kokkos kokkoscore
   OPTIONAL_COMPONENTS CUDA)
 if(Hpg_ENABLE_SERIAL)

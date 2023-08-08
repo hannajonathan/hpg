@@ -5,7 +5,7 @@ High performance gridding (kernel) implementation library.
 ## Build requirements
 
 * [CMake](https://cmake.org) (v3.14 or later)
-* [Kokkos](https://github.com/kokkos/kokkos) (v4.0.00 or later)
+* [Kokkos](https://github.com/kokkos/kokkos) (v4.1.00 or later)
 * [FFTW](http://fftw.org) (v3.3.8 or later)
 * [CUDA](https://developer.nvidia.com/cuda-toolkit) (optional, v11.0.2 or later)
 * cuFFT (part of CUDA toolkit)
