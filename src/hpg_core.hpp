@@ -793,23 +793,25 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
         // parallel loop over grid X
         K::parallel_reduce(
           K::TeamThreadRange(team_member, N_X),
-          [=](const int& X, vis_array_t& vis_array_l, wgts_array_t& wgts_array_l) {
+          [=](const int X, vis_array_t& vis_array_l, wgts_array_t& wgts_array_l) {
             scratch_phscr_t phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
             // loop over grid Y
-            for (int Y = 0; Y < N_Y; ++Y) {
-              auto screen = cphase<execution_space>(-phi_X - phi_Y(Y));
-              const auto mv = vis_t(model_vis(X, Y, gpol)) * screen;
-              // loop over visibility polarizations
-              for (int vpol = 0; vpol < N; ++vpol) {
-                if (const auto mindex = degridding_mindex(gpol, vpol);
-                    mindex >= 0) {
-                  cf_t cfv = cf_vis(X, Y, mindex);
-                  cfv.imag() *= cf_im_factor;
-                  vis_array_l.vals[vpol] += cfv * mv;
-                  wgts_array_l.vals[vpol] += cfv;
+            K::parallel_for(
+              K::ThreadVectorRange(team_member, N_Y),
+              [&](const int Y) {
+                auto screen = cphase<execution_space>(-phi_X - phi_Y(Y));
+                const auto mv = vis_t(model_vis(X, Y, gpol)) * screen;
+                // loop over visibility polarizations
+                for (int vpol = 0; vpol < N; ++vpol) {
+                  if (const auto mindex = degridding_mindex(gpol, vpol);
+                      mindex >= 0) {
+                    cf_t cfv = cf_vis(X, Y, mindex);
+                    cfv.imag() *= cf_im_factor;
+                    vis_array_l.vals[vpol] += cfv * mv;
+                    wgts_array_l.vals[vpol] += cfv;
+                  }
                 }
-              }
-            }
+              });
           },
           va,
           wa);
@@ -898,22 +900,24 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       [=](const int X, auto& wgts_array_l) {
         scratch_phscr_t phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
         // loop over grid Y
-        for (int Y = 0; Y < N_Y; ++Y) {
-          auto const screen = cphase<execution_space>(phi_X + phi_Y(Y));
-          intermediate_grid_t gv;
-          // loop over visibility polarizations
-          for (int vpol = 0; vpol < N; ++vpol) {
-            if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
-              cf_t cfv = cf_vis(X, Y, mindex);
-              cfv.imag() *= cf_im_factor;
-              gv += cfv * screen * vis.m_values[vpol];
-              wgts_array_l.vals[vpol] += cfv;
+        K::parallel_for(
+          K::ThreadVectorRange(team_member, N_Y),
+          [&](const int Y) {
+            auto const screen = cphase<execution_space>(phi_X + phi_Y(Y));
+            intermediate_grid_t gv;
+            // loop over visibility polarizations
+            for (int vpol = 0; vpol < N; ++vpol) {
+              if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
+                cf_t cfv = cf_vis(X, Y, mindex);
+                cfv.imag() *= cf_im_factor;
+                gv += cfv * screen * vis.m_values[vpol];
+                wgts_array_l.vals[vpol] += cfv;
+              }
             }
-          }
-          pseudo_atomic_add<execution_space>(&grd_vis(X, Y), gv_t(gv));
-        }
+            pseudo_atomic_add<execution_space>(&grd_vis(X, Y), gv_t(gv));
+          });
       },
-      K::Sum<wgts_array_t>(wgts_array));
+      wgts_array);
     // compute final weight and add it to weights
     K::single(
       K::PerTeam(team_member),
@@ -987,19 +991,21 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       [=](const int X) {
         scratch_phscr_t phi_X = vis.m_phi0[0] + X * vis.m_dphi[0];
         // loop over grid Y
-        for (int Y = 0; Y < N_Y; ++Y) {
-          auto const screen = cphase<execution_space>(phi_X + phi_Y(Y));
-          intermediate_grid_t gv;
-          // loop over visibility polarizations
-          for (int vpol = 0; vpol < N; ++vpol) {
-            if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
-              cf_t cfv = cf_vis(X, Y, mindex);
-              cfv.imag() *= cf_im_factor;
-              gv += cfv * screen * vis.m_values[vpol];
+        K::parallel_for(
+          K::ThreadVectorRange(team_member, N_Y),
+          [&](const int Y) {
+            auto const screen = cphase<execution_space>(phi_X + phi_Y(Y));
+            intermediate_grid_t gv;
+            // loop over visibility polarizations
+            for (int vpol = 0; vpol < N; ++vpol) {
+              if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
+                cf_t cfv = cf_vis(X, Y, mindex);
+                cfv.imag() *= cf_im_factor;
+                gv += cfv * screen * vis.m_values[vpol];
+              }
             }
-          }
-          pseudo_atomic_add<execution_space>(&grd_vis(X, Y), gv_t(gv));
-        }
+            pseudo_atomic_add<execution_space>(&grd_vis(X, Y), gv_t(gv));
+          });
       });
   }
 
@@ -1039,6 +1045,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 
     ProfileRegion region("VisibilityGridder");
 
+    static int const vector_length = 4; // TODO: should be configurable
+
     const K::Array<int, 2>
       grid_size{
       grid.extent_int(int(GridAxis::x)),
@@ -1053,7 +1061,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     if (do_degrid) {
       K::parallel_for(
         "degridding",
-        K::TeamPolicy<execution_space>(exec, num_visibilities, K::AUTO)
+        K::TeamPolicy<execution_space>(
+          exec, num_visibilities, K::AUTO, vector_length)
         .set_scratch_size(0, K::PerTeam(shmem_size)),
         KOKKOS_LAMBDA(const member_type& team_member) {
           auto i = team_member.league_rank();
@@ -1123,7 +1132,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       if (update_grid_weights)
         K::parallel_for(
           "gridding",
-          K::TeamPolicy<execution_space>(exec, N_R * num_visibilities, K::AUTO)
+          K::TeamPolicy<execution_space>(
+            exec, N_R * num_visibilities, K::AUTO, vector_length)
           .set_scratch_size(0, K::PerTeam(shmem_size)),
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
@@ -1156,7 +1166,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
       else
         K::parallel_for(
           "gridding_no_weights",
-          K::TeamPolicy<execution_space>(exec, N_R * num_visibilities, K::AUTO)
+          K::TeamPolicy<execution_space>(
+            exec, N_R * num_visibilities, K::AUTO, vector_length)
           .set_scratch_size(0, K::PerTeam(shmem_size)),
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
