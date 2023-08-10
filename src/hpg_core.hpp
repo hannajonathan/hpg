@@ -374,6 +374,7 @@ using intermediate_vis_t = compsum<vis_t>;
 using intermediate_vis_value_t = vis_t;
 using intermediate_weights_t = compsum<cf_t>;
 using intermediate_weights_value_t = cf_t;
+using vphase_fp = float; // TODO: adapt to vis_phase_fp
 #else
 using intermediate_grid_t = gv_t;
 using intermediate_grid_value_t = gv_t;
@@ -381,6 +382,7 @@ using intermediate_vis_t = acc_vis_t;
 using intermediate_vis_value_t = acc_vis_t;
 using intermediate_weights_t = acc_cf_t;
 using intermediate_weights_value_t = acc_cf_t;
+using vphase_fp = double;
 #endif // HPG_USE_MIXED_PRECISION
 
 /** visibilities plus metadata for gridding */
@@ -395,7 +397,7 @@ struct /*HPG_EXPORT*/ VisData {
     const K::Array<vis_t, N>& values, /**< visibility values */
     const K::Array<vis_weight_fp, N> weights, /**< visibility weights */
     vis_frequency_fp freq, /**< frequency */
-    vis_phase_fp d_phase, /**< phase angle */
+    vphase_fp d_phase, /**< phase angle */
     const uvw_t& uvw, /** < uvw coordinates */
     unsigned& grid_cube, /**< grid cube index */
     const K::Array<unsigned, 2>& cf_index, /**< cf (cube, grp) index */
@@ -423,7 +425,7 @@ struct /*HPG_EXPORT*/ VisData {
   K::Array<vis_t, N> m_values;
   K::Array<vis_weight_fp, N> m_weights;
   vis_frequency_fp m_freq;
-  vis_phase_fp m_d_phase;
+  vphase_fp m_d_phase;
   uvw_t m_uvw;
   unsigned m_grid_cube;
   K::Array<unsigned, 2> m_cf_index;
@@ -646,13 +648,13 @@ struct /*HPG_EXPORT*/ Vis final {
   int m_cf_size[2]; /**< cf size */
   K::Array<vis_t, N> m_values; /**< visibility values */
   K::Array<vis_weight_fp, N> m_weights; /**< visibility weights */
-  K::complex<vis_phase_fp> m_phasor;
+  K::complex<vphase_fp> m_phasor;
   int m_grid_cube; /**< grid cube index */
   int m_cf_cube; /**< cf cube index */
   int m_cf_grp; /**< cf group index */
   bool m_pos_w; /**< true iff W coordinate is strictly positive */
-  cf_phase_gradient_fp m_phi0[2]; /**< phase screen value origin */
-  cf_phase_gradient_fp m_dphi[2]; /**< phase screen value increment */
+  vphase_fp m_phi0[2]; /**< phase screen value origin */
+  vphase_fp m_dphi[2]; /**< phase screen value increment */
 
   KOKKOS_INLINE_FUNCTION Vis() {};
 
