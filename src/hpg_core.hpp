@@ -506,25 +506,25 @@ using const_mindex_view =
  * components are updated sequentially.
  */
 template <typename execution_space, typename T>
-/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
-pseudo_atomic_add(K::complex<T>* acc, const K::complex<T>& val) {
+/*HPG_EXPORT*/ KOKKOS_INLINE_FUNCTION void
+pseudo_atomic_add(T* const acc, T const& val) {
   K::atomic_add(acc, val);
 }
 
 #ifdef HPG_ENABLE_CUDA
 template <>
-/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
-pseudo_atomic_add<K::Cuda, double>(
-  K::complex<double>* acc, const K::complex<double>& val) {
+/*HPG_EXPORT*/ KOKKOS_INLINE_FUNCTION void
+pseudo_atomic_add<K::Cuda, K::complex<double>>(
+  K::complex<double>* const acc, K::complex<double> const& val) {
 
   K::atomic_add(&acc->real(), val.real());
   K::atomic_add(&acc->imag(), val.imag());
 }
 
 template <>
-/*HPG_EXPORT*/ KOKKOS_FORCEINLINE_FUNCTION void
-pseudo_atomic_add<K::Cuda, float>(
-  K::complex<float>* acc, const K::complex<float>& val) {
+/*HPG_EXPORT*/ KOKKOS_INLINE_FUNCTION void
+pseudo_atomic_add<K::Cuda, K::complex<float>>(
+  K::complex<float>* const acc, K::complex<float> const& val) {
 
   K::atomic_add(&acc->real(), val.real());
   K::atomic_add(&acc->imag(), val.imag());
@@ -805,7 +805,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
                 for (int vpol = 0; vpol < N; ++vpol) {
                   if (const auto mindex = degridding_mindex(gpol, vpol);
                       mindex >= 0) {
-                    cf_t cfv = cf_vis(X, Y, mindex);
+                    auto cfv = cf_vis(X, Y, mindex);
                     cfv.imag() *= cf_im_factor;
                     vis_array_l.vals[vpol] += cfv * mv;
                     wgts_array_l.vals[vpol] += cfv;
@@ -908,7 +908,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
             // loop over visibility polarizations
             for (int vpol = 0; vpol < N; ++vpol) {
               if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
-                cf_t cfv = cf_vis(X, Y, mindex);
+                auto cfv = cf_vis(X, Y, mindex);
                 cfv.imag() *= cf_im_factor;
                 gv += cfv * screen * vis.m_values[vpol];
                 wgts_array_l.vals[vpol] += cfv;
@@ -999,7 +999,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
             // loop over visibility polarizations
             for (int vpol = 0; vpol < N; ++vpol) {
               if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
-                cf_t cfv = cf_vis(X, Y, mindex);
+                auto cfv = cf_vis(X, Y, mindex);
                 cfv.imag() *= cf_im_factor;
                 gv += cfv * screen * vis.m_values[vpol];
               }
