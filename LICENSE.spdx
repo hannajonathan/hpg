@@ -1,7 +1,7 @@
 SPDXVersion: SPDX-2.2
 DataLicense: CC0-1.0
 
-DocumentNamespace: http://gitlab.nrao.edu/mpokorny/hpg/LICENSE-c5ae7ff9-8547-4f42-88c4-4a505ac5afbc
+DocumentNamespace: http://gitlab.com/dsa-2000/code/hpg/LICENSE-c5ae7ff9-8547-4f42-88c4-4a505ac5afbc
 DocumentName: LICENSE
 SPDXID: SPDXRef-DOCUMENT
 
@@ -10,9 +10,9 @@ Created: 2021-05-07T20:26:48Z
 
 PackageName: hpg
 SPDXID: SPDXRef-package
-PackageDownloadLocation: git+https://gitlab.nrao.edu/mpokorny/hpg.git
+PackageDownloadLocation: git+https://gitlab.com/dsa-2000/code/hpg.git
 FilesAnalyzed: false
-PackageHomePage: https://gitlab.nrao.edu/mpokorny/hpg
+PackageHomePage: https://gitlab.com/dsa-2000/code/hpg
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: Apache-2.0
 PackageCopyrightText: Copyright 2021, Associated Universities, Inc. Washington DC, USA

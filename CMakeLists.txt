@@ -18,7 +18,7 @@ include(hpgVersionDetails.cmake)
 project(hpg
   VERSION ${hpg_VER}
   DESCRIPTION "High performance (de-)gridding kernel implementation library"
-  HOMEPAGE_URL https://gitlab.nrao.edu/mpokorny/hpg)
+  HOMEPAGE_URL https://gitlab.com/dsa-2000/code/hpg)
 enable_testing()
 enable_language(CXX)
 
