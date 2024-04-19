@@ -16,6 +16,7 @@
 #include "hpg_impl.hpp"
 
 #include <cfenv>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <tuple>
