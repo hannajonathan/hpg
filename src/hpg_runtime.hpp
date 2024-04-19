@@ -21,6 +21,7 @@
 
 #include <any>
 #include <deque>
+#include <iostream>
 #include <mutex>
 #include <optional>
 #include <type_traits>
@@ -269,8 +270,12 @@ enum class /*HPG_EXPORT*/ StreamPhase {
   GRIDDING
 };
 
-/** formatted output for StreamPhase value */
-std::ostream&
+/*! \brief formatted output for StreamPhase value
+ *
+ * \todo remove inline? Added here to avoid ODR violation, but removing would
+ * require its defineitino elsewhere.
+ */
+inline std::ostream&
 operator<<(std::ostream& str, const StreamPhase& ph) {
   switch (ph) {
   case StreamPhase::PRE_GRIDDING:

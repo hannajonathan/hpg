@@ -275,9 +275,9 @@ struct TrialSpec {
     )
     : index(index_)
     , device(device_)
-    , streams(streams_)
     , op(op_)
     , sow(sow_)
+    , streams(streams_)
     , mueller_indexes(mueller_indexes_)
     , gsize(gsize_)
     , oversampling(oversampling_)
@@ -697,7 +697,7 @@ run_hpg_trial_op(
   GridlikeFn gfn) {
 
   std::queue<InputData> ids;
-  for (unsigned i = 0; i < spec.repeats; ++i)
+  for (int i = 0; i < spec.repeats; ++i)
     ids.push(input_data);
 
   std::unique_ptr<hpg::GridValueArray> model;
@@ -892,7 +892,7 @@ run_trials(
         for (auto& mindexes : mueller_indexes) {
           for (auto& cfsize : cfsizes) {
             for (auto& oversampling : oversamplings) {
-              for (auto& kernel : kernels) {
+              for ([[maybe_unused]] auto& kernel : kernels) {
                 for (auto& op : ops) {
                   for (auto sow : update_grid_weights) {
                     const auto input_data =

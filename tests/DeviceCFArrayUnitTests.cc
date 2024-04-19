@@ -20,6 +20,7 @@
 #include <array>
 #include <chrono>
 #include <complex>
+#include <iostream>
 #include <random>
 
 #if defined(HPG_ENABLE_OPENMP)

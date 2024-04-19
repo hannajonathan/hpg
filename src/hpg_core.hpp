@@ -566,7 +566,7 @@ struct /*HPG_EXPORT*/ Vis final {
  * Note that the default implementation probably is optimal only for many-core
  * devices, probably not OpenMP (although it is correct on all devices).
  */
-template <unsigned N, typename execution_space, unsigned version>
+template <int N, typename execution_space, unsigned version>
 struct /*HPG_EXPORT*/ VisibilityGridder final {
 
   using member_type = typename K::TeamPolicy<execution_space>::member_type;
@@ -1029,7 +1029,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 };
 
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-template <unsigned N, typename execution_space>
+template <int N, typename execution_space>
 struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
 
   using member_type =
@@ -2084,9 +2084,6 @@ struct /*HPG_EXPORT*/ GridShifter final {
     ShiftDirection direction,
     execution_space exec,
     const grid_view<grid_layout, memory_space>& grid) {
-
-    using scalar_t =
-      typename grid_view<grid_layout, memory_space>::value_type::value_type;
 
     using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
