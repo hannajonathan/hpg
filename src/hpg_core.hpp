@@ -895,6 +895,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const grid_view<grid_layout, memory_space>& grid,
+    const grid_view<grid_layout, memory_space>& mean_grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights,
     const scratch_phscr_view& phi_Y) {
