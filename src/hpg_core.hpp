@@ -680,7 +680,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     }
     return result;
   }
-
+  
   // degrid_vis clone with weighted mean
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
