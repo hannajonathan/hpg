@@ -731,6 +731,7 @@ public:
   using grid_layout =  impl::GridLayout<kokkos_device>;
 
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_grid;
+  impl::core::grid_view<typename grid_layout::layout, memory_space> m_mean_grid;
   impl::core::weight_view<typename execution_space::array_layout, memory_space>
     m_weights;
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_model;
@@ -1002,6 +1003,45 @@ public:
 
   template <unsigned N>
   State::maybe_vis_t
+  mean_grid_visibilities(
+    Device /*host_device*/,
+    std::vector<::hpg::VisData<N>>&& visibilities,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool return_visibilities,
+    bool do_grid) {
+
+    auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
+    auto len =
+      exec_pre.copy_visibilities_to_device(std::move(visibilities));
+
+    auto& exec_grid = m_exec_spaces[next_exec_space(StreamPhase::GRIDDING)];
+    auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
+    impl::core::const_grid_view<typename grid_layout::layout, memory_space>
+      model = m_model;
+    impl::core::VisibilityGridder<N, execution_space, 2>::kernel(
+      exec_grid.space,
+      cf.cf_d,
+      cf.cf_radii,
+      cf.max_cf_extent_y,
+      m_mueller_indexes,
+      m_conjugate_mueller_indexes,
+      update_grid_weights,
+      do_degrid,
+      do_grid,
+      len,
+      exec_grid.template visdata<N>(),
+      exec_grid.gvisbuff,
+      m_grid_scale,
+      model,
+      m_grid,
+      m_mean_grid,
+      m_weights);
+    return exec_grid.copy_visibilities_to_host(return_visibilities);
+  }
+
+  template <unsigned N>
+  State::maybe_vis_t
   alt_grid_visibilities(
     Device /*host_device*/,
     std::vector<::hpg::VisData<N>>&& visibilities,
@@ -1103,6 +1143,16 @@ public:
     case 0:
       return
         default_grid_visibilities(
+          host_device,
+          std::move(visibilities),
+          update_grid_weights,
+          do_degrid,
+          return_visibilities,
+          do_grid);
+      break;
+    case 2:
+      return
+        mean_grid_visibilities(
           host_device,
           std::move(visibilities),
           update_grid_weights,
