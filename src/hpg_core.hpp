@@ -580,7 +580,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
   degrid_vis(
-    std::cout << "Using VisibilityGridder case 0 degrid_vis" << endl;
     // gv_t = complex gridded value type
     // cf_t = convolution function value type
     const member_type& team_member, //using member_type = typename K::TeamPolicy<execution_space>::member_type
@@ -594,6 +593,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const auto& N_X = vis.m_cf_size[0]; // first index of cf_size array (how many pixels along u dim.)
     const auto& N_Y = vis.m_cf_size[1]; // second index of cf_size array (along v dim.)
     const auto N_R = model.extent_int(int(GridAxis::mrow)); // Number of elements in mrow of GridAxis?
+
+    std::cout << "Using VisibilityGridder case 0 degrid_vis" << endl;
 
     // vis.m_pos_w = true iff W coordinate is strictly positive
     // mindex is index of the Mueller matrix
@@ -687,7 +688,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION void
   grid_vis(
-    std::cout << "Using VisibilityGridder case 0 grid_vis" << endl;
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
     const unsigned gpol,
@@ -698,6 +698,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights,
     const scratch_phscr_view& phi_Y) {
+
+    std::cout << "Using VisibilityGridder case 0 grid_vis" << endl;
 
     const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
     const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
@@ -1057,7 +1059,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
   degrid_vis(
-    std::cout << "Using VisibilityGridder case 2 degrid_vis" << endl;
     // gv_t = complex gridded value type
     // cf_t = convolution function value type
     const member_type& team_member, //using member_type = typename K::TeamPolicy<execution_space>::member_type
@@ -1067,6 +1068,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const const_grid_view<grid_layout, memory_space>& model, //using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
     const scratch_phscr_view& phi_Y) { // using scratch_phscr_view = K::View<cf_phase_gradient_fp*, typename execution_space::scratch_memory_space>;
+
+    std::cout << "Using VisibilityGridder case 2 degrid_vis" << endl;
 
     const auto& N_X = vis.m_cf_size[0]; // first index of cf_size array (how many pixels along u dim.)
     const auto& N_Y = vis.m_cf_size[1]; // second index of cf_size array (along v dim.)
@@ -1164,7 +1167,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION void
   grid_vis(
-    std::cout << "Using VisibilityGridder case 2 grid_vis" << endl;
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
     const unsigned gpol,
@@ -1175,6 +1177,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights,
     const scratch_phscr_view& phi_Y) {
+
+    std::cout << "Using VisibilityGridder case 2 grid_vis" << endl;
 
     const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
     const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
