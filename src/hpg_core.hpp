@@ -1246,10 +1246,10 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   }
 };
 
-// VisibilityGridder version 2 used for mean_grid
-template <int N, typename execution_space>
-struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
-  using member_type = typename K::TeamPolicy<execution_space>::member_type;
+//VisibilityGridder version 2 used for mean_grid
+//template <int N, typename execution_space>
+//struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
+/*  using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
   using scratch_phscr_view =
     K::View<
@@ -1936,7 +1936,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     }
   }
 };
-
+*/
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
 template <int N, typename execution_space>
 struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 1> final {
