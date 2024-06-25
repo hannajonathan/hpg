@@ -1432,6 +1432,14 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         gpol,
         vis.m_grid_cube);
 
+    auto mean_grd_vis =
+      K::subview(
+        mean_grid,
+        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        gpol,
+        vis.m_grid_cube);
+
     // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
     // parallel loop over grid X
@@ -1453,6 +1461,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             }
           }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv); // add gv to grd_vis(X,Y)
+          pseudo_atomic_add<execution_space>(mean_grd_vis(X,Y), gv);
         }
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt)); // add grid_wgt_l to grid_wgt?
@@ -1467,12 +1476,12 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt); // add total weight to weights(grid polarization, grid cube index)
       });
     
-    // Weighted average (using both grid weights and vis weights--is this correct?)
+    // Weighted average (using both grid weights and vis weights--is this correct?) applied only to mean_grid
     K::parallel_for(
       K::TeamThreadRange(team_member, N_X),
       [=] (const int X) {
         for (int Y = 0; Y < N_Y; ++Y){
-          grd_vis(X, Y) /= weights(gpol, vis.m_grid_cube);
+          mean_grd_vis(X, Y) /= weights(gpol, vis.m_grid_cube);
         }
       });
   }
