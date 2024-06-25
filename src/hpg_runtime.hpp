@@ -1141,6 +1141,7 @@ public:
 
     switch (visibility_gridder_version()) {
     case 0:
+      std::cout << "Using case 0" << std::endl;
       return
         default_grid_visibilities(
           host_device,
@@ -1151,6 +1152,7 @@ public:
           do_grid);
       break;
     case 2:
+      std::cout << "Using case 2" << std::endl;
       return
         mean_grid_visibilities(
           host_device,
