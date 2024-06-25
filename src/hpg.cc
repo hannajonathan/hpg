@@ -163,7 +163,7 @@ GridderState::GridderState(
   using namespace runtime;
 
 #ifndef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  std::array<unsigned, 4> implementation_versions{0, 0, 0, 0};
+  std::array<unsigned, 4> implementation_versions{2, 0, 0, 0};
 #endif
 
   const unsigned max_active_tasks = max_added_tasks + 1;
