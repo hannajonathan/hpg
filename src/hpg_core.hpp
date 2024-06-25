@@ -579,6 +579,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
   degrid_vis(
+    cout << "Using VisibilityGridder case 0 degrid_vis" << endl;
     // gv_t = complex gridded value type
     // cf_t = convolution function value type
     const member_type& team_member, //using member_type = typename K::TeamPolicy<execution_space>::member_type
@@ -685,6 +686,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION void
   grid_vis(
+    cout << "Using VisibilityGridder case 0 grid_vis" << endl;
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
     const unsigned gpol,
@@ -1054,6 +1056,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
   degrid_vis(
+    cout << "Using VisibilityGridder case 2 degrid_vis" << endl;
     // gv_t = complex gridded value type
     // cf_t = convolution function value type
     const member_type& team_member, //using member_type = typename K::TeamPolicy<execution_space>::member_type
@@ -1160,6 +1163,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION void
   grid_vis(
+    cout << "Using VisibilityGridder case 2 grid_vis" << endl;
     const member_type& team_member,
     const Vis<N, execution_space>& vis,
     const unsigned gpol,
