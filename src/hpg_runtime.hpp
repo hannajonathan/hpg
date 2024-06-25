@@ -1019,7 +1019,7 @@ public:
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     impl::core::const_grid_view<typename grid_layout::layout, memory_space>
       model = m_model;
-    impl::core::VisibilityGridder<N, execution_space, 0>::kernel(
+    impl::core::VisibilityGridder<N, execution_space, 2>::kernel(
       exec_grid.space,
       cf.cf_d,
       cf.cf_radii,
