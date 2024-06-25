@@ -594,7 +594,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const auto& N_Y = vis.m_cf_size[1]; // second index of cf_size array (along v dim.)
     const auto N_R = model.extent_int(int(GridAxis::mrow)); // Number of elements in mrow of GridAxis?
 
-    std::cout << "Using VisibilityGridder case 0 degrid_vis" << endl;
+    std::cout << "Using VisibilityGridder case 0 degrid_vis" << std::endl;
 
     // vis.m_pos_w = true iff W coordinate is strictly positive
     // mindex is index of the Mueller matrix
@@ -699,7 +699,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     weights,
     const scratch_phscr_view& phi_Y) {
 
-    std::cout << "Using VisibilityGridder case 0 grid_vis" << endl;
+    std::cout << "Using VisibilityGridder case 0 grid_vis" << std::endl;
 
     const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
     const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
@@ -1069,7 +1069,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_grid_view<grid_layout, memory_space>& model, //using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
     const scratch_phscr_view& phi_Y) { // using scratch_phscr_view = K::View<cf_phase_gradient_fp*, typename execution_space::scratch_memory_space>;
 
-    std::cout << "Using VisibilityGridder case 2 degrid_vis" << endl;
+    std::cout << "Using VisibilityGridder case 2 degrid_vis" << std::endl;
 
     const auto& N_X = vis.m_cf_size[0]; // first index of cf_size array (how many pixels along u dim.)
     const auto& N_Y = vis.m_cf_size[1]; // second index of cf_size array (along v dim.)
@@ -1178,7 +1178,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     weights,
     const scratch_phscr_view& phi_Y) {
 
-    std::cout << "Using VisibilityGridder case 2 grid_vis" << endl;
+    std::cout << "Using VisibilityGridder case 2 grid_vis" << std::endl;
 
     const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
     const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
