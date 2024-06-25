@@ -587,6 +587,211 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const const_mindex_view<memory_space>& mueller_indexes, //using const_mindex_view = K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const const_grid_view<grid_layout, memory_space>& model, //using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
+    const grid_view<grid_layout, memory_space>& mean_grid,
+    const scratch_phscr_view& phi_Y) { // using scratch_phscr_view = K::View<cf_phase_gradient_fp*, typename execution_space::scratch_memory_space>;
+
+    const auto& N_X = vis.m_cf_size[0]; // first index of cf_size array (how many pixels along u dim.)
+    const auto& N_Y = vis.m_cf_size[1]; // second index of cf_size array (along v dim.)
+    const auto N_R = model.extent_int(int(GridAxis::mrow)); // Number of elements in mrow of GridAxis?
+
+    // vis.m_pos_w = true iff W coordinate is strictly positive
+    // mindex is index of the Mueller matrix
+    auto degridding_mindex =
+      vis.m_pos_w ? conjugate_mueller_indexes : mueller_indexes;
+    cf_fp cf_im_factor = (vis.m_pos_w ? 1 : -1);
+
+    // compute the values of the phase screen along the Y axis now and store the
+    // results in scratch memory because gridding on the Y axis accesses the
+    // phase screen values for every row of the Mueller matrix column
+    K::parallel_for(
+      K::TeamVectorRange(team_member, N_Y),
+      [=](const int Y) {
+        phi_Y(Y) = vis.m_phi0[1] + Y * vis.m_dphi[1]; // Yth index in phi_Y (phase gradient) = phase screen value origin[1] + Y * phase screen value increment [1]
+      });
+    team_member.team_barrier();
+
+    poln_array_type<visibility_fp, N> result; // Create array for all polarization products of a visibility value
+
+    if (model.is_allocated()) {
+      // model degridding
+      static_assert(std::is_same_v<acc_vis_t, acc_cf_t>);
+      vis_array_type<acc_vis_t::value_type, N> vis_array;
+      // Create vis_array_type (all polarization products of visibility values and weights)
+      // acc_vis_t::value_type is floating point type of values, N is num of polarizations
+
+      // 3d (X, Y, Mueller) subspace of CF for this visibility
+      // Degrid: we have Stokes value, convert to Feed thru Mueller matrix
+      auto cf_vis =
+        K::subview(
+          cf,
+          K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X), // X axis: from CF major coordinate to CF size array
+          K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y), // Y axis: from CF major coordinate to CF size array
+          K::ALL,
+          vis.m_cf_cube, // CF cube index (is this the Z/W coordinate?)
+          vis.m_cf_minor[0], // X axis of CF minor coordinate
+          vis.m_cf_minor[1]); // Y axis of CF minor coordinate
+
+      // 3d (X, Y, pol) subspace of model for this visibility
+      auto model_vis =
+        K::subview(
+          model,
+          K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+          K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+          K::ALL,
+          vis.m_grid_cube); // Grid cube index
+
+      // loop over model polarizations
+      for (int gpol = 0; gpol < N_R; ++gpol) {
+        decltype(vis_array) va; // Create vis_array va (?)
+        // parallel loop over grid X
+        K::parallel_reduce(
+          K::TeamThreadRange(team_member, N_X),
+          [=](const int X, decltype(vis_array)& vis_array_l) {
+            auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0]; // phi_X (phase gradient) = phase screen value origin[0] + X * phase screen value increment [0]
+            // loop over grid Y
+            for (int Y = 0; Y < N_Y; ++Y) {
+              auto screen = cphase<execution_space>(-phi_X - phi_Y(Y)); // screen = complex value conversion of phase (-phi_X - phy_Y(Y))
+              const auto mv = model_vis(X, Y, gpol) * screen; // Access (X, Y, gpol)'th element, multiply by screen (this undoes the correction)
+              // loop over visibility polarizations
+              for (int vpol = 0; vpol < N; ++vpol) {
+                if (const auto mindex = degridding_mindex(gpol, vpol); // IDK
+                    mindex >= 0) {
+                  cf_t cfv = cf_vis(X, Y, mindex); // conv. func. cfv = (X,Y,mindex)th element of cf_vis
+                  cfv.imag() *= cf_im_factor; // Im(cfv) = Im(cfv) * cf_im_factor
+                  vis_array_l.vis[vpol] += cfv * mv;
+                  vis_array_l.wgt[vpol] += cfv;
+                }
+              }
+            }
+          },
+          K::Sum<decltype(va)>(va)); // return sum as the same type as va
+        vis_array += va;
+      }
+
+      // apply weights and phasor to compute predicted visibilities
+      auto conj_phasor = vis.m_phasor;
+      conj_phasor.imag() *= -1;
+      for (int vpol = 0; vpol < N; ++vpol)
+        result.vals[vpol] =
+          (vis_array.vis[vpol]
+           / ((vis_array.wgt[vpol] != (acc_cf_t)0) // if weight != (acc_cf_t) 0, then use weight. Else, set weight = (acc_cf_t) 1, then use.
+              ? vis_array.wgt[vpol]
+              : (acc_cf_t)1))
+          * conj_phasor;
+    }
+    return result;
+  }
+
+  // function for gridding a single visibility with sum of weights
+  template <typename cf_layout, typename grid_layout, typename memory_space>
+  static KOKKOS_FUNCTION void
+  grid_vis(
+    const member_type& team_member,
+    const Vis<N, execution_space>& vis,
+    const unsigned gpol,
+    const cf_view<cf_layout, memory_space>& cf,
+    const const_mindex_view<memory_space>& mueller_indexes,
+    const const_mindex_view<memory_space>& conjugate_mueller_indexes,
+    const grid_view<grid_layout, memory_space>& grid,
+    const grid_view<grid_layout, memory_space>& mean_grid,
+    const weight_view<typename execution_space::array_layout, memory_space>&
+    weights,
+    const scratch_phscr_view& phi_Y) {
+
+    const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
+    const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
+
+    auto gridding_mindex =
+      K::subview(
+        (vis.m_pos_w ? mueller_indexes : conjugate_mueller_indexes),
+        gpol,
+        K::ALL);
+    // Create subview of either Mueller indexes or their conjugates (depending on W coordinate)
+    // Take slice at gpol-th index (the given grid polarization)
+    // Subview contains entire extent of the remaining dimension
+
+    cf_fp cf_im_factor = (vis.m_pos_w ? -1 : 1); // If W. pos., -1. Else, 1.
+
+    // compute the values of the phase screen along the Y axis now and store the
+    // results in scratch memory because gridding on the Y axis accesses the
+    // phase screen values for every row of the Mueller matrix column
+    K::parallel_for(
+      K::TeamVectorRange(team_member, N_Y),
+      [=](const int Y) {
+        phi_Y(Y) = vis.m_phi0[1] + Y * vis.m_dphi[1]; // phase gradient (Y) = phase screen origin value + Y * phase screen increment
+      });
+    team_member.team_barrier(); // Stop each thread that finishes until all other threads catch up (?)
+
+    // 3d (X, Y, Mueller) subspace of CF for this visibility
+    auto cf_vis =
+      K::subview(
+        cf,
+        K::pair<int, int>(vis.m_cf_major[0], vis.m_cf_major[0] + N_X),
+        K::pair<int, int>(vis.m_cf_major[1], vis.m_cf_major[1] + N_Y),
+        K::ALL,
+        vis.m_cf_cube,
+        vis.m_cf_minor[0],
+        vis.m_cf_minor[1]);
+    // Create a 3D subview of cf (convolution function types)
+    // range: (From X coord of major CF until end of axis, same for Y, all Mueller indexes(?), CF cube index (W/Z), X coord of minor CF, Y coord of minor CF)
+
+    // 2d (X, Y) subspace of grid for this visibility and grid polarization
+    // (gpol)
+    auto grd_vis =
+      K::subview(
+        grid,
+        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        gpol,
+        vis.m_grid_cube);
+
+    // accumulate to grid, and CF weights per visibility polarization
+    poln_array_type<acc_cf_t::value_type, N> grid_wgt;
+    // parallel loop over grid X
+    K::parallel_reduce(
+      K::TeamThreadRange(team_member, N_X),
+      [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
+        auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0]; // phase gradient
+        // loop over grid Y
+        for (int Y = 0; Y < N_Y; ++Y) {
+          const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y)); // complex conversion of phase gradient
+          gv_t gv(0);
+          // loop over visibility polarizations
+          for (int vpol = 0; vpol < N; ++vpol) {
+            if (const auto mindex = gridding_mindex(vpol); mindex >= 0) { // if vpol'th Mueller index/conjugate >= 0
+              cf_t cfv = cf_vis(X, Y, mindex);
+              cfv.imag() *= cf_im_factor;
+              gv += gv_t(cfv * screen * vis.m_values[vpol]); // gv_t gv = (X,Y,mindex)'th index of subspace of CF for this vis * phase screen * vis for this pol
+              grid_wgt_l.vals[vpol] += cfv; // weight for this vis pol = (X,Y,mindex)'th index of subspace of CF for this vis (never used again?)
+            }
+          }
+          pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv); // add gv to grd_vis(X,Y)
+        }
+      },
+      K::Sum<decltype(grid_wgt)>(grid_wgt));
+    // compute final weight and add it to weights
+    K::single(
+      K::PerTeam(team_member), // restricts lambda to execute once per team
+      [&]() { // initialize as reference
+        grid_value_fp twgt = 0;
+        for (int vpol = 0; vpol < N; ++vpol)
+          twgt +=
+            grid_value_fp(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]); // magnitude of complex vpol'th value of grid weights * vpol'th value of vis weights
+        K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt); // add total weight to weights(grid polarization, grid cube index)
+      });
+  }
+
+  template <typename cf_layout, typename grid_layout, typename memory_space>
+  static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
+  degrid_vis(
+    // gv_t = complex gridded value type
+    // cf_t = convolution function value type
+    const member_type& team_member, //using member_type = typename K::TeamPolicy<execution_space>::member_type
+    const Vis<N, execution_space>& vis, //line 495, struct Vis
+    const cf_view<cf_layout, memory_space>& cf, //using cf_view = K::View<cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
+    const const_mindex_view<memory_space>& mueller_indexes, //using const_mindex_view = K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
+    const const_mindex_view<memory_space>& conjugate_mueller_indexes,
+    const const_grid_view<grid_layout, memory_space>& model, //using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
     const scratch_phscr_view& phi_Y) { // using scratch_phscr_view = K::View<cf_phase_gradient_fp*, typename execution_space::scratch_memory_space>;
 
     const auto& N_X = vis.m_cf_size[0]; // first index of cf_size array (how many pixels along u dim.)
