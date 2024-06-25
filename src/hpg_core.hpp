@@ -1062,7 +1062,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_mindex_view<memory_space>& mueller_indexes, //using const_mindex_view = K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const const_grid_view<grid_layout, memory_space>& model, //using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
-    const grid_view<grid_layout, memory_space>& mean_grid,
     const scratch_phscr_view& phi_Y) { // using scratch_phscr_view = K::View<cf_phase_gradient_fp*, typename execution_space::scratch_memory_space>;
 
     const auto& N_X = vis.m_cf_size[0]; // first index of cf_size array (how many pixels along u dim.)
@@ -1168,7 +1167,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const grid_view<grid_layout, memory_space>& grid,
-    const grid_view<grid_layout, memory_space>& mean_grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights,
     const scratch_phscr_view& phi_Y) {
@@ -1622,7 +1620,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 mueller_indexes,
                 conjugate_mueller_indexes,
                 model,
-                mean_grid,
                 scratch_phscr_view(
                   team_member.team_scratch(0),
                   max_cf_extent_y));
@@ -1692,7 +1689,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 mueller_indexes,
                 conjugate_mueller_indexes,
                 grid,
-                mean_grid,
                 weights,
                 scratch_phscr_view(
                   team_member.team_scratch(0),
@@ -3031,4 +3027,3 @@ struct /*HPG_EXPORT*/ GridShifter final {
 // fill-column: 80
 // indent-tabs-mode: nil
 // End:
- 
