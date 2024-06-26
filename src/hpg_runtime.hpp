@@ -1960,4 +1960,3 @@ struct /*HPG_EXPORT*/ GridderState {
 // fill-column: 80
 // indent-tabs-mode: nil
 // End:
- 
