@@ -1011,6 +1011,8 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
+    std::cout << "calling mean_grid_visibilities" << std::endl;
+
     auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     auto len =
       exec_pre.copy_visibilities_to_device(std::move(visibilities));
@@ -1166,6 +1168,7 @@ public:
       break;
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
     case 1:
+      std::cout << "Using case 1" << std::endl;
       return
         alt_grid_visibilities(
           host_device,

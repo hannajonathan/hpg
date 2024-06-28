@@ -1049,6 +1049,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 //VisibilityGridder version 2 used for mean_grid
 template <int N, typename execution_space>
 struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
+
+  std::cout << "calling visibilitygridder 2 in hpg_core" << std::endl;
+
   using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
   using scratch_phscr_view =
