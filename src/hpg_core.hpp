@@ -1390,7 +1390,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
 
     std::cout << "grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
 
-
     const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
     const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
 
@@ -1404,6 +1403,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     // Subview contains entire extent of the remaining dimension
 
     cf_fp cf_im_factor = (vis.m_pos_w ? -1 : 1); // If W. pos., -1. Else, 1.
+
+    std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside parallel_for" << std::endl;
 
     // compute the values of the phase screen along the Y axis now and store the
     // results in scratch memory because gridding on the Y axis accesses the
@@ -1472,6 +1473,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt)); // add grid_wgt_l to grid_wgt?
     // compute final weight and add it to weights
+
+    std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside single" << std::endl;
     K::single(
       K::PerTeam(team_member), // restricts lambda to execute once per team
       [&]() { // initialize as reference
