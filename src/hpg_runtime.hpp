@@ -1021,6 +1021,7 @@ public:
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     impl::core::const_grid_view<typename grid_layout::layout, memory_space>
       model = m_model;
+    std::cout << "calling visibilitygridder 2" << std::endl;
     impl::core::VisibilityGridder<N, execution_space, 2>::kernel(
       exec_grid.space,
       cf.cf_d,
@@ -1039,6 +1040,7 @@ public:
       m_grid,
       m_mean_grid,
       m_weights);
+      std::cout << "completed visibilitygridder 2" << std::endl;
     return exec_grid.copy_visibilities_to_host(return_visibilities);
   }
 
