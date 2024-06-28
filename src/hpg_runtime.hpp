@@ -1130,6 +1130,8 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
+      std::cout << "calling grid_visibilities in runtime" << std::endl;
+
 // #ifndef NDEBUG
 //     for (auto& [cube, supp] : *cf_indexes) {
 //       auto& cfpool = std::get<0>(m_cfs[m_cf_indexes.front()]);
