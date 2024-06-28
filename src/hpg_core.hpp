@@ -594,7 +594,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     const auto& N_Y = vis.m_cf_size[1]; // second index of cf_size array (along v dim.)
     const auto N_R = model.extent_int(int(GridAxis::mrow)); // Number of elements in mrow of GridAxis?
 
-    std::cout << "Using VisibilityGridder case 0 degrid_vis" << std::endl;
+    //std::cout << "Using VisibilityGridder case 0 degrid_vis" << std::endl;
 
     // vis.m_pos_w = true iff W coordinate is strictly positive
     // mindex is index of the Mueller matrix
@@ -699,7 +699,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
     weights,
     const scratch_phscr_view& phi_Y) {
 
-    std::cout << "Using VisibilityGridder case 0 grid_vis" << std::endl;
+    //std::cout << "Using VisibilityGridder case 0 grid_vis" << std::endl;
 
     const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
     const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
@@ -1070,7 +1070,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_grid_view<grid_layout, memory_space>& model, //using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
     const scratch_phscr_view& phi_Y) { // using scratch_phscr_view = K::View<cf_phase_gradient_fp*, typename execution_space::scratch_memory_space>;
 
-    std::cout << "Using VisibilityGridder case 2 degrid_vis" << std::endl;
+    //std::cout << "Using VisibilityGridder case 2 degrid_vis" << std::endl;
 
     const auto& N_X = vis.m_cf_size[0]; // first index of cf_size array (how many pixels along u dim.)
     const auto& N_Y = vis.m_cf_size[1]; // second index of cf_size array (along v dim.)
@@ -1179,7 +1179,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     weights,
     const scratch_phscr_view& phi_Y) {
 
-    std::cout << "Using VisibilityGridder case 2 grid_vis" << std::endl;
+    //std::cout << "Using VisibilityGridder case 2 grid_vis" << std::endl;
 
     const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
     const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
@@ -1279,7 +1279,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const grid_view<grid_layout, memory_space>& mean_grid,
     const scratch_phscr_view& phi_Y) { // using scratch_phscr_view = K::View<cf_phase_gradient_fp*, typename execution_space::scratch_memory_space>;
 
-    std::cout << "degrid_vis_weighted_mean in visibilitygridder 2" << std::endl;
+    //std::cout << "degrid_vis_weighted_mean in visibilitygridder 2" << std::endl;
 
     const auto& N_X = vis.m_cf_size[0]; // first index of cf_size array (how many pixels along u dim.)
     const auto& N_Y = vis.m_cf_size[1]; // second index of cf_size array (along v dim.)
@@ -1388,7 +1388,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     weights,
     const scratch_phscr_view& phi_Y) {
 
-    std::cout << "grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
+    //std::cout << "grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
 
     const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
     const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
@@ -1404,7 +1404,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
 
     cf_fp cf_im_factor = (vis.m_pos_w ? -1 : 1); // If W. pos., -1. Else, 1.
 
-    std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside parallel_for" << std::endl;
+    //std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside parallel_for" << std::endl;
 
     // compute the values of the phase screen along the Y axis now and store the
     // results in scratch memory because gridding on the Y axis accesses the
@@ -1416,7 +1416,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       });
     team_member.team_barrier(); // Stop each thread that finishes until all other threads catch up (?)
 
-    std::cout << "cf_vis in visibilitygridder 2" << std::endl;
+    //std::cout << "cf_vis in visibilitygridder 2" << std::endl;
     // 3d (X, Y, Mueller) subspace of CF for this visibility
     auto cf_vis =
       K::subview(
@@ -1430,7 +1430,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     // Create a 3D subview of cf (convolution function types)
     // range: (From X coord of major CF until end of axis, same for Y, all Mueller indexes(?), CF cube index (W/Z), X coord of minor CF, Y coord of minor CF)
 
-    std::cout << "grd_vis in visibilitygridder 2" << std::endl;
+    //std::cout << "grd_vis in visibilitygridder 2" << std::endl;
     // 2d (X, Y) subspace of grid for this visibility and grid polarization
     // (gpol)
     auto grd_vis =
@@ -1441,7 +1441,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         gpol,
         vis.m_grid_cube);
 
-    std::cout << "mean_grd_vis in visibilitygridder 2" << std::endl;
+    //std::cout << "mean_grd_vis in visibilitygridder 2" << std::endl;
     auto mean_grd_vis =
       K::subview(
         mean_grid,
@@ -1453,7 +1453,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
     // parallel loop over grid X
-    std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
+    //std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
     K::parallel_reduce(
       K::TeamThreadRange(team_member, N_X),
       [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
@@ -1478,7 +1478,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       K::Sum<decltype(grid_wgt)>(grid_wgt)); // add grid_wgt_l to grid_wgt?
     // compute final weight and add it to weights
 
-    std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside single" << std::endl;
+    ////std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside single" << std::endl;
     K::single(
       K::PerTeam(team_member), // restricts lambda to execute once per team
       [&]() { // initialize as reference
@@ -1512,7 +1512,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const grid_view<grid_layout, memory_space>& grid,
     const scratch_phscr_view& phi_Y) {
 
-    std::cout << "grid_vis_no_weights in visibilitygridder 2" << std::endl;
+    //std::cout << "grid_vis_no_weights in visibilitygridder 2" << std::endl;
 
     const auto& N_X = vis.m_cf_size[0];
     const auto& N_Y = vis.m_cf_size[1];
