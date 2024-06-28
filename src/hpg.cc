@@ -21,6 +21,7 @@
 #include <tuple>
 #include <variant>
 #include <vector>
+#include <iostream>
 
 using namespace hpg;
 
@@ -465,6 +466,8 @@ GridderState::grid_visibilities_base(
 
   ProfileRegion region("GridderState::grid_visibilities_base");
 
+  std::cout << "GridderState grid_visibilities_base" << std::endl;
+
   return
     to_rval(
       runtime::GridderState::grid_visibilities(
@@ -506,6 +509,8 @@ GridderState::grid_visibilities(
   bool update_grid_weights) && {
 
   ProfileRegion region("GridderState::grid_visibilities");
+
+  std::cout << "GridderState grid_visibilities" << std::endl;
 
   return
     map(
@@ -550,6 +555,8 @@ GridderState::degrid_grid_visibilities(
   bool update_grid_weights) && {
 
   ProfileRegion region("GridderState::degrid_grid_visibilities");
+
+  std::cout << "GridderState degrid_grid_visibilities" << std::endl;
 
   return
     map(
