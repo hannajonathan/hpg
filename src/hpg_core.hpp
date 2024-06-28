@@ -1050,14 +1050,14 @@ struct /*HPG_EXPORT*/ VisibilityGridder final {
 template <int N, typename execution_space>
 struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
 
-  std::cout << "calling visibilitygridder 2 in hpg_core" << std::endl;
-
   using member_type = typename K::TeamPolicy<execution_space>::member_type;
 
   using scratch_phscr_view =
     K::View<
       cf_phase_gradient_fp*,
     typename execution_space::scratch_memory_space>;
+
+  std::cout << "calling visibilitygridder 2 in hpg_core" << std::endl;
 
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
