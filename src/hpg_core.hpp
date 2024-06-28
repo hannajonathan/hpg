@@ -1416,6 +1416,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       });
     team_member.team_barrier(); // Stop each thread that finishes until all other threads catch up (?)
 
+    std::cout << "cf_vis in visibilitygridder 2" << std::endl;
     // 3d (X, Y, Mueller) subspace of CF for this visibility
     auto cf_vis =
       K::subview(
@@ -1429,6 +1430,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     // Create a 3D subview of cf (convolution function types)
     // range: (From X coord of major CF until end of axis, same for Y, all Mueller indexes(?), CF cube index (W/Z), X coord of minor CF, Y coord of minor CF)
 
+    std::cout << "grd_vis in visibilitygridder 2" << std::endl;
     // 2d (X, Y) subspace of grid for this visibility and grid polarization
     // (gpol)
     auto grd_vis =
@@ -1439,6 +1441,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         gpol,
         vis.m_grid_cube);
 
+    std::cout << "mean_grd_vis in visibilitygridder 2" << std::endl;
     auto mean_grd_vis =
       K::subview(
         mean_grid,
@@ -1450,6 +1453,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
     // parallel loop over grid X
+    std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
     K::parallel_reduce(
       K::TeamThreadRange(team_member, N_X),
       [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
