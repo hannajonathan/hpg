@@ -1505,6 +1505,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const grid_view<grid_layout, memory_space>& grid,
     const scratch_phscr_view& phi_Y) {
 
+    std::cout << "grid_vis_no_weights in visibilitygridder 2" << std::endl;
+
     const auto& N_X = vis.m_cf_size[0];
     const auto& N_Y = vis.m_cf_size[1];
 
