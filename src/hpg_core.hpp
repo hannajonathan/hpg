@@ -1740,7 +1740,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             // skip this visibility if all of the updated grid points are not
             // within grid bounds
             if (all_within_grid(vis, grid_size)) {
-              grid_vis_no_weights<cf_layout, grid_layout, memory_space>(
+              grid_vis_weighted_mean<cf_layout, grid_layout, memory_space>(
                 team_member,
                 vis,
                 gpol,
@@ -1748,6 +1748,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 mueller_indexes,
                 conjugate_mueller_indexes,
                 grid,
+                mean_grid,
                 scratch_phscr_view(
                   team_member.team_scratch(0),
                   max_cf_extent_y));
