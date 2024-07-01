@@ -1494,7 +1494,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       K::TeamThreadRange(team_member, N_X),
       [=] (const int X) {
         for (int Y = 0; Y < N_Y; ++Y){
-          pseudo_atomic_add<execution_space>(mean_grd_vis(X,Y), grd_vis(X,Y) / weights(gpol, vis.m_grid_cube));
+          //pseudo_atomic_add<execution_space>(mean_grd_vis(X,Y), grd_vis(X,Y) / weights(gpol, vis.m_grid_cube));
         }
       });
   }
