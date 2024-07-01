@@ -1011,7 +1011,7 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-    std::cout << "calling mean_grid_visibilities" << std::endl;
+    //std::cout << "calling mean_grid_visibilities" << std::endl;
 
     auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
     auto len =
@@ -1021,7 +1021,7 @@ public:
     auto& cf = std::get<0>(m_cfs[m_cf_indexes.front()]);
     impl::core::const_grid_view<typename grid_layout::layout, memory_space>
       model = m_model;
-    std::cout << "calling visibilitygridder 2" << std::endl;
+    //std::cout << "calling visibilitygridder 2" << std::endl;
     impl::core::VisibilityGridder<N, execution_space, 2>::kernel(
       exec_grid.space,
       cf.cf_d,
@@ -1040,7 +1040,7 @@ public:
       m_grid,
       m_mean_grid,
       m_weights);
-      std::cout << "completed visibilitygridder 2" << std::endl;
+      //std::cout << "completed visibilitygridder 2" << std::endl;
     return exec_grid.copy_visibilities_to_host(return_visibilities);
   }
 
@@ -1134,7 +1134,7 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-      std::cout << "calling grid_visibilities in runtime" << std::endl;
+      //std::cout << "calling grid_visibilities in runtime" << std::endl;
 
 // #ifndef NDEBUG
 //     for (auto& [cube, supp] : *cf_indexes) {
@@ -1147,7 +1147,7 @@ public:
 
     switch (visibility_gridder_version()) {
     case 0:
-      std::cout << "Using case 0" << std::endl;
+      //std::cout << "Using case 0" << std::endl;
       return
         default_grid_visibilities(
           host_device,
@@ -1158,7 +1158,7 @@ public:
           do_grid);
       break;
     case 2:
-      std::cout << "Using case 2" << std::endl;
+      //std::cout << "Using case 2" << std::endl;
       return
         mean_grid_visibilities(
           host_device,
