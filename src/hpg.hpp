@@ -1950,6 +1950,9 @@ public:
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   grid_values() &&;
 
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  mean_grid_values() &&;
+
   /** get a pointer to the grid values buffer
    *
    * WARNING: Use of this method requires great care; it's very easy to shoot
@@ -2698,7 +2701,7 @@ public:
    */
   size_t
   grid_values_span() const &;
-  
+
   size_t
   mean_grid_values_span() const &;
   /** get copy of model values
