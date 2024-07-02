@@ -1940,12 +1940,15 @@ public:
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   grid_values() const &;
 
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  mean_grid_values() const &;
+
   /** get copy of grid values
    *
    * Invokes fence() on target.
    */
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
-  mean_grid_values() &&;
+  grid_values() &&;
 
   /** get a pointer to the grid values buffer
    *
@@ -1973,6 +1976,9 @@ public:
    *
    * @return the number of elements in the current buffer of grid values
    */
+  size_t
+  grid_values_span() const &;
+
   size_t
   mean_grid_values_span() const &;
 
@@ -2659,6 +2665,9 @@ public:
    * Invokes fence() on target.
    */
   std::unique_ptr<GridValueArray>
+  grid_values() const;
+
+  std::unique_ptr<GridValueArray>
   mean_grid_values() const;
 
   /** get a pointer to the grid values buffer
@@ -2674,6 +2683,9 @@ public:
    * @return pointer to the current buffer of grid values
    */
   std::shared_ptr<GridValueArray::value_type>
+  grid_values_ptr() const &;
+
+  std::shared_ptr<GridValueArray::value_type>
   mean_grid_values_ptr() const &;
 
   /** get the number of elements in the span of the grid values buffer
@@ -2685,8 +2697,10 @@ public:
    * @return the number of elements in the current buffer of grid values
    */
   size_t
+  grid_values_span() const &;
+  
+  size_t
   mean_grid_values_span() const &;
-
   /** get copy of model values
    *
    * Invokes fence() on target.
