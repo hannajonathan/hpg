@@ -1348,14 +1348,33 @@ Gridder::grid_values() const {
   return result;
 }
 
+std::unique_ptr<GridValueArray>
+Gridder::mean_grid_values() const {
+  std::unique_ptr<GridValueArray> result;
+  std::tie(const_cast<Gridder*>(this)->state, result) =
+    std::move(const_cast<Gridder*>(this)->state).mean_grid_values();
+  return result;
+}
+
 std::shared_ptr<GridValueArray::value_type>
 Gridder::grid_values_ptr() const & {
   return state.grid_values_ptr();
 }
 
+std::shared_ptr<GridValueArray::value_type>
+Gridder::mean_grid_values_ptr() const & {
+  return state.mean_grid_values_ptr();
+}
+
+
 size_t
 Gridder::grid_values_span() const & {
   return state.grid_values_span();
+}
+
+size_t
+Gridder::mean_grid_values_span() const & {
+  return state.mean_grid_values_span();
 }
 
 std::unique_ptr<GridValueArray>

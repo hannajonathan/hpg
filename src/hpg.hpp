@@ -2688,8 +2688,8 @@ public:
   std::shared_ptr<GridValueArray::value_type>
   grid_values_ptr() const &;
 
-  //std::shared_ptr<GridValueArray::value_type>
-  //mean_grid_values_ptr() const &;
+  std::shared_ptr<GridValueArray::value_type>
+  mean_grid_values_ptr() const &;
 
   /** get the number of elements in the span of the grid values buffer
    *
@@ -2702,8 +2702,8 @@ public:
   size_t
   grid_values_span() const &;
 
-  //size_t
-  //mean_grid_values_span() const &;
+  size_t
+  mean_grid_values_span() const &;
   /** get copy of model values
    *
    * Invokes fence() on target.
