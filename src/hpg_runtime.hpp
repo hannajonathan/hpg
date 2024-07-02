@@ -1333,7 +1333,7 @@ public:
   }
 
   size_t
-  mean_grid_values() const override {
+  mean_grid_values_span() const override {
     return m_mean_grid.span();
   }
 
