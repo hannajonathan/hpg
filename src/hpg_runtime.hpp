@@ -173,6 +173,15 @@ struct /*HPG_EXPORT*/ State {
   virtual size_t
   grid_values_span() const = 0;
 
+  virtual std::unique_ptr<GridValueArray>
+  mean_grid_values() const = 0;
+
+  virtual std::shared_ptr<GridValueArray::value_type>
+  mean_grid_values_ptr() const = 0;
+
+  virtual size_t
+  mean_grid_values_span() const = 0;
+
   virtual void
   reset_grid() = 0;
 

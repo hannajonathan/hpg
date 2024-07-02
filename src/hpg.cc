@@ -733,6 +733,32 @@ GridderState::grid_values_span() const & {
   return impl->grid_values_span();
 }
 
+// For mean_grid
+std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+GridderState::mean_grid_values() && {
+
+  ProfileRegion region("GridderState::mean_grid_values");
+
+  GridderState result(std::move(*this));
+  return {std::move(result), std::move(result.impl->mean_grid_values())};
+}
+
+std::shared_ptr<GridValueArray::value_type>
+GridderState::mean_grid_values_ptr() const & {
+
+  ProfileRegion region("GridderState::mean_grid_values_ptr");
+
+  return impl->mean_grid_values_ptr();
+}
+
+size_t
+GridderState::mean_grid_values_span() const & {
+
+  ProfileRegion region("GridderState::mean_grid_values_span");
+
+  return impl->mean_grid_values_span();
+}
+
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::model_values() const & {
 
