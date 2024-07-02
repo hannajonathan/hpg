@@ -1299,6 +1299,18 @@ public:
     return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
   }
 
+  std::unique_ptr<GridValueArray>
+  mean_grid_values() const override {
+    std::scoped_lock lock(m_mtx);
+    fence_unlocked();
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto grid_h = K::create_mirror(m_mean_grid);
+    K::deep_copy(exec.space, grid_h, m_mean_grid);
+    exec.fence();
+    return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
+  }
+
   std::shared_ptr<GridValueArray::value_type>
   grid_values_ptr() const override {
     return
@@ -1307,9 +1319,22 @@ public:
       ->ptr();
   }
 
+  std::shared_ptr<GridValueArray::value_type>
+  mean_grid_values_ptr() const override {
+    return
+      std::make_shared<
+        impl::GridValuePtr<typename grid_layout::layout, memory_space>>(m_mean_grid)
+      ->ptr();
+  }
+
   size_t
   grid_values_span() const override {
     return m_grid.span();
+  }
+
+  size_t
+  mean_grid_values() const override {
+    return m_mean_grid.span();
   }
 
   std::unique_ptr<GridValueArray>
