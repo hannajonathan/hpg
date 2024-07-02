@@ -733,6 +733,7 @@ GridderState::grid_values_span() const & {
   return impl->grid_values_span();
 }
 
+/*
 // For mean_grid
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::mean_grid_values() const & {
@@ -767,6 +768,7 @@ GridderState::mean_grid_values_span() const & {
 
   return impl->mean_grid_values_span();
 }
+*/
 
 std::tuple<GridderState, std::unique_ptr<GridValueArray>>
 GridderState::model_values() const & {
