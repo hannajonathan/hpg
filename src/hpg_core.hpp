@@ -1457,20 +1457,28 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     // initialize variables to be used in moment calculation
     switch (moment) {
       case 1:
+      {
         gv_t sum_of_visibilities = 0;
         break;
+      }
       case 2:
+      {
         gv_t variance, sum_of_visibilities;
         variance = sum_of_visibilities = 0;
         break;
+      }
       case 3:
+      {
         gv_t n, mean, M_two, M_three, M_four;
         n = mean = M_two = M_three = M_four = 0;
         break;
+      }
       case 4:
+      {
         gv_t n, mean, M_two, M_three, M_four;
         n = mean = M_two = M_three = M_four = 0;
         break;
+      }
     }
     
     // parallel loop over grid X
@@ -1496,13 +1504,18 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
 
           switch (moment) {
             case 1: // First raw moment: calculate mean of visibilities
+            {
               sum_of_visibilities += grd_vis(X,Y);
               break;
+            }
             case 2: // Second central moment: calculate variance of visibilities
+            {
               sum_of_visibilities += grd_vis(X,Y);
               variance += pow(((X + Y) * grd_vis(X,Y) - sum_of_visibilities), 2) / ((X + Y)(X + Y - 1));
               break;
+            }
             case 3: // Third standardized moment: calculate skewness of visibilities
+            {
               gv_t n_one = n;
               n++;
               gv_t delta = grd_vis(X,Y) - mean;
@@ -1514,7 +1527,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
               M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
               M_two += term_one;
               break;
+            }
             case 4: // Fourth standardized moment: calculate kurtosis of visibilities
+            {
               gv_t n_one = n;
               n++;
               gv_t delta = grd_vis(X,Y) - mean;
@@ -1526,6 +1541,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
               M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
               M_two += term_one;
               break;
+            }
           }
         }
       },
@@ -1534,17 +1550,22 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       // Calculate final moment values
       switch (moment) {
         case 1:
+        {
           gv_t mean = sum_of_visibilities / (N_X + N_Y);
           break;
+        }
         case 2:
-          gv_t variance = 0;
           break;
         case 3:
+        {
           gv_t skewness = (sqrt(n) * M_three) / pow(M_three, 1.5);
           break;
+        }
         case 4:
+        {
           gv_t kurtosis = (n * M_four) / pow(M_two, 2) - 3;
           break;
+        }
         }
 
     // compute final weight and add it to weights
