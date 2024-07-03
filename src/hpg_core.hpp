@@ -1387,7 +1387,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights,
     const scratch_phscr_view& phi_Y,
-    const int moment) {
+    const unsigned moment) {
 
     //std::cout << "grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
 
