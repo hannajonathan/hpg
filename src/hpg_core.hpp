@@ -1828,7 +1828,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 weights,
                 scratch_phscr_view(
                   team_member.team_scratch(0),
-                  max_cf_extent_y));
+                  max_cf_extent_y),
+                moment);
             }
           });
     }
