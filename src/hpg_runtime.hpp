@@ -317,6 +317,7 @@ struct /*HPG_EXPORT*/ CFPool final {
   K::View<impl::core::cf_t*, memory_space> pool;
   unsigned num_cf_groups;
   unsigned max_cf_extent_y;
+  unsigned m_moment;
   K::Array<cfd_view, HPG_MAX_NUM_CF_GROUPS> cf_d; // unmanaged (in pool)
   std::vector<std::any> cf_h;
   K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS> cf_radii;
@@ -579,8 +580,6 @@ struct /*HPG_EXPORT*/ ExecSpace final {
   using kokkos_device = typename impl::DeviceT<D>::kokkos_device;
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
-
-  unsigned m_moment;
 
   execution_space space;
   impl::core::visbuff_view<memory_space> visbuff;
@@ -1052,7 +1051,7 @@ public:
       model,
       m_grid,
       m_mean_grid,
-      exec_grid.m_moment,
+      cf.m_moment,
       m_weights);
       //std::cout << "completed visibilitygridder 2" << std::endl;
     return exec_grid.copy_visibilities_to_host(return_visibilities);
