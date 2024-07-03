@@ -746,7 +746,6 @@ public:
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_model;
   impl::core::const_mindex_view<memory_space> m_mueller_indexes;
   impl::core::const_mindex_view<memory_space> m_conjugate_mueller_indexes;
-  const unsigned m_moment;
 
   // use multiple execution spaces to support overlap of data copying with
   // computation when possible
@@ -1020,6 +1019,8 @@ public:
     bool do_degrid,
     bool return_visibilities,
     bool do_grid) {
+
+    const unsigned m_moment;
 
     //std::cout << "calling mean_grid_visibilities" << std::endl;
 
