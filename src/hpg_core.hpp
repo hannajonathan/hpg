@@ -1454,9 +1454,18 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
 
-    // variables to be used in Kurtosis calculation
-    gv_t n, mean, M_two, M_three, M_four;
-    n = mean = M_two = M_three = M_four = 0;
+    // initialize variables to be used in moment calculation
+    switch (moment) {
+      case 1:
+        h;
+      case 2:
+        j;
+      case 3:
+        k;
+      case 4:
+        gv_t n, mean, M_two, M_three, M_four;
+        n = mean = M_two = M_three = M_four = 0;
+    }
     
     // parallel loop over grid X
     //std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
@@ -1481,26 +1490,39 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           pseudo_atomic_add<execution_space>(mean_grd_vis(X,Y), gv);
 
           switch (moment) {
-            case 1: // First standardized moment: calculate mean of visibilities
-
+            case 1: // First raw moment: calculate mean of visibilities
+              gv_t mean;
+            case 2: // Second central moment: calculate variance of visibilities
+              gv_t variance;
+            case 3: // Third standardized moment: calculate skew of visibilities
+              gv_t skew;
+            case 4: // Fourth standardized moment: calculate kurtosis of visibilities
+              gv_t n_one = n;
+              n++;
+              gv_t delta = mean_grd_vis(X,Y) - mean;
+              gv_t delta_n = delta / n;
+              gv_t delta_n_two = delta_n * delta_n;
+              gv_t term_one = delta * delta_n * n_one;
+              mean = mean + delta_n;
+              M_four += term_one * delta_n_two * (n*n - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+              M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
+              M_two += term_one;
           }
-          // Kurtosis calculation
-          gv_t n_one = n;
-          n++;
-          gv_t delta = mean_grd_vis(X,Y) - mean;
-          gv_t delta_n = delta / n;
-          gv_t delta_n_two = delta_n * delta_n;
-          gv_t term_one = delta * delta_n * n_one;
-          mean = mean + delta_n;
-          M_four += term_one * delta_n_two * (n*n - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
-          M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
-          M_two += term_one;
         }
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt)); // add grid_wgt_l to grid_wgt?
 
-      // Final kurtosis value
-      gv_t kurtosis = (n * M_four) / (M_two * M_two) - 3;
+      // Calculate final moment values
+      switch (moment) {
+        case 1:
+          gv_t mean = 0;
+        case 2:
+          gv_t variance = 0;
+        case 3:
+          gv_t skew = 0;
+        case 4:
+          gv_t kurtosis = (n * M_four) / (M_two * M_two) - 3;
+        }
 
     // compute final weight and add it to weights
     ////std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside single" << std::endl;
