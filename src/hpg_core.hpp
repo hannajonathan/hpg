@@ -1386,7 +1386,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const grid_view<grid_layout, memory_space>& mean_grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights,
-    const scratch_phscr_view& phi_Y) {
+    const scratch_phscr_view& phi_Y,
+    const int moment) {
 
     //std::cout << "grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
 
@@ -1452,6 +1453,11 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
 
     // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
+
+    // variables to be used in Kurtosis calculation
+    gv_t n, mean, M_two, M_three, M_four;
+    n = mean = M_two = M_three = M_four = 0;
+    
     // parallel loop over grid X
     //std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
     K::parallel_reduce(
@@ -1473,11 +1479,30 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv); // add gv to grd_vis(X,Y)
           pseudo_atomic_add<execution_space>(mean_grd_vis(X,Y), gv);
+
+          switch (moment) {
+            case 1: // First standardized moment: calculate mean of visibilities
+
+          }
+          // Kurtosis calculation
+          gv_t n_one = n;
+          n++;
+          gv_t delta = mean_grd_vis(X,Y) - mean;
+          gv_t delta_n = delta / n;
+          gv_t delta_n_two = delta_n * delta_n;
+          gv_t term_one = delta * delta_n * n_one;
+          mean = mean + delta_n;
+          M_four += term_one * delta_n_two * (n*n - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+          M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
+          M_two += term_one;
         }
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt)); // add grid_wgt_l to grid_wgt?
-    // compute final weight and add it to weights
 
+      // Final kurtosis value
+      gv_t kurtosis = (n * M_four) / (M_two * M_two) - 3;
+
+    // compute final weight and add it to weights
     ////std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside single" << std::endl;
     K::single(
       K::PerTeam(team_member), // restricts lambda to execute once per team
