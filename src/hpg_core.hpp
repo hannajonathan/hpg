@@ -1384,9 +1384,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const grid_view<grid_layout, memory_space>& grid,
     const grid_view<grid_layout, memory_space>& mean_grid,
+    const unsigned moment,
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights,
-    const unsigned moment,
     const scratch_phscr_view& phi_Y) {
 
     //std::cout << "grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
