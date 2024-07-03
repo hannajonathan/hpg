@@ -1050,7 +1050,7 @@ public:
       model,
       m_grid,
       m_mean_grid,
-      m_weights
+      m_weights,
       m_moment);
       //std::cout << "completed visibilitygridder 2" << std::endl;
     return exec_grid.copy_visibilities_to_host(return_visibilities);
