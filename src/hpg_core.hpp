@@ -1488,7 +1488,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             case 2: // Second central moment: calculate variance of visibilities
             {
               sum_of_visibilities += K::real(grd_vis(X,Y));
-              variance += pow(((X + Y) * K::real(grd_vis(X,Y)) - sum_of_visibilities), 2) / ((X + Y)(X + Y - 1));
+              variance += pow(((X + Y) * (K::real(grd_vis(X,Y))) - sum_of_visibilities), 2) / ((X + Y)(X + Y - 1));
               break;
             }
             case 3: // Third standardized moment: calculate skewness of visibilities
