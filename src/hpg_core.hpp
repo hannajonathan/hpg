@@ -1454,33 +1454,10 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
 
-    // initialize variables to be used in moment calculation
-    switch (moment) {
-      case 1:
-      {
-        gv_t sum_of_visibilities = 0;
-        break;
-      }
-      case 2:
-      {
-        gv_t variance, sum_of_visibilities;
-        variance = sum_of_visibilities = 0;
-        break;
-      }
-      case 3:
-      {
-        gv_t n, mean, M_two, M_three, M_four;
-        n = mean = M_two = M_three = M_four = 0;
-        break;
-      }
-      case 4:
-      {
-        gv_t n, mean, M_two, M_three, M_four;
-        n = mean = M_two = M_three = M_four = 0;
-        break;
-      }
-    }
-    
+    // Initialize variables to be used in moment calculation
+    gv_t sum_of_visibilities, variance, n, mean, M_two, M_three, M_four;
+    sum_of_visibilities = variance = n = mean = M_two = M_three = M_four = 0;
+
     // parallel loop over grid X
     //std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
     K::parallel_reduce(
