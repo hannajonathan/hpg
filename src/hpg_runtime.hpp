@@ -317,7 +317,6 @@ struct /*HPG_EXPORT*/ CFPool final {
   K::View<impl::core::cf_t*, memory_space> pool;
   unsigned num_cf_groups;
   unsigned max_cf_extent_y;
-  unsigned m_moment;
   K::Array<cfd_view, HPG_MAX_NUM_CF_GROUPS> cf_d; // unmanaged (in pool)
   std::vector<std::any> cf_h;
   K::Array<K::Array<int, 2>, HPG_MAX_NUM_CF_GROUPS> cf_radii;
@@ -1021,8 +1020,6 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-    //unsigned m_moment;
-
     //std::cout << "calling mean_grid_visibilities" << std::endl;
 
     auto& exec_pre = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
@@ -1051,7 +1048,6 @@ public:
       model,
       m_grid,
       m_mean_grid,
-      cf.m_moment,
       m_weights);
       //std::cout << "completed visibilitygridder 2" << std::endl;
     return exec_grid.copy_visibilities_to_host(return_visibilities);
