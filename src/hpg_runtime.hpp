@@ -1020,7 +1020,7 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-    unsigned m_moment = 1;
+    unsigned m_moment;
 
     //std::cout << "calling mean_grid_visibilities" << std::endl;
 
