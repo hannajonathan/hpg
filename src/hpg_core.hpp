@@ -1455,8 +1455,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
 
     // Initialize variables to be used in moment calculation
-    double sum_of_visibilities, variance, n, mean, M_two, M_three, M_four; // got errors when using gv_t = K::complex<grid_value_fp> so just take Re part
-    sum_of_visibilities = variance = n = mean = M_two = M_three = M_four = 0;
+    //grid_value_fp sum_of_visibilities, variance, n, mean, M_two, M_three, M_four; // got errors when using gv_t = K::complex<grid_value_fp> so just take Re part
+    //sum_of_visibilities = variance = n = mean = M_two = M_three = M_four = 0;
 
     // parallel loop over grid X
     //std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
@@ -1478,7 +1478,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             }
           }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv); // add gv to grd_vis(X,Y)
-
+/*
           switch (moment) {
             case 1: // First raw moment: calculate mean of visibilities
             {
@@ -1493,12 +1493,12 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             }
             case 3: // Third standardized moment: calculate skewness of visibilities
             {
-              double n_one = n;
+              grid_value_fp n_one = n;
               n++;
-              double delta = K::real(grd_vis(X,Y)) - mean;
-              double delta_n = delta / n;
-              double delta_n_two = pow(delta_n, 2);
-              double term_one = delta * delta_n * n_one;
+              grid_value_fp delta = K::real(grd_vis(X,Y)) - mean;
+              grid_value_fp delta_n = delta / n;
+              grid_value_fp delta_n_two = pow(delta_n, 2);
+              grid_value_fp term_one = delta * delta_n * n_one;
               mean += delta_n;
               M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
               M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
@@ -1507,12 +1507,12 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             }
             case 4: // Fourth standardized moment: calculate kurtosis of visibilities
             {
-              double n_one = n;
+              grid_value_fp n_one = n;
               n++;
-              double delta = K::real(grd_vis(X,Y)) - mean;
-              double delta_n = delta / n;
-              double delta_n_two = pow(delta_n, 2);
-              double term_one = delta * delta_n * n_one;
+              grid_value_fp delta = K::real(grd_vis(X,Y)) - mean;
+              grid_value_fp delta_n = delta / n;
+              grid_value_fp delta_n_two = pow(delta_n, 2);
+              grid_value_fp term_one = delta * delta_n * n_one;
               mean += delta_n;
               M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
               M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
@@ -1520,30 +1520,32 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
               break;
             }
           }
+          */
         }
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt)); // add grid_wgt_l to grid_wgt?
 
       // Calculate final moment values
+      /*
       switch (moment) {
         case 1:
         {
-          double mean = sum_of_visibilities / (N_X + N_Y);
+          grid_value_fp mean = sum_of_visibilities / (N_X + N_Y);
           break;
         }
         case 2:
           break;
         case 3:
         {
-          double skewness = (sqrt(n) * M_three) / pow(M_three, 1.5);
+          grid_value_fp skewness = (sqrt(n) * M_three) / pow(M_three, 1.5);
           break;
         }
         case 4:
         {
-          double kurtosis = (n * M_four) / pow(M_two, 2) - 3;
+          grid_value_fp kurtosis = (n * M_four) / pow(M_two, 2) - 3;
           break;
         }
-        }
+      }*/
 
     // compute final weight and add it to weights
     ////std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside single" << std::endl;
