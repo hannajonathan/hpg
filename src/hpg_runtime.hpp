@@ -580,6 +580,8 @@ struct /*HPG_EXPORT*/ ExecSpace final {
   using execution_space = typename kokkos_device::execution_space;
   using memory_space = typename execution_space::memory_space;
 
+  unsigned m_moment;
+
   execution_space space;
   impl::core::visbuff_view<memory_space> visbuff;
   impl::core::gvisbuff_view<memory_space> gvisbuff;
@@ -1020,7 +1022,7 @@ public:
     bool return_visibilities,
     bool do_grid) {
 
-    unsigned m_moment;
+    //unsigned m_moment;
 
     //std::cout << "calling mean_grid_visibilities" << std::endl;
 
