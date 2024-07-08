@@ -1458,7 +1458,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     //gv_t sum_of_visibilities, variance, n, mean, M_two, M_three, M_four;
     //sum_of_visibilities = variance = n = mean = M_two = M_three = M_four = 0;
 
-    gv_t sum_of_visibilities;
+    gv_t sum_of_visibilities(0);
 
     // parallel loop over grid X
     //std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
