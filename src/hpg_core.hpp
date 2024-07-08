@@ -1458,7 +1458,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     //gv_t sum_of_visibilities, variance, n, mean, M_two, M_three, M_four;
     //sum_of_visibilities = variance = n = mean = M_two = M_three = M_four = 0;
 
-    gv_t sum_of_visibilities(0);
+    //gv_t sum_of_visibilities(0);
 
     // parallel loop over grid X
     //std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
@@ -1470,6 +1470,92 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         for (int Y = 0; Y < N_Y; ++Y) {
           const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y)); // complex conversion of phase gradient
           gv_t gv(0);
+          switch (moment) {
+            // First raw moment: mean
+            case 1: {
+              gv_t sum_of_visibilities(0);
+              for (int vpol = 0; vpol < N; ++vpol) {
+                if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
+                  cf_t cfv = cf_vis(X, Y, mindex);
+                  cfv.imag() *= cf_im_factor;
+                  gv += gv_t(cfv * screen * vis.m_values[vpol]);
+                  // Mean calculation
+                  grid_wgt_l.vals[vpol] += cfv;
+                  pseudo_atomic_add<execution_space>(sum_of_visibilities, grd_vis(X,Y));
+                }
+                pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
+              }
+              gv_t moment_result(sum_of_visibilities / (N_X + N_Y));
+              break;
+            }
+            // Second central moment: variance
+            case 2: {
+              gv_t sum_of_visibilities(0), variance(0);
+              for (int vpol = 0; vpol < N; ++vpol) {
+                if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
+                  cf_t cfv = cf_vis(X, Y, mindex);
+                  cfv.imag() *= cf_im_factor;
+                  gv += gv_t(cfv * screen * vis.m_values[vpol]);
+                  grid_wgt_l.vals[vpol] += cfv;
+                  // Variance calculation
+                  pseudo_atomic_add<execution_space>(sum_of_visibilities, grd_vis(X,Y));
+                  variance += pow((X + Y) * grd_vis(X,Y) - sum_of_visibilities, 2) / ((X + Y) * (X + Y - 1));
+                }
+                pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
+              }
+              gv_t moment_result(variance);
+            }
+            // Third standardized moment: skewness
+            case 3: {
+              gv_t sum_of_visibilities(0), variance(0), n(0), mean(0), M_two(0), M_three(0), M_four(0);
+              for (int vpol = 0; vpol < N; ++vpol) {
+                if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
+                  cf_t cfv = cf_vis(X, Y, mindex);
+                  cfv.imag() *= cf_im_factor;
+                  gv += gv_t(cfv * screen * vis.m_values[vpol]);
+                  grid_wgt_l.vals[vpol] += cfv;
+                  gv_t n_one = n;
+                  n += gv_t(1);
+                  gv_t delta = grd_vis(X,Y) - mean;
+                  gv_t delta_n = delta / n;
+                  gv_t delta_n_two = pow(delta_n, 2);
+                  gv_t term_one = delta * delta_n * n_one;
+                  mean += delta_n;
+                  M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                  M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
+                  M_two += term_one;
+                }
+                pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
+              }
+              gv_t moment_result((sqrt(n) * M_three) / pow(M_three, 1.5));
+              break;
+            }
+            // Fourth standardized moment: kurtosis
+            case 4: {
+              gv_t sum_of_visibilities(0), variance(0), n(0), mean(0), M_two(0), M_three(0), M_four(0);
+              for (int vpol = 0; vpol < N; ++vpol) {
+                if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
+                  cf_t cfv = cf_vis(X, Y, mindex);
+                  cfv.imag() *= cf_im_factor;
+                  gv += gv_t(cfv * screen * vis.m_values[vpol]);
+                  grid_wgt_l.vals[vpol] += cfv;
+                  gv_t n_one = n;
+                  n += gv_t(1);
+                  gv_t delta = grd_vis(X,Y) - mean;
+                  gv_t delta_n = delta / n;
+                  gv_t delta_n_two = pow(delta_n, 2);
+                  gv_t term_one = delta * delta_n * n_one;
+                  mean += delta_n;
+                  M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                  M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
+                  M_two += term_one;
+                }
+                pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
+              }
+              gv_t moment_result((n * M_four) / pow(M_two, 2) - 3);
+              break;
+            }
+          }
           // loop over visibility polarizations
           for (int vpol = 0; vpol < N; ++vpol) {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) { // if vpol'th Mueller index/conjugate >= 0
@@ -1478,53 +1564,57 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
               gv += gv_t(cfv * screen * vis.m_values[vpol]); // gv_t gv = (X,Y,mindex)'th index of subspace of CF for this vis * phase screen * vis for this pol
               grid_wgt_l.vals[vpol] += cfv; // weight for this vis pol = (X,Y,mindex)'th index of subspace of CF for this vis
             }
-          }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv); // add gv to grd_vis(X,Y)
-
-          switch (moment) {
-            case 1: // First raw moment: calculate mean of visibilities
-            {
-              sum_of_visibilities += gv_t(grd_vis(X,Y));
-              break;
-            } /*
-            case 2: // Second central moment: calculate variance of visibilities
-            {
-              sum_of_visibilities += grd_vis(X,Y);
-              variance += pow(((X + Y) * grd_vis(X,Y) - sum_of_visibilities), 2) / ((X + Y)(X + Y - 1));
-              break;
-            }
-            case 3: // Third standardized moment: calculate skewness of visibilities
-            {
-              gv_t n_one = n;
-              n++;
-              gv_t delta = grd_vis(X,Y) - mean;
-              gv_t delta_n = delta / n;
-              gv_t delta_n_two = pow(delta_n, 2);
-              gv_t term_one = delta * delta_n * n_one;
-              mean += delta_n;
-              M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
-              M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
-              M_two += term_one;
-              break;
-            }
-            case 4: // Fourth standardized moment: calculate kurtosis of visibilities
-            {
-              gv_t n_one = n;
-              n++;
-              gv_t delta = K::real(grd_vis(X,Y)) - mean;
-              gv_t delta_n = delta / n;
-              gv_t delta_n_two = pow(delta_n, 2);
-              gv_t term_one = delta * delta_n * n_one;
-              mean += delta_n;
-              M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
-              M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
-              M_two += term_one;
-              break;
-            } */
           }
         }
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt)); // add grid_wgt_l to grid_wgt?
+      /*
+                    switch (moment) {
+              case 1: // First raw moment: calculate mean of visibilities
+              {
+                //sum_of_visibilities += gv_t(grd_vis(X,Y));
+                pseudo_atomic_add<execution_space>(sum_of_visibilities, grd_vis(X,Y));
+                break;
+              }
+              case 2: // Second central moment: calculate variance of visibilities
+              {
+                sum_of_visibilities += grd_vis(X,Y);
+                pseudo_atomic_add<execution_space>(sum_of_visibilities, grd_vis(X,Y));
+                variance += pow(((X + Y) * grd_vis(X,Y) - sum_of_visibilities), 2) / ((X + Y)(X + Y - 1));
+                break;
+              }
+              case 3: // Third standardized moment: calculate skewness of visibilities
+              {
+                gv_t n_one = n;
+                n++;
+                gv_t delta = grd_vis(X,Y) - mean;
+                gv_t delta_n = delta / n;
+                gv_t delta_n_two = pow(delta_n, 2);
+                gv_t term_one = delta * delta_n * n_one;
+                mean += delta_n;
+                M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
+                M_two += term_one;
+                break;
+              }
+              case 4: // Fourth standardized moment: calculate kurtosis of visibilities
+              {
+                gv_t n_one = n;
+                n++;
+                gv_t delta = K::real(grd_vis(X,Y)) - mean;
+                gv_t delta_n = delta / n;
+                gv_t delta_n_two = pow(delta_n, 2);
+                gv_t term_one = delta * delta_n * n_one;
+                mean += delta_n;
+                M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
+                M_two += term_one;
+                break;
+              }
+            }
+      */
+
 
       // Calculate final moment values
       /*
