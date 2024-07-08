@@ -1478,6 +1478,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             }
           }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv); // add gv to grd_vis(X,Y)
+
 /*
           switch (moment) {
             case 1: // First raw moment: calculate mean of visibilities
@@ -1548,7 +1549,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       }*/
 
     // compute final weight and add it to weights
-    ////std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside single" << std::endl;
+    //std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside single" << std::endl;
     K::single(
       K::PerTeam(team_member), // restricts lambda to execute once per team
       [&]() { // initialize as reference
@@ -1568,6 +1569,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           pseudo_atomic_add<execution_space>(mean_grd_vis(X,Y), mean_vis);
         }
       });
+
+    //std::cout << "done with grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
   }
 
   // function for gridding a single visibility without sum of weights
@@ -1808,7 +1811,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
-            auto moment = 1;
+            auto moment = 2;
 
             Vis<N, execution_space> vis(
               visibilities(i),
@@ -1820,6 +1823,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             // skip this visibility if all of the updated grid points are not
             // within grid bounds
             if (all_within_grid(vis, grid_size)) {
+              //std::cout << "using grid_vis_weighted_mean" << std::endl;
               grid_vis_weighted_mean<cf_layout, grid_layout, memory_space>(
                 team_member,
                 vis,
