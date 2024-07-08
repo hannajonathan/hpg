@@ -1484,7 +1484,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           switch (moment) {
             case 1: // First raw moment: calculate mean of visibilities
             {
-              sum_of_visibilities += grd_vis(X,Y);
+              sum_of_visibilities += gv_t(grd_vis(X,Y));
               break;
             } /*
             case 2: // Second central moment: calculate variance of visibilities
