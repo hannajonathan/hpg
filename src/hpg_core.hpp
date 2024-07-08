@@ -1473,6 +1473,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           switch (moment) {
             // First raw moment: mean
             case 1: {
+              std::cout << "Entering case 1 mean" << std::endl;
               gv_t sum_of_visibilities(0);
               for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
@@ -1486,10 +1487,12 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
               gv_t moment_result(sum_of_visibilities / (N_X + N_Y));
+              std::cout << "Exiting case 1 mean" << std::endl;
               break;
             }
             // Second central moment: variance
             case 2: {
+              std::cout << "Entering case 2 variance" << std::endl;
               gv_t sum_of_visibilities(0), variance(0);
               for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
@@ -1504,9 +1507,11 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
               gv_t moment_result(variance);
+              std::cout << "Exiting case 2 variance" << std::endl;
             }
             // Third standardized moment: skewness
             case 3: {
+              std::cout << "Entering case 3 skewness" << std::endl;
               gv_t sum_of_visibilities(0), variance(0), n(0), mean(0), M_two(0), M_three(0), M_four(0);
               for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
@@ -1529,9 +1534,11 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
               }
               gv_t moment_result((sqrt(n) * M_three) / pow(M_three, 1.5));
               break;
+              std::cout << "Exiting case 3 variance" << std::endl;
             }
             // Fourth standardized moment: kurtosis
             case 4: {
+              std::cout << "Entering case 4 kurtosis" << std::endl;
               gv_t sum_of_visibilities(0), variance(0), n(0), mean(0), M_two(0), M_three(0), M_four(0);
               for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
@@ -1554,6 +1561,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
               }
               gv_t moment_result((n * M_four) / pow(M_two, 2) - 3);
               break;
+              std::cout << "Exiting case 4 kurtosis" << std::endl;
             }
           }
           // loop over visibility polarizations
