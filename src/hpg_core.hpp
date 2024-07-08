@@ -1774,6 +1774,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
+            auto moment = 1;
 
             Vis<N, execution_space> vis(
               visibilities(i),
@@ -1807,6 +1808,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
+            auto moment = 1;
 
             Vis<N, execution_space> vis(
               visibilities(i),
