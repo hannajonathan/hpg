@@ -1455,8 +1455,10 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
 
     // Initialize variables to be used in moment calculation
-    //grid_value_fp sum_of_visibilities, variance, n, mean, M_two, M_three, M_four; // got errors when using gv_t = K::complex<grid_value_fp> so just take Re part
+    //gv_t sum_of_visibilities, variance, n, mean, M_two, M_three, M_four;
     //sum_of_visibilities = variance = n = mean = M_two = M_three = M_four = 0;
+
+    gv_t sum_of_visibilities;
 
     // parallel loop over grid X
     //std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
@@ -1479,27 +1481,26 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           }
           pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv); // add gv to grd_vis(X,Y)
 
-/*
           switch (moment) {
             case 1: // First raw moment: calculate mean of visibilities
             {
-              sum_of_visibilities += K::real(grd_vis(X,Y));
+              sum_of_visibilities += grd_vis(X,Y);
               break;
-            }
+            } /*
             case 2: // Second central moment: calculate variance of visibilities
             {
-              sum_of_visibilities += K::real(grd_vis(X,Y));
-              variance += pow(((X + Y) * (K::real(grd_vis(X,Y))) - sum_of_visibilities), 2) / ((X + Y)(X + Y - 1));
+              sum_of_visibilities += grd_vis(X,Y);
+              variance += pow(((X + Y) * grd_vis(X,Y) - sum_of_visibilities), 2) / ((X + Y)(X + Y - 1));
               break;
             }
             case 3: // Third standardized moment: calculate skewness of visibilities
             {
-              grid_value_fp n_one = n;
+              gv_t n_one = n;
               n++;
-              grid_value_fp delta = K::real(grd_vis(X,Y)) - mean;
-              grid_value_fp delta_n = delta / n;
-              grid_value_fp delta_n_two = pow(delta_n, 2);
-              grid_value_fp term_one = delta * delta_n * n_one;
+              gv_t delta = grd_vis(X,Y) - mean;
+              gv_t delta_n = delta / n;
+              gv_t delta_n_two = pow(delta_n, 2);
+              gv_t term_one = delta * delta_n * n_one;
               mean += delta_n;
               M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
               M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
@@ -1508,20 +1509,19 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             }
             case 4: // Fourth standardized moment: calculate kurtosis of visibilities
             {
-              grid_value_fp n_one = n;
+              gv_t n_one = n;
               n++;
-              grid_value_fp delta = K::real(grd_vis(X,Y)) - mean;
-              grid_value_fp delta_n = delta / n;
-              grid_value_fp delta_n_two = pow(delta_n, 2);
-              grid_value_fp term_one = delta * delta_n * n_one;
+              gv_t delta = K::real(grd_vis(X,Y)) - mean;
+              gv_t delta_n = delta / n;
+              gv_t delta_n_two = pow(delta_n, 2);
+              gv_t term_one = delta * delta_n * n_one;
               mean += delta_n;
               M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
               M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
               M_two += term_one;
               break;
-            }
+            } */
           }
-          */
         }
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt)); // add grid_wgt_l to grid_wgt?
@@ -1531,19 +1531,19 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       switch (moment) {
         case 1:
         {
-          grid_value_fp mean = sum_of_visibilities / (N_X + N_Y);
+          gv_t mean = sum_of_visibilities / (N_X + N_Y);
           break;
         }
         case 2:
           break;
         case 3:
         {
-          grid_value_fp skewness = (sqrt(n) * M_three) / pow(M_three, 1.5);
+          gv_t skewness = (sqrt(n) * M_three) / pow(M_three, 1.5);
           break;
         }
         case 4:
         {
-          grid_value_fp kurtosis = (n * M_four) / pow(M_two, 2) - 3;
+          gv_t kurtosis = (n * M_four) / pow(M_two, 2) - 3;
           break;
         }
       }*/
