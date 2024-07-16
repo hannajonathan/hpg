@@ -1594,7 +1594,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
               break;
             }
           }
-          const grid_view<grid_layout, memory_space>& threshold_grid = pseudo_atomic_add<execution_space>(mean_grid, n_threshold * moment_result);
           // loop over visibility polarizations
           for (int vpol = 0; vpol < N; ++vpol) {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) { // if vpol'th Mueller index/conjugate >= 0
@@ -1895,6 +1894,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 conjugate_mueller_indexes,
                 grid,
                 mean_grid,
+                moment_grid,
+                threshold_grid
                 weights,
                 scratch_phscr_view(
                   team_member.team_scratch(0),
