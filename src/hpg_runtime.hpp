@@ -741,6 +741,8 @@ public:
 
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_grid;
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_mean_grid;
+  impl::core::grid_view<typename grid_layout::layout, memory_space> m_moment_grid;
+  impl::core::grid_view<typename grid_layout::layout, memory_space> m_threshold_grid;
   impl::core::weight_view<typename execution_space::array_layout, memory_space>
     m_weights;
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_model;
@@ -1048,6 +1050,8 @@ public:
       model,
       m_grid,
       m_mean_grid,
+      m_moment_grid,
+      m_threshold_grid,
       m_weights);
       std::cout << "completed visibilitygridder 2" << std::endl;
     return exec_grid.copy_visibilities_to_host(return_visibilities);

@@ -1268,16 +1268,15 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
   template <typename cf_layout, typename grid_layout, typename memory_space>
   static KOKKOS_FUNCTION poln_array_type<visibility_fp, N>
   degrid_vis_weighted_mean(
-    // gv_t = complex gridded value type
-    // cf_t = convolution function value type
-    const member_type& team_member, //using member_type = typename K::TeamPolicy<execution_space>::member_type
-    const Vis<N, execution_space>& vis, //line 495, struct Vis
-    const cf_view<cf_layout, memory_space>& cf, //using cf_view = K::View<cf_t******, Layout, memory_space, K::MemoryTraits<K::Unmanaged>>;
-    const const_mindex_view<memory_space>& mueller_indexes, //using const_mindex_view = K::View<const int[4][4], memory_space, K::MemoryTraits<K::RandomAccess>>;
+    const member_type& team_member,
+    const Vis<N, execution_space>& vis,
+    const cf_view<cf_layout, memory_space>& cf,
+    const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
-    const const_grid_view<grid_layout, memory_space>& model, //using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
+    const const_grid_view<grid_layout, memory_space>& model,
     const grid_view<grid_layout, memory_space>& mean_grid,
-    const scratch_phscr_view& phi_Y) { // using scratch_phscr_view = K::View<cf_phase_gradient_fp*, typename execution_space::scratch_memory_space>;
+    const grid_view<grid_layout, memory_space>& threshold_grid,
+    const scratch_phscr_view& phi_Y) {
 
     //std::cout << "degrid_vis_weighted_mean in visibilitygridder 2" << std::endl;
 
@@ -1331,6 +1330,14 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           K::ALL,
           vis.m_grid_cube); // Grid cube index
 
+      auto threshold_grd_vis =
+        K::subview(
+          threshold_grid,
+          K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+          K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+          K::ALL,
+          vis.m_grid_cube); // Grid cube index
+
       // loop over model polarizations
       for (int gpol = 0; gpol < N_R; ++gpol) {
         decltype(vis_array) va; // Create vis_array va (?)
@@ -1341,16 +1348,20 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             auto phi_X = vis.m_phi0[0] + X * vis.m_dphi[0]; // phi_X (phase gradient) = phase screen value origin[0] + X * phase screen value increment [0]
             // loop over grid Y
             for (int Y = 0; Y < N_Y; ++Y) {
-              auto screen = cphase<execution_space>(-phi_X - phi_Y(Y)); // screen = complex value conversion of phase (-phi_X - phy_Y(Y))
-              const auto mv = model_vis(X, Y, gpol) * screen; // Access (X, Y, gpol)'th element, multiply by screen (this undoes the correction)
-              // loop over visibility polarizations
-              for (int vpol = 0; vpol < N; ++vpol) {
-                if (const auto mindex = degridding_mindex(gpol, vpol); // IDK
-                    mindex >= 0) {
-                  cf_t cfv = cf_vis(X, Y, mindex); // conv. func. cfv = (X,Y,mindex)th element of cf_vis
-                  cfv.imag() *= cf_im_factor; // Im(cfv) = Im(cfv) * cf_im_factor
-                  vis_array_l.vis[vpol] += cfv * mv;
-                  vis_array_l.wgt[vpol] += cfv;
+              if (model_vis(X, Y) > threshold_grd_vis(X, Y))
+                model_vis(X, Y) = 0;
+              else {
+                auto screen = cphase<execution_space>(-phi_X - phi_Y(Y)); // screen = complex value conversion of phase (-phi_X - phy_Y(Y))
+                const auto mv = model_vis(X, Y, gpol) * screen; // Access (X, Y, gpol)'th element, multiply by screen (this undoes the correction)
+                // loop over visibility polarizations
+                for (int vpol = 0; vpol < N; ++vpol) {
+                  if (const auto mindex = degridding_mindex(gpol, vpol); // IDK
+                      mindex >= 0) {
+                    cf_t cfv = cf_vis(X, Y, mindex); // conv. func. cfv = (X,Y,mindex)th element of cf_vis
+                    cfv.imag() *= cf_im_factor; // Im(cfv) = Im(cfv) * cf_im_factor
+                    vis_array_l.vis[vpol] += cfv * mv;
+                    vis_array_l.wgt[vpol] += cfv;
+                  }
                 }
               }
             }
@@ -1358,7 +1369,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           K::Sum<decltype(va)>(va)); // return sum as the same type as va
         vis_array += va;
       }
-
       // apply weights and phasor to compute predicted visibilities
       auto conj_phasor = vis.m_phasor;
       conj_phasor.imag() *= -1;
@@ -1384,10 +1394,13 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const grid_view<grid_layout, memory_space>& grid,
     const grid_view<grid_layout, memory_space>& mean_grid,
+    const grid_view<grid_layout, memory_space>& moment_grid,
+    const grid_view<grid_layout, memory_space>& threshold_grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights,
     const scratch_phscr_view& phi_Y,
-    const unsigned moment) {
+    const unsigned moment,
+    const unsigned n_threshold) {
 
     //std::cout << "grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
 
@@ -1451,6 +1464,22 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         gpol,
         vis.m_grid_cube);
 
+    auto moment_grd_vis =
+      K::subview(
+        moment_grid,
+        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        gpol,
+        vis.m_grid_cube);
+    
+    auto threshold_grd_vis =
+      K::subview(
+        threshold_grid,
+        K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
+        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        gpol,
+        vis.m_grid_cube);
+
     // accumulate to grid, and CF weights per visibility polarization
     poln_array_type<acc_cf_t::value_type, N> grid_wgt;
 
@@ -1486,7 +1515,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
-              gv_t moment_result(sum_of_visibilities / (N_X + N_Y));
+              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), sum_of_visibilities / (N_X + N_Y));
               // std::cout << "Exiting case 1 mean" << std::endl;
               break;
             }
@@ -1506,7 +1535,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
-              gv_t moment_result(variance);
+              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), variance);
               // std::cout << "Exiting case 2 variance" << std::endl;
               break;
             }
@@ -1533,7 +1562,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
-              gv_t moment_result((sqrt(n) * M_three) / pow(M_three, 1.5));
+              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), (sqrt(n) * M_three) / pow(M_three, 1.5));
               // std::cout << "Exiting case 3 variance" << std::endl;
               break;
             }
@@ -1560,11 +1589,12 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
-              gv_t moment_result((n * M_four) / pow(M_two, 2) - 3);
+              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), ((n * M_four) / pow(M_two, 2) - 3));
               // std::cout << "Exiting case 4 kurtosis" << std::endl;
               break;
             }
           }
+          const grid_view<grid_layout, memory_space>& threshold_grid = pseudo_atomic_add<execution_space>(mean_grid, n_threshold * moment_result);
           // loop over visibility polarizations
           for (int vpol = 0; vpol < N; ++vpol) {
             if (const auto mindex = gridding_mindex(vpol); mindex >= 0) { // if vpol'th Mueller index/conjugate >= 0
@@ -1578,74 +1608,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         }
       },
       K::Sum<decltype(grid_wgt)>(grid_wgt)); // add grid_wgt_l to grid_wgt?
-      /*
-                    switch (moment) {
-              case 1: // First raw moment: calculate mean of visibilities
-              {
-                //sum_of_visibilities += gv_t(grd_vis(X,Y));
-                pseudo_atomic_add<execution_space>(sum_of_visibilities, grd_vis(X,Y));
-                break;
-              }
-              case 2: // Second central moment: calculate variance of visibilities
-              {
-                sum_of_visibilities += grd_vis(X,Y);
-                pseudo_atomic_add<execution_space>(sum_of_visibilities, grd_vis(X,Y));
-                variance += pow(((X + Y) * grd_vis(X,Y) - sum_of_visibilities), 2) / ((X + Y)(X + Y - 1));
-                break;
-              }
-              case 3: // Third standardized moment: calculate skewness of visibilities
-              {
-                gv_t n_one = n;
-                n++;
-                gv_t delta = grd_vis(X,Y) - mean;
-                gv_t delta_n = delta / n;
-                gv_t delta_n_two = pow(delta_n, 2);
-                gv_t term_one = delta * delta_n * n_one;
-                mean += delta_n;
-                M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
-                M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
-                M_two += term_one;
-                break;
-              }
-              case 4: // Fourth standardized moment: calculate kurtosis of visibilities
-              {
-                gv_t n_one = n;
-                n++;
-                gv_t delta = K::real(grd_vis(X,Y)) - mean;
-                gv_t delta_n = delta / n;
-                gv_t delta_n_two = pow(delta_n, 2);
-                gv_t term_one = delta * delta_n * n_one;
-                mean += delta_n;
-                M_four += term_one * delta_n_two * (pow(n,2) - 3*n + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
-                M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
-                M_two += term_one;
-                break;
-              }
-            }
-      */
-
-
-      // Calculate final moment values
-      /*
-      switch (moment) {
-        case 1:
-        {
-          gv_t mean = sum_of_visibilities / (N_X + N_Y);
-          break;
-        }
-        case 2:
-          break;
-        case 3:
-        {
-          gv_t skewness = (sqrt(n) * M_three) / pow(M_three, 1.5);
-          break;
-        }
-        case 4:
-        {
-          gv_t kurtosis = (n * M_four) / pow(M_two, 2) - 3;
-          break;
-        }
-      }*/
 
     // compute final weight and add it to weights
     //std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside single" << std::endl;
@@ -1665,7 +1627,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       [=] (const int X) {
         for (int Y = 0; Y < N_Y; ++Y){
           gv_t mean_vis = grd_vis(X,Y) / weights(gpol, vis.m_grid_cube);
-          pseudo_atomic_add<execution_space>(mean_grd_vis(X,Y), mean_vis);
+          pseudo_atomic_add<execution_space>(mean_grd_vis(X, Y), mean_vis);
+          pseudo_atomic_add<execution_space>(threshold_grd_vis(X, Y), mean_grd_vis(X, Y) + n_threshold * moment_grd_vis(X, Y));
         }
       });
 
