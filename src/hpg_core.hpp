@@ -1897,7 +1897,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 grid,
                 mean_grid,
                 moment_grid,
-                threshold_grid
+                threshold_grid,
                 weights,
                 scratch_phscr_view(
                   team_member.team_scratch(0),
