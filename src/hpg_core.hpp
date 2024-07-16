@@ -1744,6 +1744,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_grid_view<grid_layout, memory_space>& model,
     const grid_view<grid_layout, memory_space>& grid,
     const grid_view<grid_layout, memory_space>& mean_grid,
+    const grid_view<grid_layout, memory_space>& moment_grid,
+    const grid_view<grid_layout, memory_space>& threshold_grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
       weights) {
 
