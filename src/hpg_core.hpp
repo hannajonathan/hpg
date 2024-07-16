@@ -1400,7 +1400,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     weights,
     const scratch_phscr_view& phi_Y,
     const unsigned moment,
-    const unsigned n_threshold) {
+    const unsigned n_threshold)
+    {
 
     //std::cout << "grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
 
@@ -1875,6 +1876,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
             auto moment = 2;
+            auto threshold = 3;
 
             Vis<N, execution_space> vis(
               visibilities(i),
@@ -1902,7 +1904,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 scratch_phscr_view(
                   team_member.team_scratch(0),
                   max_cf_extent_y),
-                moment);
+                moment,
+                threshold);
             }
           });
     }
