@@ -1274,7 +1274,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const const_grid_view<grid_layout, memory_space>& model,
-    const grid_view<grid_layout, memory_space>& mean_grid,
     const grid_view<grid_layout, memory_space>& threshold_grid,
     const scratch_phscr_view& phi_Y) {
 
@@ -1400,8 +1399,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     weights,
     const scratch_phscr_view& phi_Y,
     const unsigned moment,
-    const unsigned n_threshold)
-    {
+    const unsigned n_threshold) {
 
     //std::cout << "grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
 
