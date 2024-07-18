@@ -1514,7 +1514,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
-              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), sum_of_visibilities / (N_X + N_Y));
+              gv_t moment_vis = sum_of_visibilities / (N_X + N_Y);
+              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), moment_vis);
               // std::cout << "Exiting case 1 mean" << std::endl;
               break;
             }
@@ -1561,7 +1562,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
-              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), (sqrt(n) * M_three) / pow(M_three, 1.5));
+              gv_t moment_vis =(sqrt(n) * M_three) / pow(M_three, 1.5);
+              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), moment_vis);
               // std::cout << "Exiting case 3 variance" << std::endl;
               break;
             }
@@ -1588,7 +1590,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
-              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), ((n * M_four) / pow(M_two, 2) - 3));
+              gv_t moment_vis = (n * M_four) / pow(M_two, 2) - 3;
+              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), moment_vis);
               // std::cout << "Exiting case 4 kurtosis" << std::endl;
               break;
             }
@@ -1626,7 +1629,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         for (int Y = 0; Y < N_Y; ++Y){
           gv_t mean_vis = grd_vis(X,Y) / weights(gpol, vis.m_grid_cube);
           pseudo_atomic_add<execution_space>(mean_grd_vis(X, Y), mean_vis);
-          pseudo_atomic_add<execution_space>(threshold_grd_vis(X, Y), mean_grd_vis(X, Y) + n_threshold * moment_grd_vis(X, Y));
+          gv_t threshold_vis = mean_grd_vis(X, Y) + n_threshold * moment_grd_vis(X, Y);
+          pseudo_atomic_add<execution_space>(threshold_grd_vis(X, Y), threshold_vis);
         }
       });
 
