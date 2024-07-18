@@ -821,6 +821,9 @@ public:
     m_implementation_versions = std::move(st).m_implementation_versions;
 
     m_grid = std::move(st).m_grid;
+    m_mean_grid = std::move(st).m_mean_grid;
+    m_moment_grid = std::move(st).m_moment_grid;
+    m_threshold_grid = std::move(st).m_threshold_grid;
     m_weights = std::move(st).m_weights;
     m_model = std::move(st).m_model;
     m_mueller_indexes = std::move(st).m_mueller_indexes;
@@ -845,6 +848,9 @@ public:
   virtual ~StateT() {
     fence();
     m_grid = decltype(m_grid)();
+    m_mean_grid = decltype(m_mean_grid)();
+    m_moment_grid = decltype(m_moment_grid)();
+    m_threshold_grid = decltype(m_threshold_grid)();
     m_weights = decltype(m_weights)();
     m_model = decltype(m_model)();
     m_mueller_indexes = decltype(m_mueller_indexes)();
@@ -1572,6 +1578,9 @@ private:
     std::swap(m_implementation_versions, other.m_implementation_versions);
 
     std::swap(m_grid, other.m_grid);
+    std::swap(m_mean_grid, other.m_mean_grid);
+    std::swap(m_moment_grid, other.m_moment_grid);
+    std::swap(m_threshold_grid, other.m_threshold_grid);
     std::swap(m_weights, other.m_weights);
     std::swap(m_model, other.m_model);
     std::swap(m_mueller_indexes, other.m_mueller_indexes);
@@ -1793,18 +1802,50 @@ private:
       int(m_grid_size[1]),
       int(m_grid_size[2]),
       int(m_grid_size[3])};
-    if (create_without_init)
+    if (create_without_init) {
       m_grid =
         decltype(m_grid)(
           K::ViewAllocateWithoutInitializing("grid"),
           grid_layout::dimensions(ig));
-    else
+      m_mean_grid =
+        decltype(m_mean_grid)(
+          K::ViewAllocateWithoutInitializing("mean_grid"),
+          grid_layout::dimensions(ig));    
+      m_moment_grid =
+        decltype(m_moment_grid)(
+          K::ViewAllocateWithoutInitializing("moment_grid"),
+          grid_layout::dimensions(ig));    
+      m_threshold_grid =
+        decltype(m_threshold_grid)(
+          K::ViewAllocateWithoutInitializing("threshold_grid"),
+          grid_layout::dimensions(ig));    
+    }
+    else {
       m_grid =
         decltype(m_grid)(
           K::view_alloc(
             "grid",
             m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
           grid_layout::dimensions(ig));
+      m_mean_grid =
+        decltype(m_mean_grid)(
+          K::view_alloc(
+            "mean_grid",
+            m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
+          grid_layout::dimensions(ig));
+      m_moment_grid =
+        decltype(m_moment_grid)(
+          K::view_alloc(
+            "moment_grid",
+            m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
+          grid_layout::dimensions(ig));
+      m_threshold_grid =
+        decltype(m_threshold_grid)(
+          K::view_alloc(
+            "threshold_grid",
+            m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
+          grid_layout::dimensions(ig));
+    }
 #ifndef NDEBUG
     std::cout << "alloc grid sz " << m_grid.extent(0)
               << " " << m_grid.extent(1)
@@ -1840,6 +1881,9 @@ private:
       auto st = std::get<const StateT*>(source);
       auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
       K::deep_copy(exec.space, m_grid, st->m_grid);
+      K::deep_copy(exec.space, m_mean_grid, st->m_mean_grid);
+      K::deep_copy(exec.space, m_moment_grid, st->m_moment_grid);
+      K::deep_copy(exec.space, m_threshold_grid, st->m_threshold_grid);
       if (also_weights)
         K::deep_copy(exec.space, m_weights, st->m_weights);
     }
