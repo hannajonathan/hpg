@@ -1406,6 +1406,31 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const auto& N_X = vis.m_cf_size[0]; // Number of pixels along X/U dimension
     const auto& N_Y = vis.m_cf_size[1]; // Number of pixels along Y/V dimension
 
+    // K::parallel_for(
+      // K::TeamThreadRange(team_member, 4),
+      // [=](const int X) {
+        // for (int Y = 0; Y < N_Y; ++Y) {
+          // for (int gpol = 0; gpol < N; ++gpol) {
+            // // Check if the pointers are valid
+            // if (mean_grid.data() != nullptr && moment_grid.data() != nullptr && threshold_grid.data() != nullptr) {
+               // // Check if the indices are within bounds
+              // if (X >= 0 && X < mean_grid.extent(0) &&
+                  // Y >= 0 && Y < mean_grid.extent(1) &&
+                  // gpol >= 0 && gpol < mean_grid.extent(2) &&
+                  // vis.m_grid_cube >= 0 && vis.m_grid_cube < mean_grid.extent(3)) {
+                // Kokkos::printf("mean_grid(%d, %d, %d, %d) = %f\n", X, Y, gpol, vis.m_grid_cube, mean_grid(X, Y, gpol, vis.m_grid_cube));
+                // Kokkos::printf("moment_grid(%d, %d, %d, %d) = %f\n", X, Y, gpol, vis.m_grid_cube, moment_grid(X, Y, gpol, vis.m_grid_cube));
+                // Kokkos::printf("threshold_grid(%d, %d, %d, %d) = %f\n", X, Y, gpol, vis.m_grid_cube, threshold_grid(X, Y, gpol, vis.m_grid_cube));
+              // } else {
+                // Kokkos::printf("Index out of bounds: X=%d, Y=%d, gpol=%d, m_grid_cube=%d\n", X, Y, gpol, vis.m_grid_cube);
+              // }
+            // } else {
+              // Kokkos::printf("Null pointer detected for one of the grids.\n");
+            // }
+          // }
+        // }
+      // });
+
     auto gridding_mindex =
       K::subview(
         (vis.m_pos_w ? mueller_indexes : conjugate_mueller_indexes),
@@ -1571,7 +1596,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
               }
               gv_t moment_vis((sqrt(n) * M_three) / pow(M_three, 1.5));
-              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), moment_vis);
+              std::cout << "right before pseudo_atomic_add skewness using mean_grd_vis instead of moment_grd_vis" << std::endl;
+              pseudo_atomic_add<execution_space>(mean_grd_vis(X, Y), moment_vis);
               std::cout << "Exiting case 3 skewness" << std::endl;
               break;
             }
@@ -1596,16 +1622,11 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   M_three += term_one * delta_n * (n - 2) - 3 * delta_n * M_two;
                   M_two += term_one;
                 }
-                std::cout << "pseudo_atomic_add grd_vis(" << X << "," << Y << ")" << std::endl;
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
-                std::cout << "equals ";
                 Kokkos::printf("moment_grid(%d, %d, %d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
               }
               gv_t moment_vis((n * M_four) / pow(M_two, 2) - 3);
-              std::cout << "moment_vis = " << moment_vis << std::endl;
-              std::cout << "pseudo_atomic_add moment_grd_vis(" << X << "," << Y << ")" << std::endl;
               pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), moment_vis);
-              std::cout << "equals ";
               Kokkos::printf("moment_grid(%d, %d, %d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
               std::cout << "Exiting case 4 kurtosis" << std::endl;
               break;
@@ -1651,34 +1672,6 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           std::cout << "done with one iteration of final parallel_for" << std::endl;
         }
       });
-
-    K::parallel_for(
-      K::TeamThreadRange(team_member, 4),
-      [=](const int X) {
-        for (int Y = 0; Y < N_Y; ++Y) {
-          for (int gpol = 0; gpol < N; ++gpol) {
-            // Check if the pointers are valid
-            if (mean_grid.data() != nullptr && moment_grid.data() != nullptr && threshold_grid.data() != nullptr) {
-               // Check if the indices are within bounds
-              if (X >= 0 && X < mean_grid.extent(0) &&
-                  Y >= 0 && Y < mean_grid.extent(1) &&
-                  gpol >= 0 && gpol < mean_grid.extent(2) &&
-                  vis.m_grid_cube >= 0 && vis.m_grid_cube < mean_grid.extent(3)) {
-                Kokkos::printf("grid(%d, %d, %d, %d) = %f\n", X, Y, gpol, vis.m_grid_cube, grid(X, Y));
-                Kokkos::printf("mean_grid(%d, %d, %d, %d) = %f\n", X, Y, gpol, vis.m_grid_cube, mean_grid(X, Y));
-                Kokkos::printf("moment_grid(%d, %d, %d, %d) = %f\n", X, Y, gpol, vis.m_grid_cube, moment_grid(X, Y));
-                Kokkos::printf("threshold_grid(%d, %d, %d, %d) = %f\n", X, Y, gpol, vis.m_grid_cube, threshold_grid(X, Y));
-              } else {
-                Kokkos::printf("Index out of bounds: X=%d, Y=%d, gpol=%d, m_grid_cube=%d\n", X, Y, gpol, vis.m_grid_cube);
-              }
-            } else {
-              Kokkos::printf("Null pointer detected for one of the grids.\n");
-            }
-          }
-        }
-      });
-
-      exit(0);
 
     std::cout << "done with grid_vis_weighted_mean in visibilitygridder 2" << std::endl;
   }
@@ -1923,7 +1916,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
-            auto moment = 1;
+            auto moment = 3;
             auto threshold = 3;
 
             Vis<N, execution_space> vis(
