@@ -740,7 +740,8 @@ public:
   using grid_layout =  impl::GridLayout<kokkos_device>;
 
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_grid;
-  impl::core::grid_view<typename grid_layout::layout, memory_space> m_mean_grid;
+  impl::core::grid_view<typename grid_layout::layout, memory_space> m_n_grid;
+  impl::core::grid_int_view<typename grid_layout::layout, memory_space> m_mean_grid;
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_moment_grid;
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_threshold_grid;
   impl::core::weight_view<typename execution_space::array_layout, memory_space>
@@ -821,6 +822,7 @@ public:
     m_implementation_versions = std::move(st).m_implementation_versions;
 
     m_grid = std::move(st).m_grid;
+    m_n_grid = std::move(st).m_n_grid;
     m_mean_grid = std::move(st).m_mean_grid;
     m_moment_grid = std::move(st).m_moment_grid;
     m_threshold_grid = std::move(st).m_threshold_grid;
@@ -848,6 +850,7 @@ public:
   virtual ~StateT() {
     fence();
     m_grid = decltype(m_grid)();
+    m_n_grid = decltype(m_n_grid)();
     m_mean_grid = decltype(m_mean_grid)();
     m_moment_grid = decltype(m_moment_grid)();
     m_threshold_grid = decltype(m_threshold_grid)();
@@ -1055,6 +1058,7 @@ public:
       m_grid_scale,
       model,
       m_grid,
+      m_n_grid,
       m_mean_grid,
       m_moment_grid,
       m_threshold_grid,
@@ -1578,6 +1582,7 @@ private:
     std::swap(m_implementation_versions, other.m_implementation_versions);
 
     std::swap(m_grid, other.m_grid);
+    std::swap(m_n_grid, other.m_n_grid);
     std::swap(m_mean_grid, other.m_mean_grid);
     std::swap(m_moment_grid, other.m_moment_grid);
     std::swap(m_threshold_grid, other.m_threshold_grid);
@@ -1807,6 +1812,10 @@ private:
         decltype(m_grid)(
           K::ViewAllocateWithoutInitializing("grid"),
           grid_layout::dimensions(ig));
+      m_n_grid =
+        decltype(m_n_grid)(
+          K::ViewAllocateWithoutInitializing("n_grid"),
+          grid_layout::dimensions(ig));    
       m_mean_grid =
         decltype(m_mean_grid)(
           K::ViewAllocateWithoutInitializing("mean_grid"),
@@ -1825,6 +1834,12 @@ private:
         decltype(m_grid)(
           K::view_alloc(
             "grid",
+            m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
+          grid_layout::dimensions(ig));
+      m_n_grid =
+        decltype(m_n_grid)(
+          K::view_alloc(
+            "n_grid",
             m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)].space),
           grid_layout::dimensions(ig));
       m_mean_grid =
@@ -1881,6 +1896,7 @@ private:
       auto st = std::get<const StateT*>(source);
       auto& exec = m_exec_spaces[next_exec_space(StreamPhase::PRE_GRIDDING)];
       K::deep_copy(exec.space, m_grid, st->m_grid);
+      K::deep_copy(exec.space, m_n_grid, st->m_n_grid);
       K::deep_copy(exec.space, m_mean_grid, st->m_mean_grid);
       K::deep_copy(exec.space, m_moment_grid, st->m_moment_grid);
       K::deep_copy(exec.space, m_threshold_grid, st->m_threshold_grid);
