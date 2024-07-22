@@ -289,11 +289,12 @@ struct /*HPG_EXPORT*/ VisData {
 template <typename Layout, typename memory_space>
 using grid_view = K::View<gv_t****, Layout, memory_space>;
 
-using grid_int_view = K::View<int****, Layout, memory_space>;
+template <typename Layout, typename memory_space>
+using grid_int_view = K::View<int**, Layout, memory_space>;
 
 /** View type for constant grid values */
 template <typename Layout, typename memory_space>
-using const_grid_view = K::View<const gv_t**, Layout, memory_space>;
+using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
 
 /** View type for weight values
  *
@@ -1573,6 +1574,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   if (vpol > 1)
                     variance += gv_t(pow(n_grid(X,Y)*gv - sum_of_visibilities, 2) / (n_grid(X,Y) * (n_grid(X,Y) - 1)));
                   n_grid(X,Y)++;
+                  Kokkos::printf("n_grid(%d, %d) = %f\n", X, Y, n_grid(X, Y));
                 }
                 // std::cout << "before psuedo_atomic_add 2" << std::endl;
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
@@ -1842,7 +1844,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const K::Array<grid_scale_fp, 2>& grid_scale,
     const const_grid_view<grid_layout, memory_space>& model,
     const grid_view<grid_layout, memory_space>& grid,
-    const grid_int_view<grid_layout, memory_space>& n_grid;
+    const grid_int_view<grid_layout, memory_space>& n_grid,
     const grid_view<grid_layout, memory_space>& mean_grid,
     const grid_view<grid_layout, memory_space>& moment_grid,
     const grid_view<grid_layout, memory_space>& threshold_grid,
