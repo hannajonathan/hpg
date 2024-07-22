@@ -290,7 +290,7 @@ template <typename Layout, typename memory_space>
 using grid_view = K::View<gv_t****, Layout, memory_space>;
 
 template <typename Layout, typename memory_space>
-using grid_int_view = K::View<int**, Layout, memory_space>;
+using grid_int_view = K::View<int****, Layout, memory_space>;
 
 /** View type for constant grid values */
 template <typename Layout, typename memory_space>
@@ -1488,7 +1488,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       K::subview(
         n_grid,
         K::pair<int, int>(vis.m_grid_coord[0], vis.m_grid_coord[0] + N_X),
-        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y));
+        K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
+        gpol,
+        vis.m_grid_cube);
 
     // std::cout << "mean_grd_vis in visibilitygridder 2" << std::endl;
     auto mean_grd_vis =
