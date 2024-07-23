@@ -1607,6 +1607,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   cfv.imag() *= cf_im_factor;
                   gv += gv_t(cfv * screen * vis.m_values[vpol]);
                   float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
+                  K::printf("vis_local = %f\n", vis_local);
                   grid_wgt_l.vals[vpol] += cfv;
                   // Skewness calculation
                   if (n_grd_vis(X,Y) > 0) {
@@ -1622,6 +1623,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                     M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
                     M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
                     M_two += term_one;
+                    K::printf("term_one = %f, delta_n = %f, M2 = ", term_one, delta_n, M_two);
                   }
                   else {
                     int n_one = 1;
@@ -1636,13 +1638,14 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                     M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
                     M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
                     M_two += term_one;
+                    K::printf("term_one = %f, delta_n = %f, M2 = %f\n", term_one, delta_n, M_two);
                   }
                   K::printf("n_grd_vis(%d, %d) = %d, M3 = %f\n", X, Y, n_grd_vis(X,Y), M_three);
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
                 K::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
               }
-              float moment_vis = (sqrt(n_grd_vis(X,Y)) * M_three) / pow(M_three, 1.5);
+              float moment_vis = (sqrt(n_grd_vis(X,Y)) * M_three) / pow(M_two, 1.5);
               K::atomic_add(&moment_grd_vis(X, Y), moment_vis);
               K::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
               break;
@@ -1660,9 +1663,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   // Kurtosis calculation
                   if (n_grd_vis(X,Y) > 0) {
                     int n_one = n_grd_vis(X,Y);
-                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X,Y));
                     K::atomic_increment(&n_grd_vis(X,Y));
-                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X,Y));
                     float delta = vis_local - mean;
                     float delta_n = delta / n_grd_vis(X,Y);
                     float delta_n_two = pow(delta_n, 2);
@@ -1674,9 +1677,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   }
                   else {
                     int n_one = 1;
-                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X,Y));
                     K::atomic_increment(&n_grd_vis(X,Y));
-                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X,Y));
                     float delta = vis_local - mean;
                     float delta_n = delta / n_grd_vis(X,Y);
                     float delta_n_two = pow(delta_n, 2);
@@ -1686,7 +1689,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                     M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
                     M_two += term_one;
                   }
-                  K::printf("n_grd_vis(%d, %d) = %f, M4 = %f, M2 = %f\n", X, Y, n_grd_vis(X,Y), M_four, M_two);
+                  K::printf("n_grd_vis(%d, %d) = %d, M4 = %f, M2 = %f\n", X, Y, n_grd_vis(X,Y), M_four, M_two);
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
                 K::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
@@ -2005,7 +2008,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
-            auto moment = 3;
+            auto moment = 4;
             auto threshold = 3;
 
             Vis<N, execution_space> vis(
