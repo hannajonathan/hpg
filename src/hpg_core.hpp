@@ -1400,7 +1400,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const grid_view<grid_layout, memory_space>& grid,
     const grid_int_view<grid_layout, memory_space>& n_grid,
-    const grid_float_view<grid_layout, memory_space>& mean_grid,
+    const grid_view<grid_layout, memory_space>& mean_grid,
     const grid_float_view<grid_layout, memory_space>& moment_grid,
     const grid_float_view<grid_layout, memory_space>& threshold_grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
@@ -1553,6 +1553,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   gv += gv_t(cfv * screen * vis.m_values[vpol]);
                   float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
                   grid_wgt_l.vals[vpol] += cfv;
+                  // accumulate vis_local to mean_grid to get ready for weighted mean calc later
+                  K::atomic_add(&mean_grd_vis(X, Y), vis_local);
                   // Mean calculation
                   sum_of_visibilities += vis_local;
                   K::atomic_increment(&n_grd_vis(X,Y));
@@ -1576,6 +1578,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   gv += gv_t(cfv * screen * vis.m_values[vpol]);
                   float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
                   grid_wgt_l.vals[vpol] += cfv;
+                  // accumulate vis_local to mean_grid to get ready for weighted mean calc later
+                  K::atomic_add(&mean_grd_vis(X, Y), vis_local);
                   // Variance calculation
                   sum_of_visibilities += vis_local;
                   K::atomic_increment(&n_grd_vis(X,Y));
@@ -1609,6 +1613,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
                   K::printf("vis_local = %f\n", vis_local);
                   grid_wgt_l.vals[vpol] += cfv;
+                  // accumulate vis_local to mean_grid to get ready for weighted mean calc later
+                  K::atomic_add(&mean_grd_vis(X, Y), vis_local);
                   // Skewness calculation
                   if (n_grd_vis(X,Y) > 0) {
                     int n_one = n_grd_vis(X,Y);
@@ -1660,6 +1666,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   gv += gv_t(cfv * screen * vis.m_values[vpol]);
                   float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
                   grid_wgt_l.vals[vpol] += cfv;
+                  // accumulate vis_local to mean_grid to get ready for weighted mean calc later
+                  K::atomic_add(&mean_grd_vis(X, Y), vis_local);
                   // Kurtosis calculation
                   if (n_grd_vis(X,Y) > 0) {
                     int n_one = n_grd_vis(X,Y);
@@ -1725,35 +1733,14 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             grid_value_fp(mag(grid_wgt.vals[vpol]) * vis.m_weights[vpol]); // magnitude of complex vpol'th value of grid weights * vpol'th value of vis weights
         K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt); // add total weight to weights(grid polarization, grid cube index)
       });
-    
-    // Weighted average (using both grid weights and vis weights--is this correct?) applied only to mean_grid
-    // std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside final parallel_for" << std::endl;
-    // K::parallel_for(
-    //   K::TeamThreadRange(team_member, N_X),
-    //   [=] (const int X) {
-    //     for (int Y = 0; Y < N_Y; ++Y){
-    //       // //std::cout << "inside final parallel_for" << std::endl;
-    //       gv_t mean_vis = grd_vis(X,Y) / weights(gpol, vis.m_grid_cube);
-    //       pseudo_atomic_add<execution_space>(mean_grd_vis(X, Y), mean_vis);
-    //       gv_t threshold_vis = mean_grd_vis(X, Y) + n_threshold * moment_grd_vis(X, Y);
-    //       K::atomic_add(&threshold_grd_vis(X, Y), threshold_vis);
-    //       // //std::cout << "done with one iteration of final parallel_for" << std::endl;
-    //     }
-    //   });
 
       K::parallel_for(
         K::TeamThreadRange(team_member, N_X),
         [=] (const int X) {
           for (int Y = 0; Y < N_Y; ++Y){
-            for (int vpol = 0; vpol < N; ++vpol) {
-              if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
-                float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
-                float mean_vis = vis_local / float(weights(gpol, vis.m_grid_cube));
-                K::atomic_add(&mean_grd_vis(X, Y), mean_vis);
-                float threshold_vis = mean_grd_vis(X, Y) + n_threshold * moment_grd_vis(X, Y);
-                K::atomic_add(&threshold_grd_vis(X, Y), threshold_vis);
-              }
-            }
+            K::atomic_divide(&mean_grd_vis(X, Y), float(weights(gpol, vis.m_grid_cube)));
+            float threshold_vis = mean_grd_vis(X, Y) + n_threshold * moment_grd_vis(X, Y);
+            K::atomic_add(&threshold_grd_vis(X, Y), threshold_vis);
           }
         });
 
@@ -1893,7 +1880,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_grid_view<grid_layout, memory_space>& model,
     const grid_view<grid_layout, memory_space>& grid,
     const grid_int_view<grid_layout, memory_space>& n_grid,
-    const grid_float_view<grid_layout, memory_space>& mean_grid,
+    const grid_view<grid_layout, memory_space>& mean_grid,
     const grid_float_view<grid_layout, memory_space>& moment_grid,
     const grid_float_view<grid_layout, memory_space>& threshold_grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
