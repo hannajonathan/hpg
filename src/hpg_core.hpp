@@ -1554,7 +1554,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   // Mean calculation
                   grid_wgt_l.vals[vpol] += cfv;
                   pseudo_atomic_add<execution_space>(sum_of_visibilities, gv);
-                  n_grid(X,Y)++;
+                  n_grd_vis(X,Y)++;
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
                 Kokkos::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
@@ -1580,9 +1580,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   // std::cout << "before psuedo_atomic_add 1" << std::endl;
                   pseudo_atomic_add<execution_space>(sum_of_visibilities, gv);
                   // std::cout << "before variance +=" << std::endl;
-                  n_grd_vis(X,Y)++;
+                  K::atomic_increment(&n_grd_vis(X,Y));
                   variance += gv_t(pow(n_grd_vis(X,Y)*gv - sum_of_visibilities, 2) / (n_grd_vis(X,Y) * (n_grd_vis(X,Y) - 1)));
-                  Kokkos::printf("n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X, Y));
+                  Kokkos::printf("n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X, Y));
                 }
                 // std::cout << "before psuedo_atomic_add 2" << std::endl;
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
@@ -1604,21 +1604,21 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   cfv.imag() *= cf_im_factor;
                   gv += gv_t(cfv * screen * vis.m_values[vpol]);
                   grid_wgt_l.vals[vpol] += cfv;
-                  gv_t n_one = n_grid(X,Y);
-                  n_grid(X,Y)++;
+                  gv_t n_one = n_grd_vis(X,Y);
+                  n_grd_vis(X,Y)++;
                   gv_t delta = gv - mean;
-                  gv_t delta_n = delta / n_grid(X,Y);
+                  gv_t delta_n = delta / n_grd_vis(X,Y);
                   gv_t delta_n_two = pow(delta_n, 2);
                   gv_t term_one = delta * delta_n * n_one;
                   mean += delta_n;
-                  M_four += term_one * delta_n_two * (pow(n_grid(X,Y),2) - 3*n_grid(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
-                  M_three += term_one * delta_n * (n_grid(X,Y) - 2) - 3 * delta_n * M_two;
+                  M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                  M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
                   M_two += term_one;
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
                 Kokkos::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
               }
-              gv_t moment_vis((sqrt(n_grid(X,Y)) * M_three) / pow(M_three, 1.5));
+              gv_t moment_vis((sqrt(n_grd_vis(X,Y)) * M_three) / pow(M_three, 1.5));
               pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), moment_vis);
               Kokkos::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
               // std::cout << "Exiting case 3 skewness" << std::endl;
@@ -1638,14 +1638,14 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   // std::cout << "vis.m_values[vpol] = " << vis.m_values[vpol] << std::endl;
                   // std::cout << "gv = " << gv << std::endl;
                   grid_wgt_l.vals[vpol] += cfv;
-                  gv_t n_one = n_grid(X,Y);
+                  gv_t n_one = n_grd_vis(X,Y);
                   // std::cout << "n_one = " << n_one << std::endl;
-                  n_grid(X,Y)++;
+                  n_grd_vis(X,Y)++;
                   // std::cout << "n = " << n << std::endl;
                   gv_t delta = gv - mean;
                   Kokkos::printf("(gv, not actual vis) grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
                   // std::cout << "delta = " << delta << std::endl;
-                  gv_t delta_n = delta / n_grid(X,Y);
+                  gv_t delta_n = delta / n_grd_vis(X,Y);
                   // std::cout << "delta_n = " << delta_n << std::endl;
                   gv_t delta_n_two = pow(delta_n, 2);
                   // std::cout << "delta_n_two = " << delta_n_two << std::endl;
@@ -1653,8 +1653,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   // std::cout << "term_one = " << term_one << std::endl;
                   mean += delta_n;
                   // std::cout << "mean = " << mean << std::endl;
-                  M_four += term_one * delta_n_two * (pow(n_grid(X,Y),2) - 3*n_grid(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
-                  M_three += term_one * delta_n * (n_grid(X,Y) - 2) - 3 * delta_n * M_two;
+                  M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                  M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
                   M_two += term_one;
                   // std::cout << "M_four = " << M_four << std::endl;
                   // std::cout << "M_three = " << M_three << std::endl;
