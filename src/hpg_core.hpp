@@ -1582,7 +1582,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   // std::cout << "before variance +=" << std::endl;
                   K::atomic_increment(&n_grd_vis(X,Y));
                   variance += gv_t(pow(n_grd_vis(X,Y)*gv - sum_of_visibilities, 2) / (n_grd_vis(X,Y) * (n_grd_vis(X,Y) - 1)));
-                  Kokkos::printf("n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X, Y));
+                  Kokkos::printf("n_grd_vis(%d, %d, %f) = %d\n", X, Y, n_grd_vis(X, Y), variance);
+                  // Kokkos::printf("n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X, Y));
                 }
                 // std::cout << "before psuedo_atomic_add 2" << std::endl;
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
