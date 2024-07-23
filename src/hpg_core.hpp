@@ -26,6 +26,7 @@
 #include <string>
 #include <tuple>
 #include <iostream>
+#include <stdio.h>
 
 #include <Kokkos_Core.hpp>
 
@@ -1342,7 +1343,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           K::pair<int, int>(vis.m_grid_coord[1], vis.m_grid_coord[1] + N_Y),
           K::ALL,
           vis.m_grid_cube); // Grid cube index
-
+      
       // loop over model polarizations
       for (int gpol = 0; gpol < N_R; ++gpol) {
         decltype(vis_array) va; // Create vis_array va (?)
@@ -1359,12 +1360,17 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
               for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = degridding_mindex(gpol, vpol); // IDK
                     mindex >= 0) {
-                  if (model_vis(X, Y, vpol) > threshold_grd_vis(X, Y, gpol)) {
-                    // flag       
+                  float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
+                  cf_t cfv = cf_vis(X, Y, mindex); // conv. func. cfv = (X,Y,mindex)th element of cf_vis
+                  cfv.imag() *= cf_im_factor; // Im(cfv) = Im(cfv) * cf_im_factor
+                  // flag values greater than threshold
+                  if (vis_local > threshold_grd_vis(X, Y, gpol)) {
+                    K::printf("vis_local = %f, threshold_grd_vis(%d, %d, %d) = %f\n", vis_local, X, Y, gpol, threshold_grd_vis(X, Y, gpol));
+                    vis_array_l.vis[vpol] = 0;
+                    vis_array_l.wgt[vpol] = 0;
+                    K::printf("vis_array_l.vis[%d] = %d, vis_array_l_wgt[%d] = %d\n", vpol, vis_array_l.vis[vpol], vpol, vis_array_l.wgt[vpol]);
                   }
                   else {
-                    cf_t cfv = cf_vis(X, Y, mindex); // conv. func. cfv = (X,Y,mindex)th element of cf_vis
-                    cfv.imag() *= cf_im_factor; // Im(cfv) = Im(cfv) * cf_im_factor
                     vis_array_l.vis[vpol] += cfv * mv;
                     vis_array_l.wgt[vpol] += cfv;
                   }
@@ -1378,13 +1384,15 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       // apply weights and phasor to compute predicted visibilities
       auto conj_phasor = vis.m_phasor;
       conj_phasor.imag() *= -1;
-      for (int vpol = 0; vpol < N; ++vpol)
+      for (int vpol = 0; vpol < N; ++vpol) {
         result.vals[vpol] =
           (vis_array.vis[vpol]
            / ((vis_array.wgt[vpol] != (acc_cf_t)0) // if weight != (acc_cf_t) 0, then use weight. Else, set weight = (acc_cf_t) 1, then use.
               ? vis_array.wgt[vpol]
               : (acc_cf_t)1))
           * conj_phasor;
+        K::printf("result.vals[%d] = %f", vpol, result.vals[vpol]);
+      }
     }
     return result;
   }
@@ -1738,8 +1746,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         K::TeamThreadRange(team_member, N_X),
         [=] (const int X) {
           for (int Y = 0; Y < N_Y; ++Y){
-            K::atomic_divide(&mean_grd_vis(X, Y), float(weights(gpol, vis.m_grid_cube)));
-            float threshold_vis = mean_grd_vis(X, Y) + n_threshold * moment_grd_vis(X, Y);
+            K::atomic_div_fetch(&mean_grd_vis(X, Y), float(weights(gpol, vis.m_grid_cube)));
+            // assuming moment = 2, sqrt(variance) = standard deviation
+            float threshold_vis = (mean_grd_vis(X, Y).real() + n_threshold * sqrt(moment_grd_vis(X, Y)));
             K::atomic_add(&threshold_grd_vis(X, Y), threshold_vis);
           }
         });
@@ -1920,13 +1929,14 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           // within grid bounds
           if (all_within_grid(vis, grid_size)) {
             gvis =
-              degrid_vis<cf_layout, grid_layout, memory_space>(
+              degrid_vis_weighted_mean<cf_layout, grid_layout, memory_space>(
                 team_member,
                 vis,
                 cfs[vis.m_cf_grp],
                 mueller_indexes,
                 conjugate_mueller_indexes,
                 model,
+                threshold_grid,
                 scratch_phscr_view(
                   team_member.team_scratch(0),
                   max_cf_extent_y));
@@ -2011,7 +2021,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
-            auto moment = 4;
+            auto moment = 2;
             auto threshold = 3;
 
             Vis<N, execution_space> vis(
