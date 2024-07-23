@@ -742,8 +742,8 @@ public:
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_grid;
   impl::core::grid_int_view<typename grid_layout::layout, memory_space> m_n_grid;
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_mean_grid;
-  impl::core::grid_view<typename grid_layout::layout, memory_space> m_moment_grid;
-  impl::core::grid_view<typename grid_layout::layout, memory_space> m_threshold_grid;
+  impl::core::grid_float_view<typename grid_layout::layout, memory_space> m_moment_grid;
+  impl::core::grid_float_view<typename grid_layout::layout, memory_space> m_threshold_grid;
   impl::core::weight_view<typename execution_space::array_layout, memory_space>
     m_weights;
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_model;

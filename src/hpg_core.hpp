@@ -292,6 +292,9 @@ using grid_view = K::View<gv_t****, Layout, memory_space>;
 template <typename Layout, typename memory_space>
 using grid_int_view = K::View<int****, Layout, memory_space>;
 
+template <typename Layout, typename memory_space>
+using grid_float_view = K::View<float****, Layout, memory_space>;
+
 /** View type for constant grid values */
 template <typename Layout, typename memory_space>
 using const_grid_view = K::View<const gv_t****, Layout, memory_space>;
@@ -1277,7 +1280,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const const_mindex_view<memory_space>& mueller_indexes,
     const const_mindex_view<memory_space>& conjugate_mueller_indexes,
     const const_grid_view<grid_layout, memory_space>& model,
-    const grid_view<grid_layout, memory_space>& threshold_grid,
+    const grid_float_view<grid_layout, memory_space>& threshold_grid,
     const scratch_phscr_view& phi_Y) {
 
     // //std::cout << "degrid_vis_weighted_mean in visibilitygridder 2" << std::endl;
@@ -1398,8 +1401,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const grid_view<grid_layout, memory_space>& grid,
     const grid_int_view<grid_layout, memory_space>& n_grid,
     const grid_view<grid_layout, memory_space>& mean_grid,
-    const grid_view<grid_layout, memory_space>& moment_grid,
-    const grid_view<grid_layout, memory_space>& threshold_grid,
+    const grid_float_view<grid_layout, memory_space>& moment_grid,
+    const grid_float_view<grid_layout, memory_space>& threshold_grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
     weights,
     const scratch_phscr_view& phi_Y,
@@ -1539,39 +1542,34 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         for (int Y = 0; Y < N_Y; ++Y) {
           const cf_t screen = cphase<execution_space>(phi_X + phi_Y(Y)); // complex conversion of phase gradient
           gv_t gv(0);
-          //std::cout << "right before moment switch" << std::endl;
           switch (moment) {
-            //std::cout << "entering moment switch" << std::endl;
             // First raw moment: mean
             case 1: {
-              // //std::cout << "Entering case 1 mean" << std::endl;
-              gv_t sum_of_visibilities(0);
+              float sum_of_visibilities(0);
               for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
                   cf_t cfv = cf_vis(X, Y, mindex);
                   cfv.imag() *= cf_im_factor;
                   gv += gv_t(cfv * screen * vis.m_values[vpol]);
-                  // Mean calculation
+                  float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
                   grid_wgt_l.vals[vpol] += cfv;
-                  pseudo_atomic_add<execution_space>(sum_of_visibilities, gv);
-                  n_grd_vis(X,Y)++;
+                  // Mean calculation
+                  sum_of_visibilities += vis_local;
+                  K::atomic_increment(&n_grd_vis(X,Y));
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
-                Kokkos::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
+                K::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
               }
-              gv_t moment_vis = sum_of_visibilities / (N_X + N_Y);
-              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), moment_vis);
-              Kokkos::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
-              // //std::cout << "Exiting case 1 mean" << std::endl;
+              float mean = sum_of_visibilities / (N_X + N_Y);
+              K::atomic_add(&moment_grd_vis(X, Y), mean);
+              K::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
               break;
             }
             // Second central moment: variance
             case 2: {
-              // //std::cout << "Entering case 2 variance\n";
               gv_t sum_of_gvs(0);
               float sum_of_visibilities(0), variance(0);
               for (int vpol = 0; vpol < N; ++vpol) {
-                // //std::cout << "inside vpol variance" << std::endl;
                 if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
                   cf_t cfv = cf_vis(X, Y, mindex);
                   cfv.imag() *= cf_im_factor;
@@ -1579,110 +1577,123 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
                   grid_wgt_l.vals[vpol] += cfv;
                   // Variance calculation
-                  // //std::cout << "before psuedo_atomic_add 1" << std::endl;
                   sum_of_visibilities += vis_local;
-                  // //std::cout << "before variance +=" << std::endl;
                   K::atomic_increment(&n_grd_vis(X,Y));
-                  // S += 1/(j(j-1)) * (j * x_j - T)^2, S = variance, j = num of data points, x_j = j'th data point, T = sum of data points
+                  // Single-pass online variance equation
+                  // S += 1/(j(j-1)) * (j * x_j - T)^2
+                  // S = variance, j = num of data points, x_j = j'th data point, T = sum of data points
                   if (n_grd_vis(X,Y) > 1)
-                  variance += float(pow(n_grd_vis(X,Y)*vis_local - sum_of_visibilities, 2) / (n_grd_vis(X,Y) * (n_grd_vis(X,Y) - 1)));
+                    variance += float(pow(n_grd_vis(X,Y)*vis_local - sum_of_visibilities, 2) / (n_grd_vis(X,Y) * (n_grd_vis(X,Y) - 1)));
                   else {
                     K::printf("variance = %f\n",variance);
                     int tmp_var=5;
                     variance += float(pow(tmp_var*vis_local - sum_of_visibilities, 2) / (tmp_var * (tmp_var - 1)));                  
                   }
                   K::printf("n_grd_vis(%d, %d) = %d, variance = %f, sum_of_vis = %f, vis_local = %f\n", X, Y, n_grd_vis(X, Y), variance, sum_of_visibilities, vis_local);
-                  // Kokkos::printf("n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X, Y));
                 }
-                // //std::cout << "before psuedo_atomic_add 2" << std::endl;
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
                 K::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
               }
-              // //std::cout << "before psuedo_atomic_add 3" << std::endl;
-              // pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), variance);
-              // Kokkos::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
-              // //std::cout << "Exiting case 2 variance\n";
+              K::atomic_add(&moment_grd_vis(X, Y), variance);
+              Kokkos::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
               break;
             }
             // Third standardized moment: skewness
             case 3: {
-              // //std::cout << "Entering case 3 skewness" << std::endl;
-              gv_t sum_of_visibilities(0), variance(0), n(0), mean(0), M_two(0), M_three(0), M_four(0);
+              float mean(0), M_two(0), M_three(0), M_four(0);
               for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
                   cf_t cfv = cf_vis(X, Y, mindex);
                   cfv.imag() *= cf_im_factor;
                   gv += gv_t(cfv * screen * vis.m_values[vpol]);
+                  float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
                   grid_wgt_l.vals[vpol] += cfv;
-                  gv_t n_one = n_grd_vis(X,Y);
-                  n_grd_vis(X,Y)++;
-                  gv_t delta = gv - mean;
-                  gv_t delta_n = delta / n_grd_vis(X,Y);
-                  gv_t delta_n_two = pow(delta_n, 2);
-                  gv_t term_one = delta * delta_n * n_one;
-                  mean += delta_n;
-                  M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
-                  M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
-                  M_two += term_one;
+                  // Skewness calculation
+                  if (n_grd_vis(X,Y) > 0) {
+                    int n_one = n_grd_vis(X,Y);
+                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::atomic_increment(&n_grd_vis(X,Y));
+                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    float delta = vis_local - mean;
+                    float delta_n = delta / n_grd_vis(X,Y);
+                    float delta_n_two = pow(delta_n, 2);
+                    float term_one = delta * delta_n * n_one;
+                    mean += delta_n;
+                    M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                    M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
+                    M_two += term_one;
+                  }
+                  else {
+                    int n_one = 1;
+                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::atomic_increment(&n_grd_vis(X,Y));
+                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    float delta = vis_local - mean;
+                    float delta_n = delta / n_grd_vis(X,Y);
+                    float delta_n_two = pow(delta_n, 2);
+                    float term_one = delta * delta_n * n_one;
+                    mean += delta_n;
+                    M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                    M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
+                    M_two += term_one;
+                  }
+                  K::printf("n_grd_vis(%d, %d) = %f, M3 = %f\n", X, Y, n_grd_vis(X,Y), M_three);
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
-                Kokkos::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
+                K::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
               }
-              gv_t moment_vis((sqrt(n_grd_vis(X,Y)) * M_three) / pow(M_three, 1.5));
-              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), moment_vis);
-              Kokkos::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
-              // //std::cout << "Exiting case 3 skewness" << std::endl;
+              float moment_vis = (sqrt(n_grd_vis(X,Y)) * M_three) / pow(M_three, 1.5);
+              K::atomic_add(&moment_grd_vis(X, Y), moment_vis);
+              K::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
               break;
             }
             // Fourth standardized moment: kurtosis
             case 4: {
-              //std::cout << "Entering case 4 kurtosis" << std::endl;
-              gv_t sum_of_visibilities(0), variance(0), n(0), mean(0), M_two(0), M_three(0), M_four(0);
+              float mean(0), M_two(0), M_three(0), M_four(0);
               for (int vpol = 0; vpol < N; ++vpol) {
                 if (const auto mindex = gridding_mindex(vpol); mindex >= 0) {
                   cf_t cfv = cf_vis(X, Y, mindex);
                   cfv.imag() *= cf_im_factor;
                   gv += gv_t(cfv * screen * vis.m_values[vpol]);
-                  // //std::cout << "cfv = " << cfv << std::endl;
-                  // //std::cout << "screen = " << screen << std::endl;
-                  // //std::cout << "vis.m_values[vpol] = " << vis.m_values[vpol] << std::endl;
-                  // //std::cout << "gv = " << gv << std::endl;
+                  float vis_local = K::sqrt(vis.m_values[vpol].real() * vis.m_values[vpol].real() + vis.m_values[vpol].imag() * vis.m_values[vpol].imag());
                   grid_wgt_l.vals[vpol] += cfv;
-                  gv_t n_one = n_grd_vis(X,Y);
-                  // //std::cout << "n_one = " << n_one << std::endl;
-                  n_grd_vis(X,Y)++;
-                  // //std::cout << "n = " << n << std::endl;
-                  gv_t delta = gv - mean;
-                  Kokkos::printf("(gv, not actual vis) grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
-                  // //std::cout << "delta = " << delta << std::endl;
-                  gv_t delta_n = delta / n_grd_vis(X,Y);
-                  // //std::cout << "delta_n = " << delta_n << std::endl;
-                  gv_t delta_n_two = pow(delta_n, 2);
-                  // //std::cout << "delta_n_two = " << delta_n_two << std::endl;
-                  gv_t term_one = delta * delta_n * n_one;
-                  // //std::cout << "term_one = " << term_one << std::endl;
-                  mean += delta_n;
-                  // //std::cout << "mean = " << mean << std::endl;
-                  M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
-                  M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
-                  M_two += term_one;
-                  // //std::cout << "M_four = " << M_four << std::endl;
-                  // //std::cout << "M_three = " << M_three << std::endl;
-                  // //std::cout << "M_two = " << M_two << std::endl;
-                  // //std::cout << "vpol, N = " << vpol << ", " << N << std::endl;
+                  // Kurtosis calculation
+                  if (n_grd_vis(X,Y) > 0) {
+                    int n_one = n_grd_vis(X,Y);
+                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::atomic_increment(&n_grd_vis(X,Y));
+                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    float delta = vis_local - mean;
+                    float delta_n = delta / n_grd_vis(X,Y);
+                    float delta_n_two = pow(delta_n, 2);
+                    float term_one = delta * delta_n * n_one;
+                    mean += delta_n;
+                    M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                    M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
+                    M_two += term_one;
+                  }
+                  else {
+                    int n_one = 1;
+                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::atomic_increment(&n_grd_vis(X,Y));
+                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    float delta = vis_local - mean;
+                    float delta_n = delta / n_grd_vis(X,Y);
+                    float delta_n_two = pow(delta_n, 2);
+                    float term_one = delta * delta_n * n_one;
+                    mean += delta_n;
+                    M_four += term_one * delta_n_two * (pow(n_grd_vis(X,Y),2) - 3*n_grd_vis(X,Y) + 3) + 6 * delta_n_two * M_two - 4 * delta_n * M_three;
+                    M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
+                    M_two += term_one;
+                  }
+                  K::printf("n_grd_vis(%d, %d) = %f, M4 = %f, M2 = %f\n", X, Y, n_grd_vis(X,Y), M_four, M_two);
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
-                // Kokkos::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
-                //std::cout << "grd_vis" << "(" << X << "," << Y << ") = " << grd_vis(X,Y) << std::flush;
+                K::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
               }
-              gv_t moment_vis((n * M_four) / pow(M_two, 2) - 3);
-              // //std::cout << "n * M_four = " << n * M_four << std::endl;
-              // //std::cout << "pow(M_two, 2) = " << pow(M_two, 2) << std::endl;
-              // //std::cout << "gv_t moment_vis = " << moment_vis << std::endl;
-              pseudo_atomic_add<execution_space>(moment_grd_vis(X, Y), moment_vis);
-              // Kokkos::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
-              //std::cout << "moment_grd_vis" << "(" << X << "," << Y << ") = " << moment_grd_vis(X,Y) << std::flush;
-              //std::cout << "Exiting case 4 kurtosis" << std::endl;
+              float moment_vis = (n_grd_vis(X,Y) * M_four) / pow(M_two, 2) - 3;
+              K::atomic_add(&moment_grd_vis(X, Y), moment_vis);
+              K::printf("moment_grid(%d, %d) = %f\n", X, Y, moment_grd_vis(X, Y));
               break;
             }
           }
@@ -1712,20 +1723,20 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt); // add total weight to weights(grid polarization, grid cube index)
       });
     
-    // Weighted average (using both grid weights and vis weights--is this correct?) applied only to mean_grid
-    // //std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside final parallel_for" << std::endl;
-    K::parallel_for(
-      K::TeamThreadRange(team_member, N_X),
-      [=] (const int X) {
-        for (int Y = 0; Y < N_Y; ++Y){
-          // //std::cout << "inside final parallel_for" << std::endl;
-          gv_t mean_vis = grd_vis(X,Y) / weights(gpol, vis.m_grid_cube);
-          pseudo_atomic_add<execution_space>(mean_grd_vis(X, Y), mean_vis);
-          gv_t threshold_vis = mean_grd_vis(X, Y) + n_threshold * moment_grd_vis(X, Y);
-          pseudo_atomic_add<execution_space>(threshold_grd_vis(X, Y), threshold_vis);
-          // //std::cout << "done with one iteration of final parallel_for" << std::endl;
-        }
-      });
+    // // Weighted average (using both grid weights and vis weights--is this correct?) applied only to mean_grid
+    // // //std::cout << "grid_vis_weighted_mean in visibilitygridder 2 outside final parallel_for" << std::endl;
+    // K::parallel_for(
+    //   K::TeamThreadRange(team_member, N_X),
+    //   [=] (const int X) {
+    //     for (int Y = 0; Y < N_Y; ++Y){
+    //       // //std::cout << "inside final parallel_for" << std::endl;
+    //       gv_t mean_vis = grd_vis(X,Y) / weights(gpol, vis.m_grid_cube);
+    //       pseudo_atomic_add<execution_space>(mean_grd_vis(X, Y), mean_vis);
+    //       gv_t threshold_vis = mean_grd_vis(X, Y) + n_threshold * moment_grd_vis(X, Y);
+    //       K::atomic_add(&threshold_grd_vis(X, Y), threshold_vis);
+    //       // //std::cout << "done with one iteration of final parallel_for" << std::endl;
+    //     }
+    //   });
 
     K::parallel_for(
       K::TeamThreadRange(team_member, 4),
@@ -1864,8 +1875,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
     const grid_view<grid_layout, memory_space>& grid,
     const grid_int_view<grid_layout, memory_space>& n_grid,
     const grid_view<grid_layout, memory_space>& mean_grid,
-    const grid_view<grid_layout, memory_space>& moment_grid,
-    const grid_view<grid_layout, memory_space>& threshold_grid,
+    const grid_float_view<grid_layout, memory_space>& moment_grid,
+    const grid_float_view<grid_layout, memory_space>& threshold_grid,
     const weight_view<typename execution_space::array_layout, memory_space>&
       weights) {
 
@@ -1994,7 +2005,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
           KOKKOS_LAMBDA(const member_type& team_member) {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
-            auto moment = 2;
+            auto moment = 3;
             auto threshold = 3;
 
             Vis<N, execution_space> vis(
