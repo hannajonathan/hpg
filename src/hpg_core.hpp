@@ -1611,9 +1611,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   // Skewness calculation
                   if (n_grd_vis(X,Y) > 0) {
                     int n_one = n_grd_vis(X,Y);
-                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::printf(">0 BEFORE INCREMENT n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X,Y));
                     K::atomic_increment(&n_grd_vis(X,Y));
-                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::printf(">0 AFTER INCREMENT n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X,Y));
                     float delta = vis_local - mean;
                     float delta_n = delta / n_grd_vis(X,Y);
                     float delta_n_two = pow(delta_n, 2);
@@ -1625,9 +1625,9 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   }
                   else {
                     int n_one = 1;
-                    K::printf("BEFORE INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::printf("else BEFORE INCREMENT n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X,Y));
                     K::atomic_increment(&n_grd_vis(X,Y));
-                    K::printf("AFTER INCREMENT n_grd_vis(%d, %d) = %f\n", X, Y, n_grd_vis(X,Y));
+                    K::printf("else AFTER INCREMENT n_grd_vis(%d, %d) = %d\n", X, Y, n_grd_vis(X,Y));
                     float delta = vis_local - mean;
                     float delta_n = delta / n_grd_vis(X,Y);
                     float delta_n_two = pow(delta_n, 2);
@@ -1637,7 +1637,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                     M_three += term_one * delta_n * (n_grd_vis(X,Y) - 2) - 3 * delta_n * M_two;
                     M_two += term_one;
                   }
-                  K::printf("n_grd_vis(%d, %d) = %f, M3 = %f\n", X, Y, n_grd_vis(X,Y), M_three);
+                  K::printf("n_grd_vis(%d, %d) = %d, M3 = %f\n", X, Y, n_grd_vis(X,Y), M_three);
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
                 K::printf("grd_vis(%d, %d) = %f\n", X, Y, grd_vis(X, Y));
