@@ -1147,8 +1147,10 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                     mindex >= 0) {
                   cf_t cfv = cf_vis(X, Y, mindex); // conv. func. cfv = (X,Y,mindex)th element of cf_vis
                   cfv.imag() *= cf_im_factor; // Im(cfv) = Im(cfv) * cf_im_factor
-                  vis_array_l.vis[vpol] += cfv * mv;
-                  vis_array_l.wgt[vpol] += cfv;
+                  // vis_array_l.vis[vpol] += cfv * mv;
+                  // vis_array_l.wgt[vpol] += cfv;
+                  vis_array_l.vis[vpol] = 0;
+                  vis_array_l.wgt[vpol] = 0;
                 }
               }
             }
@@ -1161,12 +1163,12 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
       auto conj_phasor = vis.m_phasor;
       conj_phasor.imag() *= -1;
       for (int vpol = 0; vpol < N; ++vpol)
-        result.vals[vpol] =
-          (vis_array.vis[vpol]
-           / ((vis_array.wgt[vpol] != (acc_cf_t)0) // if weight != (acc_cf_t) 0, then use weight. Else, set weight = (acc_cf_t) 1, then use.
-              ? vis_array.wgt[vpol]
-              : (acc_cf_t)1))
-          * conj_phasor;
+        result.vals[vpol] = 0;
+          // (vis_array.vis[vpol]
+          //  / ((vis_array.wgt[vpol] != (acc_cf_t)0) // if weight != (acc_cf_t) 0, then use weight. Else, set weight = (acc_cf_t) 1, then use.
+          //     ? vis_array.wgt[vpol]
+          //     : (acc_cf_t)1))
+          // * conj_phasor;
     }
     return result;
   }
@@ -1364,16 +1366,21 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   cf_t cfv = cf_vis(X, Y, mindex); // conv. func. cfv = (X,Y,mindex)th element of cf_vis
                   cfv.imag() *= cf_im_factor; // Im(cfv) = Im(cfv) * cf_im_factor
                   // flag values greater than threshold
+                  K::printf("threshold_grd_vis(%d, %d, %d) = %f\n", X, Y, gpol, threshold_grd_vis(X,Y,gpol));
+                  K::printf("vis_local = %f\n", vis_local);
                   if (vis_local > threshold_grd_vis(X, Y, gpol)) {
-                    K::printf("vis_local = %f, threshold_grd_vis(%d, %d, %d) = %f\n", vis_local, X, Y, gpol, threshold_grd_vis(X, Y, gpol));
+                    K::printf("VIS_LOCAL GREATER THAN THRESHOLD\n");
                     vis_array_l.vis[vpol] = 0;
                     vis_array_l.wgt[vpol] = 0;
-                    K::printf("vis_array_l.vis[%d] = %d, vis_array_l_wgt[%d] = %d\n", vpol, vis_array_l.vis[vpol], vpol, vis_array_l.wgt[vpol]);
                   }
                   else {
-                    vis_array_l.vis[vpol] = 0;
-                    vis_array_l.wgt[vpol] = 0;
+                    K::printf("vis_local less than threshold\n");
+                    vis_array_l.vis[vpol] += cfv * mv;
+                    vis_array_l.wgt[vpol] += cfv;
                   }
+                  K::printf("vis_array_l.vis[%d] = %d, vis_array_l_wgt[%d] = %d\n", vpol, vis_array_l.vis[vpol], vpol, vis_array_l.wgt[vpol]);
+                  // vis_array_l.vis[vpol] = 0;
+                  // vis_array_l.wgt[vpol] = 0;
                 }
               }
             }
@@ -1391,7 +1398,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
               ? vis_array.wgt[vpol]
               : (acc_cf_t)1))
           * conj_phasor;
-        K::printf("result.vals[%d] = %f", vpol, result.vals[vpol]);
+        K::printf("result.vals[%d] = %f\n", vpol, result.vals[vpol]);
       }
     }
     return result;
@@ -1542,6 +1549,11 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
 
     // parallel loop over grid X
     // //std::cout << "parallel_reduce in visibilitygridder 2" << std::endl;
+
+    // FILE *fp;
+    // fp = fopen("flagged_values.csv", "w");
+    // fprintf(fp, "visibility\tfrequency\tu\tv\tw\n");
+
     K::parallel_reduce(
       K::TeamThreadRange(team_member, N_X),
       [=](const int X, decltype(grid_wgt)& grid_wgt_l) {
@@ -1588,6 +1600,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   grid_wgt_l.vals[vpol] += cfv;
                   // accumulate vis_local to mean_grid to get ready for weighted mean calc later
                   K::atomic_add(&mean_grd_vis(X, Y), vis_local);
+                  K::printf("BEFORE DIVISION: mean_grd_vis(%d,%d) = %f\n", X, Y, mean_grd_vis(X,Y));
                   // Variance calculation
                   sum_of_visibilities += vis_local;
                   K::atomic_increment(&n_grd_vis(X,Y));
@@ -1596,11 +1609,11 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                   // S = variance, j = num of data points, x_j = j'th data point, T = sum of data points
                   if (n_grd_vis(X,Y) > 1)
                     variance += float(pow(n_grd_vis(X,Y)*vis_local - sum_of_visibilities, 2) / (n_grd_vis(X,Y) * (n_grd_vis(X,Y) - 1)));
-                  else {
-                    K::printf("variance = %f\n",variance);
-                    int tmp_var=5;
-                    variance += float(pow(tmp_var*vis_local - sum_of_visibilities, 2) / (tmp_var * (tmp_var - 1)));                  
-                  }
+                  // else {
+                  //   K::printf("variance = %f\n",variance);
+                  //   int tmp_var=5;
+                  //   variance += float(pow(tmp_var*vis_local - sum_of_visibilities, 2) / (tmp_var * (tmp_var - 1)));                  
+                  // }
                   K::printf("n_grd_vis(%d, %d) = %d, variance = %f, sum_of_vis = %f, vis_local = %f\n", X, Y, n_grd_vis(X, Y), variance, sum_of_visibilities, vis_local);
                 }
                 pseudo_atomic_add<execution_space>(grd_vis(X, Y), gv);
@@ -1742,16 +1755,22 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
         K::atomic_add(&weights(gpol, vis.m_grid_cube), twgt); // add total weight to weights(grid polarization, grid cube index)
       });
 
-      K::parallel_for(
-        K::TeamThreadRange(team_member, N_X),
-        [=] (const int X) {
-          for (int Y = 0; Y < N_Y; ++Y){
-            K::atomic_div_fetch(&mean_grd_vis(X, Y), float(weights(gpol, vis.m_grid_cube)));
-            // assuming moment = 2, sqrt(variance) = standard deviation
-            float threshold_vis = (mean_grd_vis(X, Y).real() + n_threshold * sqrt(moment_grd_vis(X, Y)));
-            K::atomic_add(&threshold_grd_vis(X, Y), threshold_vis);
-          }
-        });
+    K::parallel_for(
+      K::TeamThreadRange(team_member, N_X),
+      [=] (const int X) {
+        for (int Y = 0; Y < N_Y; ++Y){
+          K::atomic_div_fetch(&mean_grd_vis(X, Y), float(weights(gpol, vis.m_grid_cube)));
+          K::printf("AFTER DIVISION: mean_grd_vis(%d,%d) = %f\n", X, Y, mean_grd_vis(X,Y));
+          // assuming moment = 2, sqrt(variance) = standard deviation
+          float threshold_vis = (mean_grd_vis(X, Y).real() + n_threshold * sqrt(moment_grd_vis(X, Y)));
+          K::atomic_add(&threshold_grd_vis(X, Y), threshold_vis);
+          K::printf("threshold_grd_vis(%d, %d) = %f\n", X, Y, threshold_grd_vis(X,Y));
+          // if (grd_vis(X, Y) > threshold_grd_vis(X, Y, gpol))
+           // fprintf(fp, "%f\t%d\t%d\t%d\t%d\n", vis_local, vis.m_values[vpol].m_freq, vis.m_values[vpol].m_uvw[0], vis.m_values[vpol].m_uvw[1], vis.m_values[vpol].m_uvw[2]);
+        }
+      });
+
+    // fclose(fp);
 
     K::parallel_for(
       K::TeamThreadRange(team_member, 4),
@@ -2022,7 +2041,7 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
             auto i = team_member.league_rank() / N_R;
             auto gpol = team_member.league_rank() % N_R;
             auto moment = 2;
-            auto threshold = 3;
+            auto threshold = 1;
 
             Vis<N, execution_space> vis(
               visibilities(i),
