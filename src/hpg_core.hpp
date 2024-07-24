@@ -1371,8 +1371,8 @@ struct /*HPG_EXPORT*/ VisibilityGridder<N, execution_space, 2> final {
                     K::printf("vis_array_l.vis[%d] = %d, vis_array_l_wgt[%d] = %d\n", vpol, vis_array_l.vis[vpol], vpol, vis_array_l.wgt[vpol]);
                   }
                   else {
-                    vis_array_l.vis[vpol] += cfv * mv;
-                    vis_array_l.wgt[vpol] += cfv;
+                    vis_array_l.vis[vpol] = 0;
+                    vis_array_l.wgt[vpol] = 0;
                   }
                 }
               }
