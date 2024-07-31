@@ -13,1755 +13,2846 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-#include "hpg_impl.hpp"
-#include "hpg_runtime.hpp"
+#pragma once
 
-#include <optional>
+#include "hpg_config.hpp"
+#include "hpg_version.hpp"
+#include "hpg_rval.hpp"
+#include "hpg_error.hpp"
+
+#include <cassert>
+#include <complex>
+#include <functional>
+#include <memory>
+#include <set>
 #include <string>
 #include <tuple>
-#include <variant>
 #include <vector>
-#include <iostream>
+#if HPG_API >= 17 || defined(HPG_INTERNAL)
+# include <optional>
+# include <variant>
+#endif
 
-using namespace hpg;
+#include "hpg_export.h"
 
-using ProfileRegion = runtime::impl::ProfileRegion;
-
-// don't do "using runtime" in file scope, since that namespace also has a class
-// named "GridderState", the use of which would then require disambiguation; I
-// prefer putting "using runtime" into method implementations where useful
-
-/** invalid number of Mueller index rows error
+/** @file hpg.hpp
  *
- * Number of rows of Mueller indexes does not equal grid "mrow" axis size */
-struct InvalidNumberMuellerIndexRowsError
-  : public Error {
+ * Main header file for top-level HPG API
+ */
 
-  InvalidNumberMuellerIndexRowsError()
-    : Error(
-      "Number of rows of Mueller indexes does not match grid",
-      ErrorType::InvalidNumberMuellerIndexRows) {}
+/** top-level HPG API namespace
+ */
+namespace hpg {
 
+/** initialization arguments
+ *
+ * This type is currently identical to the Kokkos type of the same name,
+ * although that could change in future versions.
+ *
+ * If you set num_threads to zero or less, Kokkos will try to determine default
+ * values if possible or otherwise set them to 1. In particular, Kokkos can use
+ * the hwloc library to determine default settings using the assumption that the
+ * process binding mask is unique, i.e., that this process does not share any
+ * cores with another process. Note that the default value of each parameter is
+ * -1.
+ */
+struct HPG_EXPORT InitArguments {
+
+  InitArguments()
+    : num_threads(-1)
+    , device_id(-1)
+    , disable_warnings(false)
+    , print_configuration(false)
+    , cleanup_fftw(false) {}
+
+  /** number of threads per NUMA region */
+  int num_threads;
+
+  /** device id to be used */
+  int device_id;
+
+  /** disable Kokkos warnings */
+  bool disable_warnings;
+
+  /** print configuration */
+  bool print_configuration;
+
+  /** cleanup fftw on finalization */
+  bool cleanup_fftw;
 };
 
-Error::Error(const std::string& msg, ErrorType err)
-  : m_type(err)
-  , m_msg(msg) {}
+/** global initialization of hpg
+ *
+ * Function is idempotent, but should not be called by a process after a call to
+ * hpg::finalize(). All objects created by hpg must only exist between an
+ * initialize()/finalize() pair; in particular, any hpg object destructors must
+ * be called before the call to finalize(). A common approach is to access hpg
+ * within a new scope after the call to initialize():
+ * @code{.cpp}
+ *     int main() {
+ *       hpg::initialize();
+ *       {
+ *         Gridder g(...);
+ *       }
+ *       hpg::finalize();
+ *     }
+ * @endcode
+ * Another approach involves the use of a ScopeGuard instance.
+ *
+ * @return true, if and only if initialization succeeded
+ */
+HPG_EXPORT bool initialize();
 
-const std::string&
-Error::message() const {
-  return m_msg;
-}
+/** global initialization of hpg, with arguments
+ *
+ * @param args initialization parameters
+ */
+HPG_EXPORT bool initialize(const InitArguments& args);
 
-ErrorType
-Error::type() const {
-  return m_type;
-}
+/** global finalization of hpg
+ *
+ * Function is idempotent, but should only be called by a process after a call
+ * to hpg::initialize()
+ */
+HPG_EXPORT void finalize();
 
-Error::~Error() {}
+/** query whether hpg has been initialized
+ *
+ * Note the result will remain "true" after finalization.
+ */
+HPG_EXPORT bool is_initialized() noexcept;
 
-bool
-hpg::is_initialized() noexcept {
-  return runtime::impl::is_initialized();
-}
+/** backend device type
+ */
+enum class HPG_EXPORT Device {
+  Serial, /**< serial device */
+  OpenMP, /**< OpenMP device */
+  Cuda, /**< CUDA device */
+};
 
-bool
-hpg::initialize() {
-  return initialize(InitArguments());
-}
+/** supported devices */
+HPG_EXPORT const std::set<Device>&
+devices() noexcept;
 
-bool
-hpg::initialize(const InitArguments& args) {
-  return runtime::impl::initialize(args);
-}
+/** supported host devices */
+HPG_EXPORT const std::set<Device>&
+host_devices() noexcept;
 
-void
-hpg::finalize() {
-  runtime::impl::finalize();
-}
+/** identification string for unspecified CF layout */
+extern const char * const cf_layout_unspecified_version;
 
-const std::set<Device>&
-hpg::devices() noexcept {
-  static const std::set<Device> result{
-#ifdef HPG_ENABLE_SERIAL
-    Device::Serial,
-#endif
-#ifdef HPG_ENABLE_OPENMP
-    Device::OpenMP,
-#endif
-#ifdef HPG_ENABLE_CUDA
-    Device::Cuda,
-#endif
-  };
-  return result;
-}
+/** hpg scope object
+ *
+ * Intended to help avoid errors caused by objects that exist after the call
+ * to hpg::finalize(). For example,
+ * @code{.cpp}
+ *     int main() {
+ *       // Don't do this!
+ *       hpg::initialize();
+ *       Gridder g();
+ *       hpg::finalize(); // Error! g is still in scope,
+ *                        // ~Gridder is called after finalize()
+ *     }
+ * @endcode
+ * however, use of a ScopeGuard value as follows helps avoid this error:
+ * @code{.cpp}
+ *     int main() {
+ *       hpg::ScopeGuard hpg_guard;
+ *       Gridder g();
+ *       // OK, because g is destroyed prior to hpg_guard
+ *     }
+ * @endcode
+ */
+struct HPG_EXPORT ScopeGuard {
 
-const std::set<Device>&
-hpg::host_devices() noexcept {
-  static const std::set<Device> result{
-#ifdef HPG_ENABLE_SERIAL
-    Device::Serial,
-#endif
-#ifdef HPG_ENABLE_OPENMP
-    Device::OpenMP,
-#endif
-  };
-  return result;
-}
+private:
+  bool init;
 
-ScopeGuard::ScopeGuard()
-  : init(false) {
-  if (!is_initialized()) {
-    initialize();
-    init = true;
-  }
-}
+public:
+  /** default constructor
+   *
+   * calls hpg::initialize()
+   */
+  ScopeGuard();
 
-ScopeGuard::ScopeGuard(const InitArguments& args)
-  : init(false) {
-  if (!is_initialized()) {
-    initialize(args);
-    init = true;
-  }
-}
+  /** constructor with initialization argument
+   *
+   * calls hpg::initialize(const InitArguments&)
+   */
+  ScopeGuard(const InitArguments& args);
 
-ScopeGuard::~ScopeGuard() {
-  if (is_initialized() && init)
-    finalize();
-}
+  ~ScopeGuard();
 
+  ScopeGuard(const ScopeGuard&) = delete;
 
+  ScopeGuard&
+  operator=(const ScopeGuard&) = delete;
+};
+
+/** convolution function array value floating point type */
+using cf_fp = float;
+/** visibility value floating point type */
+using visibility_fp = float;
+/** gridded value floating point type */
+using grid_value_fp = double;
+/** grid scale floating point type */
+using grid_scale_fp = double;
+/** visibility (U, V, W) coordinate floating point type */
+using vis_uvw_fp = double;
+/** visibility weight floating point type */
+using vis_weight_fp = float;
+/** visibility frequency floating point type */
+using vis_frequency_fp = double;
+/** visibility phase floating point type */
+using vis_phase_fp = double;
+/** CF phase gradient floating point type */
+using cf_phase_gradient_fp = double;
+
+// vis_uvw_t can be any type that supports std::get<N>() for element access
+/** UVW coordinate type */
+using vis_uvw_t = std::array<vis_uvw_fp, 3>;
+
+// cf_phase_gradient_t can be any type that supports std::get<N>() for element
+// access
+/** CF phase gradient type */
+using cf_phase_gradient_t = std::array<cf_phase_gradient_fp, 2>;
+
+/** type to represent an optional value */
+#if HPG_API >= 17
 template <typename T>
-static rval_t<T>
-to_rval(std::variant<Error, T>&& t) {
-  if (std::holds_alternative<T>(t))
-    return rval<T>(std::get<T>(std::move(t)));
-  else
-    return rval<T>(std::get<Error>(std::move(t)));
-}
+using opt_t = std::optional<T>;
+#else // HPG_API < 17
+template <typename T>
+using opt_t = std::shared_ptr<T>;
+#endif //HPG_API >= 17
 
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-const std::array<unsigned, 4> GridderState::default_versions{0, 0, 0, 0};
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+/** type to represent a possible error */
+using opt_error_t = opt_t<Error>;
 
-GridderState::GridderState() {
-}
+/** representation of visibility data
+ *
+ * @tparam N number of polarizations
+ */
+template <unsigned N>
+struct VisData {
 
-GridderState::GridderState(
-  Device device,
-  unsigned max_added_tasks,
-  size_t max_visibility_batch_size,
-  const CFArrayShape* init_cf_shape,
-  const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale,
-  const IArrayVector& mueller_indexes,
-  const IArrayVector& conjugate_mueller_indexes
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  , const std::array<unsigned, 4>& implementation_versions
-#endif
-  ) {
+  /** number of polarizations */
+  static constexpr unsigned npol = N;
 
-  using namespace runtime;
+  /** visibility values, ordered by polarization*/
+  std::array<std::complex<visibility_fp>, N> m_visibilities;
+  /** visibility weights, ordered by polarization*/
+  std::array<vis_weight_fp, N> m_weights;
+  /** visibility frequency */
+  vis_frequency_fp m_frequency;
+  /** visibility phase */
+  vis_phase_fp m_phase;
+  /** visibility UVW coordinates */
+  vis_uvw_t m_uvw;
+  /** grid cube index */
+  unsigned m_grid_cube;
+  /** cube and grp CFArray index components */
+  std::array<unsigned, 2> m_cf_index;
+  /** phase gradient */
+  cf_phase_gradient_t m_cf_phase_gradient;
 
-#ifndef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  std::array<unsigned, 4> implementation_versions{2, 0, 0, 0};
-#endif
+  /** constructor, with CF phase gradient values */
+  VisData(
+    const std::array<std::complex<visibility_fp>, N>& visibilities,
+    const std::array<vis_weight_fp, N>& weights,
+    const vis_frequency_fp& frequency,
+    const vis_phase_fp& phase,
+    const vis_uvw_t& uvw,
+    const unsigned& grid_cube,
+    const std::array<unsigned, 2>& cf_index,
+    const cf_phase_gradient_t& cf_phase_gradient)
+    : m_visibilities(visibilities)
+    , m_weights(weights)
+    , m_frequency(frequency)
+    , m_phase(phase)
+    , m_uvw(uvw)
+    , m_grid_cube(grid_cube)
+    , m_cf_index(cf_index)
+    , m_cf_phase_gradient(cf_phase_gradient) {}
 
-  const unsigned max_active_tasks = max_added_tasks + 1;
+  /** constructor, without CF phase gradient values */
+  VisData(
+    const std::array<std::complex<visibility_fp>, N>& visibilities,
+    const std::array<vis_weight_fp, N>& weights,
+    const vis_frequency_fp& frequency,
+    const vis_phase_fp& phase,
+    const vis_uvw_t& uvw,
+    const unsigned& grid_cube,
+    const std::array<unsigned, 2>& cf_index)
+    : m_visibilities(visibilities)
+    , m_weights(weights)
+    , m_frequency(frequency)
+    , m_phase(phase)
+    , m_uvw(uvw)
+    , m_grid_cube(grid_cube)
+    , m_cf_index(cf_index)
+    , m_cf_phase_gradient({0, 0}) {}
 
-  switch (device) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    impl =
-      std::make_shared<StateT<Device::Serial>>(
-        max_active_tasks,
-        max_visibility_batch_size,
-        init_cf_shape,
-        grid_size,
-        grid_scale,
-        mueller_indexes,
-        conjugate_mueller_indexes,
-        implementation_versions);
-#else
-    assert(false);
-#endif // HPG_ENABLE_SERIAL
-    break;
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    impl =
-      std::make_shared<StateT<Device::OpenMP>>(
-        max_active_tasks,
-        max_visibility_batch_size,
-        init_cf_shape,
-        grid_size,
-        grid_scale,
-        mueller_indexes,
-        conjugate_mueller_indexes,
-        implementation_versions);
-#else
-    assert(false);
-#endif // HPG_ENABLE_OPENMP
-    break;
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    impl =
-      std::make_shared<StateT<Device::Cuda>>(
-        max_active_tasks,
-        max_visibility_batch_size,
-        init_cf_shape,
-        grid_size,
-        grid_scale,
-        mueller_indexes,
-        conjugate_mueller_indexes,
-        implementation_versions);
-#else
-    assert(false);
-#endif //HPG_ENABLE_CUDA
-    break;
-  default:
-    assert(false);
-    break;
+  /** default constructor */
+  VisData() {}
+
+  /** equality operator */
+  bool
+  operator==(const VisData& rhs) {
+    return m_visibilities == rhs.m_visibilities
+      && m_weights == rhs.m_weights
+      && m_frequency == rhs.m_frequency
+      && m_phase == rhs.m_phase
+      && m_uvw == rhs.m_uvw
+      && m_grid_cube == rhs.m_grid_cube
+      && m_cf_index == rhs.m_cf_index
+      && m_cf_phase_gradient == rhs.m_cf_phase_gradient;
   }
-}
+};
 
-rval_t<GridderState>
-GridderState::create(
-  Device device,
-  unsigned max_added_tasks,
-  size_t max_visibility_batch_size,
-  const CFArrayShape* init_cf_shape,
-  const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale,
-  IArrayVector&& mueller_indexes,
-  IArrayVector&& conjugate_mueller_indexes
+namespace runtime {
+struct HPG_EXPORT State;
+struct HPG_EXPORT GridderState;
+} // end namespace runtime
+
+/** vector of elements parameterized by number of polarizations
+ *
+ * Erases "number of polarizations" template parameter
+ */
+template <template <unsigned> typename E>
+struct VectorNPol {
+
+  /** number of polarizations in elements of contained vector */
+  unsigned m_npol;
+
+  /** contained vector */
+  union {
+    std::unique_ptr<std::vector<E<1>>> m_v1;
+    std::unique_ptr<std::vector<E<2>>> m_v2;
+    std::unique_ptr<std::vector<E<3>>> m_v3;
+    std::unique_ptr<std::vector<E<4>>> m_v4;
+  };
+
+  /** default constructor */
+  VectorNPol()
+    : m_npol(0)
+    , m_v1() {}
+
+  /** construct instance by moving vector elements with N=1 */
+  VectorNPol(std::vector<E<1>>&& v) noexcept
+    : m_npol(1)
+    , m_v1(new std::vector<E<1>>(std::move(v))) {}
+
+  /** construct instance by copying vector elements with N=1 */
+  VectorNPol(const std::vector<E<1>>& v)
+    : m_npol(1)
+    , m_v1(new std::vector<E<1>>(v)) {}
+
+  /** construct instance by moving vector elements with N=2 */
+  VectorNPol(std::vector<E<2>>&& v) noexcept
+    : m_npol(2)
+    , m_v2(new std::vector<E<2>>(std::move(v))) {}
+
+  /** construct instance by copying vector elements with N=2 */
+  VectorNPol(const std::vector<E<2>>& v)
+    : m_npol(2)
+    , m_v2(new std::vector<E<2>>(v)) {}
+
+  /** construct instance by moving vector elements with N=3 */
+  VectorNPol(std::vector<E<3>>&& v) noexcept
+    : m_npol(3)
+    , m_v3(new std::vector<E<3>>(std::move(v))) {}
+
+  /** construct instance by copying vector elements with N=3 */
+  VectorNPol(const std::vector<E<3>>& v)
+    : m_npol(3)
+    , m_v3(new std::vector<E<3>>(v)) {}
+
+  /** construct instance by moving vector elements with N=4 */
+  VectorNPol(std::vector<E<4>>&& v) noexcept
+    : m_npol(4)
+    , m_v4(new std::vector<E<4>>(std::move(v))) {}
+
+  /** construct instance by copying vector elements with N=4 */
+  VectorNPol(const std::vector<E<4>>& v)
+    : m_npol(4)
+    , m_v4(new std::vector<E<4>>(v)) {}
+
+  /** copy constructor */
+  VectorNPol(const VectorNPol& other)
+    : m_npol(other.m_npol)
+    , m_v1() {
+    switch (m_npol) {
+    case 0:
+      break;
+    case 1:
+      m_v1 =
+        std::unique_ptr<std::vector<E<1>>>(new std::vector<E<1>>(*other.m_v1));
+      break;
+    case 2:
+      m_v2 =
+        std::unique_ptr<std::vector<E<2>>>(new std::vector<E<2>>(*other.m_v2));
+      break;
+    case 3:
+      m_v3 =
+        std::unique_ptr<std::vector<E<3>>>(new std::vector<E<3>>(*other.m_v3));
+      break;
+    case 4:
+      m_v4 =
+        std::unique_ptr<std::vector<E<4>>>(new std::vector<E<4>>(*other.m_v4));
+      break;
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+  /** move constructor */
+  VectorNPol(VectorNPol&& other) noexcept
+    : m_npol(other.m_npol)
+    , m_v1() {
+    switch (m_npol) {
+    case 0:
+      break;
+    case 1:
+      m_v1 = std::move(other).m_v1;
+      break;
+    case 2:
+      m_v2 = std::move(other).m_v2;
+      break;
+    case 3:
+      m_v3 = std::move(other).m_v3;
+      break;
+    case 4:
+      m_v4 = std::move(other).m_v4;
+      break;
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+  /** copy assignment operator */
+  VectorNPol&
+  operator=(const VectorNPol& rhs) {
+    VectorNPol tmp(rhs);
+    swap(tmp);
+    return *this;
+  }
+
+  /** move assignment operator */
+  VectorNPol&
+  operator=(VectorNPol&& rhs) noexcept {
+    VectorNPol tmp(std::move(rhs));
+    swap(tmp);
+    return *this;
+  }
+
+  /** number of elements of vector */
+  size_t
+  size() const {
+    switch (m_npol) {
+    case 0:
+      return 0;
+      break;
+    case 1:
+      return m_v1->size();
+      break;
+    case 2:
+      return m_v2->size();
+      break;
+    case 3:
+      return m_v3->size();
+      break;
+    case 4:
+      return m_v4->size();
+      break;
+    default:
+      assert(false);
+      return 0;
+      break;
+    }
+  }
+
+  /** total number of stored values
+   *
+   * number of polarization multiplied by size of vector
+   */
+  size_t
+  num_elements() const {
+    switch (m_npol) {
+    case 0:
+      return 0;
+      break;
+    case 1:
+      return size();
+      break;
+    case 2:
+      return 2 * size();
+      break;
+    case 3:
+      return 3 * size();
+      break;
+    case 4:
+      return 4 * size();
+      break;
+    default:
+      assert(false);
+      return 0;
+      break;
+    }
+  }
+
+  virtual ~VectorNPol() {
+    switch (m_npol) {
+    case 0:
+    case 1:
+      m_v1.reset();
+      break;
+    case 2:
+      m_v2.reset();
+      break;
+    case 3:
+      m_v3.reset();
+      break;
+    case 4:
+      m_v4.reset();
+      break;
+    default:
+      assert(false);
+      break;
+    }
+  }
+
+private:
+
+  /** take over the vector from another instance */
+  void
+  takev(VectorNPol& other) noexcept {
+    switch (other.m_npol) {
+    case 0:
+    case 1:
+      m_v1 = std::move(other.m_v1);
+      break;
+    case 2:
+      m_v2 = std::move(other.m_v2);
+      break;
+    case 3:
+      m_v3 = std::move(other.m_v3);
+      break;
+    case 4:
+      m_v4 = std::move(other.m_v4);
+      break;
+    default:
+      assert(false);
+      break;
+    }
+    m_npol = other.m_npol;
+    other.m_npol = 0;
+  }
+
+  /** swap contents with another instance */
+  void
+  swap(VectorNPol& other) noexcept {
+    switch (other.m_npol) {
+    case 0: {
+      auto ov1 = std::move(other).m_v1;
+      other.takev(*this);
+      m_v1 = std::move(ov1);
+      m_npol = 0;
+      break;
+    }
+    case 1: {
+      auto ov1 = std::move(other).m_v1;
+      other.takev(*this);
+      m_v1 = std::move(ov1);
+      m_npol = 1;
+      break;
+    }
+    case 2: {
+      auto ov2 = std::move(other).m_v2;
+      other.takev(*this);
+      m_v2 = std::move(ov2);
+      m_npol = 2;
+      break;
+    }
+    case 3: {
+      auto ov3 = std::move(other).m_v3;
+      other.takev(*this);
+      m_v3 = std::move(ov3);
+      m_npol = 3;
+      break;
+    }
+    case 4: {
+      auto ov4 = std::move(other).m_v4;
+      other.takev(*this);
+      m_v4 = std::move(ov4);
+      m_npol = 4;
+      break;
+    }
+    default:
+      assert(false);
+      break;
+    }
+  }
+};
+
+/** vector of VisData<.> elements */
+using VisDataVector = VectorNPol<VisData>;
+
+/** helper type for definition of IArrayVector */
+template <unsigned N>
+using iarray = std::array<int, N>;
+
+/** vector of std::array<int, .> elements */
+using IArrayVector = VectorNPol<iarray>;
+
+/** array layout enumeration */
+enum class HPG_EXPORT Layout {
+  Right, /**< C order: rightmost index has smallest stride */
+  Left, /**< FORTRAN order: leftmost index has smallest stride */
+};
+
+/** shape of a convolution function
+ *
+ * This class is primarily of use as an argument to describe the maximum
+ * expected size of a CFArray. Note that CFArray is a subclass of this class.
+ *
+ * @sa CFArray
+ */
+class HPG_EXPORT CFArrayShape {
+public:
+
+  /** rank of array */
+  static constexpr unsigned rank = 5;
+
+  /** oversampling factor */
+  virtual unsigned
+  oversampling() const = 0;
+
+  /** number of CF groups */
+  virtual unsigned
+  num_groups() const = 0;
+
+  /** array extents for a given group */
+  virtual std::array<unsigned, rank - 1>
+  extents(unsigned grp) const = 0;
+
+  /** destructor */
+  virtual ~CFArrayShape() {}
+};
+
+/** base class for convolution functions */
+class HPG_EXPORT CFArray
+  : public CFArrayShape {
+public:
+
+  /** element value type */
+  using value_type = std::complex<cf_fp>;
+
+  /** padding, in units of major increments (not oversampled), on every edge of
+   * CF support domain */
+  static constexpr unsigned padding = 2;
+
+  /** ordered index axis names */
+  // note: changes in this must be coordinated with changes in the element
+  // access operators
+  enum Axis {x, y, mueller, cube, group};
+
+  /** CF element layout identification */
+  virtual const char*
+  layout() const {
+    return cf_layout_unspecified_version;
+  }
+
+  /** element access operator
+   *
+   * @param x X coordinate, relative to padded domain edge (oversampled units)
+   * @param y Y coordinate, relative to padded domain edge (oversampled units)
+   * @param mueller Mueller element index; selects an element of a Mueller
+   * matrix
+   * @param cube cube index
+   * @param group group index
+   */
+  virtual std::complex<cf_fp>
+  operator()(
+    unsigned x,
+    unsigned y,
+    unsigned mueller,
+    unsigned cube,
+    unsigned group)
+    const = 0;
+
+  /** half-widths of CF support domain for a given group index */
+  std::array<unsigned, 2>
+  radii(unsigned grp) const {
+    auto os = oversampling();
+    auto ext = extents(grp);
+    return {
+      ((ext[0] - 2 * padding * os) / os) / 2,
+      ((ext[1] - 2 * padding * os) / os) / 2};
+  }
+
+  /** destructor */
+  virtual ~CFArray() {}
+
+  /** copy values into a buffer with optimal layout for a given device
+   *
+   * @param device target device
+   * @param host_device host device to use for converting layout
+   * @param grp group index
+   * @param dst buffer into which to copy values
+   *
+   * @return layout version string or error
+   */
+  rval_t<std::string>
+  copy_to(Device device, Device host_device, unsigned grp, value_type* dst)
+    const;
+
+  /** minimum size of buffer for destination of copy_to()
+   *
+   * @param device target device
+   * @param grp group index
+   *
+   * @return number of elements required in a destination buffer or error
+   */
+  rval_t<size_t>
+  min_buffer_size(Device device, unsigned grp) const;
+};
+
+/** CFArray sub-class for stored (cached) values in optimized layout for
+ * devices
+ */
+class HPG_EXPORT DeviceCFArray
+  : public CFArray {
+public:
+
+  /** create a DeviceCFArray (sub-class) instance
+   *
+   * @param version version string
+   * @param oversampling CF oversampling factor
+   * @param arrays extent and values in given layout for every CFArray group
+   */
+  static rval_t<std::unique_ptr<DeviceCFArray>>
+  create(
+    const std::string& version,
+    unsigned oversampling,
+    std::vector<
+      std::tuple<
+        std::array<unsigned, rank - 1>,
+        std::vector<value_type>>>&&
+      arrays);
+
+  /** associated device type */
+  virtual Device
+  device() const = 0;
+
+  virtual ~DeviceCFArray() {}
+};
+
+/** writable DeviceCFArray sub-class for stored (cached) values in optimized
+ * layout for devices
+ */
+class HPG_EXPORT RWDeviceCFArray
+  : public DeviceCFArray {
+public:
+
+  /** create a RWDeviceCFArray (sub-class) instance
+   *
+   * @param device target device
+   * @param shape CFArray instance shape
+   */
+  static rval_t<std::unique_ptr<RWDeviceCFArray>>
+  create(Device device, const CFArrayShape& shape);
+
+  using CFArray::operator();
+
+  /** element access operator
+   *
+   * @param x X coordinate, relative to padded domain edge (oversampled units)
+   * @param y Y coordinate, relative to padded domain edge (oversampled units)
+   * @param mueller Mueller element index; selects an element of a Mueller
+   * matrix
+   * @param cube cube index
+   * @param group group index
+   *
+   * @return non-const element reference
+   */
+  virtual std::complex<cf_fp>&
+  operator()(
+    unsigned x,
+    unsigned y,
+    unsigned mueller,
+    unsigned cube,
+    unsigned group) = 0;
+
+  virtual ~RWDeviceCFArray() {}
+};
+
+/** wrapper for access to copy of grid values
+ *
+ * @todo: replace with mdspan?
+ */
+class HPG_EXPORT GridValueArray {
+public:
+
+  /** rank of array */
+  static constexpr unsigned rank = 4;
+
+  /** element value type */
+  using value_type = std::complex<grid_value_fp>;
+
+  /** ordered index axis names */
+  // note: changes in this must be coordinated with changes in the element
+  // access operators
+  enum Axis {x, y, mrow, cube};
+
+  /** size of array on given dimension */
+  virtual unsigned
+  extent(unsigned dim) const = 0;
+
+  /** const element access operator */
+  virtual const value_type&
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) const = 0;
+
+  /** non-const element access operator */
+  virtual value_type&
+  operator()(unsigned x, unsigned y, unsigned mrow, unsigned cube) = 0;
+
+  /** copy values to a buffer in requested layout
+   *
+   * @param host_device host device to use for copying values
+   * @param dst destination buffer
+   * @param layout array layout of values copied into dst
+   *
+   * @return an Error, iff host_device names a disabled host device
+   */
+  opt_t<Error>
+  copy_to(
+    Device host_device,
+    value_type* dst,
+    Layout layout = Layout::Left) const;
+
+  /** minimum size of buffer for destination of copy_to()
+   *
+   * @return number of elements required in a destination buffer
+   */
+  virtual size_t
+  min_buffer_size() const {
+    return extent(0) * extent(1) * extent(2) * extent(3);
+  }
+
+  /** destructor */
+  virtual ~GridValueArray() {}
+
+  /** create GridValueArray instance from values in a buffer
+   *
+   * @param name name of Kokkos::View underlying return value (implementation
+   * detail)
+   * @param target_device device for which result value is intended to be used
+   * @param host_device host device to use for copying values
+   * @param src source buffer
+   * @param extents grid size
+   * @param layout array layout of values copied from src
+   */
+  static std::unique_ptr<GridValueArray>
+  copy_from(
+    const std::string& name,
+    Device target_device,
+    Device host_device,
+    const value_type* src,
+    const std::array<unsigned, rank>& extents,
+    Layout layout = Layout::Left);
+
+protected:
+
+  /** unsafe version of copy_to()
+   *
+   * Assumes host_device names an enabled host device
+   */
+  virtual void
+  unsafe_copy_to(Device host_device, value_type* dst, Layout layout) const = 0;
+};
+
+/** wrapper for access to copy of grid weights
+ *
+ * @todo: replace with mdspan?
+ */
+class HPG_EXPORT GridWeightArray {
+public:
+
+  /** rank of array */
+  static constexpr unsigned rank = 2;
+
+  /** element value type */
+  using value_type = grid_value_fp;
+
+  /** ordered index axis names */
+  // note: changes in this must be coordinated with changes in the element
+  // access operators
+  enum Axis {mrow, cube};
+
+  /** size of array on given dimension */
+  virtual unsigned
+  extent(unsigned dim) const = 0;
+
+  /** const element access operator */
+  virtual const value_type&
+  operator()(unsigned mrow, unsigned cube) const = 0;
+
+  /** non-const element access operator */
+  virtual value_type&
+  operator()(unsigned mrow, unsigned cube) = 0;
+
+  /** copy values to a buffer in requested layout
+   *
+   * @param host_device host device to use for copying values
+   * @param dst destination buffer
+   * @param layout array layout of values copied into dst
+   *
+   * @return an Error, iff host_device names a disabled host device
+   */
+  opt_t<Error>
+  copy_to(
+    Device host_device,
+    value_type* dst,
+    Layout layout = Layout::Left) const;
+
+  /** minimum size of buffer for destination of copy_to()
+   *
+   * @return number of elements required in a destination buffer
+   */
+  virtual size_t
+  min_buffer_size() const {
+    return extent(0) * extent(1);
+  }
+
+  /** destructor */
+  virtual ~GridWeightArray() {}
+
+  /** create GridWeightArray instance from values in a buffer
+   *
+   * @param name name of Kokkos::View underlying return value (implementation
+   * detail)
+   * @param target_device device for which result value is intended to be used
+   * @param host_device host device to use for copying values
+   * @param src source buffer
+   * @param extents grid size
+   * @param layout array layout of values copied from src
+   */
+  static std::unique_ptr<GridWeightArray>
+  copy_from(
+    const std::string& name,
+    Device target_device,
+    Device host_device,
+    const value_type* src,
+    const std::array<unsigned, rank>& extents,
+    Layout layout = Layout::Left);
+
+protected:
+
+  /** unsafe version of copy_to()
+   *
+   * Assumes host_device names an enabled host device
+   */
+  virtual void
+  unsafe_copy_to(Device host_device, value_type* dst, Layout layout) const = 0;
+};
+
+class HPG_EXPORT Gridder;
+
+/** sign of imaginary unit in exponent of FFT kernel */
+enum class HPG_EXPORT FFTSign {
+  POSITIVE, /**< +1 */
+  NEGATIVE  /**< -1 */
+};
+
+/** default value of sign of imaginary unit in exponent of FFT kernel for
+ * apply_grid_fft() */
+constexpr FFTSign grid_fft_sign_dflt = FFTSign::POSITIVE;
+
+/** default value of sign of imaginary unit in exponent of FFT kernel for
+ * apply_model_fft() */
+constexpr FFTSign model_fft_sign_dflt =
+  ((grid_fft_sign_dflt == FFTSign::POSITIVE)
+   ? FFTSign::NEGATIVE
+   : FFTSign::POSITIVE);
+
+/** grid or model shift direction
+ *
+ * The values are defined such that a grid (or model) shift in one of the
+ * directions, followed by a shift in the other direction would restore the
+ * original grid. No definition of either value singly is provided. For those
+ * grid dimensions that have an even size, however, the two values are
+ * functionally identical.
+ */
+enum class HPG_EXPORT ShiftDirection {
+  FORWARD,
+  BACKWARD
+};
+
+/** future
+ *
+ * A type similar to a std::future, but with limitations to account for the fact
+ * that GridderState progress to fulfill a future can only occur during calls to
+ * GridderState methods. In this situation a regular std::future is prone to
+ * deadlocks, which is the reason for the existence of this class.
+ *
+ * Note that, by design, these futures are never resolved by an exception, and
+ * it is a requirement that the underlying std::future behaves similarly.
+ */
+template <typename T>
+class HPG_EXPORT future final {
+public:
+
+  /** default constructor */
+  future() {}
+
+  /** constructor */
+  future(const std::function<opt_t<T>&()>& f)
+    : m_f(f) {}
+
+  future(future&& f) noexcept
+    : m_f(std::move(f).m_f) {}
+
+  future(const future& f)
+    : m_f(f.m_f) {}
+
+  future&
+  operator=(const future& f) {
+    m_f = f.m_f;
+    return *this;
+  }
+
+  future&
+  operator=(future&& f) noexcept {
+    m_f = std::move(f).m_f;
+    return *this;
+  }
+
+  /** get value
+   *
+   * @return value of the future if it has been resolved, or nothing
+   */
+  opt_t<T>&
+  get() noexcept {
+    return m_f();
+  }
+
+  template <typename U>
+  future<U>
+  map(const std::function<U(T&&)>& f) && {
+    return future<U>(
+      [f, mf=std::move(m_f), result=opt_t<U>()]() mutable -> opt_t<U>& {
+        if (!result) {
+          auto& ot = mf();
+#if HPG_API >= 17
+          if (ot)
+            result = f(std::move(ot).value());
+#else
+          if (ot)
+            result = opt_t<U>(new U(f(std::move(*ot))));
+#endif
+        }
+        return result;
+      });
+  }
+
+  virtual ~future() {}
+
+protected:
+
+  std::function<opt_t<T>&()> m_f; /**< contained std::function */
+};
+
+/** gridder state
+ *
+ * A container for the entire state needed to do gridding as a value, including
+ * gridded visibility data and possibly a convolution function array. Used by
+ * the Gridder class, but may also be used directly for its greater flexibility.
+ *
+ * Depending on the device used for gridding, methods may schedule tasks for
+ * asynchronous execution. When an instance is constructed, the user may provide
+ * a maximum number of concurrent, asynchronous tasks to run on the requested
+ * device. Note that the actual number of concurrent tasks that the new instance
+ * supports may be less than the number requested in the constructor. In
+ * particular, several devices support no asynchronous execution. Class methods
+ * that submit work to a device, that is, for either data movement or
+ * computation, may block when the number of asynchronously running tasks is at
+ * its limit, until one of those running tasks completes. Otherwise, the methods
+ * that create device tasks will return as soon the task has been submitted to
+ * the device.
+ *
+ * In general, using a GridderState method on an instance creates a new (value)
+ * copy of the target. For example,
+ * @code{.cpp}
+ *    GridderState s0;
+ *    GridderState s1 = s0.fence();
+ * @endcode
+ * will create a copy of s0. Note that a copy will include the grid and the
+ * convolution function array. To avoid the copy, the following pattern can be
+ * used instead:
+ * @code{.cpp}
+ *    GridderState s0;
+ *    GridderState s1 = std::move(s0).fence();
+ * @endcode
+ * Note, however, that the value of s0 in the previous example after the call to
+ * fence() will be in the null state, which is likely not of much further use to
+ * the caller.
+ */
+class HPG_EXPORT GridderState {
+protected:
+  friend class Gridder;
+  friend class runtime::GridderState;
+
+  // state cannot be a unique_ptr since runtime::State is here an incomplete type
+  std::shared_ptr<runtime::State> impl; /**< state implementation */
+
+public:
+
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  , const std::array<unsigned, 4>& versions
+  static const std::array<unsigned, 4> default_versions;
 #endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  ) noexcept {
 
-  if (grid_size[2] != mueller_indexes.size()
-      || grid_size[2] != conjugate_mueller_indexes.size())
-    return rval<GridderState>(InvalidNumberMuellerIndexRowsError());
+  /** default constructor
+   *
+   * the null state, most methods will fail when called on a target with this
+   * value
+   */
+  GridderState();
 
-  if (devices().count(device) > 0)
+protected:
+
+  /** constructor
+   *
+   * create a GridderState
+   *
+   * @param device gridder device type
+   * @param max_added_tasks maximum number of additional tasks (actual number
+   * may be less than requested)
+   * @param max_visibility_batch_size maximum number of VisData<.> values for
+   * calls to grid_visibilities()
+   * @param init_cf_shape shape of CF region for initial memory allocation (per
+   * task)
+   * @param grid_size in logical axis order: X, Y, mrow, cube
+   * @param grid_scale in X, Y order
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
+   *
+   * max_added_tasks may be used to control the level of concurrency available
+   * to the GridderState instance. In all cases, at least one task is
+   * employed, but some devices support additional, concurrent tasks.
+   *
+   * The value of max_added_tasks and max_visibility_batch_size has an effect on
+   * the amount of memory allocated on the selected gridder device. The total
+   * amount of memory allocated for visibilities will be approximately equal to
+   * max_added_tasks multiplied by sizeof(VisData<N>) for the appropriate value
+   * of N.
+   *
+   * @sa Gridder::Gridder()
+   */
+  GridderState(
+    Device device,
+    unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const IArrayVector& mueller_indexes,
+    const IArrayVector& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions = default_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    );
+
+public:
+
+  /** GridderState factory method
+   *
+   * Does not throw an exception if device argument names an unsupported device
+   *
+   * @sa GridderState()
+   */
+  static rval_t<GridderState>
+  create(
+    Device device,
+    unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ) noexcept;
+
+  /** GridderState factory method
+   *
+   * Does not throw an exception if device argument names an unsupported device
+   *
+   * @tparam N number of polarizations in visibilities to be gridded
+   *
+   * @sa GridderState()
+   */
+  template <unsigned N>
+  static rval_t<GridderState>
+  create(
+    Device device,
+    unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions = default_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ) noexcept {
+
     return
-      rval<GridderState>(
-        GridderState(
-          device,
-          max_added_tasks,
-          max_visibility_batch_size,
-          init_cf_shape,
-          grid_size,
-          grid_scale,
-          mueller_indexes,
-          conjugate_mueller_indexes
+      create(
+        device,
+        max_added_tasks,
+        max_visibility_batch_size,
+        init_cf_shape,
+        grid_size,
+        grid_scale,
+        IArrayVector(mueller_indexes),
+        IArrayVector(conjugate_mueller_indexes)
 #ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-          , versions
-#endif
-          ));
-  else
-    return rval<GridderState>(DisabledDeviceError());
-
-}
-
-GridderState::GridderState(const GridderState& h) {
-  *this = h;
-}
-
-GridderState&
-GridderState::operator=(const GridderState& rhs) {
-
-  using namespace runtime;
-
-  const GridderState& crhs = const_cast<const GridderState&>(rhs);
-  switch (crhs.impl->m_device) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    impl =
-      std::make_shared<StateT<Device::Serial>>(
-        dynamic_cast<StateT<Device::Serial>*>(crhs.impl.get())
-        ->copy());
-    break;
-#endif // HPG_ENABLE_SERIAL
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    impl =
-      std::make_shared<StateT<Device::OpenMP>>(
-        dynamic_cast<StateT<Device::OpenMP>*>(crhs.impl.get())
-        ->copy());
-    break;
-#endif // HPG_ENABLE_OPENMP
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    impl =
-      std::make_shared<StateT<Device::Cuda>>(
-        dynamic_cast<StateT<Device::Cuda>*>(crhs.impl.get())
-        ->copy());
-    break;
-#endif // HPG_ENABLE_CUDA
-  default:
-    assert(false);
-    break;
+        , implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        );
   }
-  return *this;
-}
 
-GridderState::~GridderState() {}
+  /** copy constructor
+   *
+   * Copies all state. Invokes fence() on argument.
+   */
+  GridderState(const GridderState&);
 
-Device
-GridderState::device() const noexcept {
-  return impl->m_device;
-}
+  /** move constructor
+   */
+  GridderState(GridderState&&) noexcept = default;
 
-unsigned
-GridderState::max_added_tasks() const noexcept {
-  return impl->m_max_active_tasks - 1;
-}
+  virtual ~GridderState();
 
-size_t
-GridderState::max_visibility_batch_size() const noexcept {
-  return impl->m_max_visibility_batch_size;
-}
+  /** copy assignment
+   *
+   * Copies all state. Invokes fence() on argument.
+   */
+  GridderState&
+  operator=(const GridderState&);
 
-const std::array<unsigned, 4>&
-GridderState::grid_size() const noexcept {
-  return impl->m_grid_size;
-}
+  /** move assignment
+   */
+  GridderState&
+  operator=(GridderState&&) noexcept = default;
 
-std::array<grid_scale_fp, 2>
-GridderState::grid_scale() const noexcept {
-  return {impl->m_grid_scale[0], impl->m_grid_scale[1]};
-}
+  /** device */
+  Device
+  device() const noexcept;
 
-unsigned
-GridderState::num_polarizations() const noexcept {
-  return impl->m_num_polarizations;
-}
+  /** maximum additional tasks
+   *
+   * This value may differ from the value provided to the constructor, depending
+   * on device limitations */
+  unsigned
+  max_added_tasks() const noexcept;
 
-bool
-GridderState::is_null() const noexcept {
-  return !bool(impl);
-}
+  /** maximum number of visibilities passed to gridding kernel at once */
+  size_t
+  max_visibility_batch_size() const noexcept;
 
-size_t
-GridderState::convolution_function_region_size(const CFArrayShape* shape)
-  const noexcept {
+  /** grid size */
+  const std::array<unsigned, 4>&
+  grid_size() const noexcept;
 
-  ProfileRegion region("GridderState::convolution_function_region_size");
+  /** grid scale */
+  std::array<grid_scale_fp, 2>
+  grid_scale() const noexcept;
 
-  return impl->convolution_function_region_size(shape);
-}
+  /** number of visibility polarizations */
+  unsigned
+  num_polarizations() const noexcept;
 
-rval_t<GridderState>
-GridderState::allocate_convolution_function_region(
-  const CFArrayShape* shape) const & {
+  /** null state query */
+  bool
+  is_null() const noexcept;
 
-  ProfileRegion
-    region("GridderState::allocate_convolution_function_region_const");
+  /** size (in bytes) of region allocated for CFArray elements
+   *
+   * Memory allocations for convolution function regions are made per device
+   * task. Values returned for the size of the currently allocated region refer
+   * only to the most recently allocated region; multiplying this value by the
+   * number of device tasks may be an inaccurate measure of the total allocated
+   * region, as asynchronously executing tasks may be using different
+   * convolution functions.
+   *
+   * @param shape if non-null, the memory needed for a CFArray of the given
+   * shape; if null, the size of the currently allocated region in the
+   * target
+   */
+  size_t
+  convolution_function_region_size(const CFArrayShape* shape) const noexcept;
 
-  return
-    to_rval(
-      runtime::GridderState::allocate_convolution_function_region(
-        *this,
-        shape));
-}
+  /** allocate memory for convolution function
+   *
+   * Increasing memory allocations for convolution functions are handled
+   * automatically by set_convolution_function(), but in a sequence of calls to
+   * set_convolution_function() in which later calls require a larger allocation
+   * than earlier calls, it may be advantageous to use this method in order to
+   * allocate the maximum memory that will be required by the sequence before
+   * starting the sequence, which will then permit the sequence to proceed
+   * without any reallocations. To release all memory allocated for the
+   * convolution function, the caller may pass a null pointer for the method
+   * argument. Invokes fence() on the target.
+   *
+   * @param shape shape of CFArray for which to allocate memory (per task)
+   *
+   * @return new GridderState that is a copy of the target, but with memory
+   * allocated for convolution function, or error
+   */
+  rval_t<GridderState>
+  allocate_convolution_function_region(const CFArrayShape* shape) const &;
 
-rval_t<GridderState>
-GridderState::allocate_convolution_function_region(const CFArrayShape* shape)
-  && {
+  /** allocate memory for convolution function
+   *
+   * Increasing memory allocations for convolution functions are handled
+   * automatically by set_convolution_function(), but in a sequence of calls to
+   * set_convolution_function() in which later calls require a larger allocation
+   * than earlier calls, it may be advantageous to use this method in order to
+   * allocate the maximum memory that will be required by the sequence before
+   * starting the sequence, which will then permit the sequence to proceed
+   * without any reallocations. To release all memory allocated for the
+   * convolution function, the caller may pass a null pointer for the method
+   * argument. Invokes fence() on the target.
+   *
+   * @param shape shape of CFArray for which to allocate memory (per task)
+   *
+   * @return new GridderState that has overwritten the target, but with memory
+   * allocated for convolution function, or error
+   */
+  rval_t<GridderState>
+  allocate_convolution_function_region(const CFArrayShape* shape) &&;
 
-  ProfileRegion region("GridderState::allocate_convolution_function_region");
+  /** set convolution function
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState that is a copy of the target, but with provided
+   * convolution function for subsequent gridding
+   *
+   * @param host_device device to use for changing array layout
+   * @param cf convolution function array
+   *
+   * @sa Gridder::set_convolution_function()
+   */
+  rval_t<GridderState>
+  set_convolution_function(Device host_device, CFArray&& cf) const &;
 
-  return
-    to_rval(
-      runtime::GridderState::allocate_convolution_function_region(
-        std::move(*this),
-        shape));
-}
+  /** set convolution function
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState that has overwritten the target, but with provided
+   * convolution function for subsequent gridding
+   *
+   * @param host_device device to use for changing array layout
+   * @param cf convolution function array
+   *
+   * @sa Gridder::set_convolution_function()
+   */
+  rval_t<GridderState>
+  set_convolution_function(Device host_device, CFArray&& cf) &&;
 
-rval_t<GridderState>
-GridderState::set_convolution_function(Device host_device, CFArray&& cf)
-  const & {
+  /** set visibility model
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after setting model
+   *
+   * @param host_device device to use for copying model values
+   * @param gv visibility model
+   *
+   * @sa Gridder::set_model()
+   */
+  rval_t<GridderState>
+  set_model(Device host_device, GridValueArray&& gv) const &;
 
-  ProfileRegion region("GridderState::set_convolution_function_const");
+  /** set visibility model
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after setting model
+   *
+   * @param host_device device to use for copying model values
+   * @param gv visibility model
+   *
+   * @sa Gridder::set_model()
+   */
+  rval_t<GridderState>
+  set_model(Device host_device, GridValueArray&& gv) &&;
 
-  return
-    to_rval(
-      runtime::GridderState::set_convolution_function(
-        *this,
-        host_device,
-        std::move(cf)));
-}
+protected:
 
-rval_t<GridderState>
-GridderState::set_convolution_function(
-  Device host_device,
-  CFArray&& cf) && {
+  friend class Gridder;
 
-  ProfileRegion region("GridderState::set_convolution_function");
+  /** narrow type of future containing VisDataVector to future containing
+   * std::vector<VisData<N>>
+   *
+   * @tparam N number of polarizations in visibilities
+   */
+  template <unsigned N>
+  static future<std::vector<VisData<N>>>
+  future_visibilities_narrow(future<VisDataVector>&& fvs) {
+    std::abort();
+  }
 
-  return
-    to_rval(
-      runtime::GridderState::set_convolution_function(
-        std::move(*this),
-        host_device,
-        std::move(cf)));
-}
+public:
 
-rval_t<GridderState>
-GridderState::set_model(Device host_device, GridValueArray&& gv)
-  const & {
+  /** degridding/gridding base method (const version)
+   *
+   * May invoke fence() on target. This method is the most general of all the
+   * "grid_visibilities() const &" methods, and the one that is called by the
+   * implementations of all other variants.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of a potentially empty vector of returned (residual or
+   * predicted) visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   * @param do_degrid do degridding
+   * @param return_visibilities return residual or predicted visibilities
+   * @param do_grid do gridding
+   */
+  rval_t<std::tuple<GridderState, future<VisDataVector>>>
+  grid_visibilities_base(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights,
+    bool do_degrid,
+    bool return_visibilities,
+    bool do_grid) const &;
 
-  ProfileRegion region("GridderState::set_model_const");
+  /** degridding/gridding base method (rvalue reference version)
+   *
+   * May invoke fence() on target. This method is the most general of all the
+   * "grid_visibilities() &&" methods, and the one that is called by the
+   * implementations of all other variants.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of a potentially empty vector of returned (residual or
+   * predicted) visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   * @param do_degrid do degridding
+   * @param return_visibilities return residual or predicted visibilities
+   * @param do_grid do gridding
+   */
+  rval_t<std::tuple<GridderState, future<VisDataVector>>>
+  grid_visibilities_base(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights,
+    bool do_grid,
+    bool return_visibilities,
+    bool do_degrid) &&;
 
-  return
-    to_rval(
-      runtime::GridderState::set_model(*this, host_device, std::move(gv)));
-}
+  /** grid visibilities, without degridding (template-free, const version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  rval_t<GridderState>
+  grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights = true) const &;
 
-rval_t<GridderState>
-GridderState::set_model(Device host_device, GridValueArray&& gv) && {
+  /** grid visibilities, without degridding (template-free, rvalue reference
+   * version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  rval_t<GridderState>
+  grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights = true) &&;
 
-  ProfileRegion region("GridderState::set_model");
+  /** grid visibilities, without degridding (templated, const version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  template <unsigned N>
+  rval_t<GridderState>
+  grid_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = true) const & {
 
-  return
-    to_rval(
-      runtime::GridderState::set_model(
-        std::move(*this),
-        host_device,
-        std::move(gv)));
-}
-
-rval_t<std::tuple<GridderState, future<VisDataVector>>>
-GridderState::grid_visibilities_base(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights,
-  bool do_degrid,
-  bool return_visibilities,
-  bool do_grid) const & {
-
-  ProfileRegion region("GridderState::grid_visibilities_base_const");
-
-  return
-    to_rval(
-      runtime::GridderState::grid_visibilities(
-        *this,
-        host_device,
-        std::move(visibilities),
-        update_grid_weights,
-        do_degrid,
-        return_visibilities,
-        do_grid));
-}
-
-rval_t<std::tuple<GridderState, future<VisDataVector>>>
-GridderState::grid_visibilities_base(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights,
-  bool do_degrid,
-  bool return_visibilities,
-  bool do_grid) && {
-
-  ProfileRegion region("GridderState::grid_visibilities_base");
-
-  std::cout << "GridderState grid_visibilities_base" << std::endl;
-
-  return
-    to_rval(
-      runtime::GridderState::grid_visibilities(
-        std::move(*this),
-        std::move(host_device),
-        std::move(visibilities),
-        update_grid_weights,
-        do_degrid,
-        return_visibilities,
-        do_grid));
-}
-
-rval_t<GridderState>
-GridderState::grid_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights) const & {
-
-  ProfileRegion region("GridderState::grid_visibilities_const");
-
-  return
-    map(
-      grid_visibilities_base(
+    return
+      grid_visibilities(
         host_device,
         VisDataVector(std::move(visibilities)),
-        update_grid_weights,
-        false, // do_degrid
-        false, // return_visibilities
-        true), // do_grid
-      [](auto&& gs_fvs) {
-        return std::get<0>(std::move(gs_fvs));
-      });
-};
-
-rval_t<GridderState>
-GridderState::grid_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights) && {
-
-  ProfileRegion region("GridderState::grid_visibilities");
-
-  std::cout << "GridderState grid_visibilities" << std::endl;
-
-  return
-    map(
-      std::move(*this).grid_visibilities_base(
-        host_device,
-        std::move(visibilities),
-        update_grid_weights,
-        false, // do_degrid
-        false, // return_visibilities
-        true), // do_grid
-      [](auto&& gs_fvs) {
-        return std::get<0>(std::move(gs_fvs));
-      });
-};
-
-rval_t<GridderState>
-GridderState::degrid_grid_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights) const & {
-
-  ProfileRegion region("GridderState::degrid_grid_visibilities_const");
-
-  return
-    map(
-      grid_visibilities_base(
-        host_device,
-        std::move(visibilities),
-        update_grid_weights,
-        true, // do_degrid
-        false, // return_visibilities
-        true), // do_grid
-      [](auto&& gs_fvs) {
-        return std::get<0>(std::move(gs_fvs));
-      });
-};
-
-rval_t<GridderState>
-GridderState::degrid_grid_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights) && {
-
-  ProfileRegion region("GridderState::degrid_grid_visibilities");
-
-  std::cout << "GridderState degrid_grid_visibilities" << std::endl;
-
-  return
-    map(
-      std::move(*this).grid_visibilities_base(
-        host_device,
-        std::move(visibilities),
-        update_grid_weights,
-        true, // do_degrid
-        false, // return_visibilities
-        true), // do_grid
-      [](auto&& gs_fvs) {
-        return std::get<0>(std::move(gs_fvs));
-      });
-};
-
-rval_t<std::tuple<GridderState, future<VisDataVector>>>
-GridderState::degrid_get_predicted_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities) const & {
-
-  ProfileRegion
-    region("GridderState::degrid_get_predicted_visibilities_const");
-
-  return
-    grid_visibilities_base(
-      host_device,
-      std::move(visibilities),
-      false,  // update_grid_weights
-      true,   // do_degrid
-      true,   // return_visibilities
-      false); // do_grid
-};
-
-rval_t<std::tuple<GridderState, future<VisDataVector>>>
-GridderState::degrid_get_predicted_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities) && {
-
-  ProfileRegion region("GridderState::degrid_get_predicted_visibilities");
-
-  return
-    std::move(*this).grid_visibilities_base(
-      host_device,
-      std::move(visibilities),
-      false,  // update_grid_weights
-      true,   // do_degrid
-      true,   // return_visibilities
-      false); // do_grid
-};
-
-rval_t<std::tuple<GridderState, future<VisDataVector>>>
-GridderState::degrid_grid_get_residual_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights) const & {
-
-  ProfileRegion
-    region("GridderState::degrid_grid_get_residual_visibilities_const");
-
-  return
-    grid_visibilities_base(
-      host_device,
-      std::move(visibilities),
-      update_grid_weights,
-      true,  // do_degrid
-      true,  // return_visibilities
-      true); // do_grid
-};
-
-rval_t<std::tuple<GridderState, future<VisDataVector>>>
-GridderState::degrid_grid_get_residual_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights) && {
-
-  ProfileRegion
-    region("GridderState::degrid_grid_get_residual_visibilities");
-
-  return
-    std::move(*this).grid_visibilities_base(
-      host_device,
-      std::move(visibilities),
-      update_grid_weights,
-      true,  // do_degrid
-      true,  // return_visibilities
-      true); // do_grid
-};
-
-GridderState
-GridderState::fence() const & {
-
-  ProfileRegion region("GridderState::fence_const");
-
-  GridderState result(*this);
-  result.impl->fence();
-  return result;
-}
-
-GridderState
-GridderState::fence() && {
-
-  ProfileRegion region("GridderState::fence");
-
-  GridderState result(std::move(*this));
-  result.impl->fence();
-  return result;
-}
-
-std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
-GridderState::grid_weights() const & {
-
-  ProfileRegion region("GridderState::grid_weights_const");
-
-  GridderState result(*this);
-  return {std::move(result), std::move(result.impl->grid_weights())};
-}
-
-std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
-GridderState::grid_weights() && {
-
-  ProfileRegion region("GridderState::grid_weights");
-
-  GridderState result(std::move(*this));
-  return {std::move(result), std::move(result.impl->grid_weights())};
-}
-
-std::shared_ptr<GridWeightArray::value_type>
-GridderState::grid_weights_ptr() const & {
-
-  ProfileRegion region("GridderState::grid_weights_ptr");
-
-  return impl->grid_weights_ptr();
-}
-
-size_t
-GridderState::grid_weights_span() const & {
-
-  ProfileRegion region("GridderState::grid_weights_span");
-
-  return impl->grid_weights_span();
-}
-
-std::tuple<GridderState, std::unique_ptr<GridValueArray>>
-GridderState::grid_values() const & {
-
-  ProfileRegion region("GridderState::grid_values_const");
-
-  GridderState result(*this);
-  return {std::move(result), std::move(result.impl->grid_values())};
-}
-
-std::tuple<GridderState, std::unique_ptr<GridValueArray>>
-GridderState::grid_values() && {
-
-  ProfileRegion region("GridderState::grid_values");
-
-  GridderState result(std::move(*this));
-  return {std::move(result), std::move(result.impl->grid_values())};
-}
-
-std::shared_ptr<GridValueArray::value_type>
-GridderState::grid_values_ptr() const & {
-
-  ProfileRegion region("GridderState::grid_values_ptr");
-
-  return impl->grid_values_ptr();
-}
-
-size_t
-GridderState::grid_values_span() const & {
-
-  ProfileRegion region("GridderState::grid_values_span");
-
-  return impl->grid_values_span();
-}
-
-
-// For mean_grid
-std::tuple<GridderState, std::unique_ptr<GridValueArray>>
-GridderState::mean_grid_values() const & {
-
-  ProfileRegion region("GridderState::mean_grid_values_const");
-
-  GridderState result(*this);
-  return {std::move(result), std::move(result.impl->mean_grid_values())};
-}
-
-std::tuple<GridderState, std::unique_ptr<GridValueArray>>
-GridderState::mean_grid_values() && {
-
-  ProfileRegion region("GridderState::mean_grid_values");
-
-  GridderState result(std::move(*this));
-  return {std::move(result), std::move(result.impl->mean_grid_values())};
-}
-
-std::shared_ptr<GridValueArray::value_type>
-GridderState::mean_grid_values_ptr() const & {
-
-  ProfileRegion region("GridderState::mean_grid_values_ptr");
-
-  return impl->mean_grid_values_ptr();
-}
-
-size_t
-GridderState::mean_grid_values_span() const & {
-
-  ProfileRegion region("GridderState::mean_grid_values_span");
-
-  return impl->mean_grid_values_span();
-}
-
-
-std::tuple<GridderState, std::unique_ptr<GridValueArray>>
-GridderState::model_values() const & {
-
-  ProfileRegion region("GridderState::model_values_const");
-
-  GridderState result(*this);
-  return {std::move(result), std::move(result.impl->model_values())};
-}
-
-std::tuple<GridderState, std::unique_ptr<GridValueArray>>
-GridderState::model_values() && {
-
-  ProfileRegion region("GridderState::model_values");
-
-  GridderState result(std::move(*this));
-  return {std::move(result), std::move(result.impl->model_values())};
-}
-
-std::shared_ptr<GridValueArray::value_type>
-GridderState::model_values_ptr() const & {
-
-  ProfileRegion region("GridderState::model_values_ptr");
-
-  return impl->model_values_ptr();
-}
-
-size_t
-GridderState::model_values_span() const & {
-
-  ProfileRegion region("GridderState::grid_values_span");
-
-  return impl->model_values_span();
-}
-
-GridderState
-GridderState::reset_grid() const & {
-
-  ProfileRegion region("GridderState::reset_grid_const");
-
-  GridderState result(*this);
-  result.impl->reset_grid();
-  return result;
-}
-
-GridderState
-GridderState::reset_grid() && {
-
-  ProfileRegion region("GridderState::reset_grid");
-
-  GridderState result(std::move(*this));
-  result.impl->reset_grid();
-  return result;
-}
-
-GridderState
-GridderState::reset_model() const & {
-
-  ProfileRegion region("GridderState::reset_model_const");
-
-  GridderState result(*this);
-  result.impl->reset_model();
-  return result;
-}
-
-GridderState
-GridderState::reset_model() && {
-
-  ProfileRegion region("GridderState::reset_model");
-
-  GridderState result(std::move(*this));
-  result.impl->reset_model();
-  return result;
-}
-
-GridderState
-GridderState::normalize_by_weights(grid_value_fp wfactor) const & {
-
-  ProfileRegion region("GridderState::normalize_by_weights_const");
-
-  GridderState result(*this);
-  result.impl->normalize_by_weights(wfactor);
-  return result;
-}
-
-GridderState
-GridderState::normalize_by_weights(grid_value_fp wfactor) && {
-
-  ProfileRegion region("GridderState::normalize_by_weights");
-
-  GridderState result(std::move(*this));
-  result.impl->normalize_by_weights(wfactor);
-  return result;
-}
-
-rval_t<GridderState>
-GridderState::apply_grid_fft(
-  grid_value_fp norm,
-  FFTSign sign,
-  bool in_place) const & {
-
-  ProfileRegion region("GridderState::apply_grid_fft_const");
-
-  return
-    to_rval(runtime::GridderState::apply_grid_fft(*this, norm, sign, in_place));
-}
-
-rval_t<GridderState>
-GridderState::apply_grid_fft(
-  grid_value_fp norm,
-  FFTSign sign,
-  bool in_place) && {
-
-  ProfileRegion region("GridderState::apply_grid_fft");
-
-  return
-    to_rval(
-      runtime::GridderState::apply_grid_fft(
-        std::move(*this),
-        norm,
-        sign,
-        in_place));
-}
-
-rval_t<GridderState>
-GridderState::apply_model_fft(
-  grid_value_fp norm,
-  FFTSign sign,
-  bool in_place) const & {
-
-  ProfileRegion region("GridderState::apply_model_fft_const");
-
-  return
-  to_rval(runtime::GridderState::apply_model_fft(*this, norm, sign, in_place));
-}
-
-rval_t<GridderState>
-GridderState::apply_model_fft(
-  grid_value_fp norm,
-  FFTSign sign,
-  bool in_place) && {
-
-  ProfileRegion region("GridderState::apply_model_fft");
-
-  return
-    to_rval(
-      runtime::GridderState::apply_model_fft(
-        std::move(*this),
-        norm,
-        sign,
-        in_place));
-}
-
-GridderState
-GridderState::shift_grid(ShiftDirection direction) const & {
-
-  ProfileRegion region("GridderState::shift_grid_const");
-
-  GridderState result(*this);
-  result.impl->shift_grid(direction);
-  return result;
-}
-
-GridderState
-GridderState::shift_grid(ShiftDirection direction) && {
-
-  ProfileRegion region("GridderState::shift_grid");
-
-  GridderState result(std::move(*this));
-  result.impl->shift_grid(direction);
-  return result;
-}
-
-GridderState
-GridderState::shift_model(ShiftDirection direction) const & {
-
-  ProfileRegion region("GridderState::shift_model_const");
-
-  GridderState result(*this);
-  result.impl->shift_model(direction);
-  return result;
-}
-
-GridderState
-GridderState::shift_model(ShiftDirection direction) && {
-
-  ProfileRegion region("GridderState::shift_model");
-
-  GridderState result(std::move(*this));
-  result.impl->shift_model(direction);
-  return result;
-}
-
-void
-GridderState::swap(GridderState& other) noexcept {
-  std::swap(impl, other.impl);
-}
-
-template <>
-future<std::vector<VisData<1>>>
-GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-  return
-    std::move(fvs).map<std::vector<VisData<1>>>(
-      [](VisDataVector&& vs) {
-        assert(vs.m_npol == 1);
-        return std::move(*vs.m_v1);
-      });
-}
-
-template <>
-future<std::vector<VisData<2>>>
-GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-  return
-    std::move(fvs).map<std::vector<VisData<2>>>(
-      [](VisDataVector&& vs) {
-        assert(vs.m_npol == 2);
-        return std::move(*vs.m_v2);
-      });
-}
-
-template <>
-future<std::vector<VisData<3>>>
-GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-  return
-    std::move(fvs).map<std::vector<VisData<3>>>(
-      [](VisDataVector&& vs) {
-        assert(vs.m_npol == 3);
-        return std::move(*vs.m_v3);
-      });
-}
-
-template <>
-future<std::vector<VisData<4>>>
-GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs) {
-
-  return
-    std::move(fvs).map<std::vector<VisData<4>>>(
-      [](VisDataVector&& vs) {
-        assert(vs.m_npol == 4);
-        return std::move(*vs.m_v4);
-      });
-}
-
-Gridder::Gridder() {}
-
-Gridder::Gridder(
-  Device device,
-  unsigned max_added_tasks,
-  size_t max_visibility_batch_size,
-  const CFArrayShape* init_cf_shape,
-  const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale,
-  IArrayVector&& mueller_indexes,
-  IArrayVector&& conjugate_mueller_indexes
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  , const std::array<unsigned, 4>& implementation_versions
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-)
-  : state(
-    GridderState(
-      device,
-      max_added_tasks,
-      max_visibility_batch_size,
-      init_cf_shape,
-      grid_size,
-      grid_scale,
-      std::move(mueller_indexes),
-      std::move(conjugate_mueller_indexes)
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-      , implementation_versions
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-      )) {}
-
-Gridder::Gridder(GridderState&& st) noexcept
-  : state(std::move(st)) {}
-
-Gridder::~Gridder() {}
-
-rval_t<Gridder>
-Gridder::create(
-  Device device,
-  unsigned max_added_tasks,
-  size_t max_visibility_batch_size,
-  const CFArrayShape* init_cf_shape,
-  const std::array<unsigned, 4>& grid_size,
-  const std::array<grid_scale_fp, 2>& grid_scale,
-  IArrayVector&& mueller_indexes,
-  IArrayVector&& conjugate_mueller_indexes
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  , const std::array<unsigned, 4>& implementation_versions
-#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-  ) noexcept {
-
-  auto err_or_gs =
-    GridderState::create(
-      device,
-      max_added_tasks,
-      max_visibility_batch_size,
-      init_cf_shape,
-      grid_size,
-      grid_scale,
-      std::move(mueller_indexes),
-      std::move(conjugate_mueller_indexes)
-#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
-      , implementation_versions
-#endif
-      );
-  if (is_value(err_or_gs))
-    return rval(Gridder(get_value(std::move(err_or_gs))));
-  else
-    return rval<Gridder>(get_error(std::move(err_or_gs)));
-}
-
-Device
-Gridder::device() const noexcept {
-  return state.device();
-}
-
-unsigned
-Gridder::max_added_tasks() const noexcept {
-  return state.max_added_tasks();
-}
-
-size_t
-Gridder::max_visibility_batch_size() const noexcept {
-  return state.max_visibility_batch_size();
-}
-
-const std::array<unsigned, 4>&
-Gridder::grid_size() const noexcept {
-  return state.grid_size();
-}
-
-std::array<grid_scale_fp, 2>
-Gridder::grid_scale() const noexcept {
-  return state.grid_scale();
-}
-
-bool
-Gridder::is_null() const noexcept {
-  return state.is_null();
-}
-
-unsigned
-Gridder::num_polarizations() const noexcept {
-  return state.num_polarizations();
-}
-
-size_t
-Gridder::convolution_function_region_size(const CFArrayShape* shape)
-  const noexcept {
-
-  return state.convolution_function_region_size(shape);
-}
-
-opt_t<Error>
-Gridder::allocate_convolution_function_region(const CFArrayShape* shape) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state).allocate_convolution_function_region(shape),
-      [this](auto&& gs) -> std::optional<Error> {
-        this->state = std::move(gs);
-        return std::nullopt;
-      },
-      [](auto&& err) -> std::optional<Error> {
-        return std::move(err);
-      });
-#else //HPG_API < 17
-  std::shared_ptr<Error> result;
-  std::tie(result, state) =
-    std::move(state).allocate_convolution_function_region(shape);
-  return result;
-#endif //HPG_API >= 17
-}
-
-opt_t<Error>
-Gridder::set_convolution_function(Device host_device, CFArray&& cf) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state).set_convolution_function(host_device, std::move(cf)),
-      [this](auto&& gs) -> std::optional<Error> {
-        this->state = std::move(gs);
-        return std::nullopt;
-      },
-      [](auto&& err) -> std::optional<Error> {
-        return std::move(err);
-      });
-#else // HPG_API < 17
-  std::shared_ptr<Error> result;
-  std::tie(result, state) =
-    std::move(state).set_convolution_function(host_device, std::move(cf));
-  return result;
-#endif //HPG_API >= 17
-}
-
-opt_t<Error>
-Gridder::set_model(Device host_device, GridValueArray&& gv) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state).set_model(host_device, std::move(gv)),
-      [this](auto&& gs) -> std::optional<Error> {
-        this->state = std::move(gs);
-        return std::nullopt;
-      },
-      [](auto&& err) -> std::optional<Error> {
-        return std::move(err);
-      });
-#else // HPG_API < 17
-  std::shared_ptr<Error> result;
-  std::tie(result, state) =
-    std::move(state).set_model(host_device, std::move(gv));
-  return result;
-#endif //HPG_API >= 17
-}
-
-opt_t<Error>
-Gridder::grid_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state)
+        update_grid_weights);
+  };
+
+  /** grid visibilities, without degridding (templated, rvalue reference
+   * version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  template <unsigned N>
+  rval_t<GridderState>
+  grid_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = true) && {
+
+    return
+      std::move(*this)
       .grid_visibilities(
         host_device,
-        std::move(visibilities),
-        update_grid_weights),
-      [this](auto&& gs) -> std::optional<Error> {
-        this->state = std::move(gs);
-        return std::nullopt;
-      },
-      [](auto&& err) -> std::optional<Error> {
-        return std::move(err);
-      });
-#else // HPG_API < 17
-  auto [err, gs] =
-    std::move(state)
-    .grid_visibilities(
-      host_device,
-      std::move(visibilities),
-      update_grid_weights);
-  if (!err)
-    state = std::move(gs);
-  return std::move(err);
-#endif // HPG_API >= 17
-}
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
+  };
 
-opt_t<Error>
-Gridder::degrid_grid_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state)
-      .degrid_grid_visibilities(
+  /** degrid and grid visibilities (template-free, const version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  rval_t<GridderState>
+  degrid_grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights = true) const &;
+
+  /** degrid and grid visibilities (template-free, rvalue reference version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  rval_t<GridderState>
+  degrid_grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights = true) &&;
+
+  /** degrid and grid visibilities (templated, const version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  template <unsigned N>
+  rval_t<GridderState>
+  degrid_grid_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = true) const & {
+
+    return
+      degrid_grid_visibilities(
         host_device,
-        std::move(visibilities),
-        update_grid_weights),
-      [this](auto&& gs) -> std::optional<Error> {
-        this->state = std::move(gs);
-        return std::nullopt;
-      },
-      [](auto&& err) -> std::optional<Error> {
-        return std::move(err);
-      });
-#else // HPG_API < 17
-  auto [err, gs] =
-    std::move(state)
-    .degrid_grid_visibilities(
-      host_device,
-      std::move(visibilities),
-      update_grid_weights);
-  if (!err)
-    state = std::move(gs);
-  return std::move(err);
-#endif // HPG_API >= 17
-}
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
+  };
 
-rval_t<future<VisDataVector>>
-Gridder::degrid_get_predicted_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state)
-      .degrid_get_predicted_visibilities(host_device, std::move(visibilities)),
-      [this](auto&& gs_fvs) -> rval_t<future<VisDataVector>> {
-        this->state = std::get<0>(std::move(gs_fvs));
-        return std::get<1>(std::move(gs_fvs));
-      },
-      [](auto&& err) -> rval_t<future<VisDataVector>> {
-        return std::move(err);
-      });
-#else // HPG_API < 17
-  auto [err, gs_fvs] =
-    std::move(state)
-    .degrid_get_predicted_visibilities(host_device, std::move(visibilities));
-  if (!err) {
-    state = std::get<0>(std::move(gs_fvs));
-    return rval<future<VisDataVector>>(std::get<1>(std::move(gs_fvs)));
+  /** degrid and grid visibilities (templated, rvalue reference version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  template <unsigned N>
+  rval_t<GridderState>
+  degrid_grid_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = true) && {
+
+    return
+      std::move(*this).degrid_grid_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
+  };
+
+  /** degrid visibilities, returning predicted visibilities (template-free,
+   * const version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of predicted visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  rval_t<std::tuple<GridderState, future<VisDataVector>>>
+  degrid_get_predicted_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities) const &;
+
+  /** degrid visibilities, returning predicted visibilities (template-free,
+   * rvalue reference version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of predicted visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  rval_t<std::tuple<GridderState, future<VisDataVector>>>
+  degrid_get_predicted_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities) &&;
+
+  /** degrid visibilities, returning predicted visibilities (templated, const
+   * version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of predicted visibilities
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  template <unsigned N>
+  rval_t<std::tuple<GridderState, future<std::vector<VisData<N>>>>>
+  degrid_get_predicted_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities) const & {
+
+    auto tpl_or_err =
+      degrid_get_predicted_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(tpl_or_err)) {
+      GridderState gs;
+      future<VisDataVector> fvs;
+      std::tie(gs, fvs) = hpg::get_value(std::move(tpl_or_err));
+      return
+        std::make_tuple(
+          std::move(gs),
+          future_visibilities_narrow<N>(std::move(fvs)));
+    } else {
+      return hpg::get_error(std::move(tpl_or_err));
+    }
+  };
+
+  /** degrid visibilities, returning predicted visibilities (templated, rvalue
+   * reference version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of predicted visibilities
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  template <unsigned N>
+  rval_t<std::tuple<GridderState, future<std::vector<VisData<N>>>>>
+  degrid_get_predicted_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities) && {
+
+    auto tpl_or_err =
+      std::move(*this).degrid_get_predicted_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(tpl_or_err)) {
+      GridderState gs;
+      future<VisDataVector> fvs;
+      std::tie(gs, fvs) = hpg::get_value(std::move(tpl_or_err));
+      return
+        std::make_tuple(
+          std::move(gs),
+          future_visibilities_narrow<N>(std::move(fvs)));
+    } else {
+      return hpg::get_error(std::move(tpl_or_err));
+    }
+  };
+
+  /** degrid and grid visibilities, returning residual visibilities
+   * (template-free, const version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of residual visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  rval_t<std::tuple<GridderState, future<VisDataVector>>>
+  degrid_grid_get_residual_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights = true) const &;
+
+  /** degrid and grid visibilities, returning residual visibilities
+   * (template-free, rvalue reference version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of residual visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  rval_t<std::tuple<GridderState, future<VisDataVector>>>
+  degrid_grid_get_residual_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights = true) &&;
+
+  /** degrid and grid visibilities, returning residual visibilities (templated,
+   * const version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of residual visibilities
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  template <unsigned N>
+  rval_t<std::tuple<GridderState, future<std::vector<VisData<N>>>>>
+  degrid_grid_get_residual_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = true) const & {
+
+    auto tpl_or_err =
+      degrid_grid_get_residual_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
+    if (hpg::is_value(tpl_or_err)) {
+      GridderState gs;
+      future<VisDataVector> fvs;
+      std::tie(gs, fvs) = hpg::get_value(std::move(tpl_or_err));
+      return
+        rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
+          std::make_tuple(
+            std::move(gs),
+            future_visibilities_narrow<N>(std::move(fvs))));
+    } else {
+      return
+        rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
+          hpg::get_error(std::move(tpl_or_err)));
+    }
+  };
+
+  /** degrid and grid visibilities, returning residual visibilities (templated,
+   * rvalue reference version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after gridding task has been submitted to device
+   * queue, and a future of residual visibilities
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  template <unsigned N>
+  rval_t<std::tuple<GridderState, future<std::vector<VisData<N>>>>>
+  degrid_grid_get_residual_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities) && {
+
+    auto tpl_or_err =
+      std::move(*this).degrid_grid_get_residual_visibilities(
+        host_device,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(tpl_or_err)) {
+      GridderState gs;
+      future<VisDataVector> fvs;
+      std::tie(gs, fvs) = hpg::get_value(std::move(tpl_or_err));
+      return
+        rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
+          std::make_tuple(
+            std::move(gs),
+            future_visibilities_narrow<N>(std::move(fvs))));
+    } else {
+      return
+        rval<std::tuple<GridderState, future<std::vector<VisData<N>>>>>(
+          hpg::get_error(std::move(tpl_or_err)));
+    }
+  };
+
+
+  /** device execution fence
+   *
+   * @return new GridderState that is a copy of the target, but one in which all
+   * tasks on the device have completed
+   *
+   * Call is rarely explicitly required by users. In fact, any value copy of the
+   * target includes an implicit fence.
+   *
+   * @sa Gridder::fence()
+   */
+  GridderState
+  fence() const &;
+
+  /** device execution fence
+   *
+   * @return new GridderState that has overwritten the target, but only after
+   * all tasks on the device have completed
+   *
+   * Call is rarely explicitly required by users.
+   *
+   * @sa Gridder::fence()
+   */
+  GridderState
+  fence() &&;
+
+  /** get copy of grid plane weights
+   *
+   * Invokes fence() on target.
+   */
+  std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
+  grid_weights() const &;
+
+  /** get copy of grid plane weights
+   *
+   * Invokes fence() on target.
+   */
+  std::tuple<GridderState, std::unique_ptr<GridWeightArray>>
+  grid_weights() &&;
+
+  /** get a pointer to the grid weights buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of grid weights
+   */
+  std::shared_ptr<GridWeightArray::value_type>
+  grid_weights_ptr() const &;
+
+  /** get the number of elements in the span of the grid weights buffer
+   *
+   * It is recommended that this method is used to get the size of the grid
+   * weights buffer (instead of using the product of the grid dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of grid weights
+   */
+  size_t
+  grid_weights_span() const &;
+
+  /** get copy of grid values
+   *
+   * Invokes fence() on target.
+   */
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  grid_values() const &;
+
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  mean_grid_values() const &;
+
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  moment_grid_values() const &;
+
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  threshold_grid_values() const &;
+
+  /** get copy of grid values
+   *
+   * Invokes fence() on target.
+   */
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  grid_values() &&;
+
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  mean_grid_values() &&;
+
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  moment_grid_values() &&;
+
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  threshold_grid_values() &&;
+
+  /** get a pointer to the grid values buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of grid values
+   */
+  std::shared_ptr<GridValueArray::value_type>
+  grid_values_ptr() const &;
+
+  std::shared_ptr<GridValueArray::value_type>
+  mean_grid_values_ptr() const &;
+
+  std::shared_ptr<GridValueArray::value_type>
+  moment_grid_values_ptr() const &;
+
+  std::shared_ptr<GridValueArray::value_type>
+  threshold_grid_values_ptr() const &;
+
+  /** get the number of elements in the span of the grid values buffer
+   *
+   * It is recommended that this method is used to get the size of the grid
+   * values buffer (instead of using the product of the grid dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of grid values
+   */
+  size_t
+  grid_values_span() const &;
+
+  size_t
+  mean_grid_values_span() const &;
+
+  size_t
+  moment_grid_values_span() const &;
+
+  size_t
+  threshold_grid_values_span() const &;  
+  /** get copy of model values
+   *
+   * Invokes fence() on target.
+   */
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  model_values() const &;
+
+  /** get copy of model values
+   *
+   * Invokes fence() on target.
+   */
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  model_values() &&;
+
+  /** get a pointer to the model values buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of model values
+   */
+  std::shared_ptr<GridValueArray::value_type>
+  model_values_ptr() const &;
+
+  /** get the number of elements in the span of the model values buffer
+   *
+   * It is recommended that this method is used to get the size of the model
+   * values buffer (instead of using the product of the model dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of model values
+   */
+  size_t
+  model_values_span() const &;
+
+  /** reset grid values to zero
+   *
+   * Also resets grid plane weights to zero. May invoke fence() on target.
+   */
+  GridderState
+  reset_grid() const &;
+
+  /** reset grid values to zero
+   *
+   * Also resets grid plane weights to zero. May invoke fence() on target.
+   */
+  GridderState
+  reset_grid() &&;
+
+  /** reset model visibilities to zero
+   *
+   * May invoke fence() on target
+   */
+  GridderState
+  reset_model() const &;
+
+  /** reset model visibilities to zero
+   *
+   * May invoke fence() on target
+   */
+  GridderState
+  reset_model() &&;
+
+  /** normalize grid values by scaled weights
+   *
+   * May invoke fence() on target.
+   *
+   * @param wgt_factor multiplicative factor applied to weights before
+   * normalization
+   */
+  GridderState
+  normalize_by_weights(grid_value_fp wgt_factor = 1) const &;
+
+  /** normalize grid values by scaled weights
+   *
+   * May invoke fence() on target.
+   *
+   * @param wgt_factor multiplicative factor applied to weights before
+   * normalization
+   */
+  GridderState
+  normalize_by_weights(grid_value_fp wgt_factor = 1) &&;
+
+  /** apply FFT to grid array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param norm post-FFT normalization divisor
+   * @param sign sign of imaginary unit in FFT kernel
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  rval_t<GridderState>
+  apply_grid_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = grid_fft_sign_dflt,
+    bool in_place = true) const &;
+
+  /** apply FFT to grid array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param norm post-FFT normalization divisor
+   * @param sign sign of imaginary unit in FFT kernel
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  rval_t<GridderState>
+  apply_grid_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = grid_fft_sign_dflt,
+    bool in_place = true) &&;
+
+  /** apply FFT to model array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param norm post-FFT normalization divisor
+   * @param sign sign of imaginary unit in FFT kernel
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  rval_t<GridderState>
+  apply_model_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = model_fft_sign_dflt,
+    bool in_place = true) const &;
+
+  /** apply FFT to grid array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param norm post-FFT normalization divisor
+   * @param sign sign of imaginary unit in FFT kernel
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  rval_t<GridderState>
+  apply_model_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = model_fft_sign_dflt,
+    bool in_place = true) &&;
+
+  /** shift grid planes by half grid size on X, Y axes
+   *
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
+   */
+  GridderState
+  shift_grid(ShiftDirection direction) const &;
+
+  /** shift grid planes by half grid size on X, Y axes
+   *
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
+   */
+  GridderState
+  shift_grid(ShiftDirection direction) &&;
+
+  /** shift model planes by half grid size on X, Y axes
+   *
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
+   */
+  GridderState
+  shift_model(ShiftDirection direction) const &;
+
+  /** shift model planes by half grid size on X, Y axes
+   *
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
+   */
+  GridderState
+  shift_model(ShiftDirection direction) &&;
+
+protected:
+  friend class Gridder;
+
+  /** swap member values with another GridderState instance */
+  void
+  swap(GridderState& other) noexcept;
+};
+
+/** specialization of GridderState::future_visibilities_narrow<1> */
+template <>
+HPG_EXPORT future<std::vector<VisData<1>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs);
+
+/** specialization of GridderState::future_visibilities_narrow<2> */
+template <>
+HPG_EXPORT future<std::vector<VisData<2>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs);
+
+/** specialization of GridderState::future_visibilities_narrow<3> */
+template <>
+HPG_EXPORT future<std::vector<VisData<3>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs);
+
+/** specialization of GridderState::future_visibilities_narrow<4> */
+template <>
+HPG_EXPORT future<std::vector<VisData<4>>>
+GridderState::future_visibilities_narrow(future<VisDataVector>&& fvs);
+
+/** Gridder class
+ *
+ * Instances of this class may be used for a pure object-oriented interface to
+ * the functional interface of GridderState. Note that the object-oriented
+ * interface of Gridder is slightly more constrained than the functional
+ * interface of GridderState, as the GridderState member of a Gridder instance
+ * is often modified by Gridder methods through move construction/assignment,
+ * and is thus never copied. Managing GridderState instances directly provides
+ * greater flexibility, in that the caller has complete control over when
+ * GridderState values are copied vs moved. However, the flexibility provided by
+ * GridderState consequently makes it easy to create copies of those values when
+ * a moved value would have been more efficient (both in resource usage and
+ * performance).
+ *
+ * Depending on the device used for gridding, methods may schedule tasks for
+ * asynchronous execution or may block. Even when asynchronous execution is
+ * supported by a device, a call may nevertheless block at times, depending upon
+ * the internal state of the Gridder instance. See GridderState for more
+ * information.
+ *
+ * @sa GridderState
+ */
+class HPG_EXPORT Gridder {
+protected:
+
+  mutable GridderState state; /**< state maintained by instances */
+
+public:
+
+  /** default constructur */
+  Gridder();
+
+protected:
+
+  /** constructor
+   *
+   * @param device gridder device type
+   * @param max_added_tasks maximum number of concurrent tasks (actual
+   * number may be less than requested)
+   * @param max_visibility_batch_size maximum number of VisData<.> values for
+   * calls to grid_visibilities()
+   * @param init_cf_shape shape of CF region for initial memory allocation (per
+   * task)
+   * @param grid_size in logical axis order: X, Y, mrow, cube
+   * @param grid_scale in X, Y order
+   * @param mueller_indexes CFArray Mueller element indexes, by mrow
+   * @param conjugate_mueller_indexes CFArray conjugate Mueller element indexes,
+   * by mrow
+   *
+   * max_added_tasks may be used to control the level of concurrency available
+   * to the GridderState instance. In all cases, at least one task is employed,
+   * but some devices support additional, concurrent tasks.
+   *
+   * The value of max_added_tasks and max_visibility_batch_size has an effect on
+   * the amount of memory allocated on the selected gridder device. The total
+   * amount of memory allocated for visibilities will be approximately equal to
+   * max_added_tasks multiplied by sizeof(VisData<N>) for the appropriate value
+   * of N.
+   */
+  Gridder(
+    Device device,
+    unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    );
+
+public:
+
+  /** Gridder factory method
+   *
+   * Does not throw an exception if device argument names an unsupported device
+   *
+   * @sa Gridder()
+   */
+  static rval_t<Gridder>
+  create(
+    Device device,
+    unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    IArrayVector&& mueller_indexes,
+    IArrayVector&& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ) noexcept;
+
+  /** Gridder factory method
+   *
+   * Does not throw an exception if device argument names an unsupported device
+   *
+   * @tparam N number of polarization in visibilities to be gridded
+   *
+   * @sa Gridder()
+   */
+  template <unsigned N>
+  static rval_t<Gridder>
+  create(
+    Device device,
+    unsigned max_added_tasks,
+    size_t max_visibility_batch_size,
+    const CFArrayShape* init_cf_shape,
+    const std::array<unsigned, 4>& grid_size,
+    const std::array<grid_scale_fp, 2>& grid_scale,
+    const std::vector<std::array<int, size_t(N)>>& mueller_indexes,
+    const std::vector<std::array<int, size_t(N)>>& conjugate_mueller_indexes
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    , const std::array<unsigned, 4>& implementation_versions =
+      GridderState::default_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+    ) noexcept {
+
+    return
+      create(
+        device,
+        max_added_tasks,
+        max_visibility_batch_size,
+        init_cf_shape,
+        grid_size,
+        grid_scale,
+        IArrayVector(mueller_indexes),
+        IArrayVector(conjugate_mueller_indexes)
+#ifdef HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+        , implementation_versions
+#endif // HPG_ENABLE_EXPERIMENTAL_IMPLEMENTATIONS
+      );
   }
-  return rval<future<VisDataVector>>(std::move(*err));
-#endif // HPG_API >= 17
-}
 
-rval_t<future<VisDataVector>>
-Gridder::degrid_grid_get_residual_visibilities(
-  Device host_device,
-  VisDataVector&& visibilities,
-  bool update_grid_weights) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state).degrid_grid_get_residual_visibilities(
+  /** copy constructor
+   *
+   * Invokes fence() on argument.
+   */
+  Gridder(const Gridder& other) = default;
+
+  /** move constructor */
+  Gridder(Gridder&& other) noexcept = default;
+
+  /** copy assignment
+   *
+   * Invokes fence() on argument
+   */
+  Gridder&
+  operator=(const Gridder&) = default;
+
+  /** move assignment*/
+  Gridder&
+  operator=(Gridder&&) noexcept = default;
+
+  virtual ~Gridder();
+
+  /** device */
+  Device
+  device() const noexcept;
+
+  /** maximum additional tasks
+   *
+   * This value may differ from the value provided to the constructor, depending
+   * on device limitations */
+  unsigned
+  max_added_tasks() const noexcept;
+
+  /** maximum number of visibilities passed to gridding kernel at once */
+  size_t
+  max_visibility_batch_size() const noexcept;
+
+  /** grid size */
+  const std::array<unsigned, 4>&
+  grid_size() const noexcept;
+
+  /** grid scale */
+  std::array<grid_scale_fp, 2>
+  grid_scale() const noexcept;
+
+  /** number of visibility polarizations */
+  unsigned
+  num_polarizations() const noexcept;
+
+  /** null state query */
+  bool
+  is_null() const noexcept;
+
+
+  /** size (in bytes) of region allocated for CFArray elements
+   *
+   * Memory allocations for convolution function regions are made per device
+   * task. Values returned for the size of the currently allocated region refer
+   * only to the most recently allocated region; multiplying this value by the
+   * number of device tasks may be an inaccurate measure of the total allocated
+   * region, as asynchronously executing tasks may be using different
+   * convolution functions.
+   *
+   * @param shape if non-null, the memory needed for a CFArray of the given
+   * shape; if null, the size of the currently allocated region in the target
+   */
+  size_t
+  convolution_function_region_size(const CFArrayShape* shape) const noexcept;
+
+  /** allocate memory for convolution function
+   *
+   * Increasing memory allocations for convolution functions are handled
+   * automatically by set_convolution_function(), but in a sequence of calls to
+   * set_convolution_function() in which later calls require a larger allocation
+   * than earlier calls, it may be advantageous to use this method in order to
+   * allocate the maximum memory that will be required by the sequence before
+   * starting the sequence, which will then permit the sequence to proceed
+   * without any reallocations. To release all memory allocated for the
+   * convolution function, the caller may pass a null pointer for the method
+   * argument. Invokes fence() on the target.
+   *
+   * @param shape shape of CFArray for which to allocate memory (per task)
+   *
+   * @return new GridderState that is a copy of the target, but with memory
+   * allocated for convolution function, or error
+   */
+  opt_t<Error>
+  allocate_convolution_function_region(const CFArrayShape* shape);
+
+  /** set convolution function
+   *
+   * May invoke fence() on target.
+   *
+   * the provided convolution function will be used for gridding until this
+   * function is called again
+   *
+   * @param host_device device to use for changing array layout
+   * @param cf convolution function array
+   */
+  opt_t<Error>
+  set_convolution_function(Device host_device, CFArray&&);
+
+  /** set visibility model
+   *
+   * May invoke fence() on target.
+   *
+   * @return new GridderState after setting model
+   *
+   * @param host_device device to use for copying model values
+   * @param gv visibility model
+   *
+   * @sa Gridder::set_model()
+   */
+  opt_t<Error>
+  set_model(Device host_device, GridValueArray&& gv);
+
+  /** grid visibilities (template-free version)
+   *
+   * May invoke fence() on target.
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  opt_t<Error>
+  grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights = true);
+
+  /** grid visibilities (template version)
+   *
+   * May invoke fence() on target.
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  template <unsigned N>
+  opt_t<Error>
+  grid_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = true) {
+
+    return
+      grid_visibilities(
         host_device,
-        std::move(visibilities),
-        update_grid_weights),
-      [this](auto&& gs_fvs) -> rval_t<future<VisDataVector>> {
-        this->state = std::get<0>(std::move(gs_fvs));
-        return std::get<1>(std::move(gs_fvs));
-      },
-      [](auto&& err) -> rval_t<future<VisDataVector>> {
-        return std::move(err);
-      });
-#else // HPG_API < 17
-  auto [err, gs_fvs] =
-    std::move(state).degrid_grid_get_residual_visibilities(
-      host_device,
-      std::move(visibilities),
-      update_grid_weights);
-  if (!err) {
-    state = std::get<0>(std::move(gs_fvs));
-    return rval<future<VisDataVector>>(std::get<1>(std::move(gs_fvs)));
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
   }
-  return rval<future<VisDataVector>>(std::move(*err));
-#endif // HPG_API >= 17
-}
 
-void
-Gridder::fence() const {
-  state = std::move(state).fence();
-}
+  /** degrid and grid visibilities (template-free version)
+   *
+   * May invoke fence() on target.
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  opt_t<Error>
+  degrid_grid_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights = true);
 
-std::unique_ptr<GridWeightArray>
-Gridder::grid_weights() const {
-  std::unique_ptr<GridWeightArray> result;
-  std::tie(const_cast<Gridder*>(this)->state, result) =
-    std::move(const_cast<Gridder*>(this)->state).grid_weights();
-  return result;
-}
+  /** degrid and grid visibilities (template version)
+   *
+   * May invoke fence() on target.
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  template <unsigned N>
+  opt_t<Error>
+  degrid_grid_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = true) {
 
-std::shared_ptr<GridWeightArray::value_type>
-Gridder::grid_weights_ptr() const & {
-  return state.grid_weights_ptr();
-}
-
-size_t
-Gridder::grid_weights_span() const & {
-  return state.grid_weights_span();
-}
-
-std::unique_ptr<GridValueArray>
-Gridder::grid_values() const {
-  std::unique_ptr<GridValueArray> result;
-  std::tie(const_cast<Gridder*>(this)->state, result) =
-    std::move(const_cast<Gridder*>(this)->state).grid_values();
-  return result;
-}
-
-std::unique_ptr<GridValueArray>
-Gridder::mean_grid_values() const {
-  std::unique_ptr<GridValueArray> result;
-  std::tie(const_cast<Gridder*>(this)->state, result) =
-    std::move(const_cast<Gridder*>(this)->state).mean_grid_values();
-  return result;
-}
-
-std::shared_ptr<GridValueArray::value_type>
-Gridder::grid_values_ptr() const & {
-  return state.grid_values_ptr();
-}
-
-std::shared_ptr<GridValueArray::value_type>
-Gridder::mean_grid_values_ptr() const & {
-  return state.mean_grid_values_ptr();
-}
-
-
-size_t
-Gridder::grid_values_span() const & {
-  return state.grid_values_span();
-}
-
-size_t
-Gridder::mean_grid_values_span() const & {
-  return state.mean_grid_values_span();
-}
-
-std::unique_ptr<GridValueArray>
-Gridder::model_values() const {
-  std::unique_ptr<GridValueArray> result;
-  std::tie(const_cast<Gridder*>(this)->state, result) =
-    std::move(const_cast<Gridder*>(this)->state).model_values();
-  return result;
-}
-
-std::shared_ptr<GridValueArray::value_type>
-Gridder::model_values_ptr() const & {
-  return state.model_values_ptr();
-}
-
-size_t
-Gridder::model_values_span() const & {
-  return state.model_values_span();
-}
-
-void
-Gridder::reset_grid() {
-  state = std::move(state).reset_grid();
-}
-
-void
-Gridder::reset_model() {
-  state = std::move(state).reset_model();
-}
-
-void
-Gridder::normalize_by_weights(grid_value_fp wgt_factor) {
-  state = std::move(state).normalize_by_weights(wgt_factor);
-}
-
-opt_t<Error>
-Gridder::apply_grid_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state).apply_grid_fft(norm, sign, in_place),
-      [this](auto&& gs) -> std::optional<Error> {
-        this->state = std::move(gs);
-        return std::nullopt;
-      },
-      [](auto&& err) -> std::optional<Error> {
-        return std::move(err);
-      });
-#else // HPG_API < 17
-  std::shared_ptr<Error> result;
-  std::tie(result, state) =
-    std::move(state).apply_grid_fft(norm, sign, in_place);
-  return result;
-#endif //HPG_API >= 17
-}
-
-opt_t<Error>
-Gridder::apply_model_fft(grid_value_fp norm, FFTSign sign, bool in_place) {
-#if HPG_API >= 17
-  return
-    fold(
-      std::move(state).apply_model_fft(norm, sign, in_place),
-      [this](auto&& gs) -> std::optional<Error> {
-        this->state = std::move(gs);
-        return std::nullopt;
-      },
-      [](auto&& err) -> std::optional<Error> {
-        return std::move(err);
-      });
-#else // HPG_API < 17
-  std::shared_ptr<Error> result;
-  std::tie(result, state) =
-    std::move(state).apply_model_fft(norm, sign, in_place);
-  return result;
-#endif //HPG_API >= 17
-}
-
-void
-Gridder::shift_grid(ShiftDirection direction) {
-  state = std::move(state).shift_grid(direction);
-}
-
-void
-Gridder::shift_model(ShiftDirection direction) {
-  state = std::move(state).shift_model(direction);
-}
-
-opt_t<Error>
-GridValueArray::copy_to(Device host_device, value_type* dst, Layout layout)
-  const {
-
-  using namespace runtime;
-
-  static_assert(
-    int(impl::core::GridAxis::x) == GridValueArray::Axis::x
-    && int(impl::core::GridAxis::y) == GridValueArray::Axis::y
-    && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(impl::core::GridAxis::cube) == GridValueArray::Axis::cube);
-
-#if HPG_API >= 17
-  if (host_devices().count(host_device) == 0)
-    return DisabledHostDeviceError();
-  unsafe_copy_to(host_device, dst, layout);
-  return std::nullopt;
-#else // HPG_API < 17
-  if (host_devices().count(host_device) == 0)
-    return std::shared_ptr<Error>(new DisabledHostDeviceError());
-  unsafe_copy_to(host_device, dst, layout);
-  return nullptr;
-#endif //HPG_API >= 17
-}
-
-std::unique_ptr<GridValueArray>
-GridValueArray::copy_from(
-  const std::string& name,
-  Device target_device,
-  Device host_device,
-  const value_type* src,
-  const std::array<unsigned, GridValueArray::rank>& extents,
-  Layout layout) {
-
-  using namespace runtime;
-
-  static_assert(
-    int(impl::core::GridAxis::x) == GridValueArray::Axis::x
-    && int(impl::core::GridAxis::y) == GridValueArray::Axis::y
-    && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(impl::core::GridAxis::cube) == GridValueArray::Axis::cube);
-
-  switch (target_device) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
     return
-      impl::GridValueViewArray<Device::Serial>::copy_from(
-        name,
+      degrid_grid_visibilities(
         host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    return
-      impl::GridValueViewArray<Device::OpenMP>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    return
-      impl::GridValueViewArray<Device::Cuda>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-  default:
-    assert(false);
-    return nullptr;
-    break;
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
   }
-}
 
-opt_t<Error>
-GridWeightArray::copy_to(Device host_device, value_type* dst, Layout layout)
-  const {
+  /** degrid visibilities, returning predicted visibilities (template-free
+   * version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return future of predicted visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  rval_t<future<VisDataVector>>
+  degrid_get_predicted_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities);
 
-  using namespace runtime;
+  /** degrid visibilities, returning predicted visibilities (template version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return future of predicted visibilities
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   */
+  template <unsigned N>
+  rval_t<future<std::vector<VisData<N>>>>
+  degrid_get_predicted_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities) {
 
-  static_assert(
-    int(impl::core::GridAxis::x) == GridValueArray::Axis::x
-    && int(impl::core::GridAxis::y) == GridValueArray::Axis::y
-    && int(impl::core::GridAxis::mrow) == GridValueArray::Axis::mrow
-    && int(impl::core::GridAxis::cube) == GridValueArray::Axis::cube);
-
-#if HPG_API >= 17
-  if (host_devices().count(host_device) == 0)
-    return DisabledHostDeviceError();
-  unsafe_copy_to(host_device, dst, layout);
-  return std::nullopt;
-#else // HPG_API < 17
-  if (host_devices().count(host_device) == 0)
-    return std::shared_ptr<Error>(new DisabledHostDeviceError());
-  unsafe_copy_to(host_device, dst, layout);
-  return nullptr;
-#endif //HPG_API >= 17
-}
-
-
-std::unique_ptr<GridWeightArray>
-GridWeightArray::copy_from(
-  const std::string& name,
-  Device target_device,
-  Device host_device,
-  const value_type* src,
-  const std::array<unsigned, GridWeightArray::rank>& extents,
-  Layout layout) {
-
-  using namespace runtime;
-
-  switch (target_device) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    return
-      impl::GridWeightViewArray<Device::Serial>::copy_from(
-        name,
+    auto fvs_or_err =
+      degrid_get_predicted_visibilities(
         host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    return
-      impl::GridWeightViewArray<Device::OpenMP>::copy_from(
-        name,
+        VisDataVector(std::move(visibilities)));
+    if (hpg::is_value(fvs_or_err))
+      return
+        rval(
+          GridderState::future_visibilities_narrow<N>(
+            hpg::get_value(std::move(fvs_or_err))));
+    else
+      return
+        rval<future<std::vector<VisData<N>>>>(
+          hpg::get_error(std::move(fvs_or_err)));
+  }
+
+  /** degrid and grid visibilities, returning residual visibilities
+   * (template-free version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return future of residual visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  rval_t<future<VisDataVector>>
+  degrid_grid_get_residual_visibilities(
+    Device host_device,
+    VisDataVector&& visibilities,
+    bool update_grid_weights = true);
+
+  /** degrid and grid visibilities, returning residual visibilities (template
+   * version)
+   *
+   * May invoke fence() on target.
+   *
+   * @return future of residual visibilities
+   *
+   * @tparam N number of polarizations in visibilities
+   *
+   * @param host_device device to use for copying visibilities
+   * @param visibilities visibilities
+   * @param update_grid_weights update grid weights or not
+   */
+  template <unsigned N>
+  rval_t<future<std::vector<VisData<N>>>>
+  degrid_grid_get_residual_visibilities(
+    Device host_device,
+    std::vector<VisData<N>>&& visibilities,
+    bool update_grid_weights = true) {
+
+    auto fvs_or_err =
+      degrid_grid_get_residual_visibilities(
         host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    return
-      impl::GridWeightViewArray<Device::Cuda>::copy_from(
-        name,
-        host_device,
-        src,
-        extents,
-        layout);
-    break;
-#endif
-  default:
-    assert(false);
-    return nullptr;
-    break;
+        VisDataVector(std::move(visibilities)),
+        update_grid_weights);
+    if (hpg::is_value(fvs_or_err))
+      return
+        rval(
+          GridderState::future_visibilities_narrow<N>(
+            hpg::get_value(std::move(fvs_or_err))));
+    else
+      return
+        rval<future<std::vector<VisData<N>>>>(
+          hpg::get_error(std::move(fvs_or_err)));
   }
-}
 
-const char * const
-hpg::cf_layout_unspecified_version = "";
+  /** device execution fence
+   *
+   * Returns after all tasks on device have completed. Call is rarely explicitly
+   * required by users.
+   */
+  void
+  fence() const;
 
-rval_t<std::string>
-CFArray::copy_to(
-  Device device,
-  Device host_device,
-  unsigned grp,
-  value_type* dst) const {
+  /** get copy of grid plane weights
+   *
+   * Invokes fence() on target.
+   */
+  std::unique_ptr<GridWeightArray>
+  grid_weights() const;
 
-  using namespace runtime;
+  /** get a pointer to the grid weights buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of grid weights
+   */
+  std::shared_ptr<GridWeightArray::value_type>
+  grid_weights_ptr() const &;
 
-  if (host_devices().count(host_device) == 0)
-    return rval<std::string>(DisabledHostDeviceError());
+  /** get the number of elements in the span of the grid weights buffer
+   *
+   * It is recommended that this method is used to get the size of the grid
+   * values buffer (instead of using the product of the grid dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of grid weights
+   */
+  size_t
+  grid_weights_span() const &;
 
-  if (devices().count(device) == 0)
-    return rval<std::string>(DisabledDeviceError());
+  /** get copy of grid values
+   *
+   * Invokes fence() on target.
+   */
+  std::unique_ptr<GridValueArray>
+  grid_values() const;
 
-  switch (device) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    impl::layout_for_device<Device::Serial>(host_device, *this, grp, dst);
-    break;
-#endif
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    impl::layout_for_device<Device::OpenMP>(host_device, *this, grp, dst);
-    break;
-#endif
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    impl::layout_for_device<Device::Cuda>(host_device, *this, grp, dst);
-    break;
-#endif
-  default:
-    assert(false);
-    break;
-  }
-  return
-    rval(
-      impl::construct_cf_layout_version(
-        impl::cf_layout_version_number,
-        device));
-}
+  std::unique_ptr<GridValueArray>
+  mean_grid_values() const;
 
-rval_t<size_t>
-CFArray::min_buffer_size(Device device, unsigned grp) const {
+  std::unique_ptr<GridValueArray>
+  moment_grid_values() const;
 
-  return runtime::impl::min_cf_buffer_size(device, *this, grp);
-}
+  std::unique_ptr<GridValueArray>
+  threshold_grid_values() const; 
+  /** get a pointer to the grid values buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of grid values
+   */
+  std::shared_ptr<GridValueArray::value_type>
+  grid_values_ptr() const &;
 
-rval_t<std::unique_ptr<DeviceCFArray>>
-DeviceCFArray::create(
-  const std::string& layout,
-  unsigned oversampling,
-  std::vector<
-    std::tuple<std::array<unsigned, rank - 1>, std::vector<value_type>>>&&
-    arrays) {
+  std::shared_ptr<GridValueArray::value_type>
+  mean_grid_values_ptr() const &;
 
-  using namespace runtime;
+  std::shared_ptr<GridValueArray::value_type>
+  moment_grid_values_ptr() const &;
 
-  auto opt_vn_dev = impl::parsed_cf_layout_version(layout);
-  if (!opt_vn_dev)
-    return
-      rval<std::unique_ptr<DeviceCFArray>>(
-        Error("Provided layout is invalid", ErrorType::InvalidCFLayout));
-  auto& [vn, opt_dev] = opt_vn_dev.value();
-  // require an exact device match in cf layout
-  if (!opt_dev)
-    return rval<std::unique_ptr<DeviceCFArray>>(DisabledDeviceError());
-  switch (opt_dev.value()) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    return
-      rval<std::unique_ptr<DeviceCFArray>>(
-        std::make_unique<impl::DeviceCFArray<Device::Serial>>(
-          layout,
-          oversampling,
-          std::move(arrays)));
-    break;
-#endif // HPG_ENABLE_SERIAL
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    return
-      rval<std::unique_ptr<DeviceCFArray>>(
-        std::make_unique<impl::DeviceCFArray<Device::OpenMP>>(
-          layout,
-          oversampling,
-          std::move(arrays)));
-    break;
-#endif // HPG_ENABLE_OPENMP
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    return
-      rval<std::unique_ptr<DeviceCFArray>>(
-        std::make_unique<impl::DeviceCFArray<Device::Cuda>>(
-          layout,
-          oversampling,
-          std::move(arrays)));
-    break;
-#endif //HPG_ENABLE_CUDA
-  default:
-    return rval<std::unique_ptr<DeviceCFArray>>(DisabledDeviceError());
-    break;
-  }
-}
+  std::shared_ptr<GridValueArray::value_type>
+  threshold_grid_values_ptr() const &;
 
-rval_t<std::unique_ptr<RWDeviceCFArray>>
-RWDeviceCFArray::create(Device device, const CFArrayShape& shape) {
+  /** get the number of elements in the span of the grid values buffer
+   *
+   * It is recommended that this method is used to get the size of the grid
+   * values buffer (instead of using the product of the grid dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of grid values
+   */
+  size_t
+  grid_values_span() const &;
 
-  using namespace runtime;
+  size_t
+  mean_grid_values_span() const &;
 
-  switch (device) {
-#ifdef HPG_ENABLE_SERIAL
-  case Device::Serial:
-    return
-      rval<std::unique_ptr<RWDeviceCFArray>>(
-        std::make_unique<impl::DeviceCFArray<Device::Serial>>(shape));
-    break;
-#endif // HPG_ENABLE_SERIAL
-#ifdef HPG_ENABLE_OPENMP
-  case Device::OpenMP:
-    return
-      rval<std::unique_ptr<RWDeviceCFArray>>(
-        std::make_unique<impl::DeviceCFArray<Device::OpenMP>>(shape));
-    break;
-#endif // HPG_ENABLE_OPENMP
-#ifdef HPG_ENABLE_CUDA
-  case Device::Cuda:
-    return
-      rval<std::unique_ptr<RWDeviceCFArray>>(
-        std::make_unique<impl::DeviceCFArray<Device::Cuda>>(shape));
-    break;
-#endif //HPG_ENABLE_CUDA
-  default:
-    return rval<std::unique_ptr<RWDeviceCFArray>>(DisabledDeviceError());
-    break;
-  }
-}
+  size_t
+  moment_grid_values_span() const &;
+
+  size_t
+  threshold_grid_values_span() const &;
+
+  /** get copy of model values
+   *
+   * Invokes fence() on target.
+   */
+  std::unique_ptr<GridValueArray>
+  model_values() const;
+
+  /** get a pointer to the model values buffer
+   *
+   * WARNING: Use of this method requires great care; it's very easy to shoot
+   * oneself in the foot! The returned pointer may not be dereferencable by the
+   * calling process. There is no guarantee that fence() is invoked on the
+   * target by this method. Recommended guidelines are to call the method
+   * immediately after a call to any method that is guaranteed to fence the
+   * target (fence() is a good choice), and free the pointer before calling any
+   * non-const method.
+   *
+   * @return pointer to the current buffer of model values
+   */
+  std::shared_ptr<GridValueArray::value_type>
+  model_values_ptr() const &;
+
+  /** get the number of elements in the span of the model values buffer
+   *
+   * It is recommended that this method is used to get the size of the model
+   * values buffer (instead of using the product of the model dimensions) to
+   * account for potential padding in the buffer.
+   *
+   * @return the number of elements in the current buffer of model values
+   */
+  size_t
+  model_values_span() const &;
+
+  /** reset grid values to zero
+   *
+   * Also resets grid plane weights to zero. May invoke fence() on target.
+   */
+  void
+  reset_grid();
+
+  /** reset model values to zero
+   */
+  void
+  reset_model();
+
+  /** normalize grid values by scaled weights
+   *
+   * May invoke fence() on target.
+   *
+   * @param wgt_factor multiplicative factor applied to weights before
+   * normalization
+   */
+  void
+  normalize_by_weights(grid_value_fp wgt_factor = 1);
+
+  /** apply FFT to grid array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param norm post-FFT normalization divisor
+   * @param sign sign of imaginary unit in FFT kernel
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  opt_t<Error>
+  apply_grid_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = grid_fft_sign_dflt,
+    bool in_place = true);
+
+  /** apply FFT to model array planes
+   *
+   * May invoke fence() on target.
+   *
+   * @param norm post-FFT normalization divisor
+   * @param sign sign of imaginary unit in FFT kernel
+   * @param in_place run FFT in-place, without allocation of another grid
+   */
+  opt_t<Error>
+  apply_model_fft(
+    grid_value_fp norm = 1,
+    FFTSign sign = model_fft_sign_dflt,
+    bool in_place = true);
+
+  /** shift grid planes by half grid size on X, Y axes
+   *
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
+   */
+  void
+  shift_grid(ShiftDirection direction);
+
+  /** shift model planes by half grid size on X, Y axes
+   *
+   * May invoke fence() on target.
+   *
+   * @param direction direction of shift
+   */
+  void
+  shift_model(ShiftDirection direction);
+
+protected:
+
+  /** move constructor */
+  Gridder(GridderState&& st) noexcept;
+};
+
+} // end namespace hpg
 
 // Local Variables:
 // mode: c++

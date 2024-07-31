@@ -1943,6 +1943,12 @@ public:
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   mean_grid_values() const &;
 
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  moment_grid_values() const &;
+
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  threshold_grid_values() const &;
+
   /** get copy of grid values
    *
    * Invokes fence() on target.
@@ -1952,6 +1958,12 @@ public:
 
   std::tuple<GridderState, std::unique_ptr<GridValueArray>>
   mean_grid_values() &&;
+
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  moment_grid_values() &&;
+
+  std::tuple<GridderState, std::unique_ptr<GridValueArray>>
+  threshold_grid_values() &&;
 
   /** get a pointer to the grid values buffer
    *
@@ -1971,6 +1983,12 @@ public:
   std::shared_ptr<GridValueArray::value_type>
   mean_grid_values_ptr() const &;
 
+  std::shared_ptr<GridValueArray::value_type>
+  moment_grid_values_ptr() const &;
+
+  std::shared_ptr<GridValueArray::value_type>
+  threshold_grid_values_ptr() const &;
+
   /** get the number of elements in the span of the grid values buffer
    *
    * It is recommended that this method is used to get the size of the grid
@@ -1985,6 +2003,11 @@ public:
   size_t
   mean_grid_values_span() const &;
 
+  size_t
+  moment_grid_values_span() const &;
+
+  size_t
+  threshold_grid_values_span() const &;  
   /** get copy of model values
    *
    * Invokes fence() on target.
@@ -2673,6 +2696,11 @@ public:
   std::unique_ptr<GridValueArray>
   mean_grid_values() const;
 
+  std::unique_ptr<GridValueArray>
+  moment_grid_values() const;
+
+  std::unique_ptr<GridValueArray>
+  threshold_grid_values() const; 
   /** get a pointer to the grid values buffer
    *
    * WARNING: Use of this method requires great care; it's very easy to shoot
@@ -2691,6 +2719,12 @@ public:
   std::shared_ptr<GridValueArray::value_type>
   mean_grid_values_ptr() const &;
 
+  std::shared_ptr<GridValueArray::value_type>
+  moment_grid_values_ptr() const &;
+
+  std::shared_ptr<GridValueArray::value_type>
+  threshold_grid_values_ptr() const &;
+
   /** get the number of elements in the span of the grid values buffer
    *
    * It is recommended that this method is used to get the size of the grid
@@ -2704,6 +2738,13 @@ public:
 
   size_t
   mean_grid_values_span() const &;
+
+  size_t
+  moment_grid_values_span() const &;
+
+  size_t
+  threshold_grid_values_span() const &;
+
   /** get copy of model values
    *
    * Invokes fence() on target.
