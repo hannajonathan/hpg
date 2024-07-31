@@ -176,11 +176,29 @@ struct /*HPG_EXPORT*/ State {
   virtual std::unique_ptr<GridValueArray>
   mean_grid_values() const = 0;
 
+  virtual std::unique_ptr<GridValueArray>
+  moment_grid_values() const = 0;
+
+  virtual std::unique_ptr<GridValueArray>
+  threshold_grid_values() const = 0;
+
   virtual std::shared_ptr<GridValueArray::value_type>
   mean_grid_values_ptr() const = 0;
 
+  virtual std::shared_ptr<GridValueArray::value_type>
+  moment_grid_values_ptr() const = 0;
+
+  virtual std::shared_ptr<GridValueArray::value_type>
+  threshold_grid_values_ptr() const = 0;
+
   virtual size_t
   mean_grid_values_span() const = 0;
+
+  virtual size_t
+  moment_grid_values_span() const = 0;
+
+  virtual size_t
+  threshold_grid_values_span() const = 0;
 
   virtual void
   reset_grid() = 0;
@@ -742,8 +760,8 @@ public:
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_grid;
   impl::core::grid_int_view<typename grid_layout::layout, memory_space> m_n_grid;
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_mean_grid;
-  impl::core::grid_float_view<typename grid_layout::layout, memory_space> m_moment_grid;
-  impl::core::grid_float_view<typename grid_layout::layout, memory_space> m_threshold_grid;
+  impl::core::grid_view<typename grid_layout::layout, memory_space> m_moment_grid;
+  impl::core::grid_view<typename grid_layout::layout, memory_space> m_threshold_grid;
   impl::core::weight_view<typename execution_space::array_layout, memory_space>
     m_weights;
   impl::core::grid_view<typename grid_layout::layout, memory_space> m_model;
@@ -1325,6 +1343,30 @@ public:
     return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
   }
 
+  std::unique_ptr<GridValueArray>
+  moment_grid_values() const override {
+    std::scoped_lock lock(m_mtx);
+    fence_unlocked();
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto grid_h = K::create_mirror(m_moment_grid);
+    K::deep_copy(exec.space, grid_h, m_moment_grid);
+    exec.fence();
+    return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
+  }
+
+  std::unique_ptr<GridValueArray>
+  threshold_grid_values() const override {
+    std::scoped_lock lock(m_mtx);
+    fence_unlocked();
+    auto& exec =
+      m_exec_spaces[next_exec_space_unlocked(StreamPhase::PRE_GRIDDING)];
+    auto grid_h = K::create_mirror(m_threshold_grid);
+    K::deep_copy(exec.space, grid_h, m_threshold_grid);
+    exec.fence();
+    return std::make_unique<impl::GridValueViewArray<D>>(grid_h);
+  }
+
   std::shared_ptr<GridValueArray::value_type>
   grid_values_ptr() const override {
     return
@@ -1341,6 +1383,22 @@ public:
       ->ptr();
   }
 
+  std::shared_ptr<GridValueArray::value_type>
+  moment_grid_values_ptr() const override {
+    return
+      std::make_shared<
+        impl::GridValuePtr<typename grid_layout::layout, memory_space>>(m_moment_grid)
+      ->ptr();
+  }
+
+  std::shared_ptr<GridValueArray::value_type>
+  threshold_grid_values_ptr() const override {
+    return
+      std::make_shared<
+        impl::GridValuePtr<typename grid_layout::layout, memory_space>>(m_threshold_grid)
+      ->ptr();
+  }
+
   size_t
   grid_values_span() const override {
     return m_grid.span();
@@ -1349,6 +1407,16 @@ public:
   size_t
   mean_grid_values_span() const override {
     return m_mean_grid.span();
+  }
+
+  size_t
+  moment_grid_values_span() const override {
+    return m_moment_grid.span();
+  }
+
+  size_t
+  threshold_grid_values_span() const override {
+    return m_threshold_grid.span();
   }
 
   std::unique_ptr<GridValueArray>
